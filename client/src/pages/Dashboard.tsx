@@ -415,88 +415,142 @@ function BotBadge() { return <span className="grid size-10 place-items-center ro
 function Empty({ text }: { text: string }) { return <p className="rounded-xl bg-[#f5fbf9] px-3 py-4 text-center text-xs leading-5 text-[#87a39e]">{text}</p>; }
 function LoadingState() { return <div className="grid min-h-screen place-items-center bg-[#f6fffc]"><div className="text-center"><Bot className="mx-auto size-7 animate-pulse text-[#2aa487]" /><p className="mt-3 text-sm text-[#759992]">กำลังเปิดข้อมูลไมโล...</p></div></div>; }
 function LoginGate({ loading }: { loading: boolean }) {
-  const [email, setEmail] = useState("");
+  const [username, setUsername] = useState("admin");
+  const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showForgotModal, setShowForgotModal] = useState(false);
   const utils = trpc.useUtils();
 
   const adminLoginMutation = trpc.auth.adminLogin.useMutation({
-    onSuccess: async (data) => {
-      toast.success(`เข้าสู่ระบบหลังบ้านในฐานะผู้ดูแลระบบ (${data.user.name}) เรียบร้อยแล้ว`);
+    onSuccess: async () => {
+      toast.success("เข้าสู่ระบบผู้ดูแลระบบสำเร็จ กำลังเปิดแดชบอร์ด...");
       await utils.auth.me.invalidate();
       window.location.reload();
     },
     onError: (err: any) => {
-      toast.error(err.message || "เข้าสู่ระบบผู้ดูแลระบบไม่สำเร็จ กรุณาลองใหม่อีกครั้ง");
+      toast.error(err.message || "ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง");
       setIsSubmitting(false);
     },
   });
 
-  const handleAdminLogin = (loginEmail: string) => {
-    const trimmed = loginEmail.trim();
-    if (!trimmed || !trimmed.includes("@")) {
-      toast.error("กรุณากรอก Gmail ของผู้ดูแลระบบ (เช่น admin@gmail.com)");
+  const handleSubmit = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!username.trim()) {
+      toast.error("กรุณากรอกชื่อผู้ดูแลระบบ (Username)");
+      return;
+    }
+    if (!password) {
+      toast.error("กรุณากรอกรหัสผ่าน (Password)");
       return;
     }
     setIsSubmitting(true);
-    adminLoginMutation.mutate({ email: trimmed });
+    adminLoginMutation.mutate({ username: username.trim(), password });
   };
 
   return (
-    <div className="grid min-h-screen place-items-center bg-[#f6fffc] px-5">
+    <div className="grid min-h-screen place-items-center bg-[#f4faf7] px-5">
       <div className="w-full max-w-md rounded-[2.2rem] border border-[#d2ebe5] bg-white p-8 text-center paper-shadow">
         <div className="mx-auto grid size-16 place-items-center rounded-2xl bg-[#e4f7f1] text-[#1c8c72]">
           <ShieldCheck className={`size-8 ${loading || isSubmitting ? "animate-pulse" : ""}`} />
         </div>
         <h1 className="font-display mt-5 text-2xl font-bold text-[#1a3d36]">ระบบจัดการหลังบ้านไมโล</h1>
-        <p className="mt-1.5 text-xs text-[#208a71] font-semibold">Milo Admin & System Governance</p>
+        <p className="mt-1 text-xs text-[#208a71] font-semibold">Milo Admin Management Portal</p>
         <p className="mt-2 text-xs leading-relaxed text-[#688e87]">
-          ลงชื่อเข้าใช้สำหรับผู้ดูแลระบบ (Admin) เพื่อจัดการการตั้งค่า เชื่อมต่อบอต LINE และดูรายงานภาพรวม
+          เข้าสู่ระบบสำหรับผู้ดูแลระบบ เพื่อจัดการการตั้งค่าและดูสถิติ
         </p>
 
-        <div className="mt-6 space-y-3.5 text-left">
+        <form onSubmit={handleSubmit} className="mt-6 space-y-4 text-left">
           <div>
-            <label className="text-xs font-semibold text-[#284f47] block mb-1">Gmail ผู้ดูแลระบบ</label>
+            <label className="text-xs font-semibold text-[#284f47] block mb-1">ชื่อผู้ใช้ (Username)</label>
             <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="admin@gmail.com หรือ Gmail ของคุณ"
+              type="text"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              placeholder="admin"
               disabled={isSubmitting}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") handleAdminLogin(email);
-              }}
               className="w-full h-11 rounded-xl border border-[#cbe3dc] px-3.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#238f76]"
             />
           </div>
 
-          <Button
-            onClick={() => handleAdminLogin(email)}
-            disabled={isSubmitting}
-            className="w-full h-11 rounded-xl bg-[#238f76] text-white hover:bg-[#187863] font-semibold text-sm flex items-center justify-center gap-2"
-          >
-            {isSubmitting ? "กำลังเข้าสู่ระบบ..." : "เข้าสู่ระบบหลังบ้านด้วย Gmail"}
-          </Button>
-
-          <div className="relative my-4 text-center">
-            <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-[#edf4f2]"></div></div>
-            <span className="relative bg-white px-2 text-[11px] text-[#86a59e]">ทางลัดผู้ดูแลระบบ</span>
+          <div>
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-xs font-semibold text-[#284f47]">รหัสผ่าน (Password)</label>
+              <button
+                type="button"
+                onClick={() => setShowForgotModal(true)}
+                className="text-[11px] text-[#22a386] hover:underline font-medium"
+              >
+                ลืมรหัสผ่าน?
+              </button>
+            </div>
+            <div className="relative">
+              <input
+                type={showPassword ? "text" : "password"}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="กรอกรหัสผ่านผู้ดูแลระบบ"
+                disabled={isSubmitting}
+                className="w-full h-11 rounded-xl border border-[#cbe3dc] pl-3.5 pr-10 text-sm focus:outline-none focus:ring-2 focus:ring-[#238f76]"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-3 top-3 text-[#79a098] hover:text-[#238f76]"
+              >
+                {showPassword ? "ซ่อน" : "ดู"}
+              </button>
+            </div>
           </div>
 
           <Button
-            type="button"
-            variant="outline"
-            onClick={() => handleAdminLogin("admin@gmail.com")}
+            type="submit"
             disabled={isSubmitting}
-            className="w-full h-10 rounded-xl border-[#c6e4dc] text-xs text-[#238f76] hover:bg-[#edf8f4] font-semibold"
+            className="w-full h-11 rounded-xl bg-[#238f76] text-white hover:bg-[#187863] font-semibold text-sm mt-2"
           >
-            <ShieldCheck className="mr-1.5 size-3.5 text-[#238f76]" /> เข้าสู่ระบบผู้ดูแลระบบหลัก (Master Admin)
+            {isSubmitting ? "กำลังตรวจสอบข้อมูล..." : "ลงชื่อเข้าใช้ผู้ดูแลระบบ"}
           </Button>
-        </div>
+
+          <div className="rounded-xl bg-[#f5fbf9] p-3 text-center border border-[#e4f5ef]">
+            <p className="text-[11px] text-[#5e877f]">
+              🔑 ค่าเริ่มต้น: Username <strong>admin</strong> | Password <strong>admin1234</strong>
+            </p>
+          </div>
+        </form>
 
         <Link href="/" className="mt-6 block text-xs text-[#528c81] hover:underline">
           กลับหน้าหลัก
         </Link>
+
+        {/* Forgot Password Modal */}
+        {showForgotModal && (
+          <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 backdrop-blur-sm p-4">
+            <div className="w-full max-w-sm rounded-3xl bg-white p-6 text-left shadow-2xl border border-[#d3ebe5]">
+              <h3 className="text-base font-bold text-[#1a3832]">กู้คืนรหัสผ่านผู้ดูแลระบบ</h3>
+              <p className="text-xs text-[#638b82] mt-2 leading-relaxed">
+                คุณสามารถเปลี่ยนหรือรีเซ็ตรหัสผ่านของ Admin ได้ทันทีผ่านการตั้งค่าตัวแปรในระบบโฮสติ้ง:
+              </p>
+              <div className="mt-3 rounded-xl bg-[#f5fbf9] p-3 text-xs text-[#315c53] font-mono border border-[#e0f2ec] space-y-1">
+                <p>ADMIN_USERNAME = ชื่อที่ต้องการ</p>
+                <p>ADMIN_PASSWORD = รหัสผ่านใหม่</p>
+              </div>
+              <p className="text-[11px] text-[#71968e] mt-2">
+                บน Vercel: ไปที่ Settings &gt; Environment Variables เพื่อกำหนดรหัสผ่านใหม่แล้ว Redeploy
+              </p>
+              <div className="mt-5 flex justify-end">
+                <Button
+                  size="sm"
+                  onClick={() => setShowForgotModal(false)}
+                  className="rounded-xl bg-[#238f76] text-white hover:bg-[#1b7e68] text-xs px-4"
+                >
+                  เข้าใจแล้ว ปิดหน้าต่าง
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
+}
 }function ErrorState({ message, onRetry }: { message: string; onRetry: () => void }) { return <div className="grid min-h-screen place-items-center bg-[#f6fffc] px-5"><div className="max-w-md rounded-3xl border border-[#f2d5ce] bg-white p-8 text-center paper-shadow"><p className="font-display text-xl font-semibold text-[#9a4f44]">เปิดข้อมูลไมโลไม่สำเร็จ</p><p className="mt-2 text-sm leading-6 text-[#8a756e]">{message}</p><Button onClick={onRetry} className="mt-5 rounded-xl bg-[#238f76] text-white">ลองอีกครั้ง</Button></div></div>; }

@@ -43,7 +43,7 @@ function requireAdminRole(role: string) {
 
 export const appRouter = router({
   system: systemRouter,
-  auth: router({
+auth: router({
     me: publicProcedure.query(opts => opts.ctx.user),
     logout: publicProcedure.mutation(({ ctx }) => {
       const cookieOptions = getSessionCookieOptions(ctx.req);
@@ -53,24 +53,33 @@ export const appRouter = router({
     adminLogin: publicProcedure
       .input(
         z.object({
-          email: z.string().trim().email("????????? Gmail ?????????? (???? admin@gmail.com)"),
-          name: z.string().trim().optional(),
+          username: z.string().trim().min(1, "กรุณากรอกชื่อผู้ใช้ (Username)"),
+          password: z.string().min(1, "กรุณากรอกรหัสผ่าน (Password)"),
         })
       )
       .mutation(async ({ ctx, input }) => {
-        await db.initAllTablesIfNotExist();
-        const email = input.email.toLowerCase();
-        const safeOpenId = "admin_" + email.replace(/[^a-zA-Z0-9]/g, "_");
-        const name = input.name || ("??????????? (" + email.split("@")[0] + ")");
+        const expectedUser = (process.env.ADMIN_USERNAME || "admin").trim();
+        const expectedPass = (process.env.ADMIN_PASSWORD || "admin1234").trim();
 
-        await db.upsertUser({
-          openId: safeOpenId,
-          name,
-          email,
-          role: "admin",
-          loginMethod: "gmail",
-          lastSignedIn: new Date(),
-        });
+        if (input.username !== expectedUser || input.password !== expectedPass) {
+          throw new Error("ชื่อผู้ใช้หรือรหัสผ่านผู้ดูแลระบบไม่ถูกต้อง");
+        }
+
+        const safeOpenId = `admin_${expectedUser}`;
+        const name = "ผู้ดูแลระบบ (Admin)";
+
+        try {
+          await db.upsertUser({
+            openId: safeOpenId,
+            name,
+            email: "admin@milo.internal",
+            role: "admin",
+            loginMethod: "admin_password",
+            lastSignedIn: new Date(),
+          });
+        } catch (dbErr) {
+          console.warn("[AdminLogin] DB user upsert skipped/warning:", dbErr);
+        }
 
         const sessionToken = await sdk.createSessionToken(safeOpenId, {
           name,
@@ -80,7 +89,7 @@ export const appRouter = router({
         const cookieOptions = getSessionCookieOptions(ctx.req);
         ctx.res.cookie(COOKIE_NAME, sessionToken, { ...cookieOptions, maxAge: ONE_YEAR_MS });
 
-        return { success: true, user: { openId: safeOpenId, name, email, role: "admin" } };
+        return { success: true, user: { openId: safeOpenId, name, role: "admin" } };
       }),
   }),
   milo: router({
