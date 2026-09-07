@@ -1,0 +1,90 @@
+{
+  "version": "7",
+  "dialect": "mysql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "5",
+      "when": 1787399806484,
+      "tag": "0000_cool_hitman",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "5",
+      "when": 1787400584271,
+      "tag": "0001_skinny_bruce_banner",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1787401362667,
+      "tag": "0002_serious_brother_voodoo",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "5",
+      "when": 1787643133679,
+      "tag": "0003_strange_abomination",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "5",
+      "when": 1787758373888,
+      "tag": "0004_happy_jackal",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "5",
+      "when": 1787803020070,
+      "tag": "0005_uneven_ted_forrester",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "5",
+      "when": 1787818092343,
+      "tag": "0006_perfect_namora",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "5",
+      "when": 1787824796957,
+      "tag": "0007_lonely_swordsman",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "5",
+      "when": 1787825141931,
+      "tag": "0008_flowery_ogun",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "5",
+      "when": 1787825264278,
+      "tag": "0009_motionless_loners",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "5",
+      "when": 1787825781996,
+      "tag": "0010_swift_leopardon",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "5",
+      "when": 1787826291884,
+      "tag": "0011_previous_tenebrous",
+      "breakpoints": true
+    }
+  ]
+}

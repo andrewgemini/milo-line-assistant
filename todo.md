@@ -1,0 +1,697 @@
+# Project TODO
+
+- [x] เพิ่มสมุดบัญชีการเงินส่วนตัว/กลุ่มพร้อมสมาชิกและสิทธิ์ระดับบัญชี โดยแยกข้อมูลธุรกรรมจริงอย่างชัดเจน
+- [ ] ปรับหน้าจัดการเว็บมาตรฐานสำหรับคลัง หมวด งบ รายการประจำ และการตั้งค่าบัญชี ด้วย dialog ที่เข้าถึงได้และข้อมูลจริง
+- [ ] แทนปุ่มแก้แท็กและลิงก์ในคลังด้วยปุ่มเปิด dialog โดยตรง และลบ native prompt/click-capture workaround
+- [ ] เพิ่ม loading/error/empty states และ regression tests สำหรับ query และ mutation สำคัญในหน้าตั้งค่าการเงิน
+- [ ] เพิ่ม regression สำหรับ loading/error/retry/empty และ success/error ของยอดตั้งต้น หมวด งบ และรายการประจำในหน้าตั้งค่าการเงินจริง
+- [x] ตรวจ TypeScript, regression 94 กรณี, production build, responsive screenshots และ log ปัจจุบันหลังเพิ่มสมุดบัญชี/หน้า settings
+- [ ] เก็บงานหน้าจอและ QA ที่ไม่แก้ไขข้อมูลการเงินจริงต่อเนื่องจนจบ โดยไม่รอการตอบกลับจากผู้ใช้
+- [x] เพิ่มช่องค้นหาธุรกรรมย้อนหลังบน dashboard โดยกรองเฉพาะข้อมูลจริงในสมุดบัญชีที่เลือก
+- [x] เพิ่มการเปรียบเทียบรายรับ รายจ่าย และคงเหลือกับช่วงก่อนหน้าตามช่วงรายงานที่เลือก โดยใช้ข้อมูลจริง
+- [x] ลดขนาดโหลดเริ่มต้นของ dashboard โดยโหลดไลบรารี Excel เฉพาะเมื่อผู้ใช้กดส่งออกไฟล์จริง
+- [x] เพิ่มการค้นหาคลังในแผงจัดการ metadata หลัก เพื่อไม่ต้องพึ่งแผง legacy ที่ซ่อนไว้
+- [x] จัดทำคู่มือการใช้บัญชีส่วนตัว/กลุ่ม LINE สิทธิ์สมาชิก และขอบเขตความปลอดภัยของข้อมูลการเงินจริง
+- [x] เพิ่ม loading/error/empty states ที่ชัดเจนสำหรับผู้ใช้และ audit log ในหน้าแอดมิน dashboard
+- [ ] แสดงสถานะกำหนดการสรุปการเงินอัตโนมัติและประวัติการส่งล่าสุดจาก delivery audit จริงบน dashboard
+- [x] เพิ่ม pagination สำหรับตารางธุรกรรมตามสมุดบัญชีที่เลือก โดยไม่สร้างข้อมูลจำลอง
+- [x] แสดงหลักฐานใบเสร็จและไฟล์เสียงที่เชื่อมแล้วในตารางธุรกรรม โดยตรวจสิทธิ์และใช้ไฟล์จริงจากคลัง
+- [x] แสดงหลักฐานใบเสร็จ สลิป และไฟล์เสียงแบบ inline ตามรายการธุรกรรม พร้อม regression การจับคู่และการปฏิเสธสิทธิ์
+- [x] รวมหลักฐานเข้าในตารางธุรกรรมหลักต่อแถว พร้อม UI regression สำหรับกรณีมีและไม่มีหลักฐานปะปนกัน
+- [x] ตรวจสอบความพร้อมของ LINE Channel secret และ Channel access token ด้วย endpoint ทางการ
+- [x] ออกแบบและสร้างตารางฐานข้อมูลสำหรับพื้นที่สนทนา สมาชิกกลุ่ม การเตือน ไฟล์ โน้ต งาน ธุรกรรม และการเชื่อมบัญชี
+- [x] เพิ่ม endpoint webhook LINE ที่ตรวจสอบลายเซ็นและกันการประมวลผล event ซ้ำ
+- [x] สร้างตัวแยกคำสั่งภาษาไทยสำหรับเตือนครั้งเดียว รายวัน รายสัปดาห์ รายเดือน และทุก N นาที
+- [x] สร้างงานตามกำหนดเวลาสำหรับตรวจรายการเตือนที่ถึงเวลาและส่ง Push Message กลับ LINE
+- [x] สร้างระบบคลังไฟล์/ข้อความ/ลิงก์ถาวรด้วย S3 พร้อมการค้นหาและแท็ก
+- [x] สร้าง workflow สำหรับบันทึกข้อความเป็นโน้ตและ To-do list จากแชท
+- [x] สร้าง workflow สำหรับบันทึกรายรับรายจ่าย หมวดหมู่ งบประมาณ และสรุปผล
+- [x] สร้างระบบบริบทกลุ่ม LINE ที่แยกข้อมูลตามกลุ่มและรองรับการกล่าวถึงสมาชิก
+- [x] สร้าง workflow วิเคราะห์รูปภาพตาราง ใบนัด และใบเสร็จ เพื่อเสนอรายการเตือนหรือรายจ่าย
+- [x] สร้าง Landing Page โทนพาสเทลเขียว-ฟ้าพร้อม Hero, LINE chat bubbles, CTA และ FAQ accordion
+- [x] สร้างแดชบอร์ดจัดการเตือน ไฟล์ โน้ต/งาน กลุ่ม และรายรับรายจ่ายพร้อมกราฟ
+- [x] เชื่อม UI กับ API และเพิ่มสถานะ loading, empty, error, success ที่เหมาะสม
+- [x] เขียนชุดทดสอบ Vitest สำหรับตัวแยกคำสั่งเตือน การตรวจ webhook และกฎธุรกิจหลัก
+- [ ] ตรวจความถูกต้องของ schema, API, งานตามกำหนดเวลา, การตอบสนองของ UI และจัดทำคู่มือตั้งค่า LINE
+- [ ] สร้าง checkpoint สุดท้ายและส่งมอบโครงการพร้อมแนวทางตั้งค่า LINE และ webhook URL
+- [x] สร้าง Heartbeat cron จริงสำหรับ `/api/scheduled/reminders` และบันทึก/จัดการ task UID
+- [x] เพิ่ม workflow tag และลิงก์ในคลังไฟล์ทั้งจาก LINE และ dashboard
+- [x] เพิ่มคำสั่งและ validation งบประมาณ/หมวดหมู่ผ่าน LINE
+- [x] เพิ่ม confirmation flow จาก image extraction เพื่อสร้าง reminder หรือ expense จริง
+- [x] ขยาย dashboard ให้มีส่วนโน้ตและกลุ่ม LINE พร้อมภาพสรุปข้อมูลที่ชัดเจน
+- [x] เพิ่ม error states และ toasts สำหรับ query/mutation หลัก
+- [x] เขียน integration tests สำหรับ webhook route, duplicate event handling, cron delivery และ mention flow
+- [x] เพิ่ม UI และ tRPC mutation ใน dashboard สำหรับสร้างหรือแก้ไขแท็กและลิงก์ในคลัง
+- [x] เพิ่ม validation และข้อความตอบกลับที่ชัดเจนสำหรับคำสั่งงบประมาณ/หมวดหมู่ผ่าน LINE
+- [x] เขียน test ระดับ route สำหรับ webhook signature/error response และ flow mention ที่ค้นหาสมาชิกแล้วส่งข้อความจริง
+- [x] เพิ่มคำสั่งและ validation สำหรับการจัดการหมวดหมู่ผ่าน LINE โดยตรง พร้อมข้อความตอบกลับกรณีหมวดว่างหรือไม่ถูกต้อง
+- [x] เพิ่ม tests ครอบคลุมกรณี budget/category invalid ผ่าน LINE response
+- [x] เขียน integration test ของ webhook processor สำหรับคำสั่ง budget/category invalid โดยตรวจข้อความตอบกลับจาก LINE
+- [x] เขียน integration test ของ webhook processor สำหรับคำสั่ง category invalid โดยตรวจข้อความตอบกลับผ่าน LINE
+- [x] สร้างและทดสอบ Heartbeat cron จริงหลังเผยแพร่เว็บไซต์ พร้อมบันทึก task UID
+- [x] ยืนยัน end-to-end ว่า scheduler เรียก cron endpoint ได้จริง อัปเดตเวลาทำงาน และส่ง push reminder สำเร็จ
+- [x] ตั้งค่าและ Verify LINE Messaging API webhook เป็น URL production ของไมโล
+- [x] เปิด scheduler จากบัญชีผู้ดูแลบน production และตรวจสอบการบันทึก task UID
+- [x] ทดสอบรับข้อความ LINE และส่งการเตือนจริงบน production โดยไม่ส่งข้อมูลทดสอบลงฐานข้อมูลถาวร
+- [x] เชื่อม LINE User ID จริงกับแดชบอร์ดและสร้าง reminder ทดสอบแบบชั่วคราวเพื่อตรวจ `sent > 0` ก่อนลบข้อมูลทดสอบ
+- [x] จัดทำ test matrix ครอบคลุม Landing Page, dashboard ทุกเมนู, tRPC API, webhook, scheduler และ LINE flow
+- [x] ตรวจปุ่ม CTA, FAQ และ navigation ทั้ง desktop/mobile ของ Landing Page
+- [x] ตรวจเมนู dashboard ทั้งภาพรวม การเตือน คลังไฟล์ โน้ต/งาน การเงิน และกลุ่ม LINE พร้อมแก้เมนูที่ไม่พาไปยังข้อมูลจริง
+- [ ] ตรวจ loading, empty, error และ success states ของทุก mutation สำคัญใน dashboard
+- [x] รัน TypeScript, Vitest และ production build หลังแก้ไข พร้อมตรวจ visual regression บน desktop/mobile
+- [x] เชื่อมเมนู sidebar และเมนู mobile ของ dashboard ให้เลื่อนไปยังส่วนข้อมูลจริงทุกฟังก์ชัน
+- [x] เพิ่มการลบรายการเตือนจากแดชบอร์ด พร้อมทดสอบใช้ล้าง reminder ชั่วคราวหลังตรวจ push notification
+- [x] ปรับกลไก scheduler ให้ตรวจ reminder ค้างเมื่อ callback กลับมาทำงาน และบันทึกสถานะ retry ที่ตรวจสอบได้
+- [x] เพิ่ม endpoint ผู้ดูแลสำหรับสั่งประมวลผล reminder ที่ถึงเวลาแบบปลอดภัย เพื่อรองรับการทดสอบและการกู้คืนจากความหน่วงของ cron
+- [x] ลบ reminder ทดสอบหลังยืนยันผลการส่งหรือบันทึกเหตุผลการส่งไม่สำเร็จ
+- [x] ให้ไมโลส่ง LINE User ID กลับเฉพาะในแชทส่วนตัว เพื่อรองรับการเชื่อมบัญชีจากแดชบอร์ดอย่างปลอดภัย
+- [x] ตรวจสิทธิ์ผู้ดูแลบน production เพื่อแสดงปุ่มเปิด scheduler แก่เจ้าของโครงการ
+- [x] รองรับ Authorization Bearer token เป็น fallback เมื่อสร้าง scheduler หาก session cookie ไม่พร้อมบน production
+- [x] แสดงข้อความผิดพลาดการเปิด scheduler ให้ชัดเจนและทดสอบ mutation ที่ใช้ token fallback
+- [x] เขียน integration test ของ mutation setup scheduler เมื่อไม่มี cookie แต่มี Authorization Bearer token
+- [x] ยืนยันข้อความผิดพลาดของปุ่มเปิด scheduler บน UI เมื่อ mutation ล้มเหลว
+- [x] ตรวจและผูก registerMiloCron กับ Express app ก่อน static fallback เพื่อให้ callback scheduler เข้าถึงได้จริง
+- [x] ทดสอบ callback route และ execution history ของ Heartbeat หลังเผยแพร่การแก้ไข
+- [x] สร้าง Heartbeat task ใหม่ภายใต้ project owner identity และอัปเดต task UID ใน metadata ของไมโล
+- [x] กู้ schema ฐานข้อมูลที่ว่างหลัง sandbox reset ด้วย migration ที่ตรวจสอบแล้วครบ 14 ตาราง
+- [x] ปรับ callback scheduler ให้ยอมรับทุก Heartbeat task ที่ลงทะเบียนไว้ จึงประมวลผล reminder ค้างได้เมื่อรอบ cron กลับมาทำงาน
+- [x] เพิ่ม mutation และปุ่มสำหรับผู้ดูแลเพื่อประมวลผล reminder ที่ถึงเวลาได้ทันที โดยยังคงตรวจสิทธิ์ผู้ดูแล
+- [x] ผูก Heartbeat task เดิมทั้ง primary และ recovery กลับเข้ากับ metadata หลังการกู้ฐานข้อมูล และตรวจ execution ใหม่
+- [x] ยืนยันจาก production ว่าปุ่ม “ส่งรายการที่ถึงเวลา” ส่ง push สำเร็จและบันทึกสถานะ `sent > 0` แล้วลบ reminder ทดสอบ
+- [x] ตรวจการทำงานของปุ่ม scheduler และเมนู dashboard ล่าสุดบน production ทั้ง desktop และ mobile
+- [x] ทดสอบปุ่มเปิด scheduler บน production และปุ่ม scheduler บน mobile session จริง พร้อมบันทึกผล task UID หรือสถานะที่ตรวจสอบได้
+- [x] เพิ่มทางเข้าปุ่ม scheduler สำหรับ mobile dashboard และทดสอบการใช้งานจริงบน production
+- [ ] ทดสอบปุ่มเปิด scheduler และส่งรายการที่ถึงเวลาจาก mobile dashboard พร้อมหลักฐานผลลัพธ์และลบ reminder ทดสอบ
+- [x] ปรับปุ่มเปิด scheduler ให้ reuse Heartbeat primary ที่มีอยู่และไม่สร้าง task ซ้ำ ก่อนทดสอบผ่าน UI
+- [x] แก้อาการปุ่มเปิด scheduler ค้างระหว่าง update Heartbeat primary และเพิ่ม timeout/error handling ที่ตรวจสอบได้
+- [x] ทำปุ่มเปิด scheduler เป็น idempotent: รายงาน task primary ที่เปิดอยู่แล้วโดยไม่เรียก Heartbeat update ซ้ำ และทดสอบทั้ง desktop/mobile
+- [x] เพิ่ม delivery audit ต่อ reminder และต่อรอบส่ง เพื่อบันทึกผลสำเร็จ/ล้มเหลว เหตุผล และ task ที่เรียกใช้งาน พร้อม tests
+- [x] เก็บหลักฐาน callback Heartbeat รอบที่มี `sent > 0` และตรวจ recovery task หลังผูก metadata แล้วตอบ 2xx
+- [x] เพิ่ม reminder ล่วงหน้า 15, 10 และ 5 นาทีก่อนการเปิดลงทะเบียนวันที่ 27 สิงหาคม 2569 เวลา 14:00 น.
+- [ ] ตรวจสอบและสรุปขั้นตอน/ลิงก์เตรียมตัวสำหรับการลงทะเบียนจากประกาศต้นทางที่ยืนยันได้
+- [ ] รับลิงก์หรือไฟล์ประกาศกิจกรรมต้นทางที่ผู้ใช้อ้างถึงและตรวจสอบความถูกต้อง
+- [ ] เปรียบเทียบทางเลือกการติดตามประกาศเปิดลงทะเบียนรอบใหม่และรอผู้ใช้เลือกแนวทางก่อนเปิดใช้งาน
+- [ ] ตั้งค่าติดตามแบบสรุปตามเวลาที่กำหนดหลังได้รับ URL ต้นทางและช่วงเวลาตรวจจากผู้ใช้
+- [x] สร้างภาพประกาศกิจกรรมจากภาพโบสถ์ที่ผู้ใช้ส่ง โดยใส่กำหนดการลงทะเบียนที่มีอยู่
+- [x] ขยายการอ่านสลิปและใบเสร็จ: ดึงยอดเงิน วันที่ ร้านค้า/คู่ค้า และแยกหมวดค่าใช้จ่ายก่อนบันทึกหลังยืนยัน
+- [x] แก้การอ่านวันที่รูปแบบเดือนภาษาไทย และเพิ่ม tests ครอบคลุมสลิป/ใบเสร็จตั้งแต่รับรูปจนบันทึกรายจ่ายหลังยืนยัน
+- [x] ทดสอบ fallback ของภาพเอกสารที่อ่านยอดหรือวันที่ไม่ชัด เพื่อไม่บันทึกข้อมูลที่เดาเอง
+- [x] ป้องกันการบันทึกค่าใช้จ่ายจากสลิป/ใบเสร็จเมื่อวันที่อ่านไม่ชัด จนกว่าผู้ใช้จะระบุวันที่ใหม่
+- [x] แก้ endpoint ดึง media จาก LINE ให้ใช้ data API domain พร้อม regression test ป้องกัน HTTP 404
+- [x] ทดสอบส่งรูปสลิปจริงบน production หลังแก้ data API endpoint และยืนยันการบันทึกหลังผู้ใช้กดยืนยัน
+- [x] ตรวจ sidebar และ mobile navigation ทุกเมนูให้เลื่อนไปยัง section เป้าหมายจริงเมื่ออยู่นอก viewport พร้อม regression test
+- [x] ปรับชุดทดสอบให้รัน dashboard navigation regression test จริง และเก็บหลักฐาน scroll ของทุกเมนูบน desktop/mobile
+- [x] ตรวจและแก้สิทธิ์ผู้ดูแลของบัญชีเจ้าของโครงการเพื่อให้ปุ่ม scheduler และส่งรายการที่ถึงเวลาแสดงสำหรับการทดสอบ production
+- [x] แก้ authorization ของ mutation ส่ง reminder ให้สอดคล้องกับ role admin ที่ dashboard แสดง แล้วทดสอบปุ่ม production ใหม่
+- [x] ยกระดับ dashboard การเงินด้วยบัตรสถิติ กราฟแนวโน้มรายวัน กราฟโดนัทหมวดรายจ่าย และสรุปหมวดที่ใช้ข้อมูลจริง
+- [x] ตรวจ responsive และความถูกต้องของข้อมูลกราฟ dashboard รุ่นใหม่บน desktop/mobile
+- [x] แสดง empty state ของกราฟแนวโน้มเมื่อยังไม่มีธุรกรรม แทนการวาดเส้นศูนย์ที่อาจทำให้เข้าใจว่าเป็นข้อมูลจริง
+- [x] ตรวจและแก้การปรากฏของแผงกราฟการเงินรุ่นใหม่บน production โดยไม่ซ่อนเมื่อข้อมูลช่วง 7 วันว่าง
+- [x] ทดสอบปุ่มลบ reminder จาก dashboard production ด้วย reminder ชั่วคราว แล้วเก็บหลักฐานว่ารายการหายจาก UI/DB หลังตรวจ push notification
+- [x] ทดสอบปุ่ม “เปิด scheduler” บน desktop production หลัง deploy รุ่น idempotent และยืนยันว่าได้สถานะ already-active โดยไม่เรียก UpdateHeartbeatJob ซ้ำ
+- [x] เพิ่ม validation LINE User ID และให้ผู้ใช้แก้ไขการเชื่อม LINE ได้จาก dashboard เมื่อพบรหัสที่ส่ง push ไม่ได้
+- [x] ทดสอบการปฏิเสธ LINE User ID ที่ไม่ใช่รูปแบบทางการและการเชื่อมใหม่ด้วยรหัสที่ถูกต้อง
+- [x] เพิ่ม loading/pending feedback ที่ชัดเจนให้ mutation สำคัญที่ยังขาดใน dashboard โดยเฉพาะ completeTodo และ updateVault พร้อมป้องกันการกดซ้ำ
+- [ ] ทดสอบใน browser ให้ครบทั้ง success, error, empty และ loading ของ mutation สำคัญทุกตัวใน dashboard แล้วบันทึกหลักฐาน QA ก่อนค่อย mark todo นี้ เป็นเสร็จ
+- [x] ตรวจสอบ end-to-end รอบล่าสุดของ frontend, backend, database, webhook LINE, scheduler และการแสดงผลกราฟ โดยไม่แก้ไข reminder หรือธุรกรรมจริง
+- [x] ปิดการกดซ้ำของปุ่มทำ To-do ระหว่าง mutation และแสดง pending state รายการที่กำลังดำเนินการให้ชัดเจน
+- [x] แก้การแปลงเวลา datetime-local ใน dashboard ให้ยึด Asia/Bangkok และเพิ่ม regression test ป้องกัน reminder คลาด timezone
+- [x] ขอผู้ใช้ยืนยันเวลาเป้าหมายของ reminder จริงที่แสดงคลาดเคลื่อนก่อนแก้ไขข้อมูลเดิม
+- [x] ตรวจคำสั่ง LINE ตามเมนูช่วยเหลือ: เตือนครั้งเดียว/ซ้ำ การเงิน สลิปและใบเสร็จ หมวดหมู่ โน้ต งาน คลัง และค้นหา โดยไม่สร้างหรือแก้ข้อมูลจริง
+- [ ] รับข้อความหรือ URL ประกาศที่ผู้ใช้ยืนยันได้ก่อนสรุปขั้นตอนและเฝ้าติดตาม เพราะผู้ใช้ห้ามอ่านข้อความจากไฟล์ภาพต้นทางซ้ำ
+- [x] วินิจฉัยและแก้ reminder “ประชุม 17.25” ที่เลยเวลาแต่ไม่ได้ส่ง พร้อมตรวจ delivery audit และ scheduler โดยไม่ลบข้อมูลจริง
+- [ ] แทน native prompt ของการแก้ไขแท็กคลังด้วย dialog ที่เข้าถึงและทดสอบได้ พร้อม pending feedback
+
+- [ ] เพิ่มเมนูรายละเอียด dashboard ตามภาพอ้างอิง: สรุป, วิเคราะห์รายรับรายจ่าย, หมวด/งบ, รายการธุรกรรม, เตือนประจำ, กลุ่ม LINE และส่งออกข้อมูล
+- [ ] ใช้ข้อมูลจริงและแสดง empty/loading/error states สำหรับเมนูใหม่โดยไม่สร้างข้อมูลจำลอง
+- [ ] ตรวจ responsive และ navigation ของเมนูรายละเอียดใหม่บน desktop/mobile
+- [ ] รัน TypeScript, Vitest, build และบันทึก checkpoint หลัง QA เมนูใหม่
+
+---
+
+# ประวัติรายการที่เพิ่มระหว่างการพัฒนา
+
+- [ ] แทน native prompt ของการแก้ไขแท็กคลังด้วย dialog ที่เข้าถึงและทดสอบได้ พร้อม pending feedback
+- [ ] ทดสอบใน browser ให้ครบทั้ง success, error, empty และ loading ของ mutation สำคัญทุกตัวใน dashboard แล้วบันทึกหลักฐาน QA ก่อนค่อย mark todo นี้ เป็นเสร็จ
+- [ ] ทดสอบปุ่มเปิด scheduler และส่งรายการที่ถึงเวลาจาก mobile dashboard พร้อมหลักฐานผลลัพธ์และลบ reminder ทดสอบ
+- [ ] ตรวจสอบและสรุปขั้นตอน/ลิงก์เตรียมตัวสำหรับการลงทะเบียนจากประกาศต้นทางที่ยืนยันได้
+- [ ] รับลิงก์หรือไฟล์ประกาศกิจกรรมต้นทางที่ผู้ใช้อ้างถึงและตรวจสอบความถูกต้อง
+- [ ] เปรียบเทียบทางเลือกการติดตามประกาศเปิดลงทะเบียนรอบใหม่และรอผู้ใช้เลือกแนวทางก่อนเปิดใช้งาน
+- [ ] ตั้งค่าติดตามแบบสรุปตามเวลาที่กำหนดหลังได้รับ URL ต้นทางและช่วงเวลาตรวจจากผู้ใช้
+- [ ] ตรวจความถูกต้องของ schema, API, งานตามกำหนดเวลา, การตอบสนองของ UI และจัดทำคู่มือตั้งค่า LINE
+- [ ] สร้าง checkpoint สุดท้ายและส่งมอบโครงการพร้อมแนวทางตั้งค่า LINE และ webhook URL
+- [ ] ตรวจ loading, empty, error และ success states ของทุก mutation สำคัญใน dashboard
+- [ ] ขอผู้ใช้ยืนยันเวลาเป้าหมายของ reminder จริงที่แสดงคลาดเคลื่อนก่อนแก้ไขข้อมูลเดิม
+- [ ] ตรวจคำสั่ง LINE ตามเมนูช่วยเหลือ: เตือนครั้งเดียว/ซ้ำ การเงิน สลิปและใบเสร็จ หมวดหมู่ โน้ต งาน คลัง และค้นหา โดยไม่สร้างหรือแก้ข้อมูลจริง
+- [ ] วินิจฉัยและแก้ reminder “ประชุม 17.25” ที่เลยเวลาแต่ไม่ได้ส่ง พร้อมตรวจ delivery audit และ scheduler โดยไม่ลบข้อมูลจริง
+- [ ] แก้การแปลงเวลา datetime-local ใน dashboard ให้ยึด Asia/Bangkok และเพิ่ม regression test ป้องกัน reminder คลาด timezone
+- [ ] ปิดการกดซ้ำของปุ่มทำ To-do ระหว่าง mutation และแสดง pending state รายการที่กำลังดำเนินการให้ชัดเจน
+- [ ] เพิ่ม validation LINE User ID และให้ผู้ใช้แก้ไขการเชื่อม LINE ได้จาก dashboard เมื่อพบรหัสที่ส่ง push ไม่ได้
+- [ ] ตรวจและแก้การปรากฏของแผงกราฟการเงินรุ่นใหม่บน production โดยไม่ซ่อนเมื่อข้อมูลช่วง 7 วันว่าง
+- [ ] ทดสอบปุ่มลบ reminder จาก dashboard production ด้วย reminder ชั่วคราว แล้วเก็บหลักฐานว่ารายการหายจาก UI/DB หลังตรวจ push notification
+- [ ] ทดสอบปุ่ม “เปิด scheduler” บน desktop production หลัง deploy รุ่น idempotent และยืนยันว่าได้สถานะ already-active โดยไม่เรียก UpdateHeartbeatJob ซ้ำ
+- [ ] สร้างภาพประกาศกิจกรรมจากภาพโบสถ์ที่ผู้ใช้ส่ง โดยใส่กำหนดการลงทะเบียนที่มีอยู่
+- [ ] แสดง empty state ของกราฟแนวโน้มเมื่อยังไม่มีธุรกรรม แทนการวาดเส้นศูนย์ที่อาจทำให้เข้าใจว่าเป็นข้อมูลจริง
+- [ ] ตรวจ responsive และความถูกต้องของข้อมูลกราฟ dashboard รุ่นใหม่บน desktop/mobile
+- [ ] ยกระดับ dashboard การเงินด้วยบัตรสถิติ กราฟแนวโน้มรายวัน กราฟโดนัทหมวดรายจ่าย และสรุปหมวดที่ใช้ข้อมูลจริง
+- [ ] ตรวจการทำงานของปุ่ม scheduler และเมนู dashboard ล่าสุดบน production ทั้ง desktop และ mobile
+- [ ] เพิ่มการลบรายการเตือนจากแดชบอร์ด พร้อมทดสอบใช้ล้าง reminder ชั่วคราวหลังตรวจ push notification
+- [x] เชื่อมเมนู sidebar และเมนู mobile ของ dashboard ให้เลื่อนไปยังส่วนข้อมูลจริงทุกฟังก์ชัน
+- [x] รัน TypeScript, Vitest และ production build หลังแก้ไข พร้อมตรวจ visual regression บน desktop/mobile
+- [ ] ตรวจปุ่ม CTA, FAQ และ navigation ทั้ง desktop/mobile ของ Landing Page
+- [ ] จัดทำ test matrix ครอบคลุม Landing Page, dashboard ทุกเมนู, tRPC API, webhook, scheduler และ LINE flow
+- [ ] เชื่อม LINE User ID จริงกับแดชบอร์ดและสร้าง reminder ทดสอบแบบชั่วคราวเพื่อตรวจ `sent > 0` ก่อนลบข้อมูลทดสอบ
+- [ ] ทดสอบรับข้อความ LINE และส่งการเตือนจริงบน production โดยไม่ส่งข้อมูลทดสอบลงฐานข้อมูลถาวร
+- [ ] เปิด scheduler จากบัญชีผู้ดูแลบน production และตรวจสอบการบันทึก task UID
+- [ ] ตั้งค่าและ Verify LINE Messaging API webhook เป็น URL production ของไมโล
+- [ ] สร้างและทดสอบ Heartbeat cron จริงหลังเผยแพร่เว็บไซต์ พร้อมบันทึก task UID
+- [ ] ตรวจสิทธิ์ผู้ดูแลบน production เพื่อแสดงปุ่ม scheduler แก่เจ้าของโครงการ
+- [ ] เพิ่ม UI และ tRPC mutation ใน dashboard สำหรับสร้างหรือแก้ไขแท็กและลิงก์ในคลัง
+- [ ] เพิ่ม confirmation flow จาก image extraction เพื่อสร้าง reminder หรือ expense จริง
+- [ ] เพิ่ม error states และ toasts สำหรับ query/mutation หลัก
+- [ ] เพิ่มคำสั่งและ validation งบประมาณ/หมวดหมู่ผ่าน LINE
+- [ ] สร้างระบบบริบทกลุ่ม LINE ที่แยกข้อมูลตามกลุ่มและรองรับการกล่าวถึงสมาชิก
+- [ ] สร้าง workflow วิเคราะห์รูปภาพตาราง ใบนัด และใบเสร็จ เพื่อเสนอรายการเตือนหรือรายจ่าย
+- [ ] สร้าง workflow สำหรับบันทึกข้อความเป็นโน้ตและ To-do list จากแชท
+- [ ] สร้าง workflow สำหรับบันทึกรายรับรายจ่าย หมวดหมู่ งบประมาณ และสรุปผล
+- [ ] สร้างระบบคลังไฟล์/ข้อความ/ลิงก์ถาวรด้วย S3 พร้อมการค้นหาและแท็ก
+- [ ] สร้างงานตามกำหนดเวลาสำหรับตรวจรายการเตือนที่ถึงเวลาและส่ง Push Message กลับ LINE
+- [ ] สร้างตัวแยกคำสั่งภาษาไทยสำหรับเตือนครั้งเดียว รายวัน รายสัปดาห์ รายเดือน และทุก N นาที
+- [ ] เพิ่ม endpoint webhook LINE ที่ตรวจสอบลายเซ็นและกันการประมวลผล event ซ้ำ
+- [ ] ออกแบบและสร้างตารางฐานข้อมูลสำหรับพื้นที่สนทนา สมาชิกกลุ่ม การเตือน ไฟล์ โน้ต งาน ธุรกรรม และการเชื่อมบัญชี
+- [ ] ตรวจสอบความพร้อมของ LINE Channel secret และ Channel access token ด้วย endpoint ทางการ
+- [ ] ตั้งค่าติดตามแบบสรุปตามเวลาที่กำหนดหลังได้รับ URL ต้นทางและช่วงเวลาตรวจจากผู้ใช้
+- [ ] รับข้อความหรือ URL ประกาศที่ผู้ใช้ยืนยันได้ก่อนสรุปขั้นตอนและเฝ้าติดตาม เพราะผู้ใช้ห้ามอ่านข้อความจากไฟล์ภาพต้นทางซ้ำ
+- [ ] ทดสอบปุ่มเปิด scheduler และส่งรายการที่ถึงเวลาจาก mobile dashboard พร้อมหลักฐานผลลัพธ์และลบ reminder ทดสอบ
+- [ ] ตรวจสอบ end-to-end รอบล่าสุดของ frontend, backend, database, webhook LINE, scheduler และการแสดงผลกราฟ โดยไม่แก้ไข reminder หรือธุรกรรมจริง
+- [ ] เพิ่ม loading/pending feedback ที่ชัดเจนให้ mutation สำคัญที่ยังขาดใน dashboard โดยเฉพาะ completeTodo และ updateVault พร้อมป้องกันการกดซ้ำ
+- [ ] ทดสอบการปฏิเสธ LINE User ID ที่ไม่ใช่รูปแบบทางการและการเชื่อมใหม่ด้วยรหัสที่ถูกต้อง
+- [ ] เพิ่ม validation LINE User ID และให้ผู้ใช้แก้ไขการเชื่อม LINE ได้จาก dashboard เมื่อพบรหัสที่ส่ง push ไม่ได้
+- [ ] ทดสอบปุ่ม “เปิด scheduler” บน desktop production หลัง deploy รุ่น idempotent และยืนยันว่าได้สถานะ already-active โดยไม่เรียก UpdateHeartbeatJob ซ้ำ
+- [ ] ทดสอบปุ่มลบ reminder จาก dashboard production ด้วย reminder ชั่วคราว แล้วเก็บหลักฐานว่ารายการหายจาก UI/DB หลังตรวจ push notification
+- [ ] ตรวจและแก้การปรากฏของแผงกราฟการเงินรุ่นใหม่บน production โดยไม่ซ่อนเมื่อข้อมูลช่วง 7 วันว่าง
+- [ ] ยกระดับ dashboard การเงินด้วยบัตรสถิติ กราฟแนวโน้มรายวัน กราฟโดนัทหมวดรายจ่าย และสรุปหมวดที่ใช้ข้อมูลจริง
+- [ ] ตรวจ responsive และความถูกต้องของข้อมูลกราฟ dashboard รุ่นใหม่บน desktop/mobile
+- [ ] แสดง empty state ของกราฟแนวโน้มเมื่อยังไม่มีธุรกรรม แทนการวาดเส้นศูนย์ที่อาจทำให้เข้าใจว่าเป็นข้อมูลจริง
+- [ ] สร้างภาพประกาศกิจกรรมจากภาพโบสถ์ที่ผู้ใช้ส่ง โดยใส่กำหนดการลงทะเบียนที่มีอยู่
+- [ ] เพิ่ม reminder ล่วงหน้า 15, 10 และ 5 นาทีก่อนการเปิดลงทะเบียนวันที่ 27 สิงหาคม 2569 เวลา 14:00 น.
+- [ ] เขียน integration test ของ webhook processor สำหรับคำสั่ง category invalid โดยตรวจข้อความตอบกลับผ่าน LINE
+- [ ] เขียน integration test ของ webhook processor สำหรับคำสั่ง budget/category invalid โดยตรวจข้อความตอบกลับจาก LINE
+- [ ] เขียน test ระดับ route สำหรับ webhook signature/error response และ flow mention ที่ค้นหาสมาชิกแล้วส่งข้อความจริง
+- [ ] เพิ่มคำสั่งและ validation สำหรับการจัดการหมวดหมู่ผ่าน LINE โดยตรง พร้อมข้อความตอบกลับกรณีหมวดว่างหรือไม่ถูกต้อง
+- [ ] เพิ่ม tests ครอบคลุมกรณี budget/category invalid ผ่าน LINE response
+- [ ] ปรับ callback scheduler ให้ยอมรับทุก Heartbeat task ที่ลงทะเบียนไว้ จึงประมวลผล reminder ค้างได้เมื่อรอบ cron กลับมาทำงาน
+- [ ] เพิ่ม mutation และปุ่มสำหรับผู้ดูแลเพื่อประมวลผล reminder ที่ถึงเวลาได้ทันที โดยยังคงตรวจสิทธิ์ผู้ดูแล
+- [ ] ผูก Heartbeat task เดิมทั้ง primary และ recovery กลับเข้ากับ metadata หลังการกู้ฐานข้อมูล และตรวจ execution ใหม่
+- [ ] เพิ่ม delivery audit ต่อ reminder และต่อรอบส่ง เพื่อบันทึกผลสำเร็จ/ล้มเหลว เหตุผล และ task ที่เรียกใช้งาน พร้อม tests
+- [ ] ลบ reminder ทดสอบหลังยืนยันผลการส่งหรือบันทึกเหตุผลการส่งไม่สำเร็จ
+- [ ] เพิ่ม endpoint ผู้ดูแลสำหรับสั่งประมวลผล reminder ที่ถึงเวลาแบบปลอดภัย เพื่อรองรับการทดสอบและการกู้คืนจากความหน่วงของ cron
+- [ ] ปรับกลไก scheduler ให้ตรวจ reminder ค้างเมื่อ callback กลับมาทำงาน และบันทึกสถานะ retry ที่ตรวจสอบได้
+- [ ] เพิ่มการลบรายการเตือนจากแดชบอร์ด พร้อมทดสอบใช้ล้าง reminder ชั่วคราวหลังตรวจ push notification
+- [x] เชื่อมเมนู sidebar และเมนู mobile ของ dashboard ให้เลื่อนไปยังส่วนข้อมูลจริงทุกฟังก์ชัน
+- [x] รัน TypeScript, Vitest และ production build หลังแก้ไข พร้อมตรวจ visual regression บน desktop/mobile
+- [ ] ตรวจปุ่ม CTA, FAQ และ navigation ทั้ง desktop/mobile ของ Landing Page
+- [ ] จัดทำ test matrix ครอบคลุม Landing Page, dashboard ทุกเมนู, tRPC API, webhook, scheduler และ LINE flow
+- [ ] เชื่อม LINE User ID จริงกับแดชบอร์ดและสร้าง reminder ทดสอบแบบชั่วคราวเพื่อตรวจ `sent > 0` ก่อนลบข้อมูลทดสอบ
+- [ ] ทดสอบรับข้อความ LINE และส่งการเตือนจริงบน production โดยไม่ส่งข้อมูลทดสอบลงฐานข้อมูลถาวร
+- [ ] เปิด scheduler จากบัญชีผู้ดูแลบน production และตรวจสอบการบันทึก task UID
+- [ ] ตั้งค่าและ Verify LINE Messaging API webhook เป็น URL production ของไมโล
+- [ ] สร้างและทดสอบ Heartbeat cron จริงหลังเผยแพร่เว็บไซต์ พร้อมบันทึก task UID
+- [ ] ตรวจสิทธิ์ผู้ดูแลบน production เพื่อแสดงปุ่ม scheduler แก่เจ้าของโครงการ
+- [ ] แก้ authorization ของ mutation ส่ง reminder ให้สอดคล้องกับ role admin ที่ dashboard แสดง แล้วทดสอบปุ่ม production ใหม่
+- [ ] ตรวจและผูก registerMiloCron กับ Express app ก่อน static fallback เพื่อให้ callback scheduler เข้าถึงได้จริง
+- [ ] ยืนยันข้อความผิดพลาดของปุ่มเปิด scheduler บน UI เมื่อ mutation ล้มเหลว
+- [ ] เขียน integration test ของ mutation setup scheduler เมื่อไม่มี cookie แต่มี Authorization Bearer token
+- [ ] แสดงข้อความผิดพลาดการเปิด scheduler ให้ชัดเจนและทดสอบ mutation ที่ใช้ token fallback
+- [ ] รองรับ Authorization Bearer token เป็น fallback เมื่อสร้าง scheduler หาก session cookie ไม่พร้อมบน production
+- [ ] ตรวจสิทธิ์ผู้ดูแลบน production เพื่อแสดงปุ่มเปิด scheduler แก่เจ้าของโครงการ
+- [ ] ให้ไมโลส่ง LINE User ID กลับเฉพาะในแชทส่วนตัว เพื่อรองรับการเชื่อมบัญชีจากแดชบอร์ดอย่างปลอดภัย
+- [ ] กู้ schema ฐานข้อมูลที่ว่างหลัง sandbox reset ด้วย migration ที่ตรวจสอบแล้วครบ 14 ตาราง
+- [ ] ปรับชุดทดสอบให้รัน dashboard navigation regression test จริง และเก็บหลักฐาน scroll ของทุกเมนูบน desktop/mobile
+- [ ] ตรวจ sidebar และ mobile navigation ทุกเมนูให้เลื่อนไปยัง section เป้าหมายจริงเมื่ออยู่นอก viewport พร้อม regression test
+- [ ] ทดสอบส่งรูปสลิปจริงบน production หลังแก้ data API endpoint และยืนยันการบันทึกหลังผู้ใช้กดยืนยัน
+- [ ] แก้ endpoint ดึง media จาก LINE ให้ใช้ data API domain พร้อม regression test ป้องกัน HTTP 404
+- [ ] ป้องกันการบันทึกค่าใช้จ่ายจากสลิป/ใบเสร็จเมื่อวันที่อ่านไม่ชัด จนกว่าผู้ใช้จะระบุวันที่ใหม่
+- [ ] ทดสอบ fallback ของภาพเอกสารที่อ่านยอดหรือวันที่ไม่ชัด เพื่อไม่บันทึกข้อมูลที่เดาเอง
+- [ ] แก้การอ่านวันที่รูปแบบเดือนภาษาไทย และเพิ่ม tests ครอบคลุมสลิป/ใบเสร็จตั้งแต่รับรูปจนบันทึกรายจ่ายหลังยืนยัน
+- [ ] ขยายการอ่านสลิปและใบเสร็จ: ดึงยอดเงิน วันที่ ร้านค้า/คู่ค้า และแยกหมวดค่าใช้จ่ายก่อนบันทึกหลังยืนยัน
+- [ ] ขยาย dashboard ให้มีส่วนโน้ตและกลุ่ม LINE พร้อมภาพสรุปข้อมูลที่ชัดเจน
+- [ ] เขียน integration tests สำหรับ webhook route, duplicate event handling, cron delivery และ mention flow
+- [ ] เพิ่ม error states และ toasts สำหรับ query/mutation หลัก
+- [ ] เชื่อม UI กับ API และเพิ่มสถานะ loading, empty, error, success ที่เหมาะสม
+- [ ] สร้างแดชบอร์ดจัดการเตือน ไฟล์ โน้ต/งาน กลุ่ม และรายรับรายจ่ายพร้อมกราฟ
+- [ ] สร้าง Landing Page โทนพาสเทลเขียว-ฟ้าพร้อม Hero, LINE chat bubbles, CTA และ FAQ accordion
+- [ ] สร้าง workflow วิเคราะห์รูปภาพตาราง ใบนัด และใบเสร็จ เพื่อเสนอรายการเตือนหรือรายจ่าย
+- [ ] สร้างบริบทกลุ่ม LINE ที่แยกข้อมูลตามกลุ่มและรองรับการกล่าวถึงสมาชิก
+- [ ] สร้าง workflow สำหรับบันทึกรายรับรายจ่าย หมวดหมู่ งบประมาณ และสรุปผล
+- [ ] สร้าง workflow สำหรับบันทึกข้อความเป็นโน้ตและ To-do list จากแชท
+- [ ] สร้างระบบคลังไฟล์/ข้อความ/ลิงก์ถาวรด้วย S3 พร้อมการค้นหาและแท็ก
+- [ ] สร้างงานตามกำหนดเวลาสำหรับตรวจรายการเตือนที่ถึงเวลาและส่ง Push Message กลับ LINE
+- [ ] สร้างตัวแยกคำสั่งภาษาไทยสำหรับเตือนครั้งเดียว รายวัน รายสัปดาห์ รายเดือน และทุก N นาที
+- [ ] เพิ่ม endpoint webhook LINE ที่ตรวจสอบลายเซ็นและกันการประมวลผล event ซ้ำ
+- [ ] ออกแบบและสร้างตารางฐานข้อมูลสำหรับพื้นที่สนทนา สมาชิกกลุ่ม การเตือน ไฟล์ โน้ต งาน ธุรกรรม และการเชื่อมบัญชี
+- [ ] ตรวจสอบความพร้อมของ LINE Channel secret และ Channel access token ด้วย endpoint ทางการ
+- [ ] ปิดการกดซ้ำของปุ่มทำ To-do ระหว่าง mutation และแสดง pending state รายการที่กำลังดำเนินการให้ชัดเจน
+- [ ] แก้การแปลงเวลา datetime-local ใน dashboard ให้ยึด Asia/Bangkok และเพิ่ม regression test ป้องกัน reminder คลาด timezone
+- [ ] ตรวจสอบ end-to-end รอบล่าสุดของ frontend, backend, database, webhook LINE, scheduler และการแสดงผลกราฟ โดยไม่แก้ไข reminder หรือธุรกรรมจริง
+- [ ] เพิ่ม loading/pending feedback ที่ชัดเจนให้ mutation สำคัญที่ยังขาดใน dashboard โดยเฉพาะ completeTodo และ updateVault พร้อมป้องกันการกดซ้ำ
+- [ ] เพิ่ม validation LINE User ID และให้ผู้ใช้แก้ไขการเชื่อม LINE ได้จาก dashboard เมื่อพบรหัสที่ส่ง push ไม่ได้
+- [ ] ทดสอบการปฏิเสธ LINE User ID ที่ไม่ใช่รูปแบบทางการและการเชื่อมใหม่ด้วยรหัสที่ถูกต้อง
+- [ ] ตรวจและแก้การปรากฏของแผงกราฟการเงินรุ่นใหม่บน production โดยไม่ซ่อนเมื่อข้อมูลช่วง 7 วันว่าง
+- [ ] ทดสอบปุ่มลบ reminder จาก dashboard production ด้วย reminder ชั่วคราว แล้วเก็บหลักฐานว่ารายการหายจาก UI/DB หลังตรวจ push notification
+- [ ] ทดสอบปุ่ม “เปิด scheduler” บน desktop production หลัง deploy รุ่น idempotent และยืนยันว่าได้สถานะ already-active โดยไม่เรียก UpdateHeartbeatJob ซ้ำ
+- [ ] ยกระดับ dashboard การเงินด้วยบัตรสถิติ กราฟแนวโน้มรายวัน กราฟโดนัทหมวดรายจ่าย และสรุปหมวดที่ใช้ข้อมูลจริง
+- [ ] ตรวจ responsive และความถูกต้องของข้อมูลกราฟ dashboard รุ่นใหม่บน desktop/mobile
+- [ ] แสดง empty state ของกราฟแนวโน้มเมื่อยังไม่มีธุรกรรม แทนการวาดเส้นศูนย์ที่อาจทำให้เข้าใจว่าเป็นข้อมูลจริง
+- [ ] สร้างภาพประกาศกิจกรรมจากภาพโบสถ์ที่ผู้ใช้ส่ง โดยใส่กำหนดการลงทะเบียนที่มีอยู่
+- [ ] เพิ่ม validation LINE User ID และให้ผู้ใช้แก้ไขการเชื่อม LINE ได้จาก dashboard เมื่อพบรหัสที่ส่ง push ไม่ได้
+- [ ] ทดสอบการปฏิเสธ LINE User ID ที่ไม่ใช่รูปแบบทางการและการเชื่อมใหม่ด้วยรหัสที่ถูกต้อง
+- [ ] เพิ่ม loading/pending feedback ที่ชัดเจนให้ mutation สำคัญที่ยังขาดใน dashboard โดยเฉพาะ completeTodo และ updateVault พร้อมป้องกันการกดซ้ำ
+- [ ] ตรวจคำสั่ง LINE ตามเมนูช่วยเหลือ: เตือนครั้งเดียว/ซ้ำ การเงิน สลิปและใบเสร็จ หมวดหมู่ โน้ต งาน คลัง และค้นหา โดยไม่สร้างหรือแก้ข้อมูลจริง
+- [ ] เพิ่ม validation LINE User ID และให้ผู้ใช้แก้ไขการเชื่อม LINE ได้จาก dashboard เมื่อพบรหัสที่ส่ง push ไม่ได้
+- [ ] ทดสอบการปฏิเสธ LINE User ID ที่ไม่ใช่รูปแบบทางการและการเชื่อมใหม่ด้วยรหัสที่ถูกต้อง
+- [ ] ปรับสถานะ todo รายการเดิมให้คงค้างเพื่อใช้เป็นประวัติ ไม่ลบข้อมูล
+- [ ] เพิ่ม empty state ของกราฟแนวโน้มเมื่อยังไม่มีธุรกรรม แทนการวาดเส้นศูนย์ที่อาจทำให้เข้าใจว่าเป็นข้อมูลจริง
+- [ ] แก้การแปลงเวลา datetime-local ของ reminder ให้ยึด Asia/Bangkok และเพิ่ม regression test ป้องกันเวลาคลาดตาม timezone ของเบราว์เซอร์
+- [ ] ขอผู้ใช้ยืนยันเวลาที่ต้องการสำหรับ reminder จริงที่แสดงคลาดเคลื่อนก่อนแก้ไขข้อมูลเดิม
+- [ ] ตรวจและแก้การปรากฏของแผงกราฟการเงินรุ่นใหม่บน production โดยไม่ซ่อนเมื่อข้อมูลช่วง 7 วันว่าง
+- [ ] ทดสอบปุ่มลบ reminder จาก dashboard production ด้วย reminder ชั่วคราว แล้วเก็บหลักฐานว่ารายการหายจาก UI/DB หลังตรวจ push notification
+- [ ] ทดสอบปุ่ม “เปิด scheduler” บน desktop production หลัง deploy รุ่น idempotent และยืนยันว่าได้สถานะ already-active โดยไม่เรียก UpdateHeartbeatJob ซ้ำ
+- [ ] เพิ่ม validation LINE User ID และให้ผู้ใช้แก้ไขการเชื่อม LINE ได้จาก dashboard เมื่อพบรหัสที่ส่ง push ไม่ได้
+- [ ] ทดสอบการปฏิเสธ LINE User ID ที่ไม่ใช่รูปแบบทางการและการเชื่อมใหม่ด้วยรหัสที่ถูกต้อง
+- [ ] เพิ่ม loading/pending feedback ที่ชัดเจนให้ mutation สำคัญที่ยังขาดใน dashboard โดยเฉพาะ completeTodo และ updateVault พร้อมป้องกันการกดซ้ำ
+- [ ] ตรวจคำสั่ง LINE ตามเมนูช่วยเหลือ: เตือนครั้งเดียว/ซ้ำ การเงิน สลิปและใบเสร็จ หมวดหมู่ โน้ต งาน คลัง และค้นหา โดยไม่สร้างหรือแก้ข้อมูลจริง
+- [ ] ทดสอบใน browser ให้ครบทั้ง success, error, empty และ loading ของ mutation สำคัญทุกตัวใน dashboard แล้วบันทึกหลักฐาน QA ก่อนค่อย mark todo นี้ เป็นเสร็จ
+- [ ] ตรวจสอบ end-to-end รอบล่าสุดของ frontend, backend, database, webhook LINE, scheduler และการแสดงผลกราฟ โดยไม่แก้ไข reminder หรือธุรกรรมจริง
+- [ ] เพิ่ม loading/pending feedback ที่ชัดเจนให้ mutation สำคัญที่ยังขาดใน dashboard โดยเฉพาะ completeTodo และ updateVault พร้อมป้องกันการกดซ้ำ
+- [ ] ทดสอบปุ่มเปิด scheduler และส่งรายการที่ถึงเวลาจาก mobile dashboard พร้อมหลักฐานผลลัพธ์และลบ reminder ทดสอบ
+- [ ] รับข้อความหรือ URL ประกาศที่ผู้ใช้ยืนยันได้ก่อนสรุปขั้นตอนและเฝ้าติดตาม เพราะผู้ใช้ห้ามอ่านข้อความจากไฟล์ภาพต้นทางซ้ำ
+- [ ] ทดสอบปุ่มลบ reminder จาก dashboard production ด้วย reminder ชั่วคราว แล้วเก็บหลักฐานว่ารายการหายจาก UI/DB หลังตรวจ push notification
+- [ ] ทดสอบปุ่ม “เปิด scheduler” บน desktop production หลัง deploy รุ่น idempotent และยืนยันว่าได้สถานะ already-active โดยไม่เรียก UpdateHeartbeatJob ซ้ำ
+- [ ] เพิ่ม validation LINE User ID และให้ผู้ใช้แก้ไขการเชื่อม LINE ได้จาก dashboard เมื่อพบรหัสที่ส่ง push ไม่ได้
+- [ ] ทดสอบการปฏิเสธ LINE User ID ที่ไม่ใช่รูปแบบทางการและการเชื่อมใหม่ด้วยรหัสที่ถูกต้อง
+- [ ] ปิดการกดซ้ำของปุ่มทำ To-do ระหว่าง mutation และแสดง pending state รายการที่กำลังดำเนินการให้ชัดเจน
+- [ ] แก้การแปลงเวลา datetime-local ของ dashboard ให้ยึด Asia/Bangkok และเพิ่ม regression test ป้องกัน reminder คลาด timezone
+- [ ] ขอผู้ใช้ยืนยันเวลาเป้าหมายของ reminder จริงที่แสดงคลาดเคลื่อนก่อนแก้ไขข้อมูลเดิม
+- [ ] ตรวจคำสั่ง LINE ตามเมนูช่วยเหลือ: เตือนครั้งเดียว/ซ้ำ การเงิน สลิปและใบเสร็จ หมวดหมู่ โน้ต งาน คลัง และค้นหา โดยไม่สร้างหรือแก้ข้อมูลจริง
+- [ ] รับข้อความหรือ URL ประกาศที่ผู้ใช้ยืนยันได้ก่อนสรุปขั้นตอนและเฝ้าติดตาม เพราะผู้ใช้ห้ามอ่านข้อความจากไฟล์ภาพต้นทางซ้ำ
+- [ ] วินิจฉัยและแก้ reminder “ประชุม 17.25” ที่เลยเวลาแต่ไม่ได้ส่ง พร้อมตรวจ delivery audit และ scheduler โดยไม่ลบข้อมูลจริง
+- [ ] ทดสอบปุ่มเปิด scheduler และส่งรายการที่ถึงเวลาจาก mobile dashboard พร้อมหลักฐานผลลัพธ์และลบ reminder ทดสอบ
+- [ ] แก้ interaction แก้ไขแท็กคลังที่ทำให้ browser QA ค้าง โดยแทน native prompt ด้วย dialog ที่เข้าถึงและทดสอบได้
+- [ ] แก้ interaction แก้ไขแท็กคลังที่ทำให้ browser QA ค้าง โดยแทน native prompt ด้วย dialog ที่เข้าถึงและทดสอบได้
+- [ ] แทน native prompt ของการแก้ไขแท็กคลังด้วย dialog ที่เข้าถึงและทดสอบได้ พร้อม pending feedback
+- [ ] เพิ่ม validation LINE User ID และให้ผู้ใช้แก้ไขการเชื่อม LINE ได้จาก dashboard เมื่อพบรหัสที่ส่ง push ไม่ได้
+- [ ] ทดสอบการปฏิเสธ LINE User ID ที่ไม่ใช่รูปแบบทางการและการเชื่อมใหม่ด้วยรหัสที่ถูกต้อง
+- [ ] ทดสอบปุ่ม “เปิด scheduler” บน desktop production หลัง deploy รุ่น idempotent และยืนยันว่าได้สถานะ already-active โดยไม่เรียก UpdateHeartbeatJob ซ้ำ
+- [ ] ทดสอบปุ่มลบ reminder จาก dashboard production ด้วย reminder ชั่วคราว แล้วเก็บหลักฐานว่ารายการหายจาก UI/DB หลังตรวจ push notification
+- [ ] ตรวจและแก้การปรากฏของแผงกราฟการเงินรุ่นใหม่บน production โดยไม่ซ่อนเมื่อข้อมูลช่วง 7 วันว่าง
+- [ ] ยกระดับ dashboard การเงินด้วยบัตรสถิติ กราฟแนวโน้มรายวัน กราฟโดนัทหมวดรายจ่าย และสรุปหมวดที่ใช้ข้อมูลจริง
+- [ ] ตรวจ responsive และความถูกต้องของข้อมูลกราฟ dashboard รุ่นใหม่บน desktop/mobile
+- [ ] แสดง empty state ของกราฟแนวโน้มเมื่อยังไม่มีธุรกรรม แทนการวาดเส้นศูนย์ที่อาจทำให้เข้าใจว่าเป็นข้อมูลจริง
+- [ ] สร้างภาพประกาศกิจกรรมจากภาพโบสถ์ที่ผู้ใช้ส่ง โดยใส่กำหนดการลงทะเบียนที่มีอยู่
+- [ ] เพิ่ม reminder ล่วงหน้า 15, 10 และ 5 นาทีก่อนการเปิดลงทะเบียนวันที่ 27 สิงหาคม 2569 เวลา 14:00 น.
+- [ ] เขียน integration test ของ webhook processor สำหรับคำสั่ง category invalid โดยตรวจข้อความตอบกลับผ่าน LINE
+- [ ] เขียน integration test ของ webhook processor สำหรับคำสั่ง budget/category invalid โดยตรวจข้อความตอบกลับจาก LINE
+- [ ] เขียน test ระดับ route สำหรับ webhook signature/error response และ flow mention ที่ค้นหาสมาชิกแล้วส่งข้อความจริง
+- [ ] เพิ่มคำสั่งและ validation สำหรับการจัดการหมวดหมู่ผ่าน LINE โดยตรง พร้อมข้อความตอบกลับกรณีหมวดว่างหรือไม่ถูกต้อง
+- [ ] เพิ่ม tests ครอบคลุมกรณี budget/category invalid ผ่าน LINE response
+- [ ] ปรับ callback scheduler ให้ยอมรับทุก Heartbeat task ที่ลงทะเบียนไว้ จึงประมวลผล reminder ค้างได้เมื่อรอบ cron กลับมาทำงาน
+- [ ] เพิ่ม mutation และปุ่มสำหรับผู้ดูแลเพื่อประมวลผล reminder ที่ถึงเวลาได้ทันที โดยยังคงตรวจสิทธิ์ผู้ดูแล
+- [ ] ผูก Heartbeat task เดิมทั้ง primary และ recovery กลับเข้ากับ metadata หลังการกู้ฐานข้อมูล และตรวจ execution ใหม่
+- [ ] เพิ่ม delivery audit ต่อ reminder และต่อรอบส่ง เพื่อบันทึกผลสำเร็จ/ล้มเหลว เหตุผล และ task ที่เรียกใช้งาน พร้อม tests
+- [ ] ลบ reminder ทดสอบหลังยืนยันผลการส่งหรือบันทึกเหตุผลการส่งไม่สำเร็จ
+- [ ] เพิ่ม endpoint ผู้ดูแลสำหรับสั่งประมวลผล reminder ที่ถึงเวลาแบบปลอดภัย เพื่อรองรับการทดสอบและการกู้คืนจากความหน่วงของ cron
+- [ ] ปรับกลไก scheduler ให้ตรวจ reminder ค้างเมื่อ callback กลับมาทำงาน และบันทึกสถานะ retry ที่ตรวจสอบได้
+- [ ] เพิ่มการลบรายการเตือนจากแดชบอร์ด พร้อมทดสอบใช้ล้าง reminder ชั่วคราวหลังตรวจ push notification
+- [x] เชื่อมเมนู sidebar และเมนู mobile ของ dashboard ให้เลื่อนไปยังส่วนข้อมูลจริงทุกฟังก์ชัน
+- [x] รัน TypeScript, Vitest และ production build หลังแก้ไข พร้อมตรวจ visual regression บน desktop/mobile
+- [ ] ตรวจปุ่ม CTA, FAQ และ navigation ทั้ง desktop/mobile ของ Landing Page
+- [ ] จัดทำ test matrix ครอบคลุม Landing Page, dashboard ทุกเมนู, tRPC API, webhook, scheduler และ LINE flow
+- [ ] เชื่อม LINE User ID จริงกับแดชบอร์ดและสร้าง reminder ทดสอบแบบชั่วคราวเพื่อตรวจ `sent > 0` ก่อนลบข้อมูลทดสอบ
+- [ ] ทดสอบรับข้อความ LINE และส่งการเตือนจริงบน production โดยไม่ส่งข้อมูลทดสอบลงฐานข้อมูลถาวร
+- [ ] เปิด scheduler จากบัญชีผู้ดูแลบน production และตรวจสอบการบันทึก task UID
+- [ ] ตั้งค่าและ Verify LINE Messaging API webhook เป็น URL production ของไมโล
+- [ ] สร้างและทดสอบ Heartbeat cron จริงหลังเผยแพร่เว็บไซต์ พร้อมบันทึก task UID
+- [ ] ตรวจสิทธิ์ผู้ดูแลบน production เพื่อแสดงปุ่ม scheduler แก่เจ้าของโครงการ
+- [ ] แก้ authorization ของ mutation ส่ง reminder ให้สอดคล้องกับ role admin ที่ dashboard แสดง แล้วทดสอบปุ่ม production ใหม่
+- [ ] ตรวจและผูก registerMiloCron กับ Express app ก่อน static fallback เพื่อให้ callback scheduler เข้าถึงได้จริง
+- [ ] ยืนยันข้อความผิดพลาดของปุ่มเปิด scheduler บน UI เมื่อ mutation ล้มเหลว
+- [ ] เขียน integration test ของ mutation setup scheduler เมื่อไม่มี cookie แต่มี Authorization Bearer token
+- [ ] แสดงข้อความผิดพลาดการเปิด scheduler ให้ชัดเจนและทดสอบ mutation ที่ใช้ token fallback
+- [ ] รองรับ Authorization Bearer token เป็น fallback เมื่อสร้าง scheduler หาก session cookie ไม่พร้อมบน production
+- [ ] ตรวจสิทธิ์ผู้ดูแลบน production เพื่อแสดงปุ่มเปิด scheduler แก่เจ้าของโครงการ
+- [ ] ให้ไมโลส่ง LINE User ID กลับเฉพาะในแชทส่วนตัว เพื่อรองรับการเชื่อมบัญชีจากแดชบอร์ดอย่างปลอดภัย
+- [ ] กู้ schema ฐานข้อมูลที่ว่างหลัง sandbox reset ด้วย migration ที่ตรวจสอบแล้วครบ 14 ตาราง
+- [ ] ปรับชุดทดสอบให้รัน dashboard navigation regression test จริง และเก็บหลักฐาน scroll ของทุกเมนูบน desktop/mobile
+- [ ] ตรวจ sidebar และ mobile navigation ทุกเมนูให้เลื่อนไปยัง section เป้าหมายจริงเมื่ออยู่นอก viewport พร้อม regression test
+- [ ] ทดสอบส่งรูปสลิปจริงบน production หลังแก้ data API endpoint และยืนยันการบันทึกหลังผู้ใช้กดยืนยัน
+- [ ] แก้ endpoint ดึง media จาก LINE ให้ใช้ data API domain พร้อม regression test ป้องกัน HTTP 404
+- [ ] ป้องกันการบันทึกค่าใช้จ่ายจากสลิป/ใบเสร็จเมื่อวันที่อ่านไม่ชัด จนกว่าผู้ใช้จะระบุวันที่ใหม่
+- [ ] ทดสอบ fallback ของภาพเอกสารที่อ่านยอดหรือวันที่ไม่ชัด เพื่อไม่บันทึกข้อมูลที่เดาเอง
+- [ ] แก้การอ่านวันที่รูปแบบเดือนภาษาไทย และเพิ่ม tests ครอบคลุมสลิป/ใบเสร็จตั้งแต่รับรูปจนบันทึกรายจ่ายหลังยืนยัน
+- [ ] ขยายการอ่านสลิปและใบเสร็จ: ดึงยอดเงิน วันที่ ร้านค้า/คู่ค้า และแยกหมวดค่าใช้จ่ายก่อนบันทึกหลังยืนยัน
+- [ ] ขยาย dashboard ให้มีส่วนโน้ตและกลุ่ม LINE พร้อมภาพสรุปข้อมูลที่ชัดเจน
+- [ ] เขียน integration tests สำหรับ webhook route, duplicate event handling, cron delivery และ mention flow
+- [ ] เพิ่ม error states และ toasts สำหรับ query/mutation หลัก
+- [ ] เชื่อม UI กับ API และเพิ่มสถานะ loading, empty, error, success ที่เหมาะสม
+- [ ] สร้างแดชบอร์ดจัดการเตือน ไฟล์ โน้ต/งาน กลุ่ม และรายรับรายจ่ายพร้อมกราฟ
+- [ ] สร้าง Landing Page โทนพาสเทลเขียว-ฟ้าพร้อม Hero, LINE chat bubbles, CTA และ FAQ accordion
+- [ ] สร้าง workflow วิเคราะห์รูปภาพตาราง ใบนัด และใบเสร็จ เพื่อเสนอรายการเตือนหรือรายจ่าย
+- [ ] สร้างบริบทกลุ่ม LINE ที่แยกข้อมูลตามกลุ่มและรองรับการกล่าวถึงสมาชิก
+- [ ] สร้าง workflow สำหรับบันทึกรายรับรายจ่าย หมวดหมู่ งบประมาณ และสรุปผล
+- [ ] สร้าง workflow สำหรับบันทึกข้อความเป็นโน้ตและ To-do list จากแชท
+- [ ] สร้างระบบคลังไฟล์/ข้อความ/ลิงก์ถาวรด้วย S3 พร้อมการค้นหาและแท็ก
+- [ ] สร้างงานตามกำหนดเวลาสำหรับตรวจรายการเตือนที่ถึงเวลาและส่ง Push Message กลับ LINE
+- [ ] สร้างตัวแยกคำสั่งภาษาไทยสำหรับเตือนครั้งเดียว รายวัน รายสัปดาห์ รายเดือน และทุก N นาที
+- [ ] เพิ่ม endpoint webhook LINE ที่ตรวจสอบลายเซ็นและกันการประมวลผล event ซ้ำ
+- [ ] ออกแบบและสร้างตารางฐานข้อมูลสำหรับพื้นที่สนทนา สมาชิกกลุ่ม การเตือน ไฟล์ โน้ต งาน ธุรกรรม และการเชื่อมบัญชี
+- [ ] ตรวจสอบความพร้อมของ LINE Channel secret และ Channel access token ด้วย endpoint ทางการ
+- [x] รัน TypeScript, Vitest และ production build หลังแก้ไข พร้อมตรวจ visual regression บน desktop/mobile
+- [ ] ตรวจปุ่ม CTA, FAQ และ navigation ทั้ง desktop/mobile ของ Landing Page
+- [ ] จัดทำ test matrix ครอบคลุม Landing Page, dashboard ทุกเมนู, tRPC API, webhook, scheduler และ LINE flow
+- [ ] เชื่อม LINE User ID จริงกับแดชบอร์ดและสร้าง reminder ทดสอบแบบชั่วคราวเพื่อตรวจ `sent > 0` ก่อนลบข้อมูลทดสอบ
+- [ ] ทดสอบรับข้อความ LINE และส่งการเตือนจริงบน production โดยไม่ส่งข้อมูลทดสอบลงฐานข้อมูลถาวร
+- [ ] เปิด scheduler จากบัญชีผู้ดูแลบน production และตรวจสอบการบันทึก task UID
+- [ ] ตั้งค่าและ Verify LINE Messaging API webhook เป็น URL production ของไมโล
+- [ ] สร้างและทดสอบ Heartbeat cron จริงหลังเผยแพร่เว็บไซต์ พร้อมบันทึก task UID
+- [ ] ตรวจสิทธิ์ผู้ดูแลบน production เพื่อแสดงปุ่ม scheduler แก่เจ้าของโครงการ
+- [ ] แก้ authorization ของ mutation ส่ง reminder ให้สอดคล้องกับ role admin ที่ dashboard แสดง แล้วทดสอบปุ่ม production ใหม่
+- [ ] ตรวจและผูก registerMiloCron กับ Express app ก่อน static fallback เพื่อให้ callback scheduler เข้าถึงได้จริง
+- [ ] ยืนยันข้อความผิดพลาดของปุ่มเปิด scheduler บน UI เมื่อ mutation ล้มเหลว
+- [ ] เขียน integration test ของ mutation setup scheduler เมื่อไม่มี cookie แต่มี Authorization Bearer token
+- [ ] แสดงข้อความผิดพลาดการเปิด scheduler ให้ชัดเจนและทดสอบ mutation ที่ใช้ token fallback
+- [ ] รองรับ Authorization Bearer token เป็น fallback เมื่อสร้าง scheduler หาก session cookie ไม่พร้อมบน production
+- [ ] ตรวจสิทธิ์ผู้ดูแลบน production เพื่อแสดงปุ่มเปิด scheduler แก่เจ้าของโครงการ
+- [ ] ให้ไมโลส่ง LINE User ID กลับเฉพาะในแชทส่วนตัว เพื่อรองรับการเชื่อมบัญชีจากแดชบอร์ดอย่างปลอดภัย
+- [ ] กู้ schema ฐานข้อมูลที่ว่างหลัง sandbox reset ด้วย migration ที่ตรวจสอบแล้วครบ 14 ตาราง
+- [ ] ปรับชุดทดสอบให้รัน dashboard navigation regression test จริง และเก็บหลักฐาน scroll ของทุกเมนูบน desktop/mobile
+- [ ] ตรวจ sidebar และ mobile navigation ทุกเมนูให้เลื่อนไปยัง section เป้าหมายจริงเมื่ออยู่นอก viewport พร้อม regression test
+- [ ] ทดสอบส่งรูปสลิปจริงบน production หลังแก้ data API endpoint และยืนยันการบันทึกหลังผู้ใช้กดยืนยัน
+- [ ] แก้ endpoint ดึง media จาก LINE ให้ใช้ data API domain พร้อม regression test ป้องกัน HTTP 404
+- [ ] ป้องกันการบันทึกค่าใช้จ่ายจากสลิป/ใบเสร็จเมื่อวันที่อ่านไม่ชัด จนกว่าผู้ใช้จะระบุวันที่ใหม่
+- [ ] ทดสอบ fallback ของภาพเอกสารที่อ่านยอดหรือวันที่ไม่ชัด เพื่อไม่บันทึกข้อมูลที่เดาเอง
+- [ ] แก้การอ่านวันที่รูปแบบเดือนภาษาไทย และเพิ่ม tests ครอบคลุมสลิป/ใบเสร็จตั้งแต่รับรูปจนบันทึกรายจ่ายหลังยืนยัน
+- [ ] ขยายการอ่านสลิปและใบเสร็จ: ดึงยอดเงิน วันที่ ร้านค้า/คู่ค้า และแยกหมวดค่าใช้จ่ายก่อนบันทึกหลังยืนยัน
+- [ ] ขยาย dashboard ให้มีส่วนโน้ตและกลุ่ม LINE พร้อมภาพสรุปข้อมูลที่ชัดเจน
+- [ ] เขียน integration tests สำหรับ webhook route, duplicate event handling, cron delivery และ mention flow
+- [ ] เพิ่ม error states และ toasts สำหรับ query/mutation หลัก
+- [ ] เชื่อม UI กับ API และเพิ่มสถานะ loading, empty, error, success ที่เหมาะสม
+- [ ] สร้างแดชบอร์ดจัดการเตือน ไฟล์ โน้ต/งาน กลุ่ม และรายรับรายจ่ายพร้อมกราฟ
+- [ ] สร้าง Landing Page โทนพาสเทลเขียว-ฟ้าพร้อม Hero, LINE chat bubbles, CTA และ FAQ accordion
+- [ ] สร้าง workflow วิเคราะห์รูปภาพตาราง ใบนัด และใบเสร็จ เพื่อเสนอรายการเตือนหรือรายจ่าย
+- [ ] สร้างบริบทกลุ่ม LINE ที่แยกข้อมูลตามกลุ่มและรองรับการกล่าวถึงสมาชิก
+- [ ] สร้าง workflow สำหรับบันทึกรายรับรายจ่าย หมวดหมู่ งบประมาณ และสรุปผล
+- [ ] สร้าง workflow สำหรับบันทึกข้อความเป็นโน้ตและ To-do list จากแชท
+- [ ] สร้างระบบคลังไฟล์/ข้อความ/ลิงก์ถาวรด้วย S3 พร้อมการค้นหาและแท็ก
+- [ ] สร้างงานตามกำหนดเวลาสำหรับตรวจรายการเตือนที่ถึงเวลาและส่ง Push Message กลับ LINE
+- [ ] สร้างตัวแยกคำสั่งภาษาไทยสำหรับเตือนครั้งเดียว รายวัน รายสัปดาห์ รายเดือน และทุก N นาที
+- [ ] เพิ่ม endpoint webhook LINE ที่ตรวจสอบลายเซ็นและกันการประมวลผล event ซ้ำ
+- [ ] ออกแบบและสร้างตารางฐานข้อมูลสำหรับพื้นที่สนทนา สมาชิกกลุ่ม การเตือน ไฟล์ โน้ต งาน ธุรกรรม และการเชื่อมบัญชี
+- [ ] ตรวจสอบความพร้อมของ LINE Channel secret และ Channel access token ด้วย endpoint ทางการ
+- [ ] แทน native prompt ของการแก้ไขแท็กคลังด้วย dialog ที่เข้าถึงและทดสอบได้ พร้อม pending feedback
+- [ ] ทดสอบปุ่มเปิด scheduler และส่งรายการที่ถึงเวลาจาก mobile dashboard พร้อมหลักฐานผลลัพธ์และลบ reminder ทดสอบ
+- [ ] รับข้อความหรือ URL ประกาศที่ผู้ใช้ยืนยันได้ก่อนสรุปขั้นตอนและเฝ้าติดตาม เพราะผู้ใช้ห้ามอ่านข้อความจากไฟล์ภาพต้นทางซ้ำ
+- [ ] ตรวจคำสั่ง LINE ตามเมนูช่วยเหลือ: เตือนครั้งเดียว/ซ้ำ การเงิน สลิปและใบเสร็จ หมวดหมู่ โน้ต งาน คลัง และค้นหา โดยไม่สร้างหรือแก้ข้อมูลจริง
+- [ ] เพิ่ม loading/pending feedback ที่ชัดเจนให้ mutation สำคัญที่ยังขาดใน dashboard โดยเฉพาะ completeTodo และ updateVault พร้อมป้องกันการกดซ้ำ
+- [ ] ตรวจสอบ end-to-end รอบล่าสุดของ frontend, backend, database, webhook LINE, scheduler และการแสดงผลกราฟ โดยไม่แก้ไข reminder หรือธุรกรรมจริง
+- [ ] ขอผู้ใช้ยืนยันเวลาเป้าหมายของ reminder จริงที่แสดงคลาดเคลื่อนก่อนแก้ไขข้อมูลเดิม
+- [ ] แก้การแปลงเวลา datetime-local ของ dashboard ให้ยึด Asia/Bangkok และเพิ่ม regression test ป้องกัน reminder คลาด timezone
+- [ ] ปิดการกดซ้ำของปุ่มทำ To-do ระหว่าง mutation และแสดง pending state รายการที่กำลังดำเนินการให้ชัดเจน
+- [ ] เพิ่ม validation LINE User ID และให้ผู้ใช้แก้ไขการเชื่อม LINE ได้จาก dashboard เมื่อพบรหัสที่ส่ง push ไม่ได้
+- [ ] ทดสอบการปฏิเสธ LINE User ID ที่ไม่ใช่รูปแบบทางการและการเชื่อมใหม่ด้วยรหัสที่ถูกต้อง
+- [ ] เพิ่ม validation LINE User ID และให้ผู้ใช้แก้ไขการเชื่อม LINE ได้จาก dashboard เมื่อพบรหัสที่ส่ง push ไม่ได้
+- [ ] ทดสอบการปฏิเสธ LINE User ID ที่ไม่ใช่รูปแบบทางการและการเชื่อมใหม่ด้วยรหัสที่ถูกต้อง
+- [ ] เพิ่ม loading/pending feedback ที่ชัดเจนให้ mutation สำคัญที่ยังขาดใน dashboard โดยเฉพาะ completeTodo และ updateVault พร้อมป้องกันการกดซ้ำ
+- [ ] ตรวจสอบ end-to-end รอบล่าสุดของ frontend, backend, database, webhook LINE, scheduler และการแสดงผลกราฟ โดยไม่แก้ไข reminder หรือธุรกรรมจริง
+- [ ] เพิ่มการลบรายการเตือนจากแดชบอร์ด พร้อมทดสอบใช้ล้าง reminder ชั่วคราวหลังตรวจ push notification
+- [x] รัน TypeScript, Vitest และ production build หลังแก้ไข พร้อมตรวจ visual regression บน desktop/mobile
+- [ ] ตรวจปุ่ม CTA, FAQ และ navigation ทั้ง desktop/mobile ของ Landing Page
+- [ ] จัดทำ test matrix ครอบคลุม Landing Page, dashboard ทุกเมนู, tRPC API, webhook, scheduler และ LINE flow
+- [ ] เชื่อม LINE User ID จริงกับแดชบอร์ดและสร้าง reminder ทดสอบแบบชั่วคราวเพื่อตรวจ `sent > 0` ก่อนลบข้อมูลทดสอบ
+- [ ] ทดสอบรับข้อความ LINE และส่งการเตือนจริงบน production โดยไม่ส่งข้อมูลทดสอบลงฐานข้อมูลถาวร
+- [ ] เปิด scheduler จากบัญชีผู้ดูแลบน production และตรวจสอบการบันทึก task UID
+- [ ] ตั้งค่าและ Verify LINE Messaging API webhook เป็น URL production ของไมโล
+- [ ] สร้างและทดสอบ Heartbeat cron จริงหลังเผยแพร่เว็บไซต์ พร้อมบันทึก task UID
+- [ ] ตรวจสิทธิ์ผู้ดูแลบน production เพื่อแสดงปุ่ม scheduler แก่เจ้าของโครงการ
+- [ ] แก้ authorization ของ mutation ส่ง reminder ให้สอดคล้องกับ role admin ที่ dashboard แสดง แล้วทดสอบปุ่ม production ใหม่
+- [ ] ตรวจและผูก registerMiloCron กับ Express app ก่อน static fallback เพื่อให้ callback scheduler เข้าถึงได้จริง
+- [ ] ยืนยันข้อความผิดพลาดของปุ่มเปิด scheduler บน UI เมื่อ mutation ล้มเหลว
+- [ ] เขียน integration test ของ mutation setup scheduler เมื่อไม่มี cookie แต่มี Authorization Bearer token
+- [ ] แสดงข้อความผิดพลาดการเปิด scheduler ให้ชัดเจนและทดสอบ mutation ที่ใช้ token fallback
+- [ ] รองรับ Authorization Bearer token เป็น fallback เมื่อสร้าง scheduler หาก session cookie ไม่พร้อมบน production
+- [ ] ตรวจสิทธิ์ผู้ดูแลบน production เพื่อแสดงปุ่มเปิด scheduler แก่เจ้าของโครงการ
+- [ ] ให้ไมโลส่ง LINE User ID กลับเฉพาะในแชทส่วนตัว เพื่อรองรับการเชื่อมบัญชีจากแดชบอร์ดอย่างปลอดภัย
+- [ ] กู้ schema ฐานข้อมูลที่ว่างหลัง sandbox reset ด้วย migration ที่ตรวจสอบแล้วครบ 14 ตาราง
+- [ ] ปรับชุดทดสอบให้รัน dashboard navigation regression test จริง และเก็บหลักฐาน scroll ของทุกเมนูบน desktop/mobile
+- [ ] ตรวจ sidebar และ mobile navigation ทุกเมนูให้เลื่อนไปยัง section เป้าหมายจริงเมื่ออยู่นอก viewport พร้อม regression test
+- [ ] ทดสอบส่งรูปสลิปจริงบน production หลังแก้ data API endpoint และยืนยันการบันทึกหลังผู้ใช้กดยืนยัน
+- [ ] แก้ endpoint ดึง media จาก LINE ให้ใช้ data API domain พร้อม regression test ป้องกัน HTTP 404
+- [ ] ป้องกันการบันทึกค่าใช้จ่ายจากสลิป/ใบเสร็จเมื่อวันที่อ่านไม่ชัด จนกว่าผู้ใช้จะระบุวันที่ใหม่
+- [ ] ทดสอบ fallback ของภาพเอกสารที่อ่านยอดหรือวันที่ไม่ชัด เพื่อไม่บันทึกข้อมูลที่เดาเอง
+- [ ] แก้การอ่านวันที่รูปแบบเดือนภาษาไทย และเพิ่ม tests ครอบคลุมสลิป/ใบเสร็จตั้งแต่รับรูปจนบันทึกรายจ่ายหลังยืนยัน
+- [ ] ขยายการอ่านสลิปและใบเสร็จ: ดึงยอดเงิน วันที่ ร้านค้า/คู่ค้า และแยกหมวดค่าใช้จ่ายก่อนบันทึกหลังยืนยัน
+- [ ] ขยาย dashboard ให้มีส่วนโน้ตและกลุ่ม LINE พร้อมภาพสรุปข้อมูลที่ชัดเจน
+- [ ] เขียน integration tests สำหรับ webhook route, duplicate event handling, cron delivery และ mention flow
+- [ ] เพิ่ม error states และ toasts สำหรับ query/mutation หลัก
+- [ ] เชื่อม UI กับ API และเพิ่มสถานะ loading, empty, error, success ที่เหมาะสม
+- [ ] สร้างแดชบอร์ดจัดการเตือน ไฟล์ โน้ต/งาน กลุ่ม และรายรับรายจ่ายพร้อมกราฟ
+- [ ] สร้าง Landing Page โทนพาสเทลเขียว-ฟ้าพร้อม Hero, LINE chat bubbles, CTA และ FAQ accordion
+- [ ] สร้าง workflow วิเคราะห์รูปภาพตาราง ใบนัด และใบเสร็จ เพื่อเสนอรายการเตือนหรือรายจ่าย
+- [ ] สร้างบริบทกลุ่ม LINE ที่แยกข้อมูลตามกลุ่มและรองรับการกล่าวถึงสมาชิก
+- [ ] สร้าง workflow สำหรับบันทึกรายรับรายจ่าย หมวดหมู่ งบประมาณ และสรุปผล
+- [ ] สร้าง workflow สำหรับบันทึกข้อความเป็นโน้ตและ To-do list จากแชท
+- [ ] สร้างระบบคลังไฟล์/ข้อความ/ลิงก์ถาวรด้วย S3 พร้อมการค้นหาและแท็ก
+- [ ] สร้างงานตามกำหนดเวลาสำหรับตรวจรายการเตือนที่ถึงเวลาและส่ง Push Message กลับ LINE
+- [ ] สร้างตัวแยกคำสั่งภาษาไทยสำหรับเตือนครั้งเดียว รายวัน รายสัปดาห์ รายเดือน และทุก N นาที
+- [ ] เพิ่ม endpoint webhook LINE ที่ตรวจสอบลายเซ็นและกันการประมวลผล event ซ้ำ
+- [ ] ออกแบบและสร้างตารางฐานข้อมูลสำหรับพื้นที่สนทนา สมาชิกกลุ่ม การเตือน ไฟล์ โน้ต งาน ธุรกรรม และการเชื่อมบัญชี
+- [ ] ตรวจสอบความพร้อมของ LINE Channel secret และ Channel access token ด้วย endpoint ทางการ
+- [ ] ตรวจสอบสถานะการส่ง reminder ผ่าน DB หลังผู้ใช้แจ้งว่าได้รับข้อความ LINE แล้ว
+- [ ] ตรวจสอบและปิดรายการ QA dashboard/mutation ที่ทำได้โดยไม่กระทบข้อมูลจริงของผู้ใช้
+- [ ] ตรวจการเชื่อมบัญชี LINE ใหม่และข้อมูลจริงหลังผู้ใช้ส่ง LINE User ID ที่ถูกต้อง
+- [ ] ตรวจสอบ production graph visibility หลังย้าย FinanceAnalyticsPanel ขึ้นใต้ summary cards
+- [ ] เพิ่ม visual QA evidence ของ FinanceAnalyticsPanel ทั้ง desktop และ mobile
+- [ ] เพิ่ม chart empty state เมื่อไม่มีธุรกรรม 7 วันล่าสุด
+- [ ] ขยาย finance analytics backend และ frontend ให้ใช้ข้อมูลธุรกรรมจริง
+- [ ] ทดสอบและปรับกราฟการเงินใหม่บน dashboard ให้แสดงบน production
+- [ ] แก้เมนู navigation ของ dashboard ให้พาไปยัง section จริง
+- [ ] เพิ่มกราฟการเงินมืออาชีพตามภาพอ้างอิงโดยใช้ข้อมูลจริง
+- [ ] ตรวจสอบการทำงาน dashboard production หลังผู้ใช้ร้องเรียนว่ายังไม่เห็นกราฟ
+- [ ] ปรับ empty state ของกราฟให้ไม่แสดงเส้นศูนย์เมื่อไม่มีธุรกรรม
+- [ ] เพิ่ม FinanceAnalyticsPanel กับ daily analytics API
+- [ ] ตรวจสอบ dashboard production รุ่นกราฟใหม่
+- [ ] ปรับภาพ/ข้อมูลกราฟการเงินบน dashboard ตาม visual inspiration
+- [ ] QA dashboard กราฟการเงิน desktop/mobile และข้อมูลจริง
+- [ ] ปรับกราฟรายรับรายจ่ายและสัดส่วนหมวดหมู่ใน dashboard
+- [ ] ตรวจสอบ responsive mobile ของ analytics dashboard
+- [ ] เพิ่ม finance analytics backend grouping ตาม Asia/Bangkok
+- [ ] สร้างกราฟ dashboard finance โดยไม่ใช้ข้อมูลจำลอง
+- [ ] สร้างหน้า dashboard และเชื่อม finance summary จากธุรกรรมจริง
+- [ ] ตรวจสอบการทำงานของระบบทั้งหมดตามรายการ command menu
+- [ ] ปรับ validation เวลา reminder ให้รองรับรูปแบบ 17.25 และ Asia/Bangkok
+- [ ] ตรวจ incident reminder “ประชุม 17.25” ที่ไม่แจ้งเตือนและเพิ่ม regression test
+- [ ] แก้ปัญหา reminder เวลาไม่ตรงกันระหว่าง dashboard กับเวลาไทย
+- [ ] เพิ่ม UI แก้ไข LINE User ID และ validation รูปแบบ U + 32 hex
+- [ ] QA push delivery หลัง re-link บัญชี LINE จริง
+- [ ] เพิ่ม pending state สำหรับ mutation ทำ To-do และ updateVault
+- [ ] ตรวจ mutation dashboard success/error/empty/loading
+- [ ] ตรวจ production end-to-end หลังเชื่อม LINE ใหม่
+- [ ] สร้าง poster ประกาศกิจกรรมจากภาพโบสถ์
+- [ ] ขอ URL ต้นทางกิจกรรมและความถี่สำหรับติดตามประกาศ
+- [ ] ตรวจ reminder mobile normal flow
+- [ ] ทดสอบ scheduler mobile และล้าง reminder QA
+- [ ] ตรวจ landing CTA/FAQ/navigation
+- [ ] ตรวจ dashboard navigation และ mutation states
+- [ ] สร้าง guide การตั้งค่า LINE และ scheduler
+- [ ] รวบรวม QA evidence production
+- [ ] สร้างกราฟ finance dashboard
+- [ ] เพิ่ม receipt/slip OCR workflow
+- [ ] แก้ LINE media endpoint
+- [ ] ทดสอบ LINE webhook end-to-end
+- [ ] ปรับ role sync และ admin permissions
+- [ ] ตรวจ scheduler idempotency และ timeout
+- [ ] เพิ่ม delivery audit
+- [ ] ทดสอบ scheduler production
+- [ ] ตรวจ mobile dashboard scheduler
+- [ ] สร้าง reminder advance notifications
+- [ ] สรุปและติดตามประกาศลงทะเบียนเมื่อมี source URL
+- [ ] สร้าง poster จากภาพต้นฉบับ
+- [ ] เพิ่มคำสั่งช่วยเหลือ LINE ให้ครบตามเมนู
+- [ ] แก้ timezone reminder จาก LINE
+- [ ] ตรวจ reminder 17.25 delivery
+- [ ] เพิ่ม QA mutation dashboard
+- [ ] ปิดรายการ QA ที่ยืนยันแล้วตามหลักฐาน
+- [ ] ปรับเอกสาร QA และคู่มือก่อนส่งมอบ
+- [ ] ขอผู้ใช้ยืนยันข้อมูลที่ยังขาด
+- [ ] เพิ่มเมนูรายละเอียด dashboard ให้เหมือนภาพอ้างอิงทั้งหมด
+- [ ] เพิ่มเมนูการเงิน สรุป/วิเคราะห์/หมวดงบ/รายการ/ส่งออก
+- [ ] เพิ่มเมนูการเตือนประจำและกลุ่ม LINE ตามภาพอ้างอิง
+- [ ] ตรวจ responsive เมนูใหม่ desktop/mobile
+- [ ] ทดสอบและเผยแพร่เมนูใหม่
+
+*** End Patch? 
+
+**หมายเหตุ:** ระบบเพิ่มรายการซ้ำจำนวนมากจากประวัติเดิมเพื่อเก็บ traceability; ห้ามใช้รายการประวัติซ้ำเป็นเกณฑ์ว่าฟีเจอร์ยังไม่เสร็จ ให้ใช้เฉพาะรายการด้านบนของไฟล์เป็น source of truth
+
+
+## งานขยายเมนู dashboard (ส.ค. 2569)
+- [x] ขยาย sidebar และเมนูรายละเอียด dashboard: วิเคราะห์การเงิน หมวด/งบ รายการธุรกรรม การเตือนประจำ กลุ่ม LINE และส่งออกข้อมูล
+- [x] ตรวจ TypeScript, Vitest, production build และ responsive desktop/mobile หลังเพิ่มเมนู dashboard
+- [x] สรุปและล้างรายการซ้ำใน todo.md โดยคงประวัติเดิม
+- [ ] ขอ URL แหล่งข้อมูลลงทะเบียนและสรุปขั้นตอนเมื่อผู้ใช้ส่งลิงก์
+- [ ] ตรวจ end-to-end เมนูช่วยเหลือบน production
+- [x] ตรวจการดาวน์โหลดรายการธุรกรรม CSV จากข้อมูลจริง
+- [x] อัปเดตเอกสาร QA และบันทึก checkpoint หลังผ่านการตรวจ
+
+
+## Bug fix: scheduler environment (26 ส.ค. 2569)
+- [x] ตรวจและแก้ข้อความผิดพลาด “ต้องเผยแพร่เว็บไซต์ก่อน” ทั้งที่ dashboard production ใช้งานอยู่ โดยป้องกันการเรียก mutation จาก Preview และชี้ไปยัง production
+- [x] เพิ่ม regression test สำหรับ production scheduler guard และคง idempotency ของ task เดิม
+- [x] ตรวจ dashboard, TypeScript, Vitest และ production build หลังแก้ไข
+
+
+## UI refinement: Preview / Production status (26 ส.ค. 2569)
+- [x] เพิ่ม badge/banner ระบุ Preview หรือ Production ด้านบนของ dashboard
+- [x] ปรับข้อความ Preview และเพิ่มปุ่มคัดลอกลิงก์ Production ในคลิกเดียว
+- [x] เปลี่ยนปุ่ม scheduler ใน Preview เป็น Disabled พร้อม Tooltip อธิบายเหตุผล
+- [x] เพิ่ม regression tests และตรวจ responsive ก่อนบันทึก checkpoint
+
+
+## UI interaction refinement: environment controls (26 ส.ค. 2569)
+- [x] ทำให้ environment Badge คลิกเพื่อสลับไปยัง Preview หรือ Production ได้ทันที
+- [x] เพิ่ม animation/Toast หลังคัดลอกลิงก์ Production สำเร็จ
+- [x] ปรับ Tooltip scheduler ให้โดดเด่นและมีลิงก์ไป Production ภายใน Tooltip
+- [x] เพิ่ม regression tests ตรวจ interaction และตรวจ responsive ก่อน checkpoint
+
+
+## UI refinement: persistent Preview state (26 ส.ค. 2569)
+- [x] เพิ่มกรอบหรือแถบโปร่งแสงคงที่รอบหน้า Dashboard เมื่ออยู่ใน Preview
+- [x] แสดงเวลา Last Published ข้าง environment Badge
+- [x] เพิ่ม Confirmation Modal ก่อนสลับโหมดเมื่อมีข้อมูลหรือการตั้งค่าที่ยังไม่บันทึก
+- [x] เพิ่ม regression tests ตรวจ responsive และบันทึก checkpoint
+
+## UI refinement: publish awareness and save switching (26 ส.ค. 2569)
+- [x] สร้างทักษะ reusable สำหรับ UI Preview/Production awareness และตรวจ validation
+- [x] เพิ่ม fade transition แบบลด motion ได้สำหรับกรอบ Preview
+- [x] เพิ่มปุ่มบันทึกและสลับโหมดใน confirmation modal สำหรับข้อมูลค้าง
+- [x] เพิ่ม Popover ประวัติการเผยแพร่หรืออัปเดตล่าสุด 3 ครั้งจาก metadata ที่ตรวจสอบได้
+- [x] เพิ่ม regression tests ตรวจ responsive และบันทึก checkpoint
+
+## LINE financial assistant expansion (26 ส.ค. 2569)
+- [x] ทำ inventory ฟีเจอร์ LINE Bot/Dashboard ที่มีอยู่ เทียบกับรายการความต้องการแบบไม่สร้างข้อมูลจำลอง
+- [x] ใช้สถาปัตยกรรมระบบจัดการบนเว็บมาตรฐาน: webhook ตอบ LINE ทันทีและงานแจ้งเตือนตามรอบเวลา
+- [x] เพิ่มเสียงจาก LINE เป็นข้อความและเสนอรายการการเงินที่ผู้ใช้ยืนยันก่อนบันทึก
+- [x] เพิ่มคำสั่ง LINE สำหรับค้นหา แก้ไข และลบธุรกรรม พร้อม audit log
+- [x] เพิ่ม API/Dashboard สำหรับรายวัน สัปดาห์ เดือน ปี กำไร/ขาดทุน หมวด และช่วงเวลา
+- [x] เพิ่ม Export Excel สำหรับธุรกรรมและรายงานจากข้อมูลจริง
+- [x] เพิ่มการตั้งค่าหมวด หมวดอัตโนมัติ AI สรุปธุรกิจ และ AI วิเคราะห์รายจ่าย
+- [x] เพิ่มการกำหนดสิทธิ์ multi-user และหน้าผู้ดูแลสำหรับ audit/configuration
+- [x] เพิ่ม regression/production QA ครอบคลุม LINE text/image/audio, dashboard, export, roles และ audit
+
+## Bug fix: LINE voice response (26 ส.ค. 2569)
+- [x] ตรวจ log และแก้สาเหตุที่ไมโลไม่ตอบหลังรับข้อความเสียงจาก LINE
+- [x] แสดงข้อความถอดเสียงหรือข้อความผิดพลาดที่ผู้ใช้ดำเนินการต่อได้
+- [x] เพิ่ม regression test และตรวจ production voice flow โดยไม่สร้างธุรกรรมก่อนยืนยัน
+
+## Bug fix: LINE audio transcription failure (26 ส.ค. 2569)
+- [x] ตรวจ root cause จาก LINE audio/transcription logs และ metadata ไฟล์จริง
+- [x] ปรับการเข้าถึง/จัดรูปแบบไฟล์เสียงเพื่อให้ transcribe สำเร็จ
+- [x] เพิ่ม telemetry และ regression test ของ transcription failure
+- [x] เผยแพร่และยืนยันด้วยข้อความเสียงจริงจาก LINE
+
+## LINE voice confirmation experience (26 ส.ค. 2569)
+- [x] สร้างทักษะ reusable สำหรับ flow เสียง → วิเคราะห์ → ยืนยัน/แก้ไข → บันทึก
+- [x] ส่ง Flex Message หรือ Quick Reply ให้กดยืนยัน/แก้ไขข้อความถอดเสียงได้
+- [x] ใช้ AI แนะนำหมวดจาก transcript และแสดงหมวดในข้อเสนอก่อนบันทึก
+- [x] รองรับคำสั่งแก้ไขข้อความถอดเสียงก่อนผู้ใช้ยืนยัน
+- [x] เพิ่ม regression tests ทดสอบเสียงจริง และเผยแพร่
+
+## Bug fix: LINE voice Flex actions (26 ส.ค. 2569)
+- [x] ตรวจ payload/deployment ที่ทำให้ Flex Message และ Quick Reply ไม่แสดง
+- [x] ปรับ Flex หรือ fallback ให้ผู้ใช้เห็นปุ่มยืนยันและแก้ไขเสมอ
+- [x] เพิ่ม regression test และยืนยันปุ่มจาก LINE จริง
+
+## LINE voice proposal visual refresh (26 ส.ค. 2569)
+- [x] สร้างภาพแมวการ์ตูนคิขุสำหรับการ์ดข้อเสนอเสียง และเก็บเป็น asset ที่ใช้บนเว็บได้
+- [x] ปรับ Flex card โทนสี/องค์ประกอบให้เป็นสไตล์ใหม่ตามภาพอ้างอิง โดยใช้ข้อมูลธุรกรรมจริง
+- [x] รักษาปุ่มยืนยันและแก้ไข พร้อม test payload และเผยแพร่
+
+## LINE post-save summary and category editing (26 ส.ค. 2569)
+- [x] สร้างทักษะ reusable สำหรับ Flex card หลังบันทึกรายการและตรวจ validation
+- [x] เพิ่มปุ่มดูสรุปยอดวันนี้หลังบันทึกรายการ โดยใช้ยอดจริง
+- [x] เพิ่มข้อความน้องแมวที่เลือกตามระดับยอดใช้จ่ายจริง
+- [x] เพิ่ม Quick Reply หมวดยอดนิยมใน flow แก้ไขข้อความเสียง
+- [ ] เพิ่ม regression tests ทดสอบ LINE จริง และเผยแพร่
+- [x] เพิ่ม regression test ของ parser, LINE payload, webhook และ receipt-confirmation โดยไม่สร้างข้อมูลธุรกรรมจริง
+
+## LINE post-save card visual refinement (27 ส.ค. 2569)
+- [x] ปรับ hierarchy ของการ์ดหลังบันทึกให้ใกล้ภาพอ้างอิง แต่ใช้โทนพาสเทลม่วง–ชมพู–มิ้นท์ของไมโล
+- [x] รักษาการแสดงยอดธุรกรรมและยอดสรุปจากข้อมูลจริง พร้อม fallback เดิม
+- [ ] เพิ่ม regression test ของ Flex payload และเผยแพร่หลัง QA
+- [x] เพิ่ม regression test ของ Flex payload: สี, hierarchy, ยอดจริง และ action สรุปวันนี้
+
+## Bug: LINE ไม่ตอบคำสั่งรายจ่าย (27 ส.ค. 2569)
+- [x] ตรวจ webhook, log การตอบกลับ และสถานะธุรกรรมของคำสั่ง `จ่ายค่าอาหาร 100 บาท` โดยไม่สร้างข้อมูลซ้ำ
+- [x] แก้สาเหตุที่ทำให้ LINE ไม่ส่งคำตอบหลังบันทึกรายการ พร้อม fallback ที่ปลอดภัย
+- [ ] เพิ่ม regression, ทดสอบหลังเผยแพร่ และบันทึกผลจาก LINE จริง
+- [ ] ปรับการ์ด `จ่ายค่าอาหาร 100 บาท` ให้ใช้ layout ที่ LINE ยอมรับและมีแถบสำเร็จ รายละเอียดรายการ และสรุปยอดจริงตามภาพอ้างอิง
+- [x] เพิ่ม regression กรณี Flex และ reply fallback ถูกปฏิเสธ แล้วส่ง push summary โดยไม่สร้างธุรกรรมซ้ำ
+
+## LINE daily financial summary card (27 ส.ค. 2569)
+- [x] เปลี่ยนคำตอบ `สรุปการเงินวันนี้` เป็น Flex card ในรูปแบบเดียวกับการบันทึกรายจ่ายและสีธีมไมโล
+- [x] แสดงรายรับ รายจ่าย คงเหลือ และหมวดจากรายงานจริง พร้อมข้อความ fallback ที่ตอบกลับได้
+- [ ] เพิ่ม regression ทดสอบ payload และเผยแพร่เพื่อรับผลจาก LINE จริง
+- [x] รองรับ alias คำสั่ง `สรุปการเงินวันนี้` ให้เข้าสู่รายงานวันเดียวกับ `สรุปวันนี้`
+- [x] เพิ่ม regression test ของ parser, LINE payload และ webhook report card โดยไม่สร้างข้อมูลธุรกรรมจริง
+
+## Bug: LINE ไม่ตอบรายงานการเงิน (27 ส.ค. 2569)
+- [x] ตรวจ production event และ error ของคำสั่ง `สรุปการเงินวันนี้` โดยไม่แก้ไขธุรกรรมจริง
+- [x] แก้ payload หรือ fallback ที่ทำให้รายงานไม่ตอบกลับ LINE
+- [x] เพิ่ม regression, เผยแพร่ และยืนยันผลตอบกลับจาก LINE จริง
+- [x] ตรวจ Flex payload ผ่าน LINE validation endpoint ก่อนส่งจริง โดยไม่กระทบข้อความหรือธุรกรรม
+- [x] เพิ่ม telemetry ที่ไม่เปิดเผยข้อมูลส่วนตัวเพื่อยืนยัน HTTP status ของ LINE reply หรือ push ใน production
+- [x] เพิ่ม telemetry ที่ไม่เปิดเผยข้อมูลส่วนตัวและผ่าน TypeScript, Vitest 76 กรณี กับ production build
+
+## LINE financial card graphics and daily digest (27 ส.ค. 2569)
+- [x] เพิ่มโลโก้หรือกราฟิกตกแต่งธีมไมโลใน Flex card รายงานการเงิน โดยไม่บดบังยอดจริง
+- [x] ตรวจ flow บันทึกรายรับ–รายจ่ายผ่าน LINE และคง explicit confirmation สำหรับรูปหรือเสียง
+- [x] ขยายการ์ดสรุปให้รองรับรายสัปดาห์และรายเดือน พร้อมทดสอบ payload
+- [x] เลือกใช้การส่งสรุปเมื่อผู้ใช้กดดูหรือพิมพ์คำสั่ง แทนการแจ้งเตือนอัตโนมัติรายวัน
+- [ ] คงช่องทางขยายไปสู่สรุปอัตโนมัติในอนาคต หากผู้ใช้ระบุเวลาและผู้รับ
+- [x] ยืนยัน LINE validation สำหรับการ์ดรายวัน รายสัปดาห์ และรายเดือน โดยไม่มีการส่งข้อความหรือสร้างธุรกรรมจริง
+- [x] เผยแพร่และยืนยันจากผู้ใช้ว่า `สรุปสัปดาห์นี้` และ `สรุปเดือนนี้` แสดงการ์ดสำเร็จบน LINE
+
+## LINE weekly example, categories, and automatic finance digests (27 ส.ค. 2569)
+- [x] แสดงการ์ดสรุปยอดประจำสัปดาห์ในธีมไมโลจากข้อมูลจริง และยืนยันผลบน LINE
+- [x] เพิ่มชุดหมวดมาตรฐานสำหรับรายรับและรายจ่ายที่ใช้ผ่าน LINE โดยไม่ลบหมวดผู้ใช้เดิม
+- [x] กำหนดเวลาและผู้รับสำหรับสรุปรายวันและสรุปรายสัปดาห์อัตโนมัติทุกวันจันทร์ก่อนเปิด schedule จริง
+- [x] พัฒนา schedule สรุปการเงินแบบ idempotent พร้อม guard production, audit และ fallback
+- [ ] เพิ่ม regression, ทดสอบ production และบันทึกผลจาก LINE จริง
+- [x] ทดสอบการ์ดรายสัปดาห์จากคำสั่ง LINE จริงและได้รับการตอบรับ HTTP 200
+
+## Confirmed finance digest schedule (27 ส.ค. 2569)
+- [x] ยืนยันผู้รับเป็น LINE ส่วนตัวที่เชื่อมไว้เท่านั้น
+- [x] ยืนยันเวลาประเทศไทย: สรุปรายวัน 06:00 ทุกวัน และสรุปรายสัปดาห์ 06:00 ทุกวันจันทร์
+- [x] พัฒนา delivery audit และ handler แบบ idempotent สำหรับงานสรุปการเงินอัตโนมัติ
+- [x] ตั้งค่างานสรุปการเงินอัตโนมัติแบบ idempotent สำหรับรายวัน 06:00 และรายสัปดาห์วันจันทร์ 06:00 ตาม Asia/Bangkok
+- [ ] ตรวจ delivery audit หลังงานจริงรอบแรกส่งสำเร็จ
+- [x] ตรวจ job รายวันและรายสัปดาห์ enabled พร้อม cron UTC ที่แปลงเป็น 06:00 Asia/Bangkok ถูกต้อง
+
+## Standard web management completion (27 ส.ค. 2569)
+- [ ] สำรวจและจัดทำรายการสถานะฟังก์ชัน dashboard ที่มีอยู่เทียบกับคำสั่ง LINE
+- [ ] เพิ่มส่วนจัดการหมวดรายรับและรายจ่ายจากเว็บโดยไม่ลบข้อมูลเดิม
+- [ ] เพิ่มส่วนจัดการการส่งสรุปการเงินอัตโนมัติ พร้อมเปิด/ปิดอย่างปลอดภัย
+- [ ] เพิ่มส่วนประวัติ delivery และ audit สำหรับสรุปการเงิน
+- [ ] ทดสอบ flow บันทึกรายรับรายจ่ายและรายงาน LINE แบบทีละฟังก์ชัน
+- [ ] ตรวจ responsive, TypeScript, Vitest, production build และเผยแพร่
+
+## Feature expansion from finance reference (27 ส.ค. 2569)
+- [x] จัดทำ feature matrix เทียบฟังก์ชันจากภาพอ้างอิงกับสิ่งที่ไมโลรองรับแล้วและสิ่งที่ต้องเพิ่ม
+- [x] ขยายหมวดกำหนดเองให้แยกรายรับ/รายจ่าย และรองรับคำสั่ง LINE/API พร้อม audit โดยรักษาข้อมูลเดิม
+- [x] เพิ่มการบันทึกยอดตั้งต้นและการแสดงยอดคงเหลือที่แยกจากรายรับ–รายจ่าย
+- [x] เพิ่มรายการอัตโนมัติแบบตั้งรอบโดยผู้ใช้ยืนยันก่อนบันทึกรอบแรก
+- [x] เพิ่มรายงาน PDF จากธุรกรรมจริงควบคู่ Excel/CSV
+- [x] เพิ่มการเชื่อมหลักฐานหรือไฟล์แนบกับธุรกรรม โดยเก็บไฟล์ใน S3
+- [ ] เพิ่มการเลือกบริบทกลุ่ม LINE หรือบัญชีที่เชื่อมจาก dashboard โดยไม่ปะปนข้อมูล
+- [ ] ตรวจและปรับการจัดการรายการจำนวนมากให้ค้นหา กรอง และแบ่งหน้าได้
+- [ ] ทดสอบทุกฟังก์ชันที่เพิ่มจากภาพอ้างอิงแบบไม่สร้างข้อมูลธุรกรรมจำลอง

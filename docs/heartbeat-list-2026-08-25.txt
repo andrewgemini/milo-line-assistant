@@ -1,0 +1,34 @@
+{
+  "actor_user_id": "310519663046838421",
+  "jobs": [
+    {
+      "callback_method": "POST",
+      "callback_path": "/api/scheduled/reminders",
+      "callback_payload": "",
+      "created_at": "2026-08-22T16:26:54Z",
+      "cron_expression": "0 */1 * * * *",
+      "description": "ตรวจรายการเตือนของไมโลทุกหนึ่งนาที (recovery)",
+      "is_enable": true,
+      "last_executed_at": "2026-08-25T07:17:55Z",
+      "name": "milo-reminder-delivery-recovery",
+      "next_execution_at": "2026-08-25T07:18:00Z",
+      "task_uid": "LUxJ8ymCSGGpuVxdhmSqmT",
+      "user_id": "310519663046838421"
+    },
+    {
+      "callback_method": "POST",
+      "callback_path": "/api/scheduled/reminders",
+      "callback_payload": "",
+      "created_at": "2026-08-22T16:17:35Z",
+      "cron_expression": "0 * * * * *",
+      "description": "ตรวจรายการเตือนของไมโลทุกหนึ่งนาที",
+      "is_enable": true,
+      "last_executed_at": "2026-08-25T07:22:59Z",
+      "name": "milo-reminder-delivery",
+      "next_execution_at": "2026-08-25T07:23:00Z",
+      "task_uid": "FcYdWgCGv54PTya6Fs9XX4",
+      "user_id": "310519663046838421"
+    }
+  ],
+  "total": 2
+}

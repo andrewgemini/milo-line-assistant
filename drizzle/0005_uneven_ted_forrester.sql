@@ -1,0 +1,1 @@
+ALTER TABLE `voice_transcriptions` ADD `proposalJson` text;
