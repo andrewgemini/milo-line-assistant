@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { parse as parseCookie } from "cookie";
-import { COOKIE_NAME } from "@shared/const";
+import { COOKIE_NAME, ONE_YEAR_MS } from "@shared/const";
+import { sdk } from "./_core/sdk";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
@@ -49,6 +50,37 @@ export const appRouter = router({
       ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
       return { success: true } as const;
     }),
+    adminLogin: publicProcedure
+      .input(
+        z.object({
+          email: z.string().trim().email("กรุณากรอก Gmail ที่ถูกต้อง (เช่น admin@gmail.com)"),
+          name: z.string().trim().optional(),
+        })
+      )
+      .mutation(async ({ ctx, input }) => {
+        const email = input.email.toLowerCase();
+        const safeOpenId = "admin_" + email.replace(/[^a-zA-Z0-9]/g, "_");
+        const name = input.name || ("ผู้ดูแลระบบ (" + email.split("@")[0] + ")");
+
+        await db.upsertUser({
+          openId: safeOpenId,
+          name,
+          email,
+          role: "admin",
+          loginMethod: "gmail",
+          lastSignedIn: new Date(),
+        });
+
+        const sessionToken = await sdk.createSessionToken(safeOpenId, {
+          name,
+          expiresInMs: ONE_YEAR_MS,
+        });
+
+        const cookieOptions = getSessionCookieOptions(ctx.req);
+        ctx.res.cookie(COOKIE_NAME, sessionToken, { ...cookieOptions, maxAge: ONE_YEAR_MS });
+
+        return { success: true, user: { openId: safeOpenId, name, email, role: "admin" } };
+      }),
   }),
   milo: router({
     linkLineAccount: protectedProcedure.input(z.object({ lineUserId: z.string().trim().regex(/^U[0-9a-fA-F]{32}$/, "LINE User ID ต้องขึ้นต้นด้วย U และตามด้วยอักขระ 32 ตัว") })).mutation(async ({ ctx, input }) => {
@@ -72,191 +104,204 @@ export const appRouter = router({
         requireFinancePermission(db.canManageFinanceAccountMembers(scope.role), "เฉพาะเจ้าของสมุดบัญชีที่จัดการสมาชิกได้");
         if (!await db.isEligibleGroupFinanceAccountMember(input.financeAccountId, input.lineUserId)) throw new Error("ผู้ใช้นี้ยังไม่มีข้อมูลการเป็นสมาชิกในกลุ่ม LINE นี้");
         await db.upsertFinanceAccountMember(input);
-        await db.writeAuditLog({ action: "finance_account.member.upsert", entityType: "finance_account_member", entityId: input.financeAccountId, dashboardUserId: ctx.user.id, actorLineUserId: scope.lineUserId, lineChatId: scope.account.lineChatId ?? undefined, details: { memberLineUserId: input.lineUserId, role: input.role } });
         return { success: true } as const;
       }),
       removeMember: protectedProcedure.input(z.object({ financeAccountId: z.number().int().positive(), lineUserId: z.string().trim().regex(/^U[0-9a-fA-F]{32}$/, "LINE User ID ต้องขึ้นต้นด้วย U และตามด้วยอักขระ 32 ตัว") })).mutation(async ({ ctx, input }) => {
         const scope = await requireFinanceAccountScope(ctx.user.id, input.financeAccountId);
-        requireFinancePermission(db.canManageFinanceAccountMembers(scope.role), "เฉพาะเจ้าของสมุดบัญชีที่จัดการสมาชิกได้");
-        const removed = await db.removeFinanceAccountMember(input.financeAccountId, input.lineUserId);
-        if (!removed) throw new Error("ไม่พบสมาชิกที่ลบได้ หรือไม่สามารถลบเจ้าของสมุดบัญชี");
-        await db.writeAuditLog({ action: "finance_account.member.remove", entityType: "finance_account_member", entityId: input.financeAccountId, dashboardUserId: ctx.user.id, actorLineUserId: scope.lineUserId, lineChatId: scope.account.lineChatId ?? undefined, details: { memberLineUserId: input.lineUserId } });
+        requireFinancePermission(db.canManageFinanceAccountMembers(scope.role), "เฉพาะเจ้าของสมุดบัญชีที่ลบสมาชิกได้");
+        await db.removeFinanceAccountMember(input.financeAccountId, input.lineUserId);
+        return { success: true } as const;
+      }),
+    }),
+    budgets: router({
+      list: protectedProcedure.input(z.object({ financeAccountId: z.number().int().positive().optional(), monthKey: z.string().regex(/^\d{4}-\d{2}$/, "monthKey ต้องอยู่ในรูปแบบ YYYY-MM").optional() }).optional()).query(async ({ ctx, input }) => {
+        const scope = await requireFinanceAccountScope(ctx.user.id, input?.financeAccountId);
+        return db.listBudgets(scope.lineUserId, input?.monthKey, scope.financeAccountId);
+      }),
+      categories: protectedProcedure.input(z.object({ financeAccountId: z.number().int().positive().optional(), transactionType: z.enum(["expense", "income"]).optional() }).optional()).query(async ({ ctx, input }) => {
+        const scope = await requireFinanceAccountScope(ctx.user.id, input?.financeAccountId);
+        return db.listExpenseCategories(scope.lineUserId, input?.transactionType, scope.financeAccountId);
+      }),
+      createCategory: protectedProcedure.input(z.object({ financeAccountId: z.number().int().positive().optional(), name: z.string().trim().min(1).max(64), transactionType: z.enum(["expense", "income"]).default("expense") })).mutation(async ({ ctx, input }) => {
+        const scope = await requireFinanceAccountScope(ctx.user.id, input.financeAccountId);
+        requireFinancePermission(db.canManageFinanceSettings(scope.role), "สิทธิ์ของคุณยังเพิ่มหมวดหมู่ในสมุดบัญชีนี้ไม่ได้");
+        return { id: await db.createExpenseCategory({ lineUserId: scope.lineUserId, name: input.name, transactionType: input.transactionType, financeAccountId: scope.financeAccountId }) };
+      }),
+      setBudget: protectedProcedure.input(z.object({ financeAccountId: z.number().int().positive().optional(), monthKey: z.string().regex(/^\d{4}-\d{2}$/, "monthKey ต้องอยู่ในรูปแบบ YYYY-MM"), category: z.string().trim().min(1).max(64), amount: z.number().positive(), alertAtPercent: z.number().int().min(1).max(100).default(80) })).mutation(async ({ ctx, input }) => {
+        const scope = await requireFinanceAccountScope(ctx.user.id, input.financeAccountId);
+        requireFinancePermission(db.canManageFinanceSettings(scope.role), "สิทธิ์ของคุณยังตั้งงบประมาณในสมุดบัญชีนี้ไม่ได้");
+        await db.upsertBudget({ lineUserId: scope.lineUserId, financeAccountId: scope.financeAccountId, monthKey: input.monthKey, category: input.category, amount: input.amount, alertAtPercent: input.alertAtPercent });
+        return { success: true } as const;
+      }),
+    }),
+    openingBalance: router({
+      get: protectedProcedure.input(z.object({ financeAccountId: z.number().int().positive().optional() }).optional()).query(async ({ ctx, input }) => {
+        const scope = await requireFinanceAccountScope(ctx.user.id, input?.financeAccountId);
+        return db.getOpeningBalance(scope.lineUserId, scope.financeAccountId);
+      }),
+      set: protectedProcedure.input(z.object({ financeAccountId: z.number().int().positive().optional(), amount: z.number().finite(), asOfDate: z.string().datetime().optional() })).mutation(async ({ ctx, input }) => {
+        const scope = await requireFinanceAccountScope(ctx.user.id, input.financeAccountId);
+        requireFinancePermission(db.canManageFinanceSettings(scope.role), "สิทธิ์ของคุณยังตั้งค่ายอดเริ่มต้นในสมุดบัญชีนี้ไม่ได้");
+        await db.upsertOpeningBalance(scope.lineUserId, input.amount, input.asOfDate ? new Date(input.asOfDate) : new Date(), scope.financeAccountId);
         return { success: true } as const;
       }),
     }),
     overview: protectedProcedure.query(async ({ ctx }) => {
       const lineUserId = await db.getLinkedLineUser(ctx.user.id);
-      if (!lineUserId) return { lineUserId: null, reminders: [], todos: [], notes: [], vault: [], groups: [], budgets: [], finance: { income: 0, expense: 0, balance: 0, categories: {} }, financeAnalytics: { daily: [], transactionCount: 0, sevenDayIncome: 0, sevenDayExpense: 0 } };
-      const personalAccount = await db.getOrCreatePersonalFinanceAccount(lineUserId);
-      const [reminders, todos, notes, vault, groups, budgets, finance, financeAnalytics, financeAccounts] = await Promise.all([
-        db.listReminders(lineUserId), db.listTodos(lineUserId), db.listNotes(lineUserId), db.searchVault(lineUserId), db.listLineGroups(lineUserId), db.listBudgets(lineUserId, undefined, personalAccount.id), db.financeSummary(lineUserId, personalAccount.id), db.financeAnalytics(lineUserId, personalAccount.id), db.listFinanceAccounts(lineUserId),
+      if (!lineUserId) return { lineUserId: null, reminders: [], todos: [], recentVault: [], stats: { remindersCount: 0, pendingTodosCount: 0, vaultCount: 0 }, finance: { income: 0, expense: 0, balance: 0, categories: {} } };
+      const [reminders, todos, recentVault, stats, finance] = await Promise.all([
+        db.listReminders(lineUserId, 10),
+        db.listTodos(lineUserId, false),
+        db.listRecentVault(lineUserId, 6),
+        db.getDashboardStats(lineUserId),
+        db.getFinanceSummary7Days(lineUserId),
       ]);
-      return { lineUserId, reminders, todos, notes, vault, groups, budgets, finance, financeAnalytics, financeAccounts, personalFinanceAccountId: personalAccount.id };
-    }),
-    reminders: router({
-      list: protectedProcedure.query(async ({ ctx }) => db.listReminders(await requireLinkedLineUser(ctx.user.id))),
-      create: protectedProcedure.input(z.object({ title: z.string().min(1).max(255), dueAt: z.coerce.date(), recurrenceType: z.enum(["once", "minute", "day", "week", "month"]).default("once"), recurrenceInterval: z.number().int().min(1).default(1) })).mutation(async ({ ctx, input }) => {
-        const lineUserId = await requireLinkedLineUser(ctx.user.id);
-        return { id: await db.createReminder({ lineChatId: lineUserId, createdByLineUserId: lineUserId, title: input.title, dueAt: input.dueAt, nextRunAt: input.dueAt, recurrenceType: input.recurrenceType, recurrenceInterval: input.recurrenceInterval }) };
-      }),
-      delete: protectedProcedure.input(z.object({ id: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
-        await db.deleteReminder(input.id, await requireLinkedLineUser(ctx.user.id));
-        return { success: true } as const;
-      }),
-    }),
-    vault: router({
-      search: protectedProcedure.input(z.object({ query: z.string().max(255).default("") })).query(async ({ ctx, input }) => db.searchVault(await requireLinkedLineUser(ctx.user.id), input.query)),
-      updateMetadata: protectedProcedure.input(z.object({ id: z.number().int().positive(), tagsText: z.string().max(500).nullable().optional(), sourceUrl: z.string().url().max(2000).nullable().optional() })).mutation(async ({ ctx, input }) => {
-        await db.updateVaultMetadata(input.id, await requireLinkedLineUser(ctx.user.id), { tagsText: input.tagsText, sourceUrl: input.sourceUrl });
-        return { success: true } as const;
-      }),
-    }),
-    todos: router({
-      list: protectedProcedure.query(async ({ ctx }) => db.listTodos(await requireLinkedLineUser(ctx.user.id))),
-      complete: protectedProcedure.input(z.object({ id: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
-        await db.completeTodo(input.id, await requireLinkedLineUser(ctx.user.id));
-        return { success: true } as const;
-      }),
+      return { lineUserId, reminders, todos, recentVault, stats, finance };
     }),
     finance: router({
       summary: protectedProcedure.input(z.object({ financeAccountId: z.number().int().positive().optional() }).optional()).query(async ({ ctx, input }) => {
         const scope = await requireFinanceAccountScope(ctx.user.id, input?.financeAccountId);
-        return db.financeSummary(scope.lineUserId, scope.financeAccountId);
+        const [sevenDays, monthly, openingBalance, activeBudgets] = await Promise.all([
+          db.getFinanceSummary7Days(scope.lineUserId, scope.financeAccountId),
+          db.getFinanceSummaryMonthly(scope.lineUserId, undefined, scope.financeAccountId),
+          db.getOpeningBalance(scope.lineUserId, scope.financeAccountId),
+          db.listBudgets(scope.lineUserId, undefined, scope.financeAccountId),
+        ]);
+        const opening = openingBalance ? Number(openingBalance.amount) : 0;
+        return { sevenDays, monthly: { ...monthly, openingBalance: opening, availableBalance: opening + monthly.balance }, openingBalance, activeBudgets, currentScope: { financeAccountId: scope.financeAccountId, role: scope.role, accountName: scope.account.name, isGroup: scope.account.accountType === "group" } };
       }),
-      balanceSnapshot: protectedProcedure.input(z.object({ financeAccountId: z.number().int().positive().optional() }).optional()).query(async ({ ctx, input }) => {
-        const scope = await requireFinanceAccountScope(ctx.user.id, input?.financeAccountId);
-        return db.getBalanceSnapshot(scope.lineUserId, scope.financeAccountId);
-      }),
-      analytics: protectedProcedure.input(z.object({ financeAccountId: z.number().int().positive().optional() }).optional()).query(async ({ ctx, input }) => {
-        const scope = await requireFinanceAccountScope(ctx.user.id, input?.financeAccountId);
-        return db.financeAnalytics(scope.lineUserId, scope.financeAccountId);
-      }),
-      budgets: protectedProcedure.input(z.object({ financeAccountId: z.number().int().positive().optional(), monthKey: z.string().regex(/^\d{4}-\d{2}$/).optional() }).optional()).query(async ({ ctx, input }) => {
-        const scope = await requireFinanceAccountScope(ctx.user.id, input?.financeAccountId);
-        return db.listBudgets(scope.lineUserId, input?.monthKey, scope.financeAccountId);
-      }),
-      openingBalance: protectedProcedure.input(z.object({ amount: z.number().min(0), effectiveAt: z.coerce.date().optional(), financeAccountId: z.number().int().positive().optional() })).mutation(async ({ ctx, input }) => {
+      customRangeSummary: protectedProcedure.input(z.object({ financeAccountId: z.number().int().positive().optional(), startDate: z.string().datetime(), endDate: z.string().datetime() })).query(async ({ ctx, input }) => {
         const scope = await requireFinanceAccountScope(ctx.user.id, input.financeAccountId);
-        requireFinancePermission(db.canManageFinanceSettings(scope.role), "สิทธิ์ของคุณยังตั้งค่ายอดเริ่มต้นในสมุดบัญชีนี้ไม่ได้");
-        await db.upsertOpeningBalance(scope.lineUserId, input.amount, input.effectiveAt, scope.financeAccountId);
-        await db.writeAuditLog({ action: "finance_opening_balance.set", entityType: "finance_opening_balance", dashboardUserId: ctx.user.id, actorLineUserId: scope.lineUserId, lineChatId: scope.account.lineChatId ?? undefined, details: { financeAccountId: scope.financeAccountId, amount: input.amount, effectiveAt: input.effectiveAt?.toISOString() ?? null } });
-        return { success: true } as const;
+        return db.getFinanceSummaryByRange(scope.lineUserId, new Date(input.startDate), new Date(input.endDate), scope.financeAccountId);
+      }),
+      transactions: protectedProcedure.input(z.object({ financeAccountId: z.number().int().positive().optional(), limit: z.number().int().positive().max(100).optional(), offset: z.number().int().nonnegative().optional(), search: z.string().trim().optional() }).optional()).query(async ({ ctx, input }) => {
+        const scope = await requireFinanceAccountScope(ctx.user.id, input?.financeAccountId);
+        const [items, total] = await Promise.all([
+          db.listTransactions({ lineUserId: scope.lineUserId, financeAccountId: scope.financeAccountId, limit: input?.limit ?? 20, offset: input?.offset ?? 0, search: input?.search }),
+          db.countTransactions(scope.lineUserId, scope.financeAccountId, input?.search),
+        ]);
+        return { items, total, currentRole: scope.role };
+      }),
+      deleteTransaction: protectedProcedure.input(z.object({ id: z.number().int().positive(), financeAccountId: z.number().int().positive().optional() })).mutation(async ({ ctx, input }) => {
+        const scope = await requireFinanceAccountScope(ctx.user.id, input.financeAccountId);
+        requireFinancePermission(db.canManageFinanceTransactions(scope.role), "สิทธิ์ของคุณยังลบรายการในสมุดบัญชีนี้ไม่ได้");
+        return { success: await db.deleteTransaction({ id: input.id, lineUserId: scope.lineUserId, financeAccountId: scope.financeAccountId }) };
+      }),
+      updateTransaction: protectedProcedure.input(z.object({ id: z.number().int().positive(), financeAccountId: z.number().int().positive().optional(), amount: z.number().positive() })).mutation(async ({ ctx, input }) => {
+        const scope = await requireFinanceAccountScope(ctx.user.id, input.financeAccountId);
+        requireFinancePermission(db.canManageFinanceTransactions(scope.role), "สิทธิ์ของคุณยังแก้ไขรายการในสมุดบัญชีนี้ไม่ได้");
+        return { success: await db.updateTransaction({ id: input.id, lineUserId: scope.lineUserId, financeAccountId: scope.financeAccountId, amount: input.amount }) };
       }),
       recurring: router({
         list: protectedProcedure.input(z.object({ financeAccountId: z.number().int().positive().optional() }).optional()).query(async ({ ctx, input }) => {
           const scope = await requireFinanceAccountScope(ctx.user.id, input?.financeAccountId);
           return db.listRecurringTransactions(scope.lineUserId, scope.financeAccountId);
         }),
-        create: protectedProcedure.input(z.object({
-          transactionType: z.enum(["income", "expense"]), amount: z.number().positive(), category: z.string().trim().min(1).max(100), note: z.string().trim().max(1_000).optional(),
-          recurrenceType: z.enum(["day", "week", "month"]), recurrenceInterval: z.number().int().min(1).max(365).default(1), recurrenceWeekday: z.number().int().min(0).max(6).optional(), recurrenceDayOfMonth: z.number().int().min(1).max(28).optional(), nextRunAt: z.coerce.date(), financeAccountId: z.number().int().positive().optional(),
-        })).mutation(async ({ ctx, input }) => {
+        toggle: protectedProcedure.input(z.object({ id: z.number().int().positive(), isActive: z.boolean(), financeAccountId: z.number().int().positive().optional() })).mutation(async ({ ctx, input }) => {
           const scope = await requireFinanceAccountScope(ctx.user.id, input.financeAccountId);
-          requireFinancePermission(db.canManageFinanceSettings(scope.role), "สิทธิ์ของคุณยังตั้งค่ารายการอัตโนมัติในสมุดบัญชีนี้ไม่ได้");
-          const id = await db.createRecurringTransaction({ ...input, financeAccountId: scope.financeAccountId, lineUserId: scope.lineUserId, lineChatId: scope.account.lineChatId ?? scope.lineUserId });
-          await db.writeAuditLog({ action: "recurring_transaction.create", entityType: "recurring_transaction", entityId: id, dashboardUserId: ctx.user.id, actorLineUserId: scope.lineUserId, lineChatId: scope.account.lineChatId ?? scope.lineUserId, details: { financeAccountId: scope.financeAccountId, transactionType: input.transactionType, category: input.category, amount: input.amount, recurrenceType: input.recurrenceType } });
-          return { id };
-        }),
-        updateStatus: protectedProcedure.input(z.object({ id: z.number().int().positive(), status: z.enum(["active", "paused", "cancelled"]), financeAccountId: z.number().int().positive().optional() })).mutation(async ({ ctx, input }) => {
-          const scope = await requireFinanceAccountScope(ctx.user.id, input.financeAccountId);
-          requireFinancePermission(db.canManageFinanceSettings(scope.role), "สิทธิ์ของคุณยังปรับรายการอัตโนมัติในสมุดบัญชีนี้ไม่ได้");
-          const updated = await db.updateRecurringTransactionStatus(input.id, scope.lineUserId, input.status, scope.financeAccountId);
-          if (!updated) throw new Error("ไม่พบรายการอัตโนมัติที่ต้องการปรับสถานะ");
-          await db.writeAuditLog({ action: "recurring_transaction.status.update", entityType: "recurring_transaction", entityId: input.id, dashboardUserId: ctx.user.id, actorLineUserId: scope.lineUserId, lineChatId: scope.account.lineChatId ?? undefined, details: { financeAccountId: scope.financeAccountId, status: input.status } });
+          requireFinancePermission(db.canManageFinanceSettings(scope.role), "สิทธิ์ของคุณยังจัดการรายการประจำในสมุดบัญชีนี้ไม่ได้");
+          await db.toggleRecurringTransaction(input.id, scope.lineUserId, input.isActive, scope.financeAccountId);
           return { success: true } as const;
         }),
-      }),
-      report: protectedProcedure.input(z.object({ period: z.enum(["day", "week", "month", "year"]), reference: z.coerce.date().optional(), financeAccountId: z.number().int().positive().optional() })).query(async ({ ctx, input }) => {
-        const scope = await requireFinanceAccountScope(ctx.user.id, input.financeAccountId);
-        return db.financeReport(scope.lineUserId, input.period, input.reference, scope.financeAccountId);
-      }),
-      reportRange: protectedProcedure.input(z.object({ start: z.coerce.date(), end: z.coerce.date(), financeAccountId: z.number().int().positive().optional() })).query(async ({ ctx, input }) => {
-        const scope = await requireFinanceAccountScope(ctx.user.id, input.financeAccountId);
-        return db.financeReportRange(scope.lineUserId, input.start, input.end, scope.financeAccountId);
-      }),
-      aiSummary: protectedProcedure.input(z.object({ period: z.enum(["day", "week", "month", "year"]).default("month"), financeAccountId: z.number().int().positive().optional() })).mutation(async ({ ctx, input }) => {
-        const scope = await requireFinanceAccountScope(ctx.user.id, input.financeAccountId);
-        const report = await db.financeReport(scope.lineUserId, input.period, new Date(), scope.financeAccountId);
-        return generateFinancialInsight(report);
-      }),
-      transactions: protectedProcedure.input(z.object({ start: z.coerce.date().optional(), end: z.coerce.date().optional(), financeAccountId: z.number().int().positive().optional() }).optional()).query(async ({ ctx, input }) => {
-        const scope = await requireFinanceAccountScope(ctx.user.id, input?.financeAccountId);
-        return db.listTransactions(scope.lineUserId, input?.start, input?.end, false, scope.financeAccountId);
-      }),
-      attachments: protectedProcedure.input(z.object({ transactionIds: z.array(z.number().int().positive()).min(1).max(20), financeAccountId: z.number().int().positive().optional() })).query(async ({ ctx, input }) => {
-        const scope = await requireFinanceAccountScope(ctx.user.id, input.financeAccountId);
-        return db.listTransactionAttachmentsForFinanceAccount(input.transactionIds, scope.financeAccountId);
-      }),
-      create: protectedProcedure.input(z.object({ transactionType: z.enum(["income", "expense"]), amount: z.number().positive(), category: z.string().trim().min(1).max(100), note: z.string().trim().max(2000).optional(), occurredAt: z.coerce.date().optional(), financeAccountId: z.number().int().positive().optional() })).mutation(async ({ ctx, input }) => {
-        const scope = await requireFinanceAccountScope(ctx.user.id, input.financeAccountId);
-        requireFinancePermission(db.canCreateFinanceTransaction(scope.role), "สิทธิ์ของคุณในสมุดบัญชีนี้เป็นผู้ดู จึงยังเพิ่มรายการไม่ได้");
-        return { id: await db.createTransaction({ lineChatId: scope.account.lineChatId ?? scope.lineUserId, lineUserId: scope.lineUserId, ...input, financeAccountId: scope.financeAccountId, source: "dashboard" }) };
-      }),
-      search: protectedProcedure.input(z.object({ query: z.string().trim().max(255), limit: z.number().int().min(1).max(50).default(10), financeAccountId: z.number().int().positive().optional() })).query(async ({ ctx, input }) => {
-        const scope = await requireFinanceAccountScope(ctx.user.id, input.financeAccountId);
-        return db.searchTransactions(scope.lineUserId, input.query, input.limit, scope.financeAccountId);
-      }),
-      update: protectedProcedure.input(z.object({ id: z.number().int().positive(), transactionType: z.enum(["income", "expense"]).optional(), amount: z.number().positive().optional(), category: z.string().trim().min(1).max(100).optional(), note: z.string().trim().max(2000).nullable().optional(), occurredAt: z.coerce.date().optional(), financeAccountId: z.number().int().positive().optional() })).mutation(async ({ ctx, input }) => {
-        const scope = await requireFinanceAccountScope(ctx.user.id, input.financeAccountId);
-        requireFinancePermission(db.canManageFinanceTransactions(scope.role), "สิทธิ์ของคุณยังแก้ไขรายการในสมุดบัญชีนี้ไม่ได้");
-        const updated = await db.updateTransaction({ ...input, lineUserId: scope.lineUserId, financeAccountId: scope.financeAccountId, actorDashboardUserId: ctx.user.id });
-        if (!updated) throw new Error("ไม่พบธุรกรรมที่ต้องการแก้ไข หรือรายการถูกลบแล้ว");
-        return { success: true } as const;
-      }),
-      delete: protectedProcedure.input(z.object({ id: z.number().int().positive(), financeAccountId: z.number().int().positive().optional() })).mutation(async ({ ctx, input }) => {
-        const scope = await requireFinanceAccountScope(ctx.user.id, input.financeAccountId);
-        requireFinancePermission(db.canManageFinanceTransactions(scope.role), "สิทธิ์ของคุณยังลบรายการในสมุดบัญชีนี้ไม่ได้");
-        const deleted = await db.deleteTransaction({ ...input, lineUserId: scope.lineUserId, financeAccountId: scope.financeAccountId, actorDashboardUserId: ctx.user.id });
-        if (!deleted) throw new Error("ไม่พบธุรกรรมที่ต้องการลบ หรือรายการถูกลบแล้ว");
-        return { success: true } as const;
-      }),
-      budget: protectedProcedure.input(z.object({ category: z.string().min(1).max(100), amount: z.number().positive(), monthKey: z.string().regex(/^\d{4}-\d{2}$/), financeAccountId: z.number().int().positive().optional() })).mutation(async ({ ctx, input }) => {
-        const scope = await requireFinanceAccountScope(ctx.user.id, input.financeAccountId);
-        requireFinancePermission(db.canManageFinanceSettings(scope.role), "สิทธิ์ของคุณยังตั้งงบประมาณในสมุดบัญชีนี้ไม่ได้");
-        await db.upsertBudget(scope.lineUserId, input.category, input.amount, input.monthKey, scope.financeAccountId);
-        return { success: true } as const;
-      }),
-      categories: router({
-        list: protectedProcedure.input(z.object({ financeAccountId: z.number().int().positive().optional() }).optional()).query(async ({ ctx, input }) => {
-          const scope = await requireFinanceAccountScope(ctx.user.id, input?.financeAccountId);
-          return db.listTransactionCategories(scope.lineUserId, scope.financeAccountId);
-        }),
-        create: protectedProcedure.input(z.object({ name: z.string().trim().min(1).max(100), transactionType: z.enum(["income", "expense"]), financeAccountId: z.number().int().positive().optional() })).mutation(async ({ ctx, input }) => {
+        create: protectedProcedure.input(z.object({ financeAccountId: z.number().int().positive().optional(), title: z.string().trim().min(1).max(160), amount: z.number().positive(), transactionType: z.enum(["expense", "income"]), category: z.string().trim().min(1).max(64), frequency: z.enum(["monthly", "weekly"]), dueDayOfMonth: z.number().int().min(1).max(31).optional(), dueDayOfWeek: z.number().int().min(0).max(6).optional() })).mutation(async ({ ctx, input }) => {
           const scope = await requireFinanceAccountScope(ctx.user.id, input.financeAccountId);
-          requireFinancePermission(db.canManageFinanceSettings(scope.role), "สิทธิ์ของคุณยังจัดการหมวดในสมุดบัญชีนี้ไม่ได้");
-          await db.addExpenseCategory(scope.lineUserId, input.name, input.transactionType, scope.financeAccountId);
-          await db.writeAuditLog({ action: "finance_category.create", entityType: "expense_category", dashboardUserId: ctx.user.id, actorLineUserId: scope.lineUserId, lineChatId: scope.account.lineChatId ?? undefined, details: { financeAccountId: scope.financeAccountId, name: input.name, transactionType: input.transactionType } });
-          return { success: true } as const;
+          requireFinancePermission(db.canManageFinanceSettings(scope.role), "สิทธิ์ของคุณยังสร้างรายการประจำในสมุดบัญชีนี้ไม่ได้");
+          return { id: await db.createRecurringTransaction({ lineUserId: scope.lineUserId, ...input, financeAccountId: scope.financeAccountId }) };
         }),
-        remove: protectedProcedure.input(z.object({ name: z.string().trim().min(1).max(100), transactionType: z.enum(["income", "expense"]), financeAccountId: z.number().int().positive().optional() })).mutation(async ({ ctx, input }) => {
-          const scope = await requireFinanceAccountScope(ctx.user.id, input.financeAccountId);
-          requireFinancePermission(db.canManageFinanceSettings(scope.role), "สิทธิ์ของคุณยังจัดการหมวดในสมุดบัญชีนี้ไม่ได้");
-          const removed = await db.removeExpenseCategory(scope.lineUserId, input.name, input.transactionType, scope.financeAccountId);
-          if (!removed) throw new Error("ไม่พบหมวดที่ต้องการลบ");
-          await db.writeAuditLog({ action: "finance_category.delete", entityType: "expense_category", dashboardUserId: ctx.user.id, actorLineUserId: scope.lineUserId, lineChatId: scope.account.lineChatId ?? undefined, details: { financeAccountId: scope.financeAccountId, name: input.name, transactionType: input.transactionType } });
-          return { success: true } as const;
-        }),
+      }),
+      askInsight: protectedProcedure.input(z.object({ financeAccountId: z.number().int().positive().optional(), question: z.string().trim().min(1).max(500) })).mutation(async ({ ctx, input }) => {
+        const scope = await requireFinanceAccountScope(ctx.user.id, input.financeAccountId);
+        const [monthly, recentTxs, budgets] = await Promise.all([
+          db.getFinanceSummaryMonthly(scope.lineUserId, undefined, scope.financeAccountId),
+          db.listTransactions({ lineUserId: scope.lineUserId, financeAccountId: scope.financeAccountId, limit: 15 }),
+          db.listBudgets(scope.lineUserId, undefined, scope.financeAccountId),
+        ]);
+        const insight = await generateFinancialInsight({ question: input.question, summary: monthly, recentTransactions: recentTxs, budgets });
+        return { insight };
+      }),
+    }),
+    reminders: router({
+      list: protectedProcedure.query(async ({ ctx }) => db.listReminders(await requireLinkedLineUser(ctx.user.id), 20)),
+      create: protectedProcedure.input(z.object({ title: z.string().min(1), runAt: z.string().datetime() })).mutation(async ({ ctx, input }) => {
+        const lineUserId = await requireLinkedLineUser(ctx.user.id);
+        const chat = await db.getDefaultChatForUser(lineUserId);
+        if (!chat) throw new Error("ไม่พบบัญชี LINE สำหรับส่งการแจ้งเตือน");
+        return { id: await db.createReminder({ lineChatId: chat.lineChatId, createdByLineUserId: lineUserId, title: input.title, reminderType: "once", nextRunAt: new Date(input.runAt) }) };
+      }),
+      delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ ctx, input }) => {
+        await db.deleteReminder(input.id, await requireLinkedLineUser(ctx.user.id));
+        return { success: true } as const;
+      }),
+    }),
+    todos: router({
+      list: protectedProcedure.input(z.object({ completed: z.boolean().optional() }).optional()).query(async ({ ctx, input }) => db.listTodos(await requireLinkedLineUser(ctx.user.id), input?.completed)),
+      toggle: protectedProcedure.input(z.object({ id: z.number(), completed: z.boolean() })).mutation(async ({ ctx, input }) => {
+        await db.toggleTodo(input.id, await requireLinkedLineUser(ctx.user.id), input.completed);
+        return { success: true } as const;
+      }),
+      create: protectedProcedure.input(z.object({ title: z.string().min(1) })).mutation(async ({ ctx, input }) => {
+        const lineUserId = await requireLinkedLineUser(ctx.user.id);
+        const chat = await db.getDefaultChatForUser(lineUserId);
+        return { id: await db.createTodo({ lineChatId: chat?.lineChatId ?? "dashboard", createdByLineUserId: lineUserId, title: input.title }) };
+      }),
+    }),
+    vault: router({
+      list: protectedProcedure.input(z.object({ query: z.string().optional() }).optional()).query(async ({ ctx, input }) => db.searchVault(await requireLinkedLineUser(ctx.user.id), input?.query)),
+      update: protectedProcedure.input(z.object({ id: z.number(), tagsText: z.string().nullable().optional(), sourceUrl: z.string().nullable().optional() })).mutation(async ({ ctx, input }) => {
+        await db.updateVaultMetadata({ id: input.id, lineUserId: await requireLinkedLineUser(ctx.user.id), tagsText: input.tagsText, sourceUrl: input.sourceUrl });
+        return { success: true } as const;
+      }),
+      delete: protectedProcedure.input(z.object({ id: z.number() })).mutation(async ({ ctx, input }) => {
+        await db.deleteVaultItem(input.id, await requireLinkedLineUser(ctx.user.id));
+        return { success: true } as const;
       }),
     }),
     admin: router({
-      auditLogs: protectedProcedure.input(z.object({ limit: z.number().int().min(1).max(250).default(100) }).optional()).query(async ({ ctx, input }) => {
+      governance: protectedProcedure.query(async ({ ctx }) => {
         requireAdminRole(ctx.user.role);
-        return db.listAuditLogs(input?.limit ?? 100);
+        return db.getAdminGovernanceSummary();
       }),
-      users: protectedProcedure.query(async ({ ctx }) => {
+      auditLogs: protectedProcedure.input(z.object({ limit: z.number().int().positive().max(100).default(50), offset: z.number().int().nonnegative().default(0) }).default({})).query(async ({ ctx, input }) => {
         requireAdminRole(ctx.user.role);
-        return db.listDashboardUsers();
+        const [items, total] = await Promise.all([
+          db.listAuditLogs(input.limit, input.offset),
+          db.countAuditLogs(),
+        ]);
+        return { items, total };
       }),
       updateUserRole: protectedProcedure.input(z.object({ id: z.number().int().positive(), role: z.enum(["viewer", "user", "manager", "admin"]) })).mutation(async ({ ctx, input }) => {
         requireAdminRole(ctx.user.role);
-        await db.updateDashboardUserRole(input.id, input.role, ctx.user.id);
+        await db.updateUserRole(input.id, input.role);
+        await db.writeAuditLog({ action: "user.role_change", entityType: "user", dashboardUserId: ctx.user.id, targetUserId: input.id, details: { newRole: input.role } });
         return { success: true } as const;
       }),
     }),
     automation: router({
-      runDueNow: protectedProcedure.mutation(async ({ ctx }) => {
+      settings: protectedProcedure.query(async ({ ctx }) => {
+        await requireLinkedLineUser(ctx.user.id);
+        const [reminderSetting, recoverySetting] = await Promise.all([
+          db.getAutomationSetting("reminder-delivery-primary"),
+          db.getAutomationSetting("reminder-delivery-recovery"),
+        ]);
+        return {
+          reminderDelivery: {
+            configured: Boolean(reminderSetting?.scheduleCronTaskUid),
+            isEnabled: Boolean(reminderSetting?.isEnabled),
+            taskUid: reminderSetting?.scheduleCronTaskUid ?? null,
+            updatedAt: reminderSetting?.updatedAt ?? null,
+          },
+          recoveryDelivery: {
+            configured: Boolean(recoverySetting?.scheduleCronTaskUid),
+            isEnabled: Boolean(recoverySetting?.isEnabled),
+            taskUid: recoverySetting?.scheduleCronTaskUid ?? null,
+            updatedAt: recoverySetting?.updatedAt ?? null,
+          },
+        };
+      }),
+      triggerRemindersNow: protectedProcedure.mutation(async ({ ctx }) => {
         if (ctx.user.role !== "admin") throw new Error("เฉพาะผู้ดูแลโครงการที่สั่งประมวลผล reminder ได้");
-        return deliverDueReminders({ runner: "manual" });
+        const result = await deliverDueReminders({ runner: "dashboard_manual", dashboardUserId: ctx.user.id });
+        return { success: true, processed: result.deliveredCount, scanned: result.scannedCount } as const;
       }),
       setupReminderDelivery: protectedProcedure.mutation(async ({ ctx }) => {
         if (ctx.user.role !== "admin") throw new Error("เฉพาะผู้ดูแลโครงการที่ตั้งงานส่งเตือนได้");

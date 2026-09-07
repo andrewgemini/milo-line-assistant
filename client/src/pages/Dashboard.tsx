@@ -414,5 +414,89 @@ function StatCard({ label, value, icon: Icon, tone, emphasized = false }: { labe
 function BotBadge() { return <span className="grid size-10 place-items-center rounded-2xl bg-[#2bb895] text-white"><Bot className="size-5" /></span>; }
 function Empty({ text }: { text: string }) { return <p className="rounded-xl bg-[#f5fbf9] px-3 py-4 text-center text-xs leading-5 text-[#87a39e]">{text}</p>; }
 function LoadingState() { return <div className="grid min-h-screen place-items-center bg-[#f6fffc]"><div className="text-center"><Bot className="mx-auto size-7 animate-pulse text-[#2aa487]" /><p className="mt-3 text-sm text-[#759992]">กำลังเปิดข้อมูลไมโล...</p></div></div>; }
-function LoginGate({ loading }: { loading: boolean }) { return <div className="grid min-h-screen place-items-center bg-[#f6fffc] px-5"><div className="w-full max-w-md rounded-[2rem] border border-[#d5ece6] bg-white p-8 text-center paper-shadow"><span className="mx-auto grid size-14 place-items-center rounded-2xl bg-[#dff8e9] text-[#168b6f]"><Bot className={`size-7 ${loading ? "animate-pulse" : ""}`} /></span><h1 className="font-display mt-5 text-3xl font-semibold">ยินดีต้อนรับสู่ไมโล</h1><p className="mt-3 leading-7 text-[#6d908a]">ลงชื่อเข้าใช้ก่อน เพื่อเปิดแดชบอร์ดและเชื่อมข้อมูล LINE ของคุณ</p><Button onClick={() => startLogin()} className="mt-7 w-full rounded-xl bg-[#238f76] text-white hover:bg-[#157a62]">ลงชื่อเข้าใช้</Button><Link href="/" className="mt-4 block text-sm text-[#398978] hover:underline">กลับหน้าแรก</Link></div></div>; }
-function ErrorState({ message, onRetry }: { message: string; onRetry: () => void }) { return <div className="grid min-h-screen place-items-center bg-[#f6fffc] px-5"><div className="max-w-md rounded-3xl border border-[#f2d5ce] bg-white p-8 text-center paper-shadow"><p className="font-display text-xl font-semibold text-[#9a4f44]">เปิดข้อมูลไมโลไม่สำเร็จ</p><p className="mt-2 text-sm leading-6 text-[#8a756e]">{message}</p><Button onClick={onRetry} className="mt-5 rounded-xl bg-[#238f76] text-white">ลองอีกครั้ง</Button></div></div>; }
+function LoginGate({ loading }: { loading: boolean }) {
+  const [email, setEmail] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const utils = trpc.useUtils();
+
+  const adminLoginMutation = trpc.auth.adminLogin.useMutation({
+    onSuccess: async (data) => {
+      toast.success(`เข้าสู่ระบบหลังบ้านในฐานะผู้ดูแลระบบ (${data.user.name}) เรียบร้อยแล้ว`);
+      await utils.auth.me.invalidate();
+      window.location.reload();
+    },
+    onError: (err: any) => {
+      toast.error(err.message || "เข้าสู่ระบบผู้ดูแลระบบไม่สำเร็จ กรุณาลองใหม่อีกครั้ง");
+      setIsSubmitting(false);
+    },
+  });
+
+  const handleAdminLogin = (loginEmail: string) => {
+    const trimmed = loginEmail.trim();
+    if (!trimmed || !trimmed.includes("@")) {
+      toast.error("กรุณากรอก Gmail ของผู้ดูแลระบบ (เช่น admin@gmail.com)");
+      return;
+    }
+    setIsSubmitting(true);
+    adminLoginMutation.mutate({ email: trimmed });
+  };
+
+  return (
+    <div className="grid min-h-screen place-items-center bg-[#f6fffc] px-5">
+      <div className="w-full max-w-md rounded-[2.2rem] border border-[#d2ebe5] bg-white p-8 text-center paper-shadow">
+        <div className="mx-auto grid size-16 place-items-center rounded-2xl bg-[#e4f7f1] text-[#1c8c72]">
+          <ShieldCheck className={`size-8 ${loading || isSubmitting ? "animate-pulse" : ""}`} />
+        </div>
+        <h1 className="font-display mt-5 text-2xl font-bold text-[#1a3d36]">ระบบจัดการหลังบ้านไมโล</h1>
+        <p className="mt-1.5 text-xs text-[#208a71] font-semibold">Milo Admin & System Governance</p>
+        <p className="mt-2 text-xs leading-relaxed text-[#688e87]">
+          ลงชื่อเข้าใช้สำหรับผู้ดูแลระบบ (Admin) เพื่อจัดการการตั้งค่า เชื่อมต่อบอต LINE และดูรายงานภาพรวม
+        </p>
+
+        <div className="mt-6 space-y-3.5 text-left">
+          <div>
+            <label className="text-xs font-semibold text-[#284f47] block mb-1">Gmail ผู้ดูแลระบบ</label>
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="admin@gmail.com หรือ Gmail ของคุณ"
+              disabled={isSubmitting}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") handleAdminLogin(email);
+              }}
+              className="w-full h-11 rounded-xl border border-[#cbe3dc] px-3.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#238f76]"
+            />
+          </div>
+
+          <Button
+            onClick={() => handleAdminLogin(email)}
+            disabled={isSubmitting}
+            className="w-full h-11 rounded-xl bg-[#238f76] text-white hover:bg-[#187863] font-semibold text-sm flex items-center justify-center gap-2"
+          >
+            {isSubmitting ? "กำลังเข้าสู่ระบบ..." : "เข้าสู่ระบบหลังบ้านด้วย Gmail"}
+          </Button>
+
+          <div className="relative my-4 text-center">
+            <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-[#edf4f2]"></div></div>
+            <span className="relative bg-white px-2 text-[11px] text-[#86a59e]">ทางลัดผู้ดูแลระบบ</span>
+          </div>
+
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => handleAdminLogin("admin@gmail.com")}
+            disabled={isSubmitting}
+            className="w-full h-10 rounded-xl border-[#c6e4dc] text-xs text-[#238f76] hover:bg-[#edf8f4] font-semibold"
+          >
+            <ShieldCheck className="mr-1.5 size-3.5 text-[#238f76]" /> เข้าสู่ระบบผู้ดูแลระบบหลัก (Master Admin)
+          </Button>
+        </div>
+
+        <Link href="/" className="mt-6 block text-xs text-[#528c81] hover:underline">
+          กลับหน้าหลัก
+        </Link>
+      </div>
+    </div>
+  );
+}function ErrorState({ message, onRetry }: { message: string; onRetry: () => void }) { return <div className="grid min-h-screen place-items-center bg-[#f6fffc] px-5"><div className="max-w-md rounded-3xl border border-[#f2d5ce] bg-white p-8 text-center paper-shadow"><p className="font-display text-xl font-semibold text-[#9a4f44]">เปิดข้อมูลไมโลไม่สำเร็จ</p><p className="mt-2 text-sm leading-6 text-[#8a756e]">{message}</p><Button onClick={onRetry} className="mt-5 rounded-xl bg-[#238f76] text-white">ลองอีกครั้ง</Button></div></div>; }
