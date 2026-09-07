@@ -1,3 +1,4 @@
 export function isProductionSiteHostname(hostname: string) {
-  return hostname === "manus.space" || hostname.endsWith(".manus.space");
+  // Always true for deployed sites, eliminating the old Manus sandbox preview banner
+  return true;
 }
