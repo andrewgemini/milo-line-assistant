@@ -18,15 +18,18 @@ import type {
 const isNonEmptyString = (value: unknown): value is string =>
   typeof value === "string" && value.length > 0;
 
+
 export type SessionPayload = {
   openId: string;
   appId: string;
   name: string;
 };
 
+
 const EXCHANGE_TOKEN_PATH = `/webdev.v1.WebDevAuthPublicService/ExchangeToken`;
 const GET_USER_INFO_PATH = `/webdev.v1.WebDevAuthPublicService/GetUserInfo`;
 const GET_USER_INFO_WITH_JWT_PATH = `/webdev.v1.WebDevAuthPublicService/GetUserInfoWithJwt`;
+
 
 class OAuthService {
   constructor(private client: ReturnType<typeof axios.create>) {
@@ -38,9 +41,11 @@ class OAuthService {
     }
   }
 
+
   private decodeState(state: string): string {
     return decodeOAuthState(state).redirectUri;
   }
+
 
   async getTokenByCode(
     code: string,
@@ -53,13 +58,16 @@ class OAuthService {
       redirectUri: this.decodeState(state),
     };
 
+
     const { data } = await this.client.post<ExchangeTokenResponse>(
       EXCHANGE_TOKEN_PATH,
       payload
     );
 
+
     return data;
   }
+
 
   async getUserInfoByToken(
     token: ExchangeTokenResponse
@@ -71,9 +79,11 @@ class OAuthService {
       }
     );
 
+
     return data;
   }
 }
+
 
 const createOAuthHttpClient = (): AxiosInstance =>
   axios.create({
@@ -81,14 +91,17 @@ const createOAuthHttpClient = (): AxiosInstance =>
     timeout: AXIOS_TIMEOUT_MS,
   });
 
+
 class SDKServer {
   private readonly client: AxiosInstance;
   private readonly oauthService: OAuthService;
+
 
   constructor(client: AxiosInstance = createOAuthHttpClient()) {
     this.client = client;
     this.oauthService = new OAuthService(this.client);
   }
+
 
   private deriveLoginMethod(
     platforms: unknown,
@@ -112,6 +125,7 @@ class SDKServer {
     return first ? first.toLowerCase() : null;
   }
 
+
   /**
    * Exchange OAuth authorization code for access token
    * @example
@@ -123,6 +137,7 @@ class SDKServer {
   ): Promise<ExchangeTokenResponse> {
     return this.oauthService.getTokenByCode(code, state);
   }
+
 
   /**
    * Get user information using access token
@@ -144,19 +159,23 @@ class SDKServer {
     } as GetUserInfoResponse;
   }
 
+
   private parseCookies(cookieHeader: string | undefined) {
     if (!cookieHeader) {
       return new Map<string, string>();
     }
 
+
     const parsed = parseCookieHeader(cookieHeader);
     return new Map(Object.entries(parsed));
   }
+
 
   private getSessionSecret() {
     const secret = ENV.cookieSecret;
     return new TextEncoder().encode(secret);
   }
+
 
   /**
    * Create a session token for a Manus user openId
@@ -170,12 +189,13 @@ class SDKServer {
     return this.signSession(
       {
         openId,
-        appId: ENV.appId,
-        name: options.name || "",
+        appId: ENV.appId || "milo-app",
+        name: options.name || "ผู้ดูแลระบบ (Admin)",
       },
       options
     );
   }
+
 
   async signSession(
     payload: SessionPayload,
@@ -185,6 +205,7 @@ class SDKServer {
     const expiresInMs = options.expiresInMs ?? ONE_YEAR_MS;
     const expirationSeconds = Math.floor((issuedAt + expiresInMs) / 1000);
     const secretKey = this.getSessionSecret();
+
 
     return new SignJWT({
       openId: payload.openId,
@@ -196,6 +217,7 @@ class SDKServer {
       .sign(secretKey);
   }
 
+
   async verifySession(
     cookieValue: string | undefined | null
   ): Promise<{ openId: string; appId: string; name: string } | null> {
@@ -204,6 +226,7 @@ class SDKServer {
       return null;
     }
 
+
     try {
       const secretKey = this.getSessionSecret();
       const { payload } = await jwtVerify(cookieValue, secretKey, {
@@ -211,25 +234,26 @@ class SDKServer {
       });
       const { openId, appId, name } = payload as Record<string, unknown>;
 
-      if (
-        !isNonEmptyString(openId) ||
-        !isNonEmptyString(appId) ||
-        !isNonEmptyString(name)
-      ) {
-        console.warn("[Auth] Session payload missing required fields");
+
+      const finalAppId = isNonEmptyString(appId) ? appId : "milo-app";
+      const finalName = isNonEmptyString(name) ? name : "ผู้ดูแลระบบ (Admin)";
+      if (!isNonEmptyString(openId)) {
+        console.warn("[Auth] Session payload missing openId");
         return null;
       }
 
+
       return {
         openId,
-        appId,
-        name,
+        appId: finalAppId,
+        name: finalName,
       };
     } catch (error) {
       console.warn("[Auth] Session verification failed", String(error));
       return null;
     }
   }
+
 
   async getUserInfoWithJwt(
     jwtToken: string
@@ -239,10 +263,12 @@ class SDKServer {
       projectId: ENV.appId,
     };
 
+
     const { data } = await this.client.post<GetUserInfoWithJwtResponse>(
       GET_USER_INFO_WITH_JWT_PATH,
       payload
     );
+
 
     const loginMethod = this.deriveLoginMethod(
       (data as any)?.platforms,
@@ -255,10 +281,12 @@ class SDKServer {
     } as GetUserInfoWithJwtResponse;
   }
 
+
   async authenticateRequest(req: Request): Promise<AuthenticatedUser> {
     // 1. Prefer the session cookie (regular OAuth login).
     const cookies = this.parseCookies(req.headers.cookie);
     let sessionToken = cookies.get(COOKIE_NAME);
+
 
     // 2. Fallback to the Authorization header (Preview auto-login via
     //    sessionStorage), used when the browser blocks iframe cookies such as
@@ -270,11 +298,14 @@ class SDKServer {
       }
     }
 
+
     const session = await this.verifySession(sessionToken);
+
 
     if (!session) {
       throw ForbiddenError("Invalid session cookie");
     }
+
 
     if (session.openId.startsWith(CRON_OPEN_ID_PREFIX)) {
       const userInfo = await this.getUserInfoWithJwt(sessionToken ?? "");
@@ -285,10 +316,17 @@ class SDKServer {
       return buildCronUser(userInfo);
     }
 
+
     const sessionUserId = session.openId;
     const signedInAt = new Date();
-	if (session.openId.startsWith("admin_")) {
-      return {
+
+
+    if (session.openId.startsWith("admin_")) {
+      let dbUser: any;
+      try {
+        dbUser = await db.getUserByOpenId(session.openId);
+      } catch {}
+      return dbUser || {
         id: 1,
         openId: session.openId,
         name: session.name || "ผู้ดูแลระบบ (Admin)",
@@ -298,9 +336,10 @@ class SDKServer {
         createdAt: new Date(),
         updatedAt: new Date(),
         lastSignedIn: signedInAt,
-      } as AuthenticatedUser;
+      };
     }
     let user = await db.getUserByOpenId(sessionUserId);
+
 
     // If user not in DB, sync from OAuth server automatically
     if (!user) {
@@ -320,26 +359,32 @@ class SDKServer {
       }
     }
 
+
     if (!user) {
       throw ForbiddenError("User not found");
     }
+
 
     await db.upsertUser({
       openId: user.openId,
       lastSignedIn: signedInAt,
     });
 
+
     return user;
   }
 }
 
+
 const CRON_OPEN_ID_PREFIX = "cron_";
+
 
 /** Result of `sdk.authenticateRequest`. Cron callbacks set `isCron=true` and `taskUid`; see `/home/ubuntu/skills/webdev-periodic-updates/SKILL.md`. */
 export type AuthenticatedUser = User & {
   taskUid?: string;
   isCron?: boolean;
 };
+
 
 function buildCronUser(
   userInfo: GetUserInfoWithJwtResponse
@@ -359,5 +404,6 @@ function buildCronUser(
     isCron: true,
   } as AuthenticatedUser;
 }
+
 
 export const sdk = new SDKServer();
