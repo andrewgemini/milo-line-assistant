@@ -1,4 +1,4 @@
-// api/index.ts
+// server/api.ts
 import express2 from "express";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 
@@ -44,7 +44,6 @@ import { parse as parseCookieHeader } from "cookie";
 import { SignJWT, jwtVerify } from "jose";
 
 // server/db.ts
-import mysql from "mysql2/promise";
 import { and, desc, eq, gte, inArray, like, lte, ne, or } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 
@@ -416,9 +415,24 @@ function buildFinanceReport(rows, period, reference = /* @__PURE__ */ new Date()
 }
 
 // server/db.ts
+import mysql from "mysql2/promise";
 var database = null;
 async function getDb() {
-  if (!database && process.env.DATABASE_URL) database = drizzle(process.env.DATABASE_URL);
+  if (!database && process.env.DATABASE_URL) {
+    try {
+      const pool = mysql.createPool({
+        uri: process.env.DATABASE_URL,
+        ssl: {
+          minVersion: "TLSv1.2",
+          rejectUnauthorized: true
+        }
+      });
+      database = drizzle(pool);
+    } catch (e) {
+      console.error("[DB Pool Error]", e);
+      database = drizzle(process.env.DATABASE_URL);
+    }
+  }
   return database;
 }
 async function requireDb() {
@@ -497,13 +511,13 @@ async function getOrCreatePersonalFinanceAccount(lineUserId) {
     return existing;
   }
   try {
-    const result = await db.insert(financeAccounts).values({ accountType: "personal", name: "????????????", ownerLineUserId: lineUserId, lineChatId: lineUserId });
+    const result = await db.insert(financeAccounts).values({ accountType: "personal", name: "\u0E1A\u0E31\u0E0D\u0E0A\u0E35\u0E2A\u0E48\u0E27\u0E19\u0E15\u0E31\u0E27", ownerLineUserId: lineUserId, lineChatId: lineUserId });
     const id = Number(result[0].insertId);
     await db.insert(financeAccountMembers).values({ financeAccountId: id, lineUserId, role: "owner" });
     return (await db.select().from(financeAccounts).where(eq(financeAccounts.id, id)).limit(1))[0];
   } catch {
     const created = (await db.select().from(financeAccounts).where(and(eq(financeAccounts.accountType, "personal"), eq(financeAccounts.ownerLineUserId, lineUserId))).limit(1))[0];
-    if (!created) throw new Error("?????????????????????????????");
+    if (!created) throw new Error("\u0E44\u0E21\u0E48\u0E2A\u0E32\u0E21\u0E32\u0E23\u0E16\u0E2A\u0E23\u0E49\u0E32\u0E07\u0E1A\u0E31\u0E0D\u0E0A\u0E35\u0E2A\u0E48\u0E27\u0E19\u0E15\u0E31\u0E27\u0E44\u0E14\u0E49");
     await db.insert(financeAccountMembers).values({ financeAccountId: created.id, lineUserId, role: "owner" }).onDuplicateKeyUpdate({ set: { role: "owner" } });
     return created;
   }
@@ -527,9 +541,9 @@ async function resolveFinanceAccountForLineEvent(lineUserId, lineChatId, scope) 
 async function createGroupFinanceAccount(input) {
   const db = await requireDb();
   const group = (await db.select({ id: lineChats.id }).from(lineChats).innerJoin(lineMembers, eq(lineMembers.lineChatId, lineChats.lineChatId)).where(and(eq(lineChats.lineChatId, input.lineChatId), eq(lineChats.scope, "group"), eq(lineMembers.lineUserId, input.ownerLineUserId))).limit(1))[0];
-  if (!group) throw new Error("???????????????????????? LINE ??? ???????????????????????????????????");
+  if (!group) throw new Error("\u0E44\u0E21\u0E48\u0E1E\u0E1A\u0E2A\u0E34\u0E17\u0E18\u0E34\u0E4C\u0E02\u0E2D\u0E07\u0E04\u0E38\u0E13\u0E43\u0E19\u0E01\u0E25\u0E38\u0E48\u0E21 LINE \u0E19\u0E35\u0E49 \u0E01\u0E23\u0E38\u0E13\u0E32\u0E43\u0E2B\u0E49\u0E44\u0E21\u0E42\u0E25\u0E40\u0E2B\u0E47\u0E19\u0E02\u0E49\u0E2D\u0E04\u0E27\u0E32\u0E21\u0E08\u0E32\u0E01\u0E01\u0E25\u0E38\u0E48\u0E21\u0E01\u0E48\u0E2D\u0E19");
   const exists = (await db.select({ id: financeAccounts.id }).from(financeAccounts).where(eq(financeAccounts.lineChatId, input.lineChatId)).limit(1))[0];
-  if (exists) throw new Error("???????????????????????????");
+  if (exists) throw new Error("\u0E01\u0E25\u0E38\u0E48\u0E21\u0E19\u0E35\u0E49\u0E21\u0E35\u0E2A\u0E21\u0E38\u0E14\u0E1A\u0E31\u0E0D\u0E0A\u0E35\u0E2D\u0E22\u0E39\u0E48\u0E41\u0E25\u0E49\u0E27");
   const result = await db.insert(financeAccounts).values({ accountType: "group", name: input.name.trim(), ownerLineUserId: input.ownerLineUserId, lineChatId: input.lineChatId });
   const id = Number(result[0].insertId);
   await db.insert(financeAccountMembers).values({ financeAccountId: id, lineUserId: input.ownerLineUserId, role: "owner" });
@@ -863,7 +877,7 @@ async function financeReport(lineUserId, period, reference = /* @__PURE__ */ new
   return { ...buildFinanceReport(rows, period, reference), rows };
 }
 async function financeReportRange(lineUserId, start, end, financeAccountId) {
-  if (end < start) throw new Error("????????????????????????????????");
+  if (end < start) throw new Error("\u0E27\u0E31\u0E19\u0E2A\u0E34\u0E49\u0E19\u0E2A\u0E38\u0E14\u0E15\u0E49\u0E2D\u0E07\u0E44\u0E21\u0E48\u0E01\u0E48\u0E2D\u0E19\u0E27\u0E31\u0E19\u0E40\u0E23\u0E34\u0E48\u0E21\u0E15\u0E49\u0E19");
   const rows = await listTransactions(lineUserId, start, end, false, financeAccountId);
   return { period: "custom", start, end, ...summarizeFinanceRows(rows), rows };
 }
@@ -962,278 +976,6 @@ async function claimFinanceDigestDelivery(input) {
 async function finishFinanceDigestDelivery(id, status, errorMessage) {
   const db = await requireDb();
   await db.update(financeDigestDeliveries).set({ status, errorMessage: errorMessage ?? null, finishedAt: /* @__PURE__ */ new Date() }).where(eq(financeDigestDeliveries.id, id));
-}
-async function initAllTablesIfNotExist() {
-  if (!process.env.DATABASE_URL) return;
-  try {
-    const connection = await mysql.createConnection(process.env.DATABASE_URL);
-    const tablesSql = [
-      `CREATE TABLE IF NOT EXISTS users (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        openId VARCHAR(64) NOT NULL UNIQUE,
-        name TEXT,
-        email VARCHAR(320),
-        loginMethod VARCHAR(64),
-        role ENUM('viewer', 'user', 'manager', 'admin') DEFAULT 'user' NOT NULL,
-        createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
-        updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP NOT NULL,
-        lastSignedIn TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL
-      )`,
-      `CREATE TABLE IF NOT EXISTS line_chats (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        scope ENUM('user', 'group', 'room') NOT NULL,
-        lineChatId VARCHAR(128) NOT NULL UNIQUE,
-        displayName VARCHAR(255),
-        pictureUrl TEXT,
-        isActive BOOLEAN DEFAULT TRUE NOT NULL,
-        createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
-        updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP NOT NULL
-      )`,
-      `CREATE TABLE IF NOT EXISTS line_members (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        lineChatId VARCHAR(128) NOT NULL,
-        lineUserId VARCHAR(128) NOT NULL,
-        displayName VARCHAR(255),
-        pictureUrl TEXT,
-        role VARCHAR(64) DEFAULT 'member' NOT NULL,
-        joinedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
-        leftAt TIMESTAMP NULL,
-        updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP NOT NULL,
-        UNIQUE KEY idx_line_chat_user (lineChatId, lineUserId)
-      )`,
-      `CREATE TABLE IF NOT EXISTS line_account_links (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        dashboardUserId INT NOT NULL,
-        lineUserId VARCHAR(128) NOT NULL UNIQUE,
-        createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
-        updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP NOT NULL
-      )`,
-      `CREATE TABLE IF NOT EXISTS finance_accounts (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        accountType ENUM('personal', 'group') NOT NULL,
-        ownerLineUserId VARCHAR(128) NOT NULL,
-        lineChatId VARCHAR(128),
-        name VARCHAR(120) NOT NULL,
-        isArchived BOOLEAN DEFAULT FALSE NOT NULL,
-        createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
-        updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP NOT NULL
-      )`,
-      `CREATE TABLE IF NOT EXISTS finance_account_members (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        financeAccountId INT NOT NULL,
-        lineUserId VARCHAR(128) NOT NULL,
-        role ENUM('owner', 'manager', 'contributor', 'viewer') NOT NULL,
-        createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
-        updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP NOT NULL,
-        UNIQUE KEY idx_fin_acc_user (financeAccountId, lineUserId)
-      )`,
-      `CREATE TABLE IF NOT EXISTS webhook_events (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        eventId VARCHAR(128) NOT NULL UNIQUE,
-        lineChatId VARCHAR(128) NOT NULL,
-        eventType VARCHAR(64) NOT NULL,
-        messageType VARCHAR(64),
-        payload JSON NOT NULL,
-        createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL
-      )`,
-      `CREATE TABLE IF NOT EXISTS reminders (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        lineChatId VARCHAR(128) NOT NULL,
-        createdByLineUserId VARCHAR(128) NOT NULL,
-        title VARCHAR(255) NOT NULL,
-        reminderType ENUM('once', 'daily', 'weekly', 'monthly', 'minute') NOT NULL,
-        minuteInterval INT,
-        dayOfWeek INT,
-        dayOfMonth INT,
-        targetTime VARCHAR(8),
-        nextRunAt TIMESTAMP NOT NULL,
-        lastRunAt TIMESTAMP NULL,
-        isCompleted BOOLEAN DEFAULT FALSE NOT NULL,
-        sourceMessageId VARCHAR(128),
-        createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
-        updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP NOT NULL
-      )`,
-      `CREATE TABLE IF NOT EXISTS reminder_delivery_attempts (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        reminderId INT NOT NULL,
-        runner VARCHAR(64) NOT NULL,
-        taskUid VARCHAR(128),
-        status ENUM('success', 'failed', 'retry') NOT NULL,
-        deliveredAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
-        errorMessage TEXT
-      )`,
-      `CREATE TABLE IF NOT EXISTS vault_items (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        lineChatId VARCHAR(128) NOT NULL,
-        createdByLineUserId VARCHAR(128) NOT NULL,
-        itemType ENUM('text', 'image', 'file', 'link') NOT NULL,
-        title VARCHAR(255) NOT NULL,
-        textContent TEXT,
-        s3Key VARCHAR(512),
-        s3Url VARCHAR(1024),
-        mimeType VARCHAR(128),
-        fileSizeBytes INT,
-        sourceUrl VARCHAR(1024),
-        tagsText VARCHAR(255),
-        sourceMessageId VARCHAR(128),
-        createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
-        updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP NOT NULL
-      )`,
-      `CREATE TABLE IF NOT EXISTS notes (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        lineChatId VARCHAR(128) NOT NULL,
-        createdByLineUserId VARCHAR(128) NOT NULL,
-        title VARCHAR(255) NOT NULL,
-        body TEXT NOT NULL,
-        createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
-        updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP NOT NULL
-      )`,
-      `CREATE TABLE IF NOT EXISTS todo_items (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        lineChatId VARCHAR(128) NOT NULL,
-        createdByLineUserId VARCHAR(128) NOT NULL,
-        title VARCHAR(255) NOT NULL,
-        isCompleted BOOLEAN DEFAULT FALSE NOT NULL,
-        completedAt TIMESTAMP NULL,
-        createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
-        updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP NOT NULL
-      )`,
-      `CREATE TABLE IF NOT EXISTS transactions (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        lineChatId VARCHAR(128) NOT NULL,
-        lineUserId VARCHAR(128) NOT NULL,
-        financeAccountId INT NOT NULL,
-        transactionType ENUM('income', 'expense') NOT NULL,
-        amount DECIMAL(12, 2) NOT NULL,
-        category VARCHAR(64) NOT NULL,
-        note VARCHAR(255),
-        paymentMethod VARCHAR(64),
-        source ENUM('line_text', 'line_image', 'line_voice', 'dashboard', 'recurring') NOT NULL,
-        sourceMessageId VARCHAR(128),
-        occurredAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
-        createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
-        updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP NOT NULL
-      )`,
-      `CREATE TABLE IF NOT EXISTS transaction_attachments (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        transactionId INT NOT NULL,
-        vaultItemId INT NOT NULL,
-        createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL
-      )`,
-      `CREATE TABLE IF NOT EXISTS voice_transcriptions (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        lineChatId VARCHAR(128) NOT NULL,
-        lineUserId VARCHAR(128) NOT NULL,
-        messageId VARCHAR(128) NOT NULL UNIQUE,
-        audioDurationSeconds INT,
-        transcriptText TEXT,
-        confidenceScore DECIMAL(4, 2),
-        status ENUM('pending', 'completed', 'failed') NOT NULL,
-        errorMessage TEXT,
-        createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
-        updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP NOT NULL
-      )`,
-      `CREATE TABLE IF NOT EXISTS audit_logs (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        action VARCHAR(128) NOT NULL,
-        entityType VARCHAR(64) NOT NULL,
-        entityId VARCHAR(128),
-        dashboardUserId INT,
-        actorLineUserId VARCHAR(128),
-        targetUserId INT,
-        details JSON,
-        createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL
-      )`,
-      `CREATE TABLE IF NOT EXISTS budgets (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        lineUserId VARCHAR(128) NOT NULL,
-        financeAccountId INT NOT NULL,
-        monthKey VARCHAR(7) NOT NULL,
-        category VARCHAR(64) NOT NULL,
-        amount DECIMAL(12, 2) NOT NULL,
-        alertAtPercent INT DEFAULT 80 NOT NULL,
-        createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
-        updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP NOT NULL,
-        UNIQUE KEY idx_budget_month_cat (lineUserId, financeAccountId, monthKey, category)
-      )`,
-      `CREATE TABLE IF NOT EXISTS image_extractions (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        vaultItemId INT NOT NULL,
-        status ENUM('success', 'failed') NOT NULL,
-        summary TEXT,
-        rawAnalysis JSON,
-        createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL
-      )`,
-      `CREATE TABLE IF NOT EXISTS automation_settings (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        settingKey VARCHAR(128) NOT NULL UNIQUE,
-        scheduleCronTaskUid VARCHAR(128),
-        isEnabled BOOLEAN DEFAULT TRUE NOT NULL,
-        createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
-        updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP NOT NULL
-      )`,
-      `CREATE TABLE IF NOT EXISTS finance_digest_deliveries (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        lineUserId VARCHAR(128) NOT NULL,
-        digestType ENUM('daily', 'weekly') NOT NULL,
-        periodStart TIMESTAMP NOT NULL,
-        periodEnd TIMESTAMP NOT NULL,
-        deliveryStatus ENUM('delivered', 'failed', 'skipped_no_activity') NOT NULL,
-        deliveredAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL
-      )`,
-      `CREATE TABLE IF NOT EXISTS finance_opening_balances (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        lineUserId VARCHAR(128) NOT NULL,
-        financeAccountId INT NOT NULL,
-        amount DECIMAL(12, 2) NOT NULL,
-        asOfDate TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
-        createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
-        updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP NOT NULL,
-        UNIQUE KEY idx_opening_bal (lineUserId, financeAccountId)
-      )`,
-      `CREATE TABLE IF NOT EXISTS recurring_transactions (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        lineUserId VARCHAR(128) NOT NULL,
-        financeAccountId INT NOT NULL,
-        title VARCHAR(160) NOT NULL,
-        amount DECIMAL(12, 2) NOT NULL,
-        transactionType ENUM('expense', 'income') NOT NULL,
-        category VARCHAR(64) NOT NULL,
-        frequency ENUM('monthly', 'weekly') NOT NULL,
-        dueDayOfMonth INT,
-        dueDayOfWeek INT,
-        isActive BOOLEAN DEFAULT TRUE NOT NULL,
-        createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
-        updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP NOT NULL
-      )`,
-      `CREATE TABLE IF NOT EXISTS recurring_transaction_runs (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        recurringTransactionId INT NOT NULL,
-        transactionId INT NOT NULL,
-        periodKey VARCHAR(32) NOT NULL,
-        status ENUM('success', 'failed') NOT NULL,
-        runAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
-        UNIQUE KEY idx_rec_run (recurringTransactionId, periodKey)
-      )`,
-      `CREATE TABLE IF NOT EXISTS expense_categories (
-        id INT AUTO_INCREMENT PRIMARY KEY,
-        lineUserId VARCHAR(128) NOT NULL,
-        financeAccountId INT NOT NULL,
-        name VARCHAR(64) NOT NULL,
-        transactionType ENUM('expense', 'income') DEFAULT 'expense' NOT NULL,
-        createdAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
-        updatedAt TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP NOT NULL,
-        UNIQUE KEY idx_exp_cat (lineUserId, financeAccountId, name, transactionType)
-      )`
-    ];
-    for (const sql of tablesSql) {
-      await connection.execute(sql);
-    }
-    await connection.end();
-    console.info("[Auto-Migrate] All 24 tables verified/created successfully.");
-  } catch (err) {
-    console.error("[Auto-Migrate Error]", err);
-  }
 }
 
 // server/_core/sdk.ts
@@ -1351,8 +1093,8 @@ var SDKServer = class {
     return this.signSession(
       {
         openId,
-        appId: ENV.appId,
-        name: options.name || ""
+        appId: ENV.appId || "milo-app",
+        name: options.name || "\u0E1C\u0E39\u0E49\u0E14\u0E39\u0E41\u0E25\u0E23\u0E30\u0E1A\u0E1A (Admin)"
       },
       options
     );
@@ -1379,14 +1121,16 @@ var SDKServer = class {
         algorithms: ["HS256"]
       });
       const { openId, appId, name } = payload;
-      if (!isNonEmptyString(openId) || !isNonEmptyString(appId) || !isNonEmptyString(name)) {
-        console.warn("[Auth] Session payload missing required fields");
+      const finalAppId = isNonEmptyString(appId) ? appId : "milo-app";
+      const finalName = isNonEmptyString(name) ? name : "\u0E1C\u0E39\u0E49\u0E14\u0E39\u0E41\u0E25\u0E23\u0E30\u0E1A\u0E1A (Admin)";
+      if (!isNonEmptyString(openId)) {
+        console.warn("[Auth] Session payload missing openId");
         return null;
       }
       return {
         openId,
-        appId,
-        name
+        appId: finalAppId,
+        name: finalName
       };
     } catch (error) {
       console.warn("[Auth] Session verification failed", String(error));
@@ -1435,6 +1179,24 @@ var SDKServer = class {
     }
     const sessionUserId = session.openId;
     const signedInAt = /* @__PURE__ */ new Date();
+    if (session.openId.startsWith("admin_")) {
+      let dbUser;
+      try {
+        dbUser = await getUserByOpenId(session.openId);
+      } catch {
+      }
+      return dbUser || {
+        id: 1,
+        openId: session.openId,
+        name: session.name || "\u0E1C\u0E39\u0E49\u0E14\u0E39\u0E41\u0E25\u0E23\u0E30\u0E1A\u0E1A (Admin)",
+        email: "admin@milo.internal",
+        loginMethod: "admin_password",
+        role: "admin",
+        createdAt: /* @__PURE__ */ new Date(),
+        updatedAt: /* @__PURE__ */ new Date(),
+        lastSignedIn: signedInAt
+      };
+    }
     let user = await getUserByOpenId(sessionUserId);
     if (!user) {
       try {
@@ -2409,29 +2171,36 @@ var appRouter = router({
     }),
     adminLogin: publicProcedure.input(
       z2.object({
-        email: z2.string().trim().email("????????? Gmail ?????????? (???? admin@gmail.com)"),
-        name: z2.string().trim().optional()
+        username: z2.string().trim().min(1, "\u0E01\u0E23\u0E38\u0E13\u0E32\u0E01\u0E23\u0E2D\u0E01\u0E0A\u0E37\u0E48\u0E2D\u0E1C\u0E39\u0E49\u0E43\u0E0A\u0E49 (Username)"),
+        password: z2.string().min(1, "\u0E01\u0E23\u0E38\u0E13\u0E32\u0E01\u0E23\u0E2D\u0E01\u0E23\u0E2B\u0E31\u0E2A\u0E1C\u0E48\u0E32\u0E19 (Password)")
       })
     ).mutation(async ({ ctx, input }) => {
-      await initAllTablesIfNotExist();
-      const email = input.email.toLowerCase();
-      const safeOpenId = "admin_" + email.replace(/[^a-zA-Z0-9]/g, "_");
-      const name = input.name || "??????????? (" + email.split("@")[0] + ")";
-      await upsertUser({
-        openId: safeOpenId,
-        name,
-        email,
-        role: "admin",
-        loginMethod: "gmail",
-        lastSignedIn: /* @__PURE__ */ new Date()
-      });
+      const expectedUser = (process.env.ADMIN_USERNAME || "admin").trim();
+      const expectedPass = (process.env.ADMIN_PASSWORD || "admin1234").trim();
+      if (input.username !== expectedUser || input.password !== expectedPass) {
+        throw new Error("\u0E0A\u0E37\u0E48\u0E2D\u0E1C\u0E39\u0E49\u0E43\u0E0A\u0E49\u0E2B\u0E23\u0E37\u0E2D\u0E23\u0E2B\u0E31\u0E2A\u0E1C\u0E48\u0E32\u0E19\u0E1C\u0E39\u0E49\u0E14\u0E39\u0E41\u0E25\u0E23\u0E30\u0E1A\u0E1A\u0E44\u0E21\u0E48\u0E16\u0E39\u0E01\u0E15\u0E49\u0E2D\u0E07");
+      }
+      const safeOpenId = `admin_${expectedUser}`;
+      const name = "\u0E1C\u0E39\u0E49\u0E14\u0E39\u0E41\u0E25\u0E23\u0E30\u0E1A\u0E1A (Admin)";
+      try {
+        await upsertUser({
+          openId: safeOpenId,
+          name,
+          email: "admin@milo.internal",
+          role: "admin",
+          loginMethod: "admin_password",
+          lastSignedIn: /* @__PURE__ */ new Date()
+        });
+      } catch (dbErr) {
+        console.warn("[AdminLogin] DB user upsert skipped/warning:", dbErr);
+      }
       const sessionToken = await sdk.createSessionToken(safeOpenId, {
         name,
         expiresInMs: ONE_YEAR_MS
       });
       const cookieOptions = getSessionCookieOptions(ctx.req);
       ctx.res.cookie(COOKIE_NAME, sessionToken, { ...cookieOptions, maxAge: ONE_YEAR_MS });
-      return { success: true, user: { openId: safeOpenId, name, email, role: "admin" } };
+      return { success: true, user: { openId: safeOpenId, name, role: "admin" } };
     })
   }),
   milo: router({
@@ -3803,33 +3572,20 @@ function registerMiloCron(app2) {
   registerFinanceDigestRoute("/api/scheduled/finance-weekly", "finance-digest-weekly", "weekly");
 }
 
-// api/index.ts
+// server/api.ts
 var app = express2();
 registerLineWebhook(app);
 app.use(express2.json({ limit: "50mb" }));
 app.use(express2.urlencoded({ limit: "50mb", extended: true }));
 var trpcMiddleware = createExpressMiddleware({
   router: appRouter,
-  createContext,
-  onError({ error, path }) {
-    console.error(`[tRPC Error on ${path}]:`, error);
-  }
+  createContext
 });
 app.use("/api/trpc", trpcMiddleware);
 app.use("/trpc", trpcMiddleware);
 app.use("/", trpcMiddleware);
 registerMiloCron(app);
-app.use((req, res) => {
-  console.warn("[API 404]", req.method, req.url);
-  res.status(404).json({ error: `Not found: ${req.method} ${req.url}` });
-});
-app.use((err, req, res, next) => {
-  console.error("[API Error]", err);
-  if (!res.headersSent) {
-    res.status(500).json({ error: err?.message || "Internal Server Error" });
-  }
-});
-var index_default = app;
+var api_default = app;
 export {
-  index_default as default
+  api_default as default
 };
