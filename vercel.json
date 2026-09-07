@@ -1,6 +1,5 @@
 {
   "version": 2,
-  "buildCommand": "vite build",
   "outputDirectory": "dist/public",
   "rewrites": [
     {
@@ -10,12 +9,6 @@
     {
       "source": "/(.*)",
       "destination": "/index.html"
-    }
-  ],
-  "crons": [
-    {
-      "path": "/api/scheduled/reminders",
-      "schedule": "0 23 * * *"
     }
   ]
 }
