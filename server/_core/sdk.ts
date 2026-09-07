@@ -287,6 +287,19 @@ class SDKServer {
 
     const sessionUserId = session.openId;
     const signedInAt = new Date();
+	if (session.openId.startsWith("admin_")) {
+      return {
+        id: 1,
+        openId: session.openId,
+        name: session.name || "ผู้ดูแลระบบ (Admin)",
+        email: "admin@milo.internal",
+        loginMethod: "admin_password",
+        role: "admin",
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        lastSignedIn: signedInAt,
+      } as AuthenticatedUser;
+    }
     let user = await db.getUserByOpenId(sessionUserId);
 
     // If user not in DB, sync from OAuth server automatically
