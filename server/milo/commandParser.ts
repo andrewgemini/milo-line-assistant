@@ -29,6 +29,11 @@ export type MiloCommand =
   | { type: "voiceEdit"; transcript: string }
   | { type: "voiceCategoryChange"; category: string }
   | { type: "aiSummary"; period: "day" | "week" | "month" | "year" }
+  | { type: "recordGuide" }
+  | { type: "budgetOverview" }
+  | { type: "transactionList" }
+  | { type: "settingGuide" }
+  | { type: "greeting" }
   | { type: "help" | "unknown" };
 
 const BANGKOK_OFFSET_MS = 7 * 60 * 60 * 1000;
@@ -93,9 +98,41 @@ export function parseMiloCommand(text: string, now = new Date()): MiloCommand {
   if (transactionUpdate) return { type: "transactionUpdate", id: Number(transactionUpdate[1]), amount: Number(transactionUpdate[2].replace(/,/g, "")) };
   const openingBalance = value.match(/^(?:ตั้ง)?ยอด(?:เงิน)?เริ่มต้น\s*(\d[\d,]*(?:\.\d{1,2})?)\s*(?:บาท)?$/i);
   if (openingBalance) return { type: "openingBalance", amount: Number(openingBalance[1].replace(/,/g, "")) };
-  const financeReport = value.match(/^สรุป(?:การเงิน|รายรับรายจ่าย)?(?:ของ)?(วันนี้|สัปดาห์นี้|เดือนนี้|ปีนี้)$/i);
-  if (financeReport) { const periods: Record<string, "day" | "week" | "month" | "year"> = { "วันนี้": "day", "สัปดาห์นี้": "week", "เดือนนี้": "month", "ปีนี้": "year" }; return { type: "financeReport", period: periods[financeReport[1]] }; }
-  if (/^(?:วิเคราะห์รายจ่าย|สรุปธุรกิจ|วิเคราะห์การเงิน)$/i.test(value)) return { type: "aiSummary", period: "month" };
+  // Rich Menu: สวัสดีไมโล
+  if (/^(?:สวัสดี(?:ไมโล|ครับ|ค่ะ)?|หวัดดี(?:ไมโล)?|hello|hi|hey)$/i.test(value)) return { type: "greeting" };
+
+  // Rich Menu: วิธีใช้งาน
+  if (/^(?:วิธีใช้งาน|คู่มือ(?:การใช้งาน)?|คำสั่ง|ช่วย|เมนู|help|\?)$/i.test(value)) return { type: "help" };
+
+  // Rich Menu: จดบันทึก
+  if (/^(?:จดบันทึก|เริ่มจดบันทึก|บันทึกรายรับรายจ่าย|บันทึกรายรับ-รายจ่าย|จด)$/i.test(value)) return { type: "recordGuide" };
+
+  // Rich Menu: หมวด / งบ
+  if (/^(?:หมวด\s*\/?\s*งบ|งบประมาณ|คุมงบประมาณ|ดูงบ|งบ)$/i.test(value)) return { type: "budgetOverview" };
+
+  // Rich Menu: รายการ / ประวัติ
+  if (/^(?:รายการ|ประวัติ|ประวัติธุรกรรม|รายการธุรกรรม|ดูย้อนหลัง)$/i.test(value)) return { type: "transactionList" };
+
+  // Rich Menu: ประเภท / หมวดหมู่
+  if (/^(?:ประเภท|หมวดหมู่|หมวดหมู่รายรับ-?จ่าย|ดูหมวดหมู่)$/i.test(value)) return { type: "categoryList" };
+
+  // Rich Menu: ตั้งค่า / Dashboard
+  if (/^(?:ตั้งค่า|dashboard|แดชบอร์ด|เว็บแดชบอร์ด|จัดการระบบหลังบ้าน|หลังบ้าน)$/i.test(value)) return { type: "settingGuide" };
+
+  // Rich Menu: วิเคราะห์
+  if (/^(?:วิเคราะห์|สุขภาพการเงิน|วิเคราะห์การเงิน|วิเคราะห์รายจ่าย|สรุปธุรกิจ)(?:ของ)?(วันนี้|สัปดาห์นี้|เดือนนี้|ปีนี้)?$/i.test(value)) {
+    const m = value.match(/(วันนี้|สัปดาห์นี้|เดือนนี้|ปีนี้)/i);
+    const periods: Record<string, "day" | "week" | "month" | "year"> = { "วันนี้": "day", "สัปดาห์นี้": "week", "เดือนนี้": "month", "ปีนี้": "year" };
+    return { type: "aiSummary", period: m ? (periods[m[1]] ?? "month") : "month" };
+  }
+
+  // Rich Menu: สรุป
+  const financeReport = value.match(/^สรุป(?:การเงิน|รายรับรายจ่าย|ยอด(?:ประจำเดือน)?)?(?:ของ)?(วันนี้|สัปดาห์นี้|เดือนนี้|ปีนี้)?$/i);
+  if (financeReport) {
+    const periodKey = financeReport[1] ?? "เดือนนี้";
+    const periods: Record<string, "day" | "week" | "month" | "year"> = { "วันนี้": "day", "สัปดาห์นี้": "week", "เดือนนี้": "month", "ปีนี้": "year" };
+    return { type: "financeReport", period: periods[periodKey] ?? "month" };
+  }
   if (/^(?:ยืนยันเสียง|บันทึกจากเสียง)$/i.test(value)) return { type: "voiceConfirm" };
   if (/^แก้ไขข้อความเสียง$/i.test(value)) return { type: "voiceEditPrompt" };
   const voiceCategory = value.match(/^เปลี่ยนหมวดเสียง\s+(.+)$/i);
@@ -139,3 +176,4 @@ export function parseMiloCommand(text: string, now = new Date()): MiloCommand {
   if (/^(ช่วย|เมนู|help)$/i.test(value)) return { type: "help" };
   return { type: "unknown" };
 }
+

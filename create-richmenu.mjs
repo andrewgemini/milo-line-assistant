@@ -1,6 +1,6 @@
 New-Item -ItemType Directory -Force -Path scripts
 
-Set-Content -Path scripts\create-richmenu.mjs -Value @'
+Set-Content -Path scripts/create-richmenu.mjs -Value @'
 import fs from 'fs';
 
 let token = process.env.LINE_CHANNEL_ACCESS_TOKEN;
@@ -20,7 +20,6 @@ if (!token && fs.existsSync('.env')) {
 
 if (!token) {
   console.error("❌ Error: ไม่พบ LINE_CHANNEL_ACCESS_TOKEN ในไฟล์ .env");
-  console.error("กรุณาเพิ่ม LINE_CHANNEL_ACCESS_TOKEN ใน .env ก่อนรันสคริปต์นี้");
   process.exit(1);
 }
 
@@ -49,29 +48,27 @@ async function main() {
     headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
     body: JSON.stringify(richMenuConfig)
   });
-
   if (!createResp.ok) throw new Error(await createResp.text());
   const { richMenuId } = await createResp.json();
-  console.log(`✓ สร้าง Rich Menu สำเร็จ: ${richMenuId}`);
+  console.log(`✓ สร้าง Rich Menu สำเร็จ (ID: ${richMenuId})`);
 
-  let imagePath = fs.existsSync("./richmenu_milo.png") ? "./richmenu_milo.png" : (fs.existsSync("./richmenu_milo.jpg") ? "./richmenu_milo.jpg" : null);
-  if (imagePath) {
-    console.log(`กำลังอัปโหลดรูปภาพ: ${imagePath}...`);
-    const buffer = fs.readFileSync(imagePath);
+  const imagePath = fs.existsSync("./richmenu_milo.png") ? "./richmenu_milo.png" : "./richmenu_milo.jpg";
+  if (fs.existsSync(imagePath)) {
+    const isPng = imagePath.endsWith('.png');
+    const imageBuffer = fs.readFileSync(imagePath);
     await fetch(`https://api-data.line.me/v2/bot/richmenu/${richMenuId}/content`, {
       method: "POST",
-      headers: { Authorization: `Bearer ${token}`, "Content-Type": imagePath.endsWith('.png') ? 'image/png' : 'image/jpeg' },
-      body: buffer
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": isPng ? "image/png" : "image/jpeg" },
+      body: imageBuffer
     });
-    console.log("✓ อัปโหลดรูปภาพสำเร็จแล้ว!");
+    console.log(`✓ อัปโหลดรูปภาพ Rich Menu สำเร็จแล้ว!`);
   }
 
   await fetch(`https://api.line.me/v2/bot/user/all/richmenu/${richMenuId}`, {
     method: "POST",
     headers: { Authorization: `Bearer ${token}` }
   });
-  console.log("🎉 เปิดใช้งาน Rich Menu เป็นค่าเริ่มต้นให้ผู้ใช้ทุกคนเรียบร้อยแล้ว!");
+  console.log("🎉 เปิดใช้งานเป็น Default Rich Menu สำหรับผู้ใช้ทุกคนเรียบร้อยแล้ว!");
 }
-
-main().catch(err => console.error("❌ Error:", err.message));
+main().catch(err => console.error("❌ เกิดข้อผิดพลาด:", err.message));
 '@
