@@ -85,6 +85,13 @@
       "when": 1787826291884,
       "tag": "0011_previous_tenebrous",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1788967000000,
+      "tag": "0012_reconcile_automation_settings",
+      "breakpoints": true
     }
   ]
 }
