@@ -49,7 +49,8 @@ import {
   Trash2,
   UserCog,
   UsersRound,
-, X} from "lucide-react";
+  X,
+} from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "wouter";
 import { toast } from "sonner";
