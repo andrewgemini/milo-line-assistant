@@ -349,7 +349,7 @@ async function handleText(event: LineEvent, lineChatId: string, lineUserId: stri
         const limit = Number(b.amount);
         const percent = limit > 0 ? Math.round((spent / limit) * 100) : 0;
         return `• ${b.category}: ใช้ไป ${spent.toLocaleString("th-TH")} / ${limit.toLocaleString("th-TH")} บาท (${percent}%)`;
-      }).join("\n") + `
+      }}).join("\n");
 
 
 💡 ตั้งงบเพิ่ม: "ตั้งงบ [ชื่อหมวด] [จำนวนเงิน] บาท"`;
@@ -368,7 +368,7 @@ async function handleText(event: LineEvent, lineChatId: string, lineUserId: stri
 ` + recent.map(item => {
         const sign = item.transactionType === "income" ? "+ (รับ)" : "- (จ่าย)";
         return `• ${item.category} ${sign} ${Number(item.amount).toLocaleString("th-TH")} บาท${item.note ? ` (${item.note})` : ""}`;
-      }).join("\n") + `
+      }).join("\n");
 
 
 🔍 ค้นหารายการ พิมพ์ "ค้นหารายการ [คำค้น]" หรือดูทั้งหมดในเว็บแดชบอร์ดครับ`;

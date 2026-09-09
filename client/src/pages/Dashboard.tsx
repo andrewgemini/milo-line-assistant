@@ -69,6 +69,7 @@ const navigation: Array<{ id: DashboardSectionId; label: string; icon: typeof La
   { id: "tasks", label: "โน้ตและงาน", icon: ListTodo },
   { id: "groups", label: "กลุ่ม LINE", icon: UsersRound },
   { id: "export", label: "ส่งออกข้อมูล", icon: Download },
+  { id: "admin", label: "จัดการระบบ (Admin)", icon: ShieldCheck },
 ];
 
 type ScopedFinanceSummary = { income: number; expense: number; balance: number; openingBalance?: number; availableBalance?: number; categories: Record<string, number> };
@@ -87,19 +88,10 @@ export default function Dashboard() {
   const [reminderTitle, setReminderTitle] = useState("");
   const [reminderTime, setReminderTime] = useState("");
   const [search, setSearch] = useState("");
+  const [showAdminProfile, setShowAdminProfile] = useState(false);
   const [activeSection, setActiveSection] = useState<DashboardSectionId>("overview");
   const [schedulerError, setSchedulerError] = useState("");
   const [isEditingLineLink, setIsEditingLineLink] = useState(false);
-  const [showAdminProfileModal, setShowAdminProfileModal] = useState(false);
-  const handleLogout = () => {
-    try {
-      sessionStorage.removeItem("manus-cookie");
-      sessionStorage.removeItem("admin-session");
-      localStorage.removeItem("admin-session");
-    } catch {}
-    logout();
-    window.location.assign("/dashboard");
-  };
   const [completingTodoId, setCompletingTodoId] = useState<number | null>(null);
   const [updatingVaultId, setUpdatingVaultId] = useState<number | null>(null);
   const [vaultEditor, setVaultEditor] = useState<VaultMetadataItem | null>(null);
@@ -195,7 +187,7 @@ export default function Dashboard() {
 
   return <div className={`relative min-h-screen bg-[#f5fcfa] text-[#245851] ${!isProductionSite ? "preview-surface" : ""}`}>
     {!isProductionSite && <div className={`preview-frame-overlay pointer-events-none fixed inset-2 z-40 rounded-[1.25rem] border-2 border-[#e7ad43]/45 shadow-[inset_0_0_0_9999px_rgba(255,205,108,.035),0_0_0_5px_rgba(231,173,67,.08)] ${isPreviewFading ? "preview-frame-fade-out" : ""}`} aria-hidden="true" />}
-    <aside className="fixed inset-y-0 hidden w-64 flex-col border-r border-[#d6ece6] bg-white p-5 lg:flex">
+    <aside className="fixed inset-y-0 hidden w-64 flex-col overflow-y-auto border-r border-[#d6ece6] bg-white p-5 lg:flex">
       <Link href="/" className="flex items-center gap-2.5"><BotBadge /><span className="font-display text-xl font-semibold">ไมโล</span></Link>
       <p className="mt-1 pl-12 text-xs text-[#8aa9a4]">แดชบอร์ดจัดการชีวิต</p>
       <DashboardNavigation active={activeSection} onNavigate={goTo} className="mt-10" />
@@ -206,11 +198,8 @@ export default function Dashboard() {
     <main className="relative lg:ml-64" aria-busy={contentMutationPending}>
       {contentMutationPending && <div role="status" aria-live="polite" className="absolute inset-0 z-30 grid min-h-full place-items-start bg-[#f5fcfa]/55 pt-24 text-sm font-medium text-[#2b876f] backdrop-blur-[1px]">กำลังบันทึกข้อมูล...</div>}
       <header className="sticky top-0 z-20 flex items-center justify-between border-b border-[#d8ede8] bg-[#f5fcfa]/90 px-5 py-4 backdrop-blur lg:px-9">
-        <div><p className="text-xs text-[#7c9b95]">สวัสดี, {user.name || "ผู้ใช้ไมโล"}</p><h1 className="font-display text-xl font-semibold">ภาพรวมของคุณ</h1></div>
-        <div className="flex items-center gap-2.5"><FinanceAccountSwitcher accounts={financeAccounts} financeAccountId={activeFinanceAccountId} onChange={setActiveFinanceAccountId} /><EnvironmentBadge isProduction={isProductionSite} onSwitch={switchEnvironment} /><PublishHistoryPopover lastPublishedLabel={lastPublishedLabel} /><Link href="/"><Button variant="outline" className="hidden rounded-xl border-[#d2e9e3] bg-white text-[#548078] sm:inline-flex">หน้าแรก</Button></Link><span className={`rounded-full px-3 py-1.5 text-xs font-medium ${isLinked ? "bg-[#dff8e9] text-[#1b886e]" : "bg-[#fff1dd] text-[#b47732]"}`}>{isLinked ? "เชื่อม LINE แล้ว" : "รอเชื่อม LINE"}</span>{isLinked && <button type="button" onClick={() => setIsEditingLineLink(true)} className="grid size-8 place-items-center rounded-lg border border-[#d2e9e3] bg-white text-[#548078] transition-colors hover:bg-[#edf8f4]" aria-label="แก้ไขบัญชี LINE" title="แก้ไขบัญชี LINE"><Pencil className="size-3.5" /></button>}
-          <button type="button" onClick={() => setShowAdminProfileModal(true)} className="flex items-center gap-1.5 rounded-xl border border-[#cbe4dd] bg-white px-3 py-1.5 text-xs font-semibold text-[#1c8c72] hover:bg-[#edf8f5] shadow-sm transition-colors" title="จัดการโปรไฟล์แอดมิน"><ShieldCheck className="size-4 text-[#1c8c72]" /><span className="hidden md:inline">โปรไฟล์ Admin</span></button>
-          <button type="button" onClick={handleLogout} className="flex items-center gap-1.5 rounded-xl border border-[#fad2d8] bg-[#fff6f7] px-3 py-1.5 text-xs font-semibold text-[#c83d54] hover:bg-[#fae2e6] shadow-sm transition-colors" title="ออกจากระบบ"><LogOut className="size-4" /><span className="hidden sm:inline">ออกจากระบบ</span></button>
-        </div>
+        <div><button type="button" onClick={() => setShowAdminProfile(true)} className="text-xs text-[#258e76] hover:underline font-semibold flex items-center gap-1">สวัสดี, {user.name || "ผู้ดูแลระบบ (Admin)"} <ShieldCheck className="size-3 text-[#258e76]" /></button><h1 className="font-display text-xl font-semibold">ภาพรวมของคุณ</h1></div>
+        <div className="flex items-center gap-2.5"><FinanceAccountSwitcher accounts={financeAccounts} financeAccountId={activeFinanceAccountId} onChange={setActiveFinanceAccountId} /><EnvironmentBadge isProduction={isProductionSite} onSwitch={switchEnvironment} /><PublishHistoryPopover lastPublishedLabel={lastPublishedLabel} /><Link href="/"><Button variant="outline" className="hidden rounded-xl border-[#d2e9e3] bg-white text-[#548078] sm:inline-flex">หน้าแรก</Button></Link><Button variant="outline" onClick={() => setShowAdminProfile(true)} className="rounded-xl border-[#c6e4dc] bg-white px-3 py-1.5 text-xs text-[#208a70] hover:bg-[#ebf8f4] flex items-center gap-1.5"><ShieldCheck className="size-3.5" />โปรไฟล์ Admin</Button><button onClick={logout} className="flex items-center gap-1.5 rounded-xl border border-[#f5d5ce] bg-white px-3 py-1.5 text-xs font-semibold text-[#b84d3e] hover:bg-[#fff3f0] transition-colors"><LogOut className="size-3.5" />ออกจากระบบ</button><span className={`rounded-full px-3 py-1.5 text-xs font-medium ${isLinked ? "bg-[#dff8e9] text-[#1b886e]" : "bg-[#fff1dd] text-[#b47732]"}`}>{isLinked ? "เชื่อม LINE แล้ว" : "รอเชื่อม LINE"}</span>{isLinked && <button type="button" onClick={() => setIsEditingLineLink(true)} className="grid size-8 place-items-center rounded-lg border border-[#d2e9e3] bg-white text-[#548078] transition-colors hover:bg-[#edf8f4]" aria-label="แก้ไขบัญชี LINE" title="แก้ไขบัญชี LINE"><Pencil className="size-3.5" /></button>}</div>
       </header>
       {!isProductionSite && <PreviewBanner />}
       {isLinked && <div className="border-b border-[#d8ede8] bg-white px-4 py-2 md:hidden"><FinanceAccountSwitcher accounts={financeAccounts} financeAccountId={activeFinanceAccountId} onChange={setActiveFinanceAccountId} mobile /></div>}
@@ -233,7 +222,7 @@ export default function Dashboard() {
           <TransactionSearch value={transactionSearch} matchedCount={filteredTransactions.length} totalCount={allScopedTransactions.length} onChange={setTransactionSearch} />
           <TransactionManagerPanel transactions={paginatedTransactions} financeAccountId={activeFinanceAccountId} role={activeFinanceAccount?.membership.role} />
           <TransactionPagination page={safeTransactionPage} pageCount={transactionPageCount} itemCount={filteredTransactions.length} pageSize={transactionPageSize} onChange={setTransactionPage} />
-          <AdminGovernancePanelStandard isAdmin={user.role === "admin"} />
+          <section id="admin-governance" className="scroll-mt-24"><AdminGovernancePanelStandard isAdmin={user.role === "admin"} /></section>
 
           <section className="mt-6 grid gap-6 xl:grid-cols-[1.1fr_.9fr]">
           <section id="reminders" className="scroll-mt-24 rounded-[1.6rem] border border-[#d7ebe6] bg-white p-6 soft-shadow"><SectionTitle title="การเตือนที่กำลังจะถึง" subtitle="จัดการจากแชท LINE หรือเพิ่มรายการด้วยมือ" icon={BellRing} tone="text-[#25a586]" /><div className="mt-5 space-y-3">{data.reminders.slice(0, 6).map(reminder => <div key={reminder.id} className="flex items-center gap-3 rounded-2xl bg-[#f3fbf8] p-3"><span className="grid size-9 place-items-center rounded-xl bg-white text-[#27a487]"><BellRing className="size-4" /></span><div className="min-w-0 flex-1"><p className="truncate text-sm font-medium">{reminder.title}</p><p className="text-xs text-[#77a098]">{reminder.nextRunAt ? dateTime.format(new Date(reminder.nextRunAt)) : "รอกำหนดเวลา"}</p></div><span className="rounded-full bg-white px-2 py-1 text-[10px] text-[#4d8277]">{reminder.recurrenceType === "once" ? "ครั้งเดียว" : `ทุก ${reminder.recurrenceType}`}</span><button onClick={() => deleteReminder.mutate({ id: reminder.id })} disabled={deleteReminder.isPending} aria-busy={deleteReminder.isPending} aria-label={`ลบการเตือน ${reminder.title}`} className="grid size-7 place-items-center rounded-lg text-[#b27770] transition-colors hover:bg-[#ffeae5] hover:text-[#b44b3e] disabled:opacity-50"><Trash2 className="size-3.5" /></button></div>)}{data.reminders.length === 0 && <Empty text="ยังไม่มีรายการเตือน ลองพิมพ์ “เตือนประชุมพรุ่งนี้ 10:00” ใน LINE" />}</div><form onSubmit={event => { event.preventDefault(); createReminder.mutate({ title: normalizedReminderTitle(reminderTitle), dueAt: reminderDueAtFromBangkokInput(reminderTime) }); }} className="mt-5 grid gap-2 sm:grid-cols-[1fr_auto_auto]"><Input value={reminderTitle} onChange={event => setReminderTitle(event.target.value)} placeholder="เพิ่มการเตือน" className="rounded-xl" /><Input type="datetime-local" value={reminderTime} onChange={event => setReminderTime(event.target.value)} className="rounded-xl" /><Button type="submit" disabled={!canSubmitReminderDraft(reminderTitle) || createReminder.isPending} aria-busy={createReminder.isPending} className="rounded-xl bg-[#238f76] text-white hover:bg-[#157a62]">{createReminder.isPending ? "กำลังเพิ่ม..." : <><Plus className="mr-1 size-4" />เพิ่ม</>}</Button></form></section>
@@ -250,67 +239,75 @@ export default function Dashboard() {
           <section className="mt-6 rounded-[1.6rem] border border-[#d7ebe6] bg-white p-6 soft-shadow"><SectionTitle title="กราฟรายจ่ายตามหมวด" subtitle="สรุปเฉพาะเดือนปัจจุบัน" icon={BarChart3} tone="text-[#8965b2]" />{categoryChart.length ? <div className="mt-5 h-56"><ResponsiveContainer width="100%" height="100%"><BarChart data={categoryChart} margin={{ top: 8, right: 8, left: -24, bottom: 0 }}><XAxis dataKey="category" tickLine={false} axisLine={false} tick={{ fill: "#71938c", fontSize: 11 }} /><YAxis tickLine={false} axisLine={false} tick={{ fill: "#71938c", fontSize: 11 }} /><Tooltip cursor={{ fill: "#edf8f4" }} formatter={(value: number) => money.format(value)} contentStyle={{ borderRadius: 14, border: "1px solid #d7ebe6", boxShadow: "0 8px 22px rgba(31, 131, 118, .12)" }} /><Bar dataKey="amount" fill="#85cfbc" radius={[8, 8, 3, 3]} maxBarSize={52} /></BarChart></ResponsiveContainer></div> : <div className="mt-5"><Empty text="เริ่มบันทึกรายจ่ายผ่าน LINE เพื่อดูกราฟสรุปตามหมวด" /></div>}</section>
         </>}
       </div>{contentMutationPending && <><div className="fixed inset-0 z-40 cursor-wait" aria-hidden="true" /><div role="status" className="fixed bottom-5 left-1/2 z-50 -translate-x-1/2 rounded-full bg-[#245851] px-4 py-2 text-sm font-medium text-white shadow-lg">{completingTodoId !== null ? "กำลังบันทึกงาน..." : "กำลังอัปเดตคลัง..."}</div></>}
-      {showAdminProfileModal && (
-        <div className="fixed inset-0 z-50 grid place-items-center bg-black/45 backdrop-blur-sm p-4">
-          <div className="w-full max-w-md rounded-3xl bg-white p-6 sm:p-8 text-left shadow-2xl border border-[#d3ebe5] animate-in fade-in zoom-in duration-150">
-            <div className="flex items-center justify-between pb-4 border-b border-[#e8f3f0]">
-              <div className="flex items-center gap-3">
-                <span className="grid size-11 place-items-center rounded-2xl bg-[#e3f7f0] text-[#1c8c72]">
-                  <ShieldCheck className="size-6" />
-                </span>
-                <div>
-                  <h3 className="text-lg font-bold text-[#1a3832]">โปรไฟล์ผู้ดูแลระบบ</h3>
-                  <p className="text-xs text-[#2aa386] font-semibold">Milo System Administrator</p>
-                </div>
+      {pendingEnvironmentUrl && <EnvironmentSwitchModal targetUrl={pendingEnvironmentUrl} canSave={canSaveAndSwitch} saving={link.isPending || createReminder.isPending} onCancel={() => setPendingEnvironmentUrl(null)} onConfirm={() => navigateEnvironment(pendingEnvironmentUrl)} onSaveAndConfirm={saveAndSwitch} />}
+      <VaultMetadataDialog item={vaultEditor} pending={updatingVaultId === vaultEditor?.id} onClose={() => setVaultEditor(null)} onSave={input => updateVault.mutate(input, { onSuccess: () => setVaultEditor(null) })} />
+    
+      {/* Admin Profile Modal */}
+      {showAdminProfile && (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 backdrop-blur-sm p-4">
+          <div className="w-full max-w-md rounded-[2rem] bg-white p-6 sm:p-8 text-left shadow-2xl border border-[#d2ebe5]">
+            <div className="flex items-center gap-3">
+              <span className="grid size-12 place-items-center rounded-2xl bg-[#e4f7f1] text-[#1a8c72]">
+                <ShieldCheck className="size-6" />
+              </span>
+              <div>
+                <h3 className="font-display text-lg font-bold text-[#1a3832]">โปรไฟล์ผู้ดูแลระบบ (Admin)</h3>
+                <p className="text-xs text-[#229177] font-medium">Milo Admin Management Portal</p>
               </div>
-              <button type="button" onClick={() => setShowAdminProfileModal(false)} className="rounded-xl p-1.5 text-[#86a69f] hover:bg-[#f2f7f5] hover:text-[#1a3832]">
-                <X className="size-5" />
+            </div>
+
+            <div className="mt-5 space-y-3 rounded-2xl bg-[#f5fbf9] p-4 text-xs border border-[#e2f2ec]">
+              <div className="flex justify-between items-center py-1 border-b border-[#e5f0ec]">
+                <span className="text-[#648b82]">ชื่อผู้ดูแลระบบ:</span>
+                <span className="font-semibold text-[#1e4e44]">{user.name || "ผู้ดูแลระบบ (Admin)"}</span>
+              </div>
+              <div className="flex justify-between items-center py-1 border-b border-[#e5f0ec]">
+                <span className="text-[#648b82]">ชื่อผู้ใช้ (Username):</span>
+                <span className="font-mono font-semibold text-[#1e4e44]">admin</span>
+              </div>
+              <div className="flex justify-between items-center py-1 border-b border-[#e5f0ec]">
+                <span className="text-[#648b82]">ระดับสิทธิ์ (Role):</span>
+                <span className="rounded-full bg-[#dff8e9] px-2.5 py-0.5 text-[10px] font-bold text-[#187e67]">SUPER ADMIN</span>
+              </div>
+              <div className="flex justify-between items-center py-1">
+                <span className="text-[#648b82]">สถานะ LINE:</span>
+                <span className="font-semibold text-[#1e4e44]">{isLinked ? "เชื่อมต่อแล้ว" : "ยังไม่ได้เชื่อมต่อ"}</span>
+              </div>
+            </div>
+
+            <div className="mt-4 rounded-2xl border border-[#e4ece9] bg-white p-4">
+              <p className="text-xs font-semibold text-[#2b5950]">การเปลี่ยนรหัสผ่านแอดมิน</p>
+              <p className="mt-1 text-[11px] leading-relaxed text-[#759891]">
+                คุณสามารถกำหนดรหัสผ่านใหม่ได้ทันทีผ่านตัวแปร <code>ADMIN_PASSWORD</code> ใน Vercel Dashboard (Settings &gt; Environment Variables) แล้วกด Redeploy
+              </p>
+            </div>
+
+            <div className="mt-6 flex flex-wrap items-center justify-between gap-2">
+              <button
+                onClick={() => { setShowAdminProfile(false); goTo("admin"); }}
+                className="rounded-xl border border-[#cbe4dc] bg-[#eef8f4] px-4 py-2 text-xs font-semibold text-[#208a71] hover:bg-[#e0f3ed]"
+              >
+                ไปที่ส่วนจัดการระบบ &gt;
               </button>
-            </div>
-
-            <div className="mt-5 space-y-3.5 text-xs">
-              <div className="rounded-2xl bg-[#f5fbf9] p-4 border border-[#dff0eb] space-y-2.5">
-                <div className="flex justify-between items-center">
-                  <span className="text-[#6d928b]">ชื่อผู้ดูแลระบบ:</span>
-                  <span className="font-semibold text-[#1a3832]">{user.name || "ผู้ดูแลระบบ (Admin)"}</span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-[#6d928b]">ชื่อผู้ใช้ (Username):</span>
-                  <span className="font-mono font-semibold text-[#256658]">admin</span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-[#6d928b]">ระดับสิทธิ์ (Role):</span>
-                  <span className="rounded-full bg-[#dff7ed] px-2.5 py-0.5 font-semibold text-[#1a886f]">Admin (สิทธิ์สูงสุด)</span>
-                </div>
-                <div className="flex justify-between items-center pt-1 border-t border-[#e5f2ee]">
-                  <span className="text-[#6d928b]">LINE ที่เชื่อมต่อ:</span>
-                  <span className="font-mono text-[11px] text-[#256658] truncate max-w-[190px]">{isLinked ? (overview.data?.lineUserId || "เชื่อมต่อแล้ว") : "ยังไม่ได้เชื่อมต่อ"}</span>
-                </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={logout}
+                  className="rounded-xl border border-[#f5d6cf] bg-white px-3 py-2 text-xs font-semibold text-[#be4d3f] hover:bg-[#fff2f0]"
+                >
+                  ออกจากระบบ
+                </button>
+                <Button
+                  onClick={() => setShowAdminProfile(false)}
+                  className="rounded-xl bg-[#238f76] text-white hover:bg-[#187863] text-xs px-4"
+                >
+                  ปิด
+                </Button>
               </div>
-
-              <div className="rounded-2xl border border-[#e8f0ed] p-4 space-y-2">
-                <p className="font-semibold text-[#2b544c] flex items-center gap-1.5">
-                  <KeyRound className="size-4 text-[#208a71]" /> การเปลี่ยนรหัสผ่านผู้ดูแลระบบ
-                </p>
-                <p className="text-[11px] text-[#6d928b] leading-relaxed">
-                  รหัสผ่านแอดมินถูกควบคุมผ่านระบบความปลอดภัยของ Vercel เพื่อป้องกันการถูกดักจับ โดยคุณสามารถเปลี่ยนรหัสผ่านได้ทันทีผ่านตัวแปร <code>ADMIN_PASSWORD</code> ใน Vercel Dashboard
-                </p>
-              </div>
-            </div>
-
-            <div className="mt-6 flex items-center justify-between pt-4 border-t border-[#e8f3f0]">
-              <Button type="button" variant="outline" onClick={handleLogout} className="rounded-xl border-[#fad2d8] bg-[#fff6f7] text-[#c83d54] hover:bg-[#fae2e6] text-xs font-semibold flex items-center gap-1.5">
-                <LogOut className="size-3.5" /> ออกจากระบบ
-              </Button>
-              <Button type="button" onClick={() => setShowAdminProfileModal(false)} className="rounded-xl bg-[#238f76] text-white hover:bg-[#187863] text-xs px-5">
-                ปิดหน้าต่าง
-              </Button>
             </div>
           </div>
         </div>
       )}
-      {pendingEnvironmentUrl && <EnvironmentSwitchModal targetUrl={pendingEnvironmentUrl} canSave={canSaveAndSwitch} saving={link.isPending || createReminder.isPending} onCancel={() => setPendingEnvironmentUrl(null)} onConfirm={() => navigateEnvironment(pendingEnvironmentUrl)} onSaveAndConfirm={saveAndSwitch} />}
-      <VaultMetadataDialog item={vaultEditor} pending={updatingVaultId === vaultEditor?.id} onClose={() => setVaultEditor(null)} onSave={input => updateVault.mutate(input, { onSuccess: () => setVaultEditor(null) })} />
+
     </main>
   </div>;
 }

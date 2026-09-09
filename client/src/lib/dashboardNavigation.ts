@@ -1,4 +1,4 @@
-export const dashboardSectionIds = ["overview", "analysis", "budgets", "transactions", "recurring", "vault", "tasks", "groups", "export"] as const;
+export const dashboardSectionIds = ["overview", "analysis", "budgets", "transactions", "recurring", "vault", "tasks", "groups", "export", "admin"] as const;
 
 export type DashboardSectionId = (typeof dashboardSectionIds)[number];
 
@@ -15,6 +15,7 @@ const sectionTargets: Record<DashboardSectionId, string> = {
   tasks: "tasks",
   groups: "groups",
   export: "export",
+  admin: "admin-governance",
 };
 
 export function scrollToDashboardSection(id: DashboardSectionId, root: SectionRoot = document) {
@@ -23,3 +24,4 @@ export function scrollToDashboardSection(id: DashboardSectionId, root: SectionRo
   section.scrollIntoView({ behavior: "smooth", block: "start" });
   return true;
 }
+
