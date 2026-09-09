@@ -13,16 +13,13 @@ import { buildExpenseNote, formatImageProposal, normalizeExpenseCategory, parseE
 import { STANDARD_EXPENSE_CATEGORIES, STANDARD_INCOME_CATEGORIES } from "./financeCategories";
 import { financeReportCardText, getMessageContent, getProfile, lineCredentials, postSaveSummaryText, pushText, replyFinanceReportCard, replyFinanceReportCardFallback, replyMention, replyPostSaveSummary, replyPostSaveSummaryFallback, replyText, replyVoiceCategoryChoices, replyVoiceProposal, replyVoiceProposalFallback, sourceIdentity, type LineEvent, type VoiceTransactionProposal, verifyLineSignature } from "./line";
 
-
 function helpText() {
   return "สวัสดีครับ ผมไมโล ช่วยได้ในแชทเดียว\n• เตือน ประชุมพรุ่งนี้ 09:00\n• เตือนดื่มน้ำทุก 30 นาที\n• จ่ายกาแฟ 55 / จ่ายค่าไฟ 1500\n• รับเงินเดือน 55000 / รับค่าจ้าง 5000\n• ส่งสลิปหรือใบเสร็จ แล้วพิมพ์ “ยืนยันค่าใช้จ่าย”\n• ส่งข้อความเสียง แล้วพิมพ์ “ยืนยันเสียง”\n• ค้นหารายการ กาแฟ / แก้รายการ 12 เป็น 150 / ลบรายการ 12\n• สรุปวันนี้ / สรุปสัปดาห์นี้ / สรุปเดือนนี้ / สรุปปีนี้\n• เพิ่มหมวด เดินทาง / ดูหมวด\n• โน้ต รหัส Wi‑Fi ห้องประชุม\n• งาน ส่งสรุปรายสัปดาห์\n• เก็บ ลิงก์หรือข้อความสำคัญ\n• ค้นหา ใบเสร็จ\n\nเชื่อม dashboard: พิมพ์ “ไอดี” ในแชทส่วนตัวกับไมโล";
 }
 
-
 function formatDate(date: Date) {
   return new Intl.DateTimeFormat("th-TH", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Bangkok" }).format(date);
 }
-
 
 function formatFinanceReport(report: Awaited<ReturnType<typeof db.financeReport>>) {
   const money = (amount: number) => amount.toLocaleString("th-TH", { maximumFractionDigits: 2 });
@@ -31,14 +28,12 @@ function formatFinanceReport(report: Awaited<ReturnType<typeof db.financeReport>
   return `สรุปการเงิน${label[report.period]}\nรายรับ ${money(report.income)} บาท\nรายจ่าย ${money(report.expense)} บาท\nกำไร/คงเหลือ ${money(report.balance)} บาท\n${categories ? `\nรายจ่ายตามหมวด\n${categories}` : "\nยังไม่มีรายจ่ายในช่วงนี้"}`;
 }
 
-
 function formatFinancialInsight(insight: Awaited<ReturnType<typeof generateFinancialInsight>>) {
   const quality = insight.dataSufficiency === "adequate" ? "ข้อมูลเพียงพอสำหรับวิเคราะห์เบื้องต้น" : insight.dataSufficiency === "limited" ? "ข้อมูลยังมีไม่มาก จึงเป็นข้อสังเกตเบื้องต้น" : "ยังไม่มีข้อมูลเพียงพอสำหรับวิเคราะห์";
   const highlights = insight.highlights.map(item => `• ${item}`).join("\n");
   const actions = insight.suggestedActions.map(item => `• ${item}`).join("\n");
   return `AI สรุปธุรกิจ\n${quality}\n${insight.summary}${highlights ? `\n\nข้อสังเกต\n${highlights}` : ""}${actions ? `\n\nแนวทางจัดการ\n${actions}` : ""}`;
 }
-
 
 async function buildVoiceProposal(transcript: string, lineUserId: string, financeAccountId?: number): Promise<VoiceTransactionProposal> {
   const command = parseMiloCommand(transcript);
@@ -54,7 +49,6 @@ async function buildVoiceProposal(transcript: string, lineUserId: string, financ
   return { transcript, transactionType: command.type, amount: command.amount, category, note: command.note };
 }
 
-
 function proposalFromStoredTranscript(transcript: string, proposalJson: string | null): VoiceTransactionProposal {
   try {
     const proposal = JSON.parse(proposalJson ?? "") as VoiceTransactionProposal;
@@ -64,7 +58,6 @@ function proposalFromStoredTranscript(transcript: string, proposalJson: string |
   return parsed.type === "expense" || parsed.type === "income" ? { transcript, transactionType: parsed.type, amount: parsed.amount, category: parsed.category, note: parsed.note } : { transcript };
 }
 
-
 async function sendVoiceProposal(replyToken: string, proposal: VoiceTransactionProposal) {
   try {
     await replyVoiceProposal(replyToken, proposal);
@@ -73,7 +66,6 @@ async function sendVoiceProposal(replyToken: string, proposal: VoiceTransactionP
     await replyVoiceProposalFallback(replyToken, proposal);
   }
 }
-
 
 async function sendPostSaveSummary(replyToken: string, lineUserId: string, lineChatId: string, financeAccountId: number, transaction: Pick<VoiceTransactionProposal, "transactionType" | "amount" | "category">) {
   const report = await db.financeReport(lineUserId, "day", new Date(), financeAccountId);
@@ -91,7 +83,6 @@ async function sendPostSaveSummary(replyToken: string, lineUserId: string, lineC
   }
 }
 
-
 async function sendFinanceReportCard(replyToken: string, lineChatId: string, report: Awaited<ReturnType<typeof db.financeReport>>) {
   try {
     await replyFinanceReportCard(replyToken, report);
@@ -106,9 +97,7 @@ async function sendFinanceReportCard(replyToken: string, lineChatId: string, rep
   }
 }
 
-
 type LineFinanceScope = "user" | "group" | "room";
-
 
 async function resolveFinanceScope(lineUserId: string, lineChatId: string, scope: LineFinanceScope) {
   const access = await db.resolveFinanceAccountForLineEvent(lineUserId, lineChatId, scope);
@@ -116,13 +105,11 @@ async function resolveFinanceScope(lineUserId: string, lineChatId: string, scope
   return { financeAccountId: access.account.id, role: access.membership.role };
 }
 
-
 function financeAccessMessage(scope: LineFinanceScope) {
   return scope === "user"
     ? "ยังไม่พบบัญชีการเงินส่วนตัว ลองส่งคำสั่งอีกครั้งครับ"
     : "กลุ่มนี้ยังไม่ได้เปิดสมุดบัญชีสำหรับสมาชิกของคุณ จึงไม่บันทึกหรือแสดงการเงินร่วมโดยอัตโนมัติ เพื่อปกป้องข้อมูลส่วนตัว ให้เจ้าของกลุ่มตั้งค่าบัญชีและบทบาทจาก dashboard ก่อนครับ";
 }
-
 
 async function handleText(event: LineEvent, lineChatId: string, lineUserId: string, scope: LineFinanceScope) {
   const text = event.message?.text ?? "";
@@ -136,7 +123,7 @@ async function handleText(event: LineEvent, lineChatId: string, lineUserId: stri
   }
   const command = parseMiloCommand(text);
   let message = "";
-  const financeCommands = new Set(["expense", "income", "transactionSearch", "transactionDelete", "transactionUpdate", "openingBalance", "financeReport", "aiSummary", "voiceConfirm", "voiceEditPrompt", "voiceCategoryChange", "voiceEdit", "budget", "categoryAdd", "categoryRemove", "categoryList", "imageConfirm", "budgetOverview", "transactionList"]);
+  const financeCommands = new Set(["expense", "income", "transactionSearch", "transactionDelete", "transactionUpdate", "openingBalance", "financeReport", "aiSummary", "voiceConfirm", "voiceEditPrompt", "voiceCategoryChange", "voiceEdit", "budget", "categoryAdd", "categoryRemove", "categoryList", "imageConfirm"]);
   const financeScope = financeCommands.has(command.type) ? await resolveFinanceScope(lineUserId, lineChatId, scope) : undefined;
   if (financeCommands.has(command.type) && !financeScope) {
     if (event.replyToken) await replyText(event.replyToken, financeAccessMessage(scope));
@@ -302,35 +289,6 @@ async function handleText(event: LineEvent, lineChatId: string, lineUserId: stri
         }
       }
     }
-  } else if (command.type === "greeting") {
-    message = "สวัสดีครับ! ผมไมโล ผู้ช่วยการเงินและจัดการชีวิตใน LINE 🐱✨\n\nยินดีต้อนรับครับ! คุณสามารถ:\n• จดบันทึกรายรับ-รายจ่าย (พิมพ์, ส่งเสียง, หรือส่งรูปสลิป)\n• ตั้งเตือนความจำ (เช่น “เตือน กินยาวันนี้ 13:00”)\n• ดูสรุปและรายงานการเงินผ่านเมนูด้านล่างได้ตลอด 24 ชม. ครับ";
-  } else if (command.type === "recordGuide") {
-    message = "📝 วิธีจดบันทึกรายรับ-รายจ่ายกับไมโล:\n\n1. พิมพ์ข้อความง่ายๆ เช่น:\n• จ่าย ข้าวมันไก่ 50\n• จ่าย ค่าไฟ 1200\n• รับ เงินเดือน 40000\n\n2. ส่งรูปสลิปโอนเงิน / ใบเสร็จ:\n• ส่งรูปสลิปเข้ามาได้ทันที ไมโลจะอ่านยอด วันที่ และหมวดหมู่ให้อัตโนมัติ\n\n3. ส่งข้อความเสียง:\n• กดปุ่มไมค์อัดเสียงสั้นๆ เช่น “จ่ายค่ากาแฟ 65 บาท”";
-  } else if (command.type === "budgetOverview") {
-    const now = new Date();
-    const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-    const budgets = await db.listBudgets(lineUserId, monthKey, financeScope?.financeAccountId);
-    if (budgets.length) {
-      const lines = budgets.map(b => `• ${b.category}: ${Number(b.amount).toLocaleString("th-TH")} บาท (เตือนเมื่อ ${b.alertAtPercent}%)`);
-      message = `📊 งบประมาณเดือนนี้ของคุณ:\n${lines.join("\n")}\n\n💡 ตั้งงบเพิ่ม: “ตั้งงบ [ชื่อหมวด] [จำนวนเงิน]” เช่น “ตั้งงบ อาหาร 5000”`;
-    } else {
-      message = "📊 ยังไม่ได้ตั้งงบประมาณสำหรับเดือนนี้ครับ\n\n💡 คุณสามารถเริ่มตั้งงบได้ง่ายๆ เช่น:\n• ตั้งงบ อาหาร 5000\n• ตั้งงบ เดินทาง 2000\n• ตั้งงบ บันเทิง 1500";
-    }
-  } else if (command.type === "transactionList") {
-    const recentTxs = await db.listTransactions(lineUserId, undefined, undefined, false, financeScope?.financeAccountId);
-    if (recentTxs.length) {
-      const money = (amount: string | number) => Number(amount).toLocaleString("th-TH", { maximumFractionDigits: 2 });
-      const list = recentTxs.slice(0, 5).map((t, idx) => {
-        const sign = t.transactionType === "expense" ? "-" : "+";
-        const dateStr = new Intl.DateTimeFormat("th-TH", { month: "short", day: "numeric", timeZone: "Asia/Bangkok" }).format(new Date(t.occurredAt));
-        return `${idx + 1}. [${dateStr}] ${t.category}: ${sign}${money(t.amount)} ฿ (#${t.id}${t.note ? ` - ${t.note}` : ""})`;
-      });
-      message = `📋 รายการธุรกรรมล่าสุด (5 รายการ):\n\n${list.join("\n")}\n\n💡 จัดการรายการ:\n• ค้นหา: “ค้นหารายการ อาหาร”\n• แก้ไข: “แก้รายการ 1 เป็น 150”\n• ลบ: “ลบรายการ 1”`;
-    } else {
-      message = "📋 ยังไม่มีรายการธุรกรรมที่บันทึกไว้ครับ\n\nลองเริ่มบันทึกรายการแรก เช่น:\n• จ่าย ข้าวเที่ยง 60\n• หรือส่งรูปสลิปโอนเงินเข้ามาได้เลยครับ!";
-    }
-  } else if (command.type === "settingGuide") {
-    message = `⚙️ จัดการระบบหลังบ้าน (Web Dashboard):\n\n🌐 เข้าใช้งานได้ที่:\nhttps://milo-line-app.vercel.app/dashboard\n\n🔑 รหัส LINE User ID ของคุณ:\n${lineUserId}\n(คัดลอกรหัสนี้ไปเชื่อมต่อในแดชบอร์ดได้เลยครับ)`;
   } else if (command.type === "help") {
     message = helpText();
   } else {
@@ -338,7 +296,6 @@ async function handleText(event: LineEvent, lineChatId: string, lineUserId: stri
   }
   if (event.replyToken) await replyText(event.replyToken, message);
 }
-
 
 async function handleMedia(event: LineEvent, lineChatId: string, lineUserId: string, scope: LineFinanceScope) {
   const message = event.message;
@@ -385,7 +342,6 @@ async function handleMedia(event: LineEvent, lineChatId: string, lineUserId: str
   }
 }
 
-
 export async function processEvent(event: LineEvent, rawPayload: string) {
   const identity = sourceIdentity(event.source);
   if (!identity.lineUserId) return;
@@ -408,7 +364,6 @@ export async function processEvent(event: LineEvent, rawPayload: string) {
   }
 }
 
-
 export function registerLineWebhook(app: Express) {
   app.post("/api/line/webhook", express.raw({ type: "*/*", limit: "50mb" }), async (req: Request, res: Response) => {
     const raw = req.body as Buffer;
@@ -424,7 +379,6 @@ export function registerLineWebhook(app: Express) {
     }
   });
 }
-
 
 export function registerMiloCron(app: Express) {
   app.post("/api/scheduled/reminders", async (req: Request, res: Response) => {
@@ -458,3 +412,4 @@ export function registerMiloCron(app: Express) {
   registerFinanceDigestRoute("/api/scheduled/finance-daily", "finance-digest-daily", "daily");
   registerFinanceDigestRoute("/api/scheduled/finance-weekly", "finance-digest-weekly", "weekly");
 }
+
