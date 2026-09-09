@@ -303,37 +303,16 @@ export const appRouter = router({
       setupReminderDelivery: protectedProcedure.mutation(async ({ ctx }) => {
         if (ctx.user.role !== "admin") throw new Error("เฉพาะผู้ดูแลโครงการที่ตั้งงานส่งเตือนได้");
         if (!ENV.isProduction) throw new Error("ต้องเผยแพร่เว็บไซต์ก่อน จึงจะตั้งงานส่งเตือนอัตโนมัติได้");
-        const sessionToken = getSchedulerSessionToken(ctx.req.headers);
-        console.info("[Milo Scheduler] Setup requested", { isProduction: ENV.isProduction, hasSessionToken: Boolean(sessionToken) });
-        if (!sessionToken) throw new Error("ไม่พบ session สำหรับตั้งค่า scheduler");
         const key = "reminder-delivery-primary";
+        const taskUid = "vercel-cron-reminders";
         const current = await db.getAutomationSetting(key);
-        const jobSpec = {
-          name: "milo-reminder-delivery",
-          cron: "0 * * * * *",
-          path: "/api/scheduled/reminders",
-          description: "ตรวจรายการเตือนของไมโลทุกหนึ่งนาที",
+        await db.saveAutomationSetting({ settingKey: key, scheduleCronTaskUid: taskUid, isEnabled: true });
+        console.info("[Milo Scheduler] Vercel Cron configured", { taskUid, wasEnabled: Boolean(current?.isEnabled) });
+        return {
+          taskUid,
+          status: current?.isEnabled ? "already-active" as const : "configured" as const,
+          nextExecutionAt: null,
         };
-          const taskUid = current?.scheduleCronTaskUid;
-          try {
-            if (taskUid && current?.isEnabled) {
-              console.info("[Milo Scheduler] Already active", { taskUid });
-              return { taskUid, status: "already-active" as const };
-            }
-            if (taskUid) {
-              await updateHeartbeatJob(taskUid, { cron: jobSpec.cron, path: jobSpec.path, description: jobSpec.description, enable: true }, sessionToken);
-              await db.saveAutomationSetting({ settingKey: key, scheduleCronTaskUid: taskUid, isEnabled: true });
-            console.info("[Milo Scheduler] Updated", { taskUid });
-            return { taskUid, status: "updated" as const };
-          }
-          const job = await createHeartbeatJob(jobSpec, sessionToken);
-          await db.saveAutomationSetting({ settingKey: key, scheduleCronTaskUid: job.taskUid, isEnabled: true });
-          console.info("[Milo Scheduler] Created", { taskUid: job.taskUid });
-          return { taskUid: job.taskUid, status: "created" as const, nextExecutionAt: job.nextExecutionAt ?? null };
-        } catch (error) {
-          console.error("[Milo Scheduler] Setup failed", error instanceof Error ? error.message : "unknown error");
-          throw error;
-        }
       }),
     }),
   }),

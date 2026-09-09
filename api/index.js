@@ -1387,119 +1387,6 @@ var systemRouter = router({
   })
 });
 
-// server/_core/heartbeat.ts
-import { TRPCError as TRPCError3 } from "@trpc/server";
-var SERVICE = "webdevtoken.v1.WebDevService";
-var HEARTBEAT_REQUEST_TIMEOUT_MS = 2e4;
-var buildEndpoint = (rpc) => {
-  if (!ENV.forgeApiUrl) {
-    throw new TRPCError3({
-      code: "INTERNAL_SERVER_ERROR",
-      message: "Heartbeat service URL is not configured (BUILT_IN_FORGE_API_URL)."
-    });
-  }
-  if (!ENV.forgeApiKey) {
-    throw new TRPCError3({
-      code: "INTERNAL_SERVER_ERROR",
-      message: "Heartbeat service API key is not configured (BUILT_IN_FORGE_API_KEY)."
-    });
-  }
-  const baseUrl = ENV.forgeApiUrl;
-  const normalizedBase = baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;
-  return new URL(`${SERVICE}/${rpc}`, normalizedBase).toString();
-};
-var callForge = async (rpc, body, userSession) => {
-  const endpoint = buildEndpoint(rpc);
-  const headers = {
-    accept: "application/json",
-    authorization: `Bearer ${ENV.forgeApiKey}`,
-    "content-type": "application/json",
-    "connect-protocol-version": "1"
-  };
-  if (userSession) {
-    headers["x-manus-user-session"] = userSession;
-  }
-  let response;
-  try {
-    response = await fetch(endpoint, {
-      method: "POST",
-      headers,
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(HEARTBEAT_REQUEST_TIMEOUT_MS)
-    });
-  } catch (error) {
-    const timeoutMessage = error instanceof DOMException && error.name === "TimeoutError" ? `Heartbeat ${rpc} timed out after ${HEARTBEAT_REQUEST_TIMEOUT_MS / 1e3} seconds` : `Heartbeat ${rpc} network error: ${String(error)}`;
-    throw new TRPCError3({
-      code: "INTERNAL_SERVER_ERROR",
-      message: timeoutMessage
-    });
-  }
-  if (!response.ok) {
-    const detail = await response.text().catch(() => "");
-    throw mapForgeError(response, detail, rpc);
-  }
-  return await response.json();
-};
-var mapForgeError = (response, detail, rpc) => {
-  const status = response.status;
-  let code = "INTERNAL_SERVER_ERROR";
-  if (status === 401) code = "UNAUTHORIZED";
-  else if (status === 403) code = "FORBIDDEN";
-  else if (status === 404) code = "NOT_FOUND";
-  else if (status === 400 || status === 422) code = "BAD_REQUEST";
-  else if (status === 409) code = "CONFLICT";
-  else if (status === 429) code = "TOO_MANY_REQUESTS";
-  return new TRPCError3({
-    code,
-    message: `Heartbeat ${rpc} failed (${status})${detail ? `: ${detail}` : ""}`
-  });
-};
-var stringifyPayload = (payload) => {
-  if (payload === void 0 || payload === null) return "{}";
-  if (typeof payload === "string") return payload;
-  return JSON.stringify(payload);
-};
-var validateCallbackPath = (path) => {
-  if (!path || !path.startsWith("/api/scheduled/")) {
-    throw new TRPCError3({
-      code: "BAD_REQUEST",
-      message: "callback path must start with /api/scheduled/"
-    });
-  }
-};
-async function createHeartbeatJob(job, userSession) {
-  validateCallbackPath(job.path);
-  return callForge(
-    "CreateHeartbeatJob",
-    {
-      name: job.name,
-      cronExpression: job.cron,
-      callbackPath: job.path,
-      callbackMethod: job.method ?? "POST",
-      callbackPayload: stringifyPayload(job.payload),
-      description: job.description ?? ""
-    },
-    userSession
-  );
-}
-async function updateHeartbeatJob(taskUid, patch, userSession) {
-  if (patch.path !== void 0) validateCallbackPath(patch.path);
-  const body = { taskUid };
-  if (patch.cron !== void 0) body.cronExpression = patch.cron;
-  if (patch.path !== void 0) body.callbackPath = patch.path;
-  if (patch.method !== void 0) body.callbackMethod = patch.method;
-  if (patch.payload !== void 0) {
-    body.callbackPayload = stringifyPayload(patch.payload);
-  }
-  if (patch.description !== void 0) body.description = patch.description;
-  if (patch.enable !== void 0) body.enable = patch.enable;
-  return callForge(
-    "UpdateHeartbeatJob",
-    body,
-    userSession
-  );
-}
-
 // server/milo/line.ts
 import crypto2 from "node:crypto";
 function lineCredentials() {
@@ -2121,12 +2008,6 @@ async function generateFinancialInsight(input) {
 }
 
 // server/routers.ts
-function getSchedulerSessionToken(headers) {
-  const cookieToken = parseCookie(headers.cookie ?? "")[COOKIE_NAME];
-  if (cookieToken) return cookieToken;
-  const authorization = headers.authorization;
-  return typeof authorization === "string" && authorization.startsWith("Bearer ") ? authorization.slice(7) : "";
-}
 async function requireLinkedLineUser(dashboardUserId) {
   const lineUserId = await getLinkedLineUser(dashboardUserId);
   if (!lineUserId) throw new Error("\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E44\u0E14\u0E49\u0E40\u0E0A\u0E37\u0E48\u0E2D\u0E21\u0E1A\u0E31\u0E0D\u0E0A\u0E35 LINE \u0E01\u0E31\u0E1A\u0E44\u0E21\u0E42\u0E25");
@@ -2414,37 +2295,16 @@ var appRouter = router({
       setupReminderDelivery: protectedProcedure.mutation(async ({ ctx }) => {
         if (ctx.user.role !== "admin") throw new Error("\u0E40\u0E09\u0E1E\u0E32\u0E30\u0E1C\u0E39\u0E49\u0E14\u0E39\u0E41\u0E25\u0E42\u0E04\u0E23\u0E07\u0E01\u0E32\u0E23\u0E17\u0E35\u0E48\u0E15\u0E31\u0E49\u0E07\u0E07\u0E32\u0E19\u0E2A\u0E48\u0E07\u0E40\u0E15\u0E37\u0E2D\u0E19\u0E44\u0E14\u0E49");
         if (!ENV.isProduction) throw new Error("\u0E15\u0E49\u0E2D\u0E07\u0E40\u0E1C\u0E22\u0E41\u0E1E\u0E23\u0E48\u0E40\u0E27\u0E47\u0E1A\u0E44\u0E0B\u0E15\u0E4C\u0E01\u0E48\u0E2D\u0E19 \u0E08\u0E36\u0E07\u0E08\u0E30\u0E15\u0E31\u0E49\u0E07\u0E07\u0E32\u0E19\u0E2A\u0E48\u0E07\u0E40\u0E15\u0E37\u0E2D\u0E19\u0E2D\u0E31\u0E15\u0E42\u0E19\u0E21\u0E31\u0E15\u0E34\u0E44\u0E14\u0E49");
-        const sessionToken = getSchedulerSessionToken(ctx.req.headers);
-        console.info("[Milo Scheduler] Setup requested", { isProduction: ENV.isProduction, hasSessionToken: Boolean(sessionToken) });
-        if (!sessionToken) throw new Error("\u0E44\u0E21\u0E48\u0E1E\u0E1A session \u0E2A\u0E33\u0E2B\u0E23\u0E31\u0E1A\u0E15\u0E31\u0E49\u0E07\u0E04\u0E48\u0E32 scheduler");
         const key = "reminder-delivery-primary";
+        const taskUid = "vercel-cron-reminders";
         const current = await getAutomationSetting(key);
-        const jobSpec = {
-          name: "milo-reminder-delivery",
-          cron: "0 * * * * *",
-          path: "/api/scheduled/reminders",
-          description: "\u0E15\u0E23\u0E27\u0E08\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E40\u0E15\u0E37\u0E2D\u0E19\u0E02\u0E2D\u0E07\u0E44\u0E21\u0E42\u0E25\u0E17\u0E38\u0E01\u0E2B\u0E19\u0E36\u0E48\u0E07\u0E19\u0E32\u0E17\u0E35"
+        await saveAutomationSetting({ settingKey: key, scheduleCronTaskUid: taskUid, isEnabled: true });
+        console.info("[Milo Scheduler] Vercel Cron configured", { taskUid, wasEnabled: Boolean(current?.isEnabled) });
+        return {
+          taskUid,
+          status: current?.isEnabled ? "already-active" : "configured",
+          nextExecutionAt: null
         };
-        const taskUid = current?.scheduleCronTaskUid;
-        try {
-          if (taskUid && current?.isEnabled) {
-            console.info("[Milo Scheduler] Already active", { taskUid });
-            return { taskUid, status: "already-active" };
-          }
-          if (taskUid) {
-            await updateHeartbeatJob(taskUid, { cron: jobSpec.cron, path: jobSpec.path, description: jobSpec.description, enable: true }, sessionToken);
-            await saveAutomationSetting({ settingKey: key, scheduleCronTaskUid: taskUid, isEnabled: true });
-            console.info("[Milo Scheduler] Updated", { taskUid });
-            return { taskUid, status: "updated" };
-          }
-          const job = await createHeartbeatJob(jobSpec, sessionToken);
-          await saveAutomationSetting({ settingKey: key, scheduleCronTaskUid: job.taskUid, isEnabled: true });
-          console.info("[Milo Scheduler] Created", { taskUid: job.taskUid });
-          return { taskUid: job.taskUid, status: "created", nextExecutionAt: job.nextExecutionAt ?? null };
-        } catch (error) {
-          console.error("[Milo Scheduler] Setup failed", error instanceof Error ? error.message : "unknown error");
-          throw error;
-        }
       })
     })
   })
@@ -3281,7 +3141,7 @@ ${lineUserId}
   }
   const command = parseMiloCommand(text2);
   let message = "";
-  const financeCommands = /* @__PURE__ */ new Set(["expense", "income", "transactionSearch", "transactionDelete", "transactionUpdate", "openingBalance", "financeReport", "aiSummary", "voiceConfirm", "voiceEditPrompt", "voiceCategoryChange", "voiceEdit", "budget", "categoryAdd", "categoryRemove", "categoryList", "imageConfirm"]);
+  const financeCommands = /* @__PURE__ */ new Set(["expense", "income", "transactionSearch", "transactionDelete", "transactionUpdate", "openingBalance", "financeReport", "aiSummary", "budgetOverview", "transactionList", "voiceConfirm", "voiceEditPrompt", "voiceCategoryChange", "voiceEdit", "budget", "categoryAdd", "categoryRemove", "categoryList", "imageConfirm"]);
   const financeScope = financeCommands.has(command.type) ? await resolveFinanceScope(lineUserId, lineChatId, scope) : void 0;
   if (financeCommands.has(command.type) && !financeScope) {
     if (event.replyToken) await replyText(event.replyToken, financeAccessMessage(scope));
@@ -3518,6 +3378,16 @@ ${incomeSection}
         }
       }
     }
+  } else if (command.type === "recordGuide") {
+    message = "\u{1F4DD} \u0E08\u0E14\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E44\u0E14\u0E49\u0E40\u0E25\u0E22\n\u0E15\u0E31\u0E27\u0E2D\u0E22\u0E48\u0E32\u0E07: \u0E08\u0E48\u0E32\u0E22 125 \u0E04\u0E48\u0E32\u0E2D\u0E32\u0E2B\u0E32\u0E23\n\u0E2B\u0E23\u0E37\u0E2D: \u0E23\u0E31\u0E1A\u0E40\u0E07\u0E34\u0E19\u0E40\u0E14\u0E37\u0E2D\u0E19 30000\n\u0E41\u0E25\u0E49\u0E27\u0E1C\u0E21\u0E08\u0E30\u0E0A\u0E48\u0E27\u0E22\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E43\u0E2B\u0E49\u0E04\u0E23\u0E31\u0E1A";
+  } else if (command.type === "budgetOverview") {
+    const budgets2 = await listBudgets(lineUserId, void 0, financeScope.financeAccountId);
+    message = budgets2.length ? "\u{1F4CA} \u0E07\u0E1A\u0E1B\u0E23\u0E30\u0E21\u0E32\u0E13\u0E40\u0E14\u0E37\u0E2D\u0E19\u0E19\u0E35\u0E49\n" + budgets2.slice(0, 10).map((item) => `\u2022 ${item.category} ${Number(item.amount).toLocaleString("th-TH")} \u0E1A\u0E32\u0E17`).join("\n") : "\u{1F4CA} \u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E21\u0E35\u0E07\u0E1A\u0E1B\u0E23\u0E30\u0E21\u0E32\u0E13\u0E17\u0E35\u0E48\u0E15\u0E31\u0E49\u0E07\u0E44\u0E27\u0E49\u0E04\u0E23\u0E31\u0E1A\n\u0E15\u0E31\u0E27\u0E2D\u0E22\u0E48\u0E32\u0E07: \u0E07\u0E1A\u0E1B\u0E23\u0E30\u0E21\u0E32\u0E13 \u0E04\u0E48\u0E32\u0E2D\u0E32\u0E2B\u0E32\u0E23 5000";
+  } else if (command.type === "transactionList") {
+    const results = await searchTransactions(lineUserId, "", 10, financeScope.financeAccountId);
+    message = results.length ? "\u{1F4CB} \u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E25\u0E48\u0E32\u0E2A\u0E38\u0E14\n" + results.map((item) => `#${item.id} \u2022 ${item.transactionType === "expense" ? "\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22" : "\u0E23\u0E32\u0E22\u0E23\u0E31\u0E1A"} ${Number(item.amount).toLocaleString("th-TH")} \u0E1A\u0E32\u0E17 \u2022 ${item.category}`).join("\n") : "\u{1F4CB} \u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E21\u0E35\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E18\u0E38\u0E23\u0E01\u0E23\u0E23\u0E21\u0E04\u0E23\u0E31\u0E1A";
+  } else if (command.type === "greeting") {
+    message = "\u0E2A\u0E27\u0E31\u0E2A\u0E14\u0E35\u0E04\u0E23\u0E31\u0E1A \u{1F44B} \u0E1C\u0E21\u0E44\u0E21\u0E42\u0E25 \u0E1C\u0E39\u0E49\u0E0A\u0E48\u0E27\u0E22\u0E01\u0E32\u0E23\u0E40\u0E07\u0E34\u0E19\u0E02\u0E2D\u0E07\u0E04\u0E38\u0E13\n\u0E01\u0E14\u0E40\u0E21\u0E19\u0E39\u0E14\u0E49\u0E32\u0E19\u0E25\u0E48\u0E32\u0E07\u0E2B\u0E23\u0E37\u0E2D\u0E1E\u0E34\u0E21\u0E1E\u0E4C \u201C\u0E0A\u0E48\u0E27\u0E22\u201D \u0E40\u0E1E\u0E37\u0E48\u0E2D\u0E14\u0E39\u0E04\u0E33\u0E2A\u0E31\u0E48\u0E07\u0E17\u0E35\u0E48\u0E43\u0E0A\u0E49\u0E07\u0E32\u0E19\u0E44\u0E14\u0E49\u0E04\u0E23\u0E31\u0E1A";
   } else if (command.type === "help") {
     message = helpText();
   } else {
@@ -3626,15 +3496,29 @@ function registerLineWebhook(app2) {
   });
 }
 function registerMiloCron(app2) {
-  app2.post("/api/scheduled/reminders", async (req, res) => {
+  app2.all("/api/scheduled/reminders", async (req, res) => {
     try {
-      const user = await sdk.authenticateRequest(req);
-      if (!user.isCron || !user.taskUid) return res.status(403).json({ error: "cron-only" });
-      const schedule = await getAutomationSettingByTaskUid(user.taskUid);
-      if (!schedule) return res.json({ ok: true, skipped: "orphan" });
-      const result = await deliverDueReminders({ runner: "heartbeat", taskUid: user.taskUid });
+      const isVercelCron = req.method === "GET" && req.headers["user-agent"] === "vercel-cron/1.0";
+      let taskUid;
+      if (isVercelCron) {
+        const secret = process.env.CRON_SECRET?.trim();
+        const authorization = req.headers.authorization;
+        if (!secret || authorization !== `Bearer ${secret}`) return res.status(401).json({ error: "cron-unauthorized" });
+        const schedule = await getAutomationSetting("reminder-delivery-primary");
+        if (!schedule?.isEnabled) return res.json({ ok: true, skipped: "disabled" });
+        taskUid = schedule.scheduleCronTaskUid ?? "vercel-cron-reminders";
+      } else if (req.method === "POST") {
+        const user = await sdk.authenticateRequest(req);
+        if (!user.isCron || !user.taskUid) return res.status(403).json({ error: "cron-only" });
+        const schedule = await getAutomationSettingByTaskUid(user.taskUid);
+        if (!schedule) return res.json({ ok: true, skipped: "orphan" });
+        taskUid = user.taskUid;
+      } else {
+        return res.status(405).json({ error: "method-not-allowed" });
+      }
+      const result = await deliverDueReminders({ runner: "heartbeat", taskUid });
       const recurring = await deliverDueRecurringTransactions();
-      await saveAutomationSetting({ settingKey: schedule.settingKey, scheduleCronTaskUid: user.taskUid, isEnabled: true, lastRunAt: /* @__PURE__ */ new Date() });
+      await saveAutomationSetting({ settingKey: "reminder-delivery-primary", scheduleCronTaskUid: taskUid, isEnabled: true, lastRunAt: /* @__PURE__ */ new Date() });
       return res.json({ ok: true, ...result, recurring });
     } catch (error) {
       return res.status(500).json({ error: error instanceof Error ? error.message : "unknown", timestamp: (/* @__PURE__ */ new Date()).toISOString() });
