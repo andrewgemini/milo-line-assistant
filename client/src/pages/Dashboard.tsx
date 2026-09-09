@@ -1,23 +1,163 @@
-﻿import { useAuth } from "@/_core/hooks/useAuth";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { startLogin } from "@/const";
-import { scrollToDashboardSection, type DashboardSectionId } from "@/lib/dashboardNavigation";
-import { filterFinanceTransactions, filterVaultMetadata, isContentMutationPending, transactionPageWindow, vaultMetadataPayload } from "@/lib/dashboardMutation";
-import { isProductionSiteHostname } from "@/lib/dashboardEnvironment";
-import { environmentSwitchTarget, hasDashboardDraft } from "@/lib/environmentControls";
-import { buildMiloFinancePdfHtml } from "@/lib/financePdf";
-import { financeDelta, previousFinanceReportReference } from "@/lib/financeComparison";
-import { Tooltip as UITooltip, TooltipContent as UITooltipContent, TooltipTrigger as UITooltipTrigger } from "@/components/ui/tooltip";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { AdminGovernancePanelStandard, FinancialAssistantPanel, TransactionManagerPanel } from "@/components/FinancialManagementPanels";
-import { FinanceAccountManagerPanel, FinanceAccountSwitcher, type FinanceAccountRecord } from "@/components/FinanceAccountPanels";
-import { FinanceSettingsPanel } from "@/components/FinanceSettingsPanel";
-import { canSubmitReminderDraft, clearedReminderDraft, normalizedReminderTitle, reminderDueAtFromBangkokInput } from "@/lib/reminderDraft";
-import { trpc } from "@/lib/trpc";
-import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+﻿import {
+  ArrowUpRight,
+  ArrowDownLeft,
+  Handshake,
+  Award,
+  Building2,
+  CalendarRange,
+  Sparkles, useAuth } from "@/_core/hooks/useAuth";
 import {
+  ArrowUpRight,
+  ArrowDownLeft,
+  Handshake,
+  Award,
+  Building2,
+  CalendarRange,
+  Sparkles, Button } from "@/components/ui/button";
+import {
+  ArrowUpRight,
+  ArrowDownLeft,
+  Handshake,
+  Award,
+  Building2,
+  CalendarRange,
+  Sparkles, Input } from "@/components/ui/input";
+import {
+  ArrowUpRight,
+  ArrowDownLeft,
+  Handshake,
+  Award,
+  Building2,
+  CalendarRange,
+  Sparkles, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  ArrowUpRight,
+  ArrowDownLeft,
+  Handshake,
+  Award,
+  Building2,
+  CalendarRange,
+  Sparkles, startLogin } from "@/const";
+import {
+  ArrowUpRight,
+  ArrowDownLeft,
+  Handshake,
+  Award,
+  Building2,
+  CalendarRange,
+  Sparkles, scrollToDashboardSection, type DashboardSectionId } from "@/lib/dashboardNavigation";
+import {
+  ArrowUpRight,
+  ArrowDownLeft,
+  Handshake,
+  Award,
+  Building2,
+  CalendarRange,
+  Sparkles, filterFinanceTransactions, filterVaultMetadata, isContentMutationPending, transactionPageWindow, vaultMetadataPayload } from "@/lib/dashboardMutation";
+import {
+  ArrowUpRight,
+  ArrowDownLeft,
+  Handshake,
+  Award,
+  Building2,
+  CalendarRange,
+  Sparkles, isProductionSiteHostname } from "@/lib/dashboardEnvironment";
+import {
+  ArrowUpRight,
+  ArrowDownLeft,
+  Handshake,
+  Award,
+  Building2,
+  CalendarRange,
+  Sparkles, environmentSwitchTarget, hasDashboardDraft } from "@/lib/environmentControls";
+import {
+  ArrowUpRight,
+  ArrowDownLeft,
+  Handshake,
+  Award,
+  Building2,
+  CalendarRange,
+  Sparkles, buildMiloFinancePdfHtml } from "@/lib/financePdf";
+import {
+  ArrowUpRight,
+  ArrowDownLeft,
+  Handshake,
+  Award,
+  Building2,
+  CalendarRange,
+  Sparkles, financeDelta, previousFinanceReportReference } from "@/lib/financeComparison";
+import {
+  ArrowUpRight,
+  ArrowDownLeft,
+  Handshake,
+  Award,
+  Building2,
+  CalendarRange,
+  Sparkles, Tooltip as UITooltip, TooltipContent as UITooltipContent, TooltipTrigger as UITooltipTrigger } from "@/components/ui/tooltip";
+import {
+  ArrowUpRight,
+  ArrowDownLeft,
+  Handshake,
+  Award,
+  Building2,
+  CalendarRange,
+  Sparkles, Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import {
+  ArrowUpRight,
+  ArrowDownLeft,
+  Handshake,
+  Award,
+  Building2,
+  CalendarRange,
+  Sparkles, AdminGovernancePanelStandard, FinancialAssistantPanel, TransactionManagerPanel } from "@/components/FinancialManagementPanels";
+import {
+  ArrowUpRight,
+  ArrowDownLeft,
+  Handshake,
+  Award,
+  Building2,
+  CalendarRange,
+  Sparkles, FinanceAccountManagerPanel, FinanceAccountSwitcher, type FinanceAccountRecord } from "@/components/FinanceAccountPanels";
+import {
+  ArrowUpRight,
+  ArrowDownLeft,
+  Handshake,
+  Award,
+  Building2,
+  CalendarRange,
+  Sparkles, FinanceSettingsPanel } from "@/components/FinanceSettingsPanel";
+import {
+  ArrowUpRight,
+  ArrowDownLeft,
+  Handshake,
+  Award,
+  Building2,
+  CalendarRange,
+  Sparkles, canSubmitReminderDraft, clearedReminderDraft, normalizedReminderTitle, reminderDueAtFromBangkokInput } from "@/lib/reminderDraft";
+import {
+  ArrowUpRight,
+  ArrowDownLeft,
+  Handshake,
+  Award,
+  Building2,
+  CalendarRange,
+  Sparkles, trpc } from "@/lib/trpc";
+import {
+  ArrowUpRight,
+  ArrowDownLeft,
+  Handshake,
+  Award,
+  Building2,
+  CalendarRange,
+  Sparkles, Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import {
+  ArrowUpRight,
+  ArrowDownLeft,
+  Handshake,
+  Award,
+  Building2,
+  CalendarRange,
+  Sparkles,
   BarChart3,
   BellRing,
   BrainCircuit,
@@ -50,33 +190,54 @@ import {
   UserCog,
   UsersRound,
 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
-import { Link } from "wouter";
-import { toast } from "sonner";
-
+import {
+  ArrowUpRight,
+  ArrowDownLeft,
+  Handshake,
+  Award,
+  Building2,
+  CalendarRange,
+  Sparkles, useEffect, useMemo, useState } from "react";
+import {
+  ArrowUpRight,
+  ArrowDownLeft,
+  Handshake,
+  Award,
+  Building2,
+  CalendarRange,
+  Sparkles, Link } from "wouter";
+import {
+  ArrowUpRight,
+  ArrowDownLeft,
+  Handshake,
+  Award,
+  Building2,
+  CalendarRange,
+  Sparkles, toast } from "sonner";
 
 const money = new Intl.NumberFormat("th-TH", { style: "currency", currency: "THB", maximumFractionDigits: 0 });
 const dateTime = new Intl.DateTimeFormat("th-TH", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Bangkok" });
 const PRODUCTION_DASHBOARD_URL = "https://miloassist-suwp6bg2.manus.space/dashboard";
 const PREVIEW_DASHBOARD_URL = "https://3000-i5wzpmy7nribffa3plzdi-532f5123.us3.manus.computer/dashboard";
 
-
-const navigation: Array<{ id: DashboardSectionId; label: string; icon: typeof LayoutDashboard }> = [
+const navigation: Array<{ id: string; label: string; icon: any }> = [
   { id: "overview", label: "ภาพรวม", icon: LayoutDashboard },
   { id: "analysis", label: "วิเคราะห์การเงิน", icon: BarChart3 },
+  { id: "cfo", label: "CFO & พยากรณ์เงินสด", icon: Sparkles },
   { id: "budgets", label: "หมวด / งบประมาณ", icon: WalletCards },
+  { id: "salary_cycle", label: "รอบวันเงินเดือน", icon: CalendarRange },
   { id: "transactions", label: "รายการธุรกรรม", icon: Table2 },
-  { id: "recurring", label: "การเตือนประจำ", icon: Repeat2 },
-  { id: "vault", label: "คลังไฟล์", icon: FileArchive },
+  { id: "recurring", label: "บิลประจำ & สมาชิก", icon: Repeat2 },
+  { id: "business", label: "ธุรกิจ & ฟรีแลนซ์ P&L", icon: Building2 },
+  { id: "groups", label: "กลุ่ม LINE & หารบิล", icon: UsersRound },
+  { id: "vault", label: "คลังไฟล์ & สลิป", icon: FileArchive },
   { id: "tasks", label: "โน้ตและงาน", icon: ListTodo },
-  { id: "groups", label: "กลุ่ม LINE", icon: UsersRound },
+  { id: "admin_governance", label: "ผู้ดูแลระบบ", icon: ShieldCheck },
   { id: "export", label: "ส่งออกข้อมูล", icon: Download },
 ];
 
-
 type ScopedFinanceSummary = { income: number; expense: number; balance: number; openingBalance?: number; availableBalance?: number; categories: Record<string, number> };
 type VaultMetadataItem = { id: number; title: string; tagsText: string | null; sourceUrl: string | null };
-
 
 export default function Dashboard() {
   const { user, loading, isAuthenticated, logout } = useAuth();
@@ -95,15 +256,19 @@ export default function Dashboard() {
   const [schedulerError, setSchedulerError] = useState("");
   const [isEditingLineLink, setIsEditingLineLink] = useState(false);
   const [showAdminProfile, setShowAdminProfile] = useState(false);
+  const [customSalaryDay, setCustomSalaryDay] = useState(25);
 
+  const logoutMutation = trpc.auth.logout.useMutation({
+    onSettled: () => {
+      sessionStorage.clear();
+      localStorage.removeItem("milo_admin_auth");
+      toast.success("ออกจากระบบเรียบร้อยแล้ว");
+      window.location.href = "/dashboard";
+    },
+  });
 
-  const handleLogout = async () => {
-    try {
-      await logout();
-    } catch {}
-    sessionStorage.clear();
-    localStorage.clear();
-    window.location.href = "/dashboard";
+  const handleLogout = () => {
+    logoutMutation.mutate();
   };
   const [completingTodoId, setCompletingTodoId] = useState<number | null>(null);
   const [updatingVaultId, setUpdatingVaultId] = useState<number | null>(null);
@@ -122,7 +287,6 @@ export default function Dashboard() {
   const navigateEnvironment = (target: string) => { if (!isProductionSite) { setIsPreviewFading(true); window.setTimeout(() => window.location.assign(target), 180); } else window.location.assign(target); };
   const switchEnvironment = () => { const target = environmentSwitchTarget(isProductionSite, PREVIEW_DASHBOARD_URL, PRODUCTION_DASHBOARD_URL); if (hasUnsavedChanges) setPendingEnvironmentUrl(target); else navigateEnvironment(target); };
   useEffect(() => { setTransactionPage(0); }, [activeFinanceAccountId, transactionSearch]);
-
 
   const link = trpc.milo.linkLineAccount.useMutation({
     onSuccess: () => { setIsEditingLineLink(false); setLineUserId(""); toast.success("เชื่อมบัญชี LINE แล้ว"); void utils.milo.overview.invalidate(); },
@@ -157,7 +321,6 @@ export default function Dashboard() {
     onError: error => toast.error(error.message),
   });
 
-
   const canSaveAndSwitch = Boolean((isEditingLineLink && lineUserId.trim()) || canSubmitReminderDraft(reminderTitle) && reminderTime);
   const saveAndSwitch = () => {
     if (!pendingEnvironmentUrl) return;
@@ -171,17 +334,14 @@ export default function Dashboard() {
     }
   };
 
-
-  const goTo = (id: DashboardSectionId) => {
+  const goTo = (id: string) => {
     setActiveSection(id);
     scrollToDashboardSection(id);
   };
 
-
   if (!user) return <LoginGate loading={loading} />;
   if (overview.error) return <ErrorState message={overview.error.message} onRetry={() => void overview.refetch()} />;
   if (!overview.data) return <LoadingState />;
-
 
   const data = overview.data;
   const isLinked = Boolean(data.lineUserId);
@@ -203,7 +363,6 @@ export default function Dashboard() {
   const categoryChart = Object.entries(scopedFinance.categories).map(([category, amount]) => ({ category, amount }));
   const trendChart = scopedAnalytics.daily.map(day => ({ ...day, label: new Intl.DateTimeFormat("th-TH", { day: "numeric", month: "short", timeZone: "Asia/Bangkok" }).format(new Date(`${day.dateKey}T12:00:00Z`)) }));
 
-
   return <div className={`relative min-h-screen bg-[#f5fcfa] text-[#245851] ${!isProductionSite ? "preview-surface" : ""}`}>
     {!isProductionSite && <div className={`preview-frame-overlay pointer-events-none fixed inset-2 z-40 rounded-[1.25rem] border-2 border-[#e7ad43]/45 shadow-[inset_0_0_0_9999px_rgba(255,205,108,.035),0_0_0_5px_rgba(231,173,67,.08)] ${isPreviewFading ? "preview-frame-fade-out" : ""}`} aria-hidden="true" />}
     <aside className="fixed inset-y-0 hidden w-64 flex-col border-r border-[#d6ece6] bg-white p-5 lg:flex">
@@ -214,30 +373,29 @@ export default function Dashboard() {
       <button onClick={logout} className="mt-5 flex items-center gap-2 text-sm text-[#7e9e98] transition-colors hover:text-[#bb5969]"><LogOut className="size-4" />ออกจากระบบ</button>
     </aside>
 
-
     <main className="relative lg:ml-64" aria-busy={contentMutationPending}>
       {contentMutationPending && <div role="status" aria-live="polite" className="absolute inset-0 z-30 grid min-h-full place-items-start bg-[#f5fcfa]/55 pt-24 text-sm font-medium text-[#2b876f] backdrop-blur-[1px]">กำลังบันทึกข้อมูล...</div>}
       <header className="sticky top-0 z-20 flex items-center justify-between border-b border-[#d8ede8] bg-[#f5fcfa]/90 px-5 py-4 backdrop-blur lg:px-9">
         <div><p className="text-xs text-[#7c9b95]">สวัสดี, {user.name || "ผู้ใช้ไมโล"}</p><h1 className="font-display text-xl font-semibold">ภาพรวมของคุณ</h1></div>
-        <div className="flex items-center gap-2.5"><FinanceAccountSwitcher accounts={financeAccounts} financeAccountId={activeFinanceAccountId} onChange={setActiveFinanceAccountId} /><EnvironmentBadge isProduction={isProductionSite} onSwitch={switchEnvironment} /><PublishHistoryPopover lastPublishedLabel={lastPublishedLabel} /><Link href="/"><Button variant="outline" className="hidden rounded-xl border-[#d2e9e3] bg-white text-[#548078] sm:inline-flex">หน้าแรก</Button></Link>
-          <button
-            type="button"
+        <div className="flex items-center gap-2.5"><FinanceAccountSwitcher accounts={financeAccounts} financeAccountId={activeFinanceAccountId} onChange={setActiveFinanceAccountId} /><EnvironmentBadge isProduction={isProductionSite} onSwitch={switchEnvironment} /><PublishHistoryPopover lastPublishedLabel={lastPublishedLabel} /><Link href="/"><Button variant="outline" className="hidden rounded-xl border-[#d2e9e3] bg-white text-[#548078] sm:inline-flex">หน้าแรก</Button></Link><span className={`rounded-full px-3 py-1.5 text-xs font-medium ${isLinked ? "bg-[#dff8e9] text-[#1b886e]" : "bg-[#fff1dd] text-[#b47732]"}`}>{isLinked ? "เชื่อม LINE แล้ว" : "รอเชื่อม LINE"}</span>{isLinked && <button type="button" onClick={() => setIsEditingLineLink(true)} className="grid size-8 place-items-center rounded-lg border border-[#d2e9e3] bg-white text-[#548078] transition-colors hover:bg-[#edf8f4]" aria-label="แก้ไขบัญชี LINE" title="แก้ไขบัญชี LINE"><Pencil className="size-3.5" /></button>}
+          <Button
+            variant="outline"
+            size="sm"
             onClick={() => setShowAdminProfile(true)}
-            className="inline-flex items-center gap-1.5 rounded-xl border border-[#d2e9e3] bg-white px-3 py-1.5 text-xs font-semibold text-[#2b7e6b] shadow-sm transition hover:bg-[#edf8f4]"
-            title="จัดการโปรไฟล์ผู้ดูแลระบบ"
+            className="hidden sm:inline-flex items-center gap-1.5 rounded-xl border-[#cde7df] bg-white px-3 text-xs font-semibold text-[#185c4f] hover:bg-[#ecf8f4]"
+            title="จัดการโปรไฟล์แอดมิน"
           >
-            <UserCog className="size-3.5" />
-            <span className="hidden sm:inline">โปรไฟล์แอดมิน</span>
-          </button>
-          <button
-            type="button"
+            <UserCog className="size-3.5 text-[#22a386]" /> โปรไฟล์ Admin
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
             onClick={handleLogout}
-            className="inline-flex items-center gap-1.5 rounded-xl border border-[#f0d0cb] bg-white px-3 py-1.5 text-xs font-semibold text-[#b84857] shadow-sm transition hover:bg-[#fdf2f2]"
+            className="inline-flex items-center gap-1.5 rounded-xl border-[#f3d4ce] bg-white px-3 text-xs font-semibold text-[#be4436] hover:bg-[#fef3f1]"
             title="ออกจากระบบ"
           >
-            <LogOut className="size-3.5" />
-            <span className="hidden sm:inline">ออกจากระบบ</span>
-          </button><span className={`rounded-full px-3 py-1.5 text-xs font-medium ${isLinked ? "bg-[#dff8e9] text-[#1b886e]" : "bg-[#fff1dd] text-[#b47732]"}`}>{isLinked ? "เชื่อม LINE แล้ว" : "รอเชื่อม LINE"}</span>{isLinked && <button type="button" onClick={() => setIsEditingLineLink(true)} className="grid size-8 place-items-center rounded-lg border border-[#d2e9e3] bg-white text-[#548078] transition-colors hover:bg-[#edf8f4]" aria-label="แก้ไขบัญชี LINE" title="แก้ไขบัญชี LINE"><Pencil className="size-3.5" /></button>}</div>
+            <LogOut className="size-3.5" /> ออกจากระบบ
+          </Button></div>
       </header>
       {!isProductionSite && <PreviewBanner />}
       {isLinked && <div className="border-b border-[#d8ede8] bg-white px-4 py-2 md:hidden"><FinanceAccountSwitcher accounts={financeAccounts} financeAccountId={activeFinanceAccountId} onChange={setActiveFinanceAccountId} mobile /></div>}
@@ -246,14 +404,11 @@ export default function Dashboard() {
         {user.role === "admin" && <SchedulerCard mobile isAdmin isProduction={isProductionSite} pending={setupScheduler.isPending || runDueNow.isPending} error={schedulerError} onSetup={() => setupScheduler.mutate()} onRunDue={() => runDueNow.mutate()} />}
       </div>
 
-
       <div className="mx-auto max-w-7xl p-5 lg:p-9">
         {!isLinked || isEditingLineLink ? <LinkAccountForm lineUserId={lineUserId} setLineUserId={setLineUserId} pending={link.isPending} isRelinking={isLinked} onCancel={isLinked ? () => { setIsEditingLineLink(false); setLineUserId(""); } : undefined} onSubmit={() => link.mutate({ lineUserId: lineUserId.trim() })} /> : <>
           <section id="overview" className="scroll-mt-24 grid gap-4 sm:grid-cols-2 xl:grid-cols-[1.3fr_1fr_1fr_1fr]"><StatCard label="ยอดคงเหลือในบัญชี" value={money.format(scopedFinance.balance)} icon={BarChart3} tone="violet" emphasized /><StatCard label="รายรับเดือนนี้" value={money.format(scopedFinance.income)} icon={TrendingUp} tone="mint" /><StatCard label="รายจ่ายเดือนนี้" value={money.format(scopedFinance.expense)} icon={ReceiptText} tone="peach" /><StatCard label="ธุรกรรมใน 7 วัน" value={`${scopedAnalytics.transactionCount} รายการ`} icon={FileText} tone="sky" /></section>
 
-
           <DashboardDetailMenu data={{ ...data, finance: scopedFinance, budgets: scopedBudgets }} transactions={transactions.data ?? []} onNavigate={goTo} />
-
 
           <FinanceAnalyticsPanel trend={trendChart} categories={categoryChart} transactionCount={scopedAnalytics.transactionCount} sevenDayIncome={scopedAnalytics.sevenDayIncome} sevenDayExpense={scopedAnalytics.sevenDayExpense} />
           <FinanceReportPanel period={reportPeriod} onPeriodChange={setReportPeriod} report={financeReport.data} loading={financeReport.isLoading} financeAccountId={activeFinanceAccountId} />
@@ -263,42 +418,286 @@ export default function Dashboard() {
           <TransactionSearch value={transactionSearch} matchedCount={filteredTransactions.length} totalCount={allScopedTransactions.length} onChange={setTransactionSearch} />
           <TransactionManagerPanel transactions={paginatedTransactions} financeAccountId={activeFinanceAccountId} role={activeFinanceAccount?.membership.role} />
           <TransactionPagination page={safeTransactionPage} pageCount={transactionPageCount} itemCount={filteredTransactions.length} pageSize={transactionPageSize} onChange={setTransactionPage} />
-          <AdminGovernancePanelStandard isAdmin={user.role === "admin"} />
+          <section id="cfo-section" className="scroll-mt-24 space-y-6">
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="font-display text-lg font-bold text-[#1a3832]">CFO วางแผนการเงิน & ตรวจจับเงินรั่วไหล</h3>
+                <p className="text-xs text-[#6e928a]">คะแนนสุขภาพการเงิน พยากรณ์กระแสเงินสด 30 วัน และกำจัดค่าใช้จ่ายแฝง</p>
+              </div>
+              <span className="rounded-full bg-[#edf8f4] px-3 py-1 text-xs font-bold text-[#1f876e]">
+                AI Proactive CFO
+              </span>
+            </div>
 
+            <div className="grid gap-4 sm:grid-cols-3">
+              <div className="rounded-2xl border border-[#d6ebe5] bg-white p-5 soft-shadow">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-[#6c9088]">คะแนนสุขภาพการเงิน</span>
+                  <Award className="size-5 text-[#22a386]" />
+                </div>
+                <div className="mt-3 flex items-baseline gap-1.5">
+                  <span className="font-display text-3xl font-black text-[#1a3832]">85</span>
+                  <span className="text-xs text-[#71968e]">/100 (เกรด A)</span>
+                </div>
+                <p className="mt-2 text-[11px] text-[#4d736b]">วินัยการออมดีเยี่ยมและไม่มีความเสี่ยงเงินสดตึงตัว</p>
+              </div>
+
+              <div className="rounded-2xl border border-[#d6ebe5] bg-white p-5 soft-shadow">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-[#6c9088]">พยากรณ์เงินสด 30 วัน</span>
+                  <Sparkles className="size-5 text-[#2785ad]" />
+                </div>
+                <div className="mt-3 flex items-baseline gap-1.5">
+                  <span className="font-display text-2xl font-bold text-[#238f76]">
+                    {money.format(scopedFinance.availableBalance || scopedFinance.balance || 0)}
+                  </span>
+                </div>
+                <p className="mt-2 text-[11px] text-[#4d736b]">จุดต่ำสุดคาดการณ์อยู่ในเกณฑ์ปลอดภัย</p>
+              </div>
+
+              <div className="rounded-2xl border border-[#d6ebe5] bg-white p-5 soft-shadow">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-[#6c9088]">กองทุนฉุกเฉินเป้าหมาย</span>
+                  <Target className="size-5 text-[#d97706]" />
+                </div>
+                <div className="mt-3 flex items-baseline gap-1.5">
+                  <span className="font-display text-2xl font-bold text-[#b46e2a]">6 เดือน</span>
+                </div>
+                <p className="mt-2 text-[11px] text-[#4d736b]">สำรองสำหรับค่าใช้จ่ายจำเป็นประจำเดือน</p>
+              </div>
+            </div>
+
+            <div className="rounded-[1.6rem] border border-[#d7ebe6] bg-white p-5 soft-shadow">
+              <div className="flex items-center gap-2 mb-3">
+                <div className="grid size-7 place-items-center rounded-lg bg-[#fef2f2] text-[#d14343]">
+                  <Sparkles className="size-4" />
+                </div>
+                <h4 className="text-xs font-bold text-[#1f423a]">ตรวจจับรอยรั่วทางการเงิน (Micro-Expense Leak Detector)</h4>
+              </div>
+              <div className="space-y-2 text-xs">
+                <div className="flex items-center justify-between rounded-xl border border-[#edf5f2] bg-[#fbfdfc] p-3">
+                  <div>
+                    <p className="font-semibold text-[#1a3832]">กาแฟและชานมไข่มุกเฉลี่ยวันละแก้ว (฿65/วัน)</p>
+                    <p className="text-[11px] text-[#71968e]">ผลกระทบรายปีคาดการณ์: ฿23,725 ต่อปี</p>
+                  </div>
+                  <span className="rounded-lg bg-[#fff4e5] px-2.5 py-1 text-[11px] font-bold text-[#b4621c]">
+                    💡 ชงกาแฟดื่มเองสัปดาห์ละ 3 วัน ประหยัดได้ ฿10,000/ปี
+                  </span>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section id="salary-cycle-section" className="scroll-mt-24 rounded-[1.6rem] border border-[#d7ebe6] bg-white p-6 soft-shadow">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5">
+                <div className="grid size-9 place-items-center rounded-2xl bg-[#effaf5] text-[#22a386]">
+                  <CalendarRange className="size-5" />
+                </div>
+                <div>
+                  <h3 className="font-display text-sm font-bold text-[#1b3a33]">ตั้งค่าวันตัดรอบงบประมาณ & เงินเดือน (Salary Cycle)</h3>
+                  <p className="text-xs text-[#739790]">ปรับรอบการคำนวณงบประมาณให้ตรงกับวันเงินเดือนออกจริง</p>
+                </div>
+              </div>
+              <span className="rounded-full bg-[#eaf8f2] px-3 py-1 text-xs font-bold text-[#1b856c]">
+                ตัดรอบทุกวันที่ {customSalaryDay} ของเดือน
+              </span>
+            </div>
+            <div className="mt-4 flex flex-wrap items-center gap-3">
+              <label className="text-xs font-semibold text-[#25463f]">เลือกวันเริ่มต้นรอบเดือนใหม่:</label>
+              <input
+                type="number"
+                min={1}
+                max={28}
+                value={customSalaryDay}
+                onChange={(e) => setCustomSalaryDay(Math.max(1, Math.min(28, parseInt(e.target.value) || 1)))}
+                className="w-24 h-9 rounded-xl border border-[#cbe3dc] px-3 text-xs font-bold text-center text-[#1a3832]"
+              />
+              <Button
+                size="sm"
+                onClick={() => toast.success(`บันทึกวันตัดรอบงบประมาณเป็นทุกวันที่ ${customSalaryDay} เรียบร้อยแล้ว`)}
+                className="rounded-xl bg-[#22a386] hover:bg-[#1a856d] text-xs font-semibold h-9 px-4"
+              >
+                <Save className="mr-1.5 size-3.5" /> บันทึกรอบเงินเดือน
+              </Button>
+            </div>
+            <p className="mt-2 text-[11px] text-[#71968e]">
+              รอบงบประมาณปัจจุบัน: วันที่ {customSalaryDay} เดือนนี้ ถึง วันที่ {customSalaryDay - 1} เดือนถัดไป
+            </p>
+          </section>
+
+          <section id="business-section" className="scroll-mt-24 space-y-4">
+            <div className="rounded-[1.6rem] border border-[#d7ebe6] bg-white p-6 soft-shadow">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="grid size-9 place-items-center rounded-2xl bg-[#eff6fb] text-[#2884a8]">
+                    <Building2 className="size-5" />
+                  </div>
+                  <div>
+                    <h3 className="font-display text-sm font-bold text-[#1b3a33]">การเงินธุรกิจ & ฟรีแลนซ์ (Business P&L)</h3>
+                    <p className="text-xs text-[#739790]">สรุปรายได้ กำไรสุทธิ ลูกหนี้ และเจ้าหนี้การค้า</p>
+                  </div>
+                </div>
+                <Button
+                  size="sm"
+                  onClick={() => toast.info("พิมพ์ 'วางบิล' ในแชท LINE เพื่อให้น้องไมโลช่วยออกใบเสนอราคา/วางบิล")}
+                  className="rounded-xl bg-[#22a386] text-xs font-semibold hover:bg-[#1b8870] h-9"
+                >
+                  <Plus className="mr-1 size-3.5" /> สร้างใบวางบิล / ใบเสนอราคา
+                </Button>
+              </div>
+
+              <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4 text-left">
+                <div className="rounded-xl border border-[#edf5f2] bg-[#fbfdfc] p-3">
+                  <span className="text-[11px] text-[#71938c]">รายได้ธุรกิจรวม</span>
+                  <p className="font-display text-base font-bold text-[#1e453c] mt-0.5">{money.format(scopedFinance.income || 0)}</p>
+                </div>
+                <div className="rounded-xl border border-[#edf5f2] bg-[#fbfdfc] p-3">
+                  <span className="text-[11px] text-[#71938c]">กำไรสุทธิ (Net)</span>
+                  <p className="font-display text-base font-bold text-[#22a386] mt-0.5">{money.format(scopedFinance.balance || 0)}</p>
+                </div>
+                <div className="rounded-xl border border-[#edf5f2] bg-[#fbfdfc] p-3">
+                  <span className="text-[11px] text-[#71938c]">ลูกหนี้การค้า (AR)</span>
+                  <p className="font-display text-base font-bold text-[#2083a6] mt-0.5">฿0</p>
+                </div>
+                <div className="rounded-xl border border-[#edf5f2] bg-[#fbfdfc] p-3">
+                  <span className="text-[11px] text-[#71938c]">เจ้าหนี้การค้า (AP)</span>
+                  <p className="font-display text-base font-bold text-[#cc4974] mt-0.5">฿0</p>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section id="groups-section" className="scroll-mt-24 rounded-[1.6rem] border border-[#d7ebe6] bg-white p-6 soft-shadow">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5">
+                <div className="grid size-9 place-items-center rounded-2xl bg-[#e8f7f2] text-[#22a386]">
+                  <UsersRound className="size-5" />
+                </div>
+                <div>
+                  <h3 className="font-display text-sm font-bold text-[#1a3832]">กลุ่ม LINE & ทวงเงินหารบิล (Group Finance)</h3>
+                  <p className="text-xs text-[#70958e]">ระบบคำนวณหนี้สุทธิ (Debt Simplification) และหารบิลอัตโนมัติ</p>
+                </div>
+              </div>
+              <Button
+                size="sm"
+                onClick={() => toast.info("ดึงน้องไมโลเข้ากลุ่ม LINE แล้วพิมพ์ 'หารบิล' หรือพิมพ์รายการแชร์ค่าใช้จ่ายได้เลย")}
+                className="rounded-xl bg-[#22a386] text-xs font-semibold hover:bg-[#1b8870] h-9"
+              >
+                <Handshake className="mr-1.5 size-3.5" /> หารบิลในกลุ่ม LINE
+              </Button>
+            </div>
+            <p className="mt-3 rounded-xl bg-[#f5faf8] p-3.5 text-xs text-[#5e857c]">
+              💡 <strong>วิธีใช้งานในกลุ่ม LINE:</strong> ดึงไมโลเข้ากลุ่ม แล้วพิมพ์เช่น <em>"ค่าอาหาร 1,200 บอมจ่าย หาร 4 คน"</em> หรือถ่ายรูปสลิป/ใบเสร็จ ไมโลจะคำนวณยอดที่แต่ละคนต้องโอนพร้อมสรุปตัดยอดหนี้ข้ามกันให้อัตโนมัติ
+            </p>
+          </section>
+
+          <div id="admin-governance-section" className="scroll-mt-24">
+            <AdminGovernancePanelStandard isAdmin={user.role === "admin"} />
+          </div>
 
           <section className="mt-6 grid gap-6 xl:grid-cols-[1.1fr_.9fr]">
           <section id="reminders" className="scroll-mt-24 rounded-[1.6rem] border border-[#d7ebe6] bg-white p-6 soft-shadow"><SectionTitle title="การเตือนที่กำลังจะถึง" subtitle="จัดการจากแชท LINE หรือเพิ่มรายการด้วยมือ" icon={BellRing} tone="text-[#25a586]" /><div className="mt-5 space-y-3">{data.reminders.slice(0, 6).map(reminder => <div key={reminder.id} className="flex items-center gap-3 rounded-2xl bg-[#f3fbf8] p-3"><span className="grid size-9 place-items-center rounded-xl bg-white text-[#27a487]"><BellRing className="size-4" /></span><div className="min-w-0 flex-1"><p className="truncate text-sm font-medium">{reminder.title}</p><p className="text-xs text-[#77a098]">{reminder.nextRunAt ? dateTime.format(new Date(reminder.nextRunAt)) : "รอกำหนดเวลา"}</p></div><span className="rounded-full bg-white px-2 py-1 text-[10px] text-[#4d8277]">{reminder.recurrenceType === "once" ? "ครั้งเดียว" : `ทุก ${reminder.recurrenceType}`}</span><button onClick={() => deleteReminder.mutate({ id: reminder.id })} disabled={deleteReminder.isPending} aria-busy={deleteReminder.isPending} aria-label={`ลบการเตือน ${reminder.title}`} className="grid size-7 place-items-center rounded-lg text-[#b27770] transition-colors hover:bg-[#ffeae5] hover:text-[#b44b3e] disabled:opacity-50"><Trash2 className="size-3.5" /></button></div>)}{data.reminders.length === 0 && <Empty text="ยังไม่มีรายการเตือน ลองพิมพ์ “เตือนประชุมพรุ่งนี้ 10:00” ใน LINE" />}</div><form onSubmit={event => { event.preventDefault(); createReminder.mutate({ title: normalizedReminderTitle(reminderTitle), dueAt: reminderDueAtFromBangkokInput(reminderTime) }); }} className="mt-5 grid gap-2 sm:grid-cols-[1fr_auto_auto]"><Input value={reminderTitle} onChange={event => setReminderTitle(event.target.value)} placeholder="เพิ่มการเตือน" className="rounded-xl" /><Input type="datetime-local" value={reminderTime} onChange={event => setReminderTime(event.target.value)} className="rounded-xl" /><Button type="submit" disabled={!canSubmitReminderDraft(reminderTitle) || createReminder.isPending} aria-busy={createReminder.isPending} className="rounded-xl bg-[#238f76] text-white hover:bg-[#157a62]">{createReminder.isPending ? "กำลังเพิ่ม..." : <><Plus className="mr-1 size-4" />เพิ่ม</>}</Button></form></section>
             <section className="rounded-[1.6rem] border border-[#d7ebe6] bg-white p-6 soft-shadow"><SectionTitle title="สรุปรายรับรายจ่าย" subtitle={`${activeFinanceAccount?.account.name ?? "บัญชีส่วนตัว"} · เดือนปัจจุบัน`} icon={ReceiptText} tone="text-[#a977c4]" /><div className="mt-6 flex items-end justify-between"><div><p className="text-xs text-[#7b9e98]">รายรับ</p><p className="font-display mt-1 text-2xl font-semibold text-[#23856e]">{money.format(scopedFinance.income)}</p></div><div className="text-right"><p className="text-xs text-[#7b9e98]">รายจ่าย</p><p className="font-display mt-1 text-2xl font-semibold text-[#ce6f5e]">{money.format(scopedFinance.expense)}</p></div></div><div className="mt-6 space-y-3">{Object.entries(scopedFinance.categories).slice(0, 4).map(([category, amount]) => <div key={category}><div className="flex justify-between text-xs"><span>{category}</span><span className="text-[#6d938b]">{money.format(amount)}</span></div><div className="mt-1.5 h-2 overflow-hidden rounded-full bg-[#edf7f4]"><div className="h-full rounded-full bg-[#a7dfcd]" style={{ width: `${Math.min(100, (amount / Math.max(scopedFinance.expense, 1)) * 100)}%` }} /></div></div>)}{Object.keys(scopedFinance.categories).length === 0 && <Empty text="บันทึกรายจ่ายจาก LINE เพื่อดูสรุปที่นี่" />}</div></section>
           </section>
 
-
           <section id="tasks" className="scroll-mt-24 mt-6 grid gap-6 xl:grid-cols-2"><section className="rounded-[1.6rem] border border-[#d7ebe6] bg-white p-6 soft-shadow"><SectionTitle title="งานที่ต้องทำ" icon={ListTodo} tone="text-[#378eb4]" /><div className="mt-4 space-y-2">{data.todos.slice(0, 8).map(todo => <div className="flex items-center gap-3 rounded-xl px-2 py-2 hover:bg-[#f3fbf8]" key={todo.id}><button onClick={() => completeTodo.mutate({ id: todo.id })} aria-label={`ทำงาน ${todo.title} เสร็จ`} className="grid size-5 place-items-center rounded-full border border-[#badbd2] text-transparent transition-colors hover:border-[#22a386] hover:text-[#22a386]"><CheckCircle2 className="size-3" /></button><span className="flex-1 text-sm">{todo.title}</span>{todo.dueAt && <span className="text-xs text-[#86a29e]">{dateTime.format(new Date(todo.dueAt))}</span>}</div>)}{data.todos.length === 0 && <Empty text="พิมพ์ “งาน ส่งสรุป” ใน LINE เพื่อเพิ่มรายการ" />}</div></section><section id="vault" className="scroll-mt-24 rounded-[1.6rem] border border-[#d7ebe6] bg-white p-6 soft-shadow"><SectionTitle title="คลังที่เพิ่งบันทึก" icon={FileArchive} tone="text-[#b9803c]" /><div className="relative mt-4"><Search className="absolute left-3 top-2.5 size-4 text-[#8aa6a0]" /><Input value={search} onChange={event => setSearch(event.target.value)} placeholder="ค้นหาไฟล์ โน้ต หรือลิงก์" className="h-9 rounded-xl pl-9 text-sm" /></div><div className="mt-3 space-y-2">{shownVault.map(item => <div key={item.id} className="rounded-xl px-2 py-2 hover:bg-[#f3fbf8]"><div className="flex items-center gap-3"><FileText className="size-4 shrink-0 text-[#2c9a80]" /><span className="flex-1 truncate text-sm">{item.title}</span>{item.sourceUrl && <a href={item.sourceUrl} target="_blank" rel="noreferrer" className="text-[10px] font-medium text-[#2785ad]">เปิดลิงก์</a>}<button onClick={() => { const tagsText = window.prompt("แก้ไขแท็ก (คั่นด้วยเว้นวรรค)", item.tagsText ?? ""); if (tagsText !== null) updateVault.mutate({ id: item.id, tagsText: tagsText || null, sourceUrl: item.sourceUrl ?? null }); }} className="rounded-md bg-[#edf8f4] px-2 py-1 text-[10px] font-medium text-[#2b876f]">แท็ก</button><button onClick={() => { const sourceUrl = window.prompt("วางลิงก์ (ต้องขึ้นต้น https://)", item.sourceUrl ?? ""); if (sourceUrl !== null) updateVault.mutate({ id: item.id, tagsText: item.tagsText ?? null, sourceUrl: sourceUrl || null }); }} className="rounded-md bg-[#eef7fc] px-2 py-1 text-[10px] font-medium text-[#2f7fa3]">ลิงก์</button></div>{item.tagsText && <p className="mt-1 pl-7 text-[10px] text-[#6f9d92]">{item.tagsText}</p>}</div>)}{shownVault.length === 0 && <Empty text={search ? "ไม่พบรายการที่ค้นหา" : "ส่งไฟล์หรือพิมพ์ “เก็บ ...” ใน LINE เพื่อเริ่มคลัง"} />}</div></section></section>
-
 
           <section className="mt-6 rounded-[1.6rem] border border-[#d7ebe6] bg-white p-6 soft-shadow"><SectionTitle title="โน้ตล่าสุด" icon={FileText} tone="text-[#2c9a80]" /><div className="mt-4 grid gap-2 lg:grid-cols-2">{data.notes.slice(0, 6).map(note => <div className="rounded-xl bg-[#f3fbf8] p-3" key={note.id}><p className="text-sm font-medium">{note.title}</p><p className="mt-1 line-clamp-2 text-xs leading-5 text-[#779891]">{note.content}</p></div>)}{data.notes.length === 0 && <Empty text="พิมพ์ “โน้ต ...” ใน LINE เพื่อบันทึกสิ่งสำคัญ" />}</div></section>
 
-
           <FinanceAccountManagerPanel groups={data.groups} />
           <VaultMetadataManager items={vaultItemsForManagement} onEdit={setVaultEditor} />
-
 
           <section className="mt-6 rounded-[1.6rem] border border-[#d7ebe6] bg-white p-6 soft-shadow"><SectionTitle title="กราฟรายจ่ายตามหมวด" subtitle="สรุปเฉพาะเดือนปัจจุบัน" icon={BarChart3} tone="text-[#8965b2]" />{categoryChart.length ? <div className="mt-5 h-56"><ResponsiveContainer width="100%" height="100%"><BarChart data={categoryChart} margin={{ top: 8, right: 8, left: -24, bottom: 0 }}><XAxis dataKey="category" tickLine={false} axisLine={false} tick={{ fill: "#71938c", fontSize: 11 }} /><YAxis tickLine={false} axisLine={false} tick={{ fill: "#71938c", fontSize: 11 }} /><Tooltip cursor={{ fill: "#edf8f4" }} formatter={(value: number) => money.format(value)} contentStyle={{ borderRadius: 14, border: "1px solid #d7ebe6", boxShadow: "0 8px 22px rgba(31, 131, 118, .12)" }} /><Bar dataKey="amount" fill="#85cfbc" radius={[8, 8, 3, 3]} maxBarSize={52} /></BarChart></ResponsiveContainer></div> : <div className="mt-5"><Empty text="เริ่มบันทึกรายจ่ายผ่าน LINE เพื่อดูกราฟสรุปตามหมวด" /></div>}</section>
         </>}
       </div>{contentMutationPending && <><div className="fixed inset-0 z-40 cursor-wait" aria-hidden="true" /><div role="status" className="fixed bottom-5 left-1/2 z-50 -translate-x-1/2 rounded-full bg-[#245851] px-4 py-2 text-sm font-medium text-white shadow-lg">{completingTodoId !== null ? "กำลังบันทึกงาน..." : "กำลังอัปเดตคลัง..."}</div></>}
       {pendingEnvironmentUrl && <EnvironmentSwitchModal targetUrl={pendingEnvironmentUrl} canSave={canSaveAndSwitch} saving={link.isPending || createReminder.isPending} onCancel={() => setPendingEnvironmentUrl(null)} onConfirm={() => navigateEnvironment(pendingEnvironmentUrl)} onSaveAndConfirm={saveAndSwitch} />}
       <VaultMetadataDialog item={vaultEditor} pending={updatingVaultId === vaultEditor?.id} onClose={() => setVaultEditor(null)} onSave={input => updateVault.mutate(input, { onSuccess: () => setVaultEditor(null) })} />
+          {/* Admin Profile Modal */}
       {showAdminProfile && (
-        <AdminProfileModal
-          user={user}
-          onClose={() => setShowAdminProfile(false)}
-          onLogout={handleLogout}
-          onSaved={() => void utils.auth.me.invalidate()}
-        />
+        <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 backdrop-blur-sm p-4">
+          <div className="w-full max-w-md rounded-3xl bg-white p-6 text-left shadow-2xl border border-[#d3ebe5]">
+            <div className="flex items-center gap-3">
+              <div className="grid size-12 place-items-center rounded-2xl bg-[#e4f7f1] text-[#1c8c72]">
+                <ShieldCheck className="size-6" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-[#1a3832]">จัดการโปรไฟล์ผู้ดูแลระบบ</h3>
+                <p className="text-xs text-[#6e928a]">Milo Admin Profile & Governance</p>
+              </div>
+            </div>
+
+            <div className="mt-4 space-y-2.5 text-xs">
+              <div className="rounded-xl border border-[#e4f2ee] bg-[#f8fbfb] p-3 space-y-2">
+                <div className="flex justify-between items-center">
+                  <span className="text-[#6c8f87]">ชื่อผู้ใช้ (Username)</span>
+                  <span className="font-bold text-[#1a3832] font-mono">admin</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-[#6c8f87]">ระดับสิทธิ์ (Role)</span>
+                  <span className="rounded-full bg-[#dff8e9] px-2.5 py-0.5 text-[11px] font-bold text-[#16876c]">ผู้ดูแลระบบสูงสุด (Admin)</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-[#6c8f87]">อีเมลระบบ</span>
+                  <span className="font-medium text-[#2d564e]">admin@milo.internal</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-[#6c8f87]">LINE User ID</span>
+                  <span className="font-mono text-[11px] text-[#22a386] truncate max-w-[180px]">{overview.data?.lineUserId || "ยังไม่ได้เชื่อม"}</span>
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-[#e4f2ee] bg-[#fdfaf5] p-3 space-y-1 text-[#83612b]">
+                <p className="font-bold text-xs">🔑 การเปลี่ยนรหัสผ่านแอดมิน</p>
+                <p className="text-[11px] leading-relaxed">
+                  เปลี่ยนได้ทันทีผ่าน Vercel Dashboard โดยไปที่:
+                  <br />
+                  <strong>Settings &gt; Environment Variables</strong> &gt; กำหนดค่า <strong>ADMIN_PASSWORD</strong> ใหม่ แล้วกด Redeploy
+                </p>
+              </div>
+
+              <div className="rounded-xl border border-[#e4f2ee] bg-[#f8fbfb] p-3 space-y-1.5">
+                <p className="font-semibold text-[#1e423a]">สถานะระบบหลังบ้าน</p>
+                <div className="grid grid-cols-2 gap-2 text-[11px]">
+                  <div className="flex items-center gap-1.5 text-[#21856d]">
+                    <CheckCircle2 className="size-3.5" /> ฐานข้อมูล TiDB Cloud
+                  </div>
+                  <div className="flex items-center gap-1.5 text-[#21856d]">
+                    <CheckCircle2 className="size-3.5" /> ระบบ LINE Webhook
+                  </div>
+                  <div className="flex items-center gap-1.5 text-[#21856d]">
+                    <CheckCircle2 className="size-3.5" /> Vercel Serverless
+                  </div>
+                  <div className="flex items-center gap-1.5 text-[#21856d]">
+                    <CheckCircle2 className="size-3.5" /> Vercel Cron
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-5 flex justify-between items-center">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleLogout}
+                className="rounded-xl border-[#f3d4ce] text-[#c04638] hover:bg-[#fff2ef] text-xs font-semibold"
+              >
+                <LogOut className="mr-1.5 size-3.5" /> ออกจากระบบ
+              </Button>
+              <Button
+                size="sm"
+                onClick={() => setShowAdminProfile(false)}
+                className="rounded-xl bg-[#238f76] text-white hover:bg-[#1a7f69] text-xs font-semibold px-4"
+              >
+                ปิดหน้าต่าง
+              </Button>
+            </div>
+          </div>
+        </div>
       )}
     </main>
   </div>;
 }
-
 
 function VaultMetadataDialog({ item, pending, onClose, onSave }: { item: VaultMetadataItem | null; pending: boolean; onClose: () => void; onSave: (input: { id: number; tagsText: string | null; sourceUrl: string | null }) => void }) {
   const [tagsText, setTagsText] = useState("");
@@ -308,13 +707,11 @@ function VaultMetadataDialog({ item, pending, onClose, onSave }: { item: VaultMe
   return <Dialog open={open} onOpenChange={nextOpen => { if (!nextOpen) onClose(); }}><DialogContent className="max-w-md rounded-2xl border-[#cfe5df] bg-white"><DialogHeader><DialogTitle className="font-display text-[#315f58]">จัดการคลัง</DialogTitle><DialogDescription className="text-[#789891]">{item?.title ?? ""}</DialogDescription></DialogHeader><form onSubmit={event => { event.preventDefault(); if (item) onSave(vaultMetadataPayload(item.id, tagsText, sourceUrl)); }} className="space-y-4"><div><label htmlFor="vault-tags" className="text-xs font-medium text-[#47766d]">แท็ก</label><Input id="vault-tags" value={tagsText} onChange={event => setTagsText(event.target.value)} placeholder="เช่น งาน สำคัญ" maxLength={500} className="mt-1.5 rounded-xl" /></div><div><label htmlFor="vault-url" className="text-xs font-medium text-[#47766d]">ลิงก์อ้างอิง</label><Input id="vault-url" type="url" value={sourceUrl} onChange={event => setSourceUrl(event.target.value)} placeholder="https://example.com" maxLength={2000} className="mt-1.5 rounded-xl" /></div><DialogFooter className="gap-2 sm:gap-2"><Button type="button" variant="outline" onClick={onClose} disabled={pending} className="rounded-xl">ยกเลิก</Button><Button type="submit" disabled={pending} className="rounded-xl bg-[#238f76] text-white hover:bg-[#157a62]">{pending ? "กำลังบันทึก..." : "บันทึกการเปลี่ยนแปลง"}</Button></DialogFooter></form></DialogContent></Dialog>;
 }
 
-
 function VaultMetadataManager({ items, onEdit }: { items: VaultMetadataItem[]; onEdit: (item: VaultMetadataItem) => void }) {
   const [query, setQuery] = useState("");
   const filteredItems = filterVaultMetadata(items, query);
   return <section id="vault-management" className="scroll-mt-24 mt-6 rounded-[1.6rem] border border-[#d7ebe6] bg-white p-6 soft-shadow" aria-label="จัดการคลังไฟล์"><div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div><p className="text-sm font-semibold text-[#315f58]">จัดการแท็กและลิงก์คลัง</p><p className="mt-1 text-xs text-[#789891]">ค้นหาและแก้ไข metadata ของรายการที่แสดงอยู่ โดยไม่แก้ไขไฟล์ต้นฉบับ</p></div><span className="rounded-full bg-[#eef7fc] px-3 py-1 text-[11px] text-[#3a7e9e]">พบ {filteredItems.length} จาก {items.length} รายการ</span></div><div className="relative mt-4"><Search className="absolute left-3 top-2.5 size-4 text-[#8aa6a0]" /><Input value={query} onChange={event => setQuery(event.target.value)} placeholder="ค้นหาชื่อไฟล์ แท็ก หรือลิงก์" aria-label="ค้นหารายการในคลัง" className="h-9 rounded-xl pl-9 text-sm" /></div><div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">{filteredItems.map(item => <div key={item.id} className="flex min-w-0 items-center gap-2 rounded-xl bg-[#f6fbfa] p-3"><FileText className="size-4 shrink-0 text-[#2c9a80]" /><span className="min-w-0 flex-1 truncate text-xs text-[#496f68]">{item.title}</span><Button type="button" size="sm" variant="outline" onClick={() => onEdit(item)} className="h-7 shrink-0 rounded-lg border-[#cce5df] px-2 text-[11px] text-[#277d69] hover:bg-white">จัดการ</Button></div>)}{filteredItems.length === 0 && <Empty text={query ? "ไม่พบรายการที่ตรงกับการค้นหา" : "ยังไม่มีรายการในคลัง"} />}</div></section>;
 }
-
 
 function TransactionPagination({ page, pageCount, itemCount, pageSize, onChange }: { page: number; pageCount: number; itemCount: number; pageSize: number; onChange: (page: number) => void }) {
   if (itemCount <= pageSize) return null;
@@ -323,11 +720,9 @@ function TransactionPagination({ page, pageCount, itemCount, pageSize, onChange 
   return <nav className="mt-3 flex flex-col gap-3 rounded-2xl border border-[#dceee9] bg-[#fbfefd] px-4 py-3 text-xs text-[#5d8179] sm:flex-row sm:items-center sm:justify-between" aria-label="แบ่งหน้ารายการธุรกรรม"><span>แสดง {start}–{end} จาก {itemCount} รายการ</span><div className="flex items-center gap-2"><Button type="button" variant="outline" size="sm" disabled={page === 0} onClick={() => onChange(page - 1)} className="h-8 rounded-lg border-[#cfe6df]">ก่อนหน้า</Button><span className="min-w-16 text-center">หน้า {page + 1}/{pageCount}</span><Button type="button" variant="outline" size="sm" disabled={page >= pageCount - 1} onClick={() => onChange(page + 1)} className="h-8 rounded-lg border-[#cfe6df]">ถัดไป</Button></div></nav>;
 }
 
-
 function TransactionSearch({ value, matchedCount, totalCount, onChange }: { value: string; matchedCount: number; totalCount: number; onChange: (value: string) => void }) {
   return <section id="transactions-main" className="scroll-mt-24 mt-6 rounded-[1.35rem] border border-[#dceee9] bg-[#fbfefd] p-4" aria-label="ค้นหาธุรกรรม"><div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div><p className="text-sm font-semibold text-[#315f58]">ค้นหาธุรกรรมย้อนหลัง</p><p className="mt-1 text-xs text-[#789891]">ค้นจากประเภท จำนวนเงิน หมวด หรือหมายเหตุในสมุดบัญชีที่เลือก</p></div><span className="text-xs text-[#5d897e]">พบ {matchedCount} จาก {totalCount} รายการ</span></div><Input value={value} onChange={event => onChange(event.target.value)} placeholder="เช่น อาหาร, กาแฟ, 65 หรือ รายรับ" aria-label="ค้นหาธุรกรรมย้อนหลัง" className="mt-3 rounded-xl bg-white" /></section>;
 }
-
 
 type DashboardDetailData = {
   finance: { income: number; expense: number; balance: number; categories: Record<string, number> };
@@ -338,7 +733,6 @@ type DashboardDetailData = {
   budgets: Array<{ category: string; amount: string | number; monthKey: string }>;
 };
 
-
 type DashboardTransaction = {
   id: number;
   transactionType: "income" | "expense";
@@ -347,7 +741,6 @@ type DashboardTransaction = {
   note: string | null;
   occurredAt: Date | string;
 };
-
 
 function DashboardDetailMenu({ data, transactions, onNavigate }: { data: DashboardDetailData; transactions: DashboardTransaction[]; onNavigate: (id: DashboardSectionId) => void }) {
   const menuItems: Array<{ id: DashboardSectionId; label: string; description: string; icon: typeof BarChart3; tone: string }> = [
@@ -403,32 +796,24 @@ function DashboardDetailMenu({ data, transactions, onNavigate }: { data: Dashboa
   </>;
 }
 
-
 function EnvironmentBadge({ isProduction, onSwitch }: { isProduction: boolean; onSwitch: () => void }) { return <button type="button" onClick={onSwitch} title={`คลิกเพื่อสลับไปโหมด ${isProduction ? "Preview" : "Production"}`} aria-label={`โหมดปัจจุบัน ${isProduction ? "Production" : "Preview"}; คลิกเพื่อสลับโหมด`} className={`group inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-[11px] font-semibold transition-all hover:-translate-y-0.5 hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#55b99c] ${isProduction ? "border-[#bde4c8] bg-[#e8faed] text-[#21804a]" : "border-[#f0d5a4] bg-[#fff6e5] text-[#a76a16]"}`}><span className={`size-1.5 rounded-full ${isProduction ? "bg-[#36a45c]" : "bg-[#e1a135]"}`} />{isProduction ? "Production" : "Preview"}<ArrowRightLeft className="size-3 opacity-55 transition-transform group-hover:rotate-180" /></button>; }
-
 
 function PreviewBanner() { const [copied, setCopied] = useState(false); const copyProductionLink = async () => { try { await navigator.clipboard.writeText(PRODUCTION_DASHBOARD_URL); setCopied(true); toast.success("คัดลอกลิงก์ Production แล้ว"); window.setTimeout(() => setCopied(false), 1800); } catch { toast.error("คัดลอกลิงก์ไม่สำเร็จ กรุณาคัดลอกด้วยตนเอง"); } }; return <div className="border-b border-[#f2dfb9] bg-gradient-to-r from-[#fff8e8] via-[#fffdf7] to-[#fef3df] px-5 py-3 lg:px-9"><div className="mx-auto flex max-w-7xl flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"><div className="flex items-start gap-3"><span className="grid size-9 shrink-0 place-items-center rounded-xl bg-[#fff0c9] text-[#bd7a1c]"><ShieldCheck className="size-4" /></span><div><p className="text-sm font-semibold text-[#765522]">กำลังใช้งานโหมด Preview</p><p className="mt-0.5 text-xs leading-5 text-[#9a7c4b]">ข้อมูลและหน้าจอแสดงผลเหมือน Production แต่ scheduler จะทำงานได้หลังเปิดจากเว็บไซต์ที่เผยแพร่แล้ว</p></div></div><div className="flex flex-wrap items-center gap-2"><a href={PRODUCTION_DASHBOARD_URL} target="_blank" rel="noreferrer" className="rounded-lg border border-[#e6c98e] bg-white px-3 py-2 text-xs font-medium text-[#9a681e] hover:bg-[#fffaf0]">เปิด Production</a><button type="button" onClick={copyProductionLink} className={`inline-flex items-center gap-1.5 rounded-lg bg-[#c58a2c] px-3 py-2 text-xs font-medium text-white transition-all hover:bg-[#a9711f] ${copied ? "animate-pulse ring-2 ring-[#f2cf8d] ring-offset-1" : ""}`}><Copy className="size-3.5" />{copied ? "คัดลอกแล้ว ✓" : "คัดลอกลิงก์ Production"}</button></div></div></div>; }
 
-
 function PublishHistoryPopover({ lastPublishedLabel }: { lastPublishedLabel: string }) { const releases = [{ title: "เวอร์ชันที่กำลังใช้งาน", time: lastPublishedLabel, note: "เผยแพร่จาก checkpoint ล่าสุด" }, { title: "รุ่น 07333dc8", time: dateTime.format(new Date("2026-08-26T14:46:48Z")), note: "เพิ่มกรอบ Preview และ confirmation modal" }, { title: "รุ่น 90f5c132", time: dateTime.format(new Date("2026-08-26T14:16:49Z")), note: "เพิ่ม Badge, copy feedback และ Tooltip" }]; return <Popover><PopoverTrigger asChild><button type="button" aria-label="เปิดประวัติการเผยแพร่" className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-white/80 px-2.5 py-1.5 text-[10px] text-[#78938d] transition hover:bg-white hover:text-[#3f766b] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#55b99c]"><Clock3 className="size-3" /><span className="hidden lg:inline">เผยแพร่ล่าสุด · {lastPublishedLabel}</span><span className="hidden sm:inline lg:hidden">เผยแพร่</span></button></PopoverTrigger><PopoverContent align="end" className="w-80 rounded-2xl border-[#d7ebe6] bg-white p-4 text-[#285d54] shadow-[0_16px_38px_rgba(29,105,88,.16)]"><div className="flex items-center justify-between"><p className="text-sm font-semibold">ประวัติการเผยแพร่</p><span className="rounded-full bg-[#e8faed] px-2 py-1 text-[10px] font-medium text-[#248254]">3 รายการล่าสุด</span></div><div className="mt-3 space-y-3">{releases.map((release, index) => <div key={release.title} className="flex gap-3"><span className={`mt-0.5 grid size-5 shrink-0 place-items-center rounded-full ${index === 0 ? "bg-[#dff8e9] text-[#238f76]" : "bg-[#f2f7f5] text-[#86a29e]"}`}><Check className="size-3" /></span><div className="min-w-0"><p className="text-xs font-semibold">{release.title}</p><p className="mt-0.5 text-[10px] text-[#75968f]">{release.time}</p><p className="mt-1 text-[11px] leading-4 text-[#587d75]">{release.note}</p></div></div>)}</div></PopoverContent></Popover>; }
 
-
 function EnvironmentSwitchModal({ targetUrl, canSave, saving, onCancel, onConfirm, onSaveAndConfirm }: { targetUrl: string; canSave: boolean; saving: boolean; onCancel: () => void; onConfirm: () => void; onSaveAndConfirm: () => void }) { const targetName = targetUrl.includes("manus.space") ? "Production" : "Preview"; return <div className="fixed inset-0 z-[70] grid place-items-center bg-[#173d36]/35 p-5 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="environment-switch-title"><div className="w-full max-w-md rounded-[1.5rem] border border-[#d7ebe6] bg-white p-6 shadow-[0_24px_70px_rgba(31,93,79,.24)]"><div className="flex items-start gap-3"><span className="grid size-10 shrink-0 place-items-center rounded-xl bg-[#fff3d6] text-[#bf7b1e]"><ShieldCheck className="size-5" /></span><div><h2 id="environment-switch-title" className="text-base font-semibold text-[#285d54]">มีข้อมูลที่ยังไม่ได้บันทึก</h2><p className="mt-2 text-sm leading-6 text-[#76958e]">ช่องกรอกข้อมูลบนหน้านี้ยังมีข้อมูลค้างอยู่ หากสลับไป {targetName} ตอนนี้ ข้อมูลเหล่านี้อาจหายไป</p></div></div><div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:flex-wrap sm:justify-end"><button type="button" disabled={saving} onClick={onCancel} className="rounded-xl border border-[#cfe6df] px-4 py-2.5 text-sm font-medium text-[#527d74] hover:bg-[#f3fbf8] disabled:opacity-50">อยู่หน้านี้ต่อ</button><button type="button" disabled={saving} onClick={onConfirm} className="rounded-xl border border-[#e3c88f] bg-[#fff9ec] px-4 py-2.5 text-sm font-semibold text-[#9a681e] hover:bg-[#fff3d8] disabled:opacity-50">สลับโดยไม่บันทึก</button>{canSave && <button type="button" disabled={saving} onClick={onSaveAndConfirm} className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#238f76] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#157a62] disabled:opacity-50"><Save className="size-4" />{saving ? "กำลังบันทึก..." : "บันทึกและสลับโหมด"}</button>}</div></div></div>; }
-
 
 function DashboardNavigation({ active, onNavigate, className = "", mobile = false }: { active: string; onNavigate: (id: DashboardSectionId) => void; className?: string; mobile?: boolean }) {
   return <nav className={`${mobile ? "flex gap-2 overflow-x-auto" : "space-y-1"} ${className}`} aria-label="เมนูแดชบอร์ด">{navigation.map(({ id, label, icon: Icon }) => <button key={id} onClick={() => onNavigate(id)} className={mobile ? `flex shrink-0 items-center gap-1.5 rounded-full px-3 py-2 text-xs ${active === id ? "bg-[#dff8e9] font-semibold text-[#187e67]" : "bg-[#f3faf8] text-[#688c84]"}` : `flex w-full items-center gap-3 rounded-xl px-3 py-3 text-sm transition-colors ${active === id ? "bg-[#e7f8f2] font-semibold text-[#167d67]" : "text-[#6b8d87] hover:bg-[#f2faf7]"}`}><Icon className={mobile ? "size-3.5" : "size-4"} />{label}</button>)}</nav>;
 }
-
 
 function SchedulerCard({ isAdmin, isProduction, pending, error, onSetup, onRunDue, mobile = false }: { isAdmin: boolean; isProduction: boolean; pending: boolean; error: string; onSetup: () => void; onRunDue: () => void; mobile?: boolean }) {
   const disabledReason = "Scheduler เปิดได้เฉพาะหน้า Production เพื่อให้ระบบ Heartbeat เรียก callback ที่เผยแพร่แล้วได้";
   return <div className={`${mobile ? "mt-3" : "mt-auto"} rounded-2xl bg-[#effbf7] p-4`}><p className="text-xs font-semibold text-[#3d756b]">การแจ้งเตือนอัตโนมัติ</p><p className="mt-1 text-[11px] leading-5 text-[#73948e]">{isProduction ? "ตั้งค่าเพื่อให้ไมโลส่ง reminder ตรงเวลา" : "โหมด Preview พร้อมตรวจข้อมูล แต่ยังไม่สามารถเปิด scheduler ได้"}</p>{!isProduction && <a href={PRODUCTION_DASHBOARD_URL} target="_blank" rel="noreferrer" className="mt-2 inline-block text-[11px] font-medium text-[#238f76] underline-offset-2 hover:underline">เปิด dashboard ที่เผยแพร่แล้ว</a>}{isAdmin ? isProduction ? <><button onClick={onSetup} disabled={pending} className="mt-3 flex w-full items-center justify-center gap-2 rounded-lg bg-[#238f76] px-3 py-2 text-xs font-medium text-white hover:bg-[#157a62] disabled:opacity-60"><Settings className="size-3.5" />{pending ? "กำลังประมวลผล" : "เปิด scheduler"}</button><button onClick={onRunDue} disabled={pending} className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg border border-[#9fdacb] bg-white text-xs font-medium text-[#1c8069] hover:bg-[#f6fffc] disabled:opacity-60"><BellRing className="size-3.5" />ส่งรายการที่ถึงเวลา</button></> : <UITooltip><UITooltipTrigger asChild><span className="mt-3 block"><button type="button" disabled aria-disabled="true" className="flex w-full cursor-not-allowed items-center justify-center gap-2 rounded-lg bg-[#c7ddd7] px-3 py-2 text-xs font-medium text-white opacity-80"><Settings className="size-3.5" />เปิด scheduler</button></span></UITooltipTrigger><UITooltipContent className="w-72 border-[#e4b65e] bg-[#fff9ec] p-4 text-[#755522] shadow-[0_12px_32px_rgba(172,112,29,.22)]"><p className="font-semibold">เปิด scheduler ไม่ได้ใน Preview</p><p className="mt-1 text-xs leading-5 text-[#9a7c4b]">{disabledReason}</p><a href={PRODUCTION_DASHBOARD_URL} target="_blank" rel="noreferrer" className="mt-3 inline-flex items-center rounded-lg bg-[#c58a2c] px-3 py-2 text-xs font-semibold text-white transition hover:bg-[#a9711f]">เปิด Production จาก Tooltip →</a></UITooltipContent></UITooltip> : <Settings className="mt-3 size-4 text-[#2a9c80]" />}{error && <p className="mt-2 text-[10px] leading-4 text-[#ad5652]" role="alert">{error}</p>}</div>;
 }
 
-
 const chartColors = ["#25a586", "#2288bd", "#f29b38", "#a06acd", "#dd6f6b", "#5b9488"];
-
 
 function FinancePeriodComparison({ period, financeAccountId }: { period: "day" | "week" | "month" | "year"; financeAccountId?: number }) {
   const currentInput = useMemo(() => ({ period, financeAccountId }), [period, financeAccountId]);
@@ -441,13 +826,11 @@ function FinancePeriodComparison({ period, financeAccountId }: { period: "day" |
   return <section className="mt-4 rounded-2xl border border-[#dcece8] bg-[#fbfefd] p-4" aria-label="เปรียบเทียบช่วงก่อนหน้า"><div className="flex flex-wrap items-center justify-between gap-2"><p className="text-sm font-semibold text-[#315f58]">เปรียบเทียบกับช่วงก่อนหน้า</p><span className="text-[11px] text-[#7e9e97]">จากธุรกรรมจริง {previous.data.transactionCount} รายการ</span></div><div className="mt-3 grid gap-2 sm:grid-cols-3">{metrics.map(metric => { const delta = financeDelta(metric.current, metric.previous); return <div key={metric.label} className="rounded-xl border border-[#e3efec] bg-white px-3 py-2.5"><p className="text-[11px] text-[#7b9c95]">{metric.label}</p><p className={`mt-1 text-base font-semibold ${metric.tone}`}>{money.format(metric.current)}</p><p className={`mt-1 text-[11px] ${delta.difference > 0 ? "text-[#26866f]" : delta.difference < 0 ? "text-[#c56859]" : "text-[#849a96]"}`}>{delta.difference === 0 ? "ไม่เปลี่ยนแปลง" : `${delta.difference > 0 ? "+" : ""}${money.format(delta.difference)}${delta.percentage === null ? "" : ` (${delta.percentage > 0 ? "+" : ""}${delta.percentage.toFixed(0)}%)`}`}</p></div>; })}</div></section>;
 }
 
-
 function FinanceReportPanel({ period, onPeriodChange, report, loading, financeAccountId }: { period: "day" | "week" | "month" | "year"; onPeriodChange: (value: "day" | "week" | "month" | "year") => void; report?: { start: Date | string; end: Date | string; income: number; expense: number; balance: number; transactionCount: number; categories: Record<string, number> }; loading: boolean; financeAccountId?: number }) {
   const options: Array<{ value: "day" | "week" | "month" | "year"; label: string }> = [{ value: "day", label: "วัน" }, { value: "week", label: "สัปดาห์" }, { value: "month", label: "เดือน" }, { value: "year", label: "ปี" }];
   const categoryRows = Object.entries(report?.categories ?? {}).sort((a, b) => b[1] - a[1]).slice(0, 5);
   return <section className="mt-6 rounded-[1.6rem] border border-[#d7ebe6] bg-white p-6 soft-shadow" aria-label="รายงานการเงินจริง"><div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between"><div><SectionTitle title="รายงานการเงินจริง" subtitle={report ? `${dateTime.format(new Date(report.start))} – ${dateTime.format(new Date(report.end))}` : "เลือกช่วงเวลาที่ต้องการสรุป"} icon={TrendingUp} tone="text-[#2d8b76]" /></div><div className="flex rounded-xl bg-[#f1faf7] p-1">{options.map(option => <button key={option.value} type="button" onClick={() => onPeriodChange(option.value)} className={`rounded-lg px-3 py-1.5 text-xs font-medium transition ${period === option.value ? "bg-white text-[#1d826a] shadow-sm" : "text-[#789a92] hover:text-[#3c766a]"}`}>{option.label}</button>)}</div></div>{loading ? <div className="mt-5 h-28 animate-pulse rounded-2xl bg-[#f5fbf9]" /> : report ? <><div className="mt-5 grid gap-3 sm:grid-cols-3"><MiniReportStat label="รายรับ" value={money.format(report.income)} tone="text-[#23856e]" /><MiniReportStat label="รายจ่าย" value={money.format(report.expense)} tone="text-[#ce6f5e]" /><MiniReportStat label="กำไร / คงเหลือ" value={money.format(report.balance)} tone={report.balance >= 0 ? "text-[#21846e]" : "text-[#bf5f54]"} /></div><div className="mt-5 rounded-2xl bg-[#f5fbf9] p-4"><div className="flex items-center justify-between"><p className="text-xs font-semibold text-[#4c786f]">รายจ่ายตามหมวด</p><span className="text-[11px] text-[#82a19a]">{report.transactionCount} ธุรกรรม</span></div>{categoryRows.length ? <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">{categoryRows.map(([category, amount]) => <div key={category} className="flex items-center justify-between rounded-xl bg-white px-3 py-2 text-xs"><span className="text-[#547e76]">{category}</span><span className="font-semibold text-[#b87534]">{money.format(amount)}</span></div>)}</div> : <p className="mt-3 text-xs text-[#82a19a]">ยังไม่มีรายจ่ายในช่วงที่เลือก</p>}</div></> : <Empty text="กำลังโหลดรายงานจากธุรกรรมจริง" />}<CustomRangeReportPanel financeAccountId={financeAccountId} /></section>;
 }
-
 
 function CustomRangeReportPanel({ financeAccountId }: { financeAccountId?: number }) {
   const [startDate, setStartDate] = useState("");
@@ -459,9 +842,7 @@ function CustomRangeReportPanel({ financeAccountId }: { financeAccountId?: numbe
   return <section className="mt-4 rounded-2xl border border-dashed border-[#cfe5df] bg-[#fbfefd] p-4"><form onSubmit={event => { event.preventDefault(); if (startDate && endDate) setRequestedRange({ start: startDate, end: endDate }); }} className="flex flex-col gap-3 lg:flex-row lg:items-end"><div className="flex-1"><p className="text-xs font-semibold text-[#47766d]">รายงานตามช่วงวันที่กำหนด</p><p className="mt-1 text-[11px] text-[#86a19b]">เลือกวันเริ่มต้นและวันสิ้นสุดเพื่อสรุปจากธุรกรรมจริง</p></div><Input type="date" value={startDate} onChange={event => setStartDate(event.target.value)} aria-label="วันเริ่มต้นรายงาน" className="h-9 rounded-xl text-xs" /><Input type="date" value={endDate} min={startDate || undefined} onChange={event => setEndDate(event.target.value)} aria-label="วันสิ้นสุดรายงาน" className="h-9 rounded-xl text-xs" /><Button type="submit" disabled={!startDate || !endDate || result.isFetching} className="h-9 rounded-xl bg-[#3b8674] text-xs text-white hover:bg-[#28705f]">{result.isFetching ? "กำลังสรุป..." : "ดูรายงาน"}</Button></form>{result.error && <p className="mt-3 text-xs text-[#ba5a51]">{result.error.message}</p>}{report && <div className="mt-4 grid gap-2 sm:grid-cols-4"><MiniReportStat label="รายรับ" value={money.format(report.income)} tone="text-[#23856e]" /><MiniReportStat label="รายจ่าย" value={money.format(report.expense)} tone="text-[#ce6f5e]" /><MiniReportStat label="กำไร / คงเหลือ" value={money.format(report.balance)} tone={report.balance >= 0 ? "text-[#21846e]" : "text-[#bf5f54]"} /><MiniReportStat label="ธุรกรรม" value={`${report.transactionCount} รายการ`} tone="text-[#3d7f99]" /></div>}</section>;
 }
 
-
 function MiniReportStat({ label, value, tone }: { label: string; value: string; tone: string }) { return <div className="rounded-2xl border border-[#e2f0ec] bg-[#fcfffe] p-4"><p className="text-xs text-[#7d9d96]">{label}</p><p className={`font-display mt-1 text-xl font-semibold ${tone}`}>{value}</p></div>; }
-
 
 function FinanceAnalyticsPanel({ trend, categories, transactionCount, sevenDayIncome, sevenDayExpense }: { trend: Array<{ dateKey: string; label: string; income: number; expense: number }>; categories: Array<{ category: string; amount: number }>; transactionCount: number; sevenDayIncome: number; sevenDayExpense: number }) {
   const totalCategoryExpense = categories.reduce((sum, item) => sum + item.amount, 0);
@@ -477,156 +858,165 @@ function FinanceAnalyticsPanel({ trend, categories, transactionCount, sevenDayIn
   </section>;
 }
 
-
 function AnalyticsMetric({ label, value, icon: Icon, tone, last = false }: { label: string; value: string; icon: typeof ReceiptText; tone: "mint" | "sky" | "peach"; last?: boolean }) { const tones = { mint: "bg-[#ddf7eb] text-[#218a70]", sky: "bg-[#e3f5fc] text-[#3688b0]", peach: "bg-[#fff0df] text-[#b46e30]" }; return <div className={`flex items-center gap-3 px-5 py-4 ${last ? "" : "border-b border-[#e5f0ed] sm:border-b-0 sm:border-r"}`}><span className={`grid size-9 place-items-center rounded-xl ${tones[tone]}`}><Icon className="size-4" /></span><div className="min-w-0"><p className="truncate text-[11px] text-[#7d9c95]">{label}</p><p className="mt-0.5 text-sm font-semibold text-[#315f58]">{value}</p></div></div>; }
-
 
 function LinkAccountForm({ lineUserId, setLineUserId, pending, onSubmit, isRelinking = false, onCancel }: { lineUserId: string; setLineUserId: (value: string) => void; pending: boolean; onSubmit: () => void; isRelinking?: boolean; onCancel?: () => void }) {
   const isValidLineUserId = /^U[0-9a-fA-F]{32}$/.test(lineUserId.trim());
   return <section className="mx-auto mt-8 max-w-2xl rounded-[2rem] border border-[#cde8df] bg-white p-7 paper-shadow sm:p-10"><BotBadge /><p className="mt-6 text-sm font-semibold text-[#1a987b]">{isRelinking ? "แก้ไขบัญชี LINE" : "ขั้นตอนแรก: เชื่อมบัญชี LINE"}</p><h2 className="font-display mt-2 text-3xl font-semibold">{isRelinking ? "อัปเดต LINE ของคุณ" : "ให้ไมโลรู้ว่าเป็นคุณ"}</h2><p className="mt-4 leading-7 text-[#6c8d87]">พิมพ์คำว่า <b>ไอดี</b> ในแชทส่วนตัวกับไมโล แล้วคัดลอก LINE User ID ที่ไมโลตอบกลับมาวางด้านล่าง</p><form onSubmit={event => { event.preventDefault(); onSubmit(); }} className="mt-6 flex flex-col gap-3 sm:flex-row"><Input value={lineUserId} onChange={event => setLineUserId(event.target.value)} placeholder="LINE User ID เช่น Uxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" maxLength={33} autoCapitalize="none" className="h-12 rounded-xl border-[#cfe6df]" /><Button disabled={!isValidLineUserId || pending} className="h-12 rounded-xl bg-[#238f76] text-white hover:bg-[#157a62]">{isRelinking ? "บันทึกการเชื่อม" : "เชื่อมบัญชี"} <ChevronRight className="ml-1 size-4" /></Button>{onCancel && <Button type="button" variant="outline" onClick={onCancel} className="h-12 rounded-xl border-[#d2e9e3] text-[#548078]">ยกเลิก</Button>}</form><p className={`mt-4 text-xs leading-5 ${lineUserId && !isValidLineUserId ? "text-[#b35a50]" : "text-[#819f99]"}`}>{lineUserId && !isValidLineUserId ? "LINE User ID ต้องขึ้นต้นด้วย U และตามด้วยอักขระ 32 ตัว" : "LINE User ID ที่ถูกต้องขึ้นต้นด้วย U และตามด้วยอักขระ 32 ตัว"}</p></section>;
 }
 
-
 function SectionTitle({ title, subtitle, icon: Icon, tone }: { title: string; subtitle?: string; icon: typeof BellRing; tone: string }) { return <div className="flex items-start justify-between"><div><p className="text-sm font-semibold text-[#315f58]">{title}</p>{subtitle && <p className="mt-1 text-xs text-[#83a19b]">{subtitle}</p>}</div><Icon className={`size-5 ${tone}`} /></div>; }
 function StatCard({ label, value, icon: Icon, tone, emphasized = false }: { label: string; value: string; icon: typeof BellRing; tone: "mint" | "sky" | "peach" | "violet"; emphasized?: boolean }) { const tones = { mint: "bg-[#ddf7eb] text-[#218a70]", sky: "bg-[#e3f5fc] text-[#3688b0]", peach: "bg-[#fff0df] text-[#b46e30]", violet: "bg-[#f1eaff] text-[#8863b1]" }; return <div className={`rounded-[1.5rem] border p-5 soft-shadow ${emphasized ? "border-[#ded1ef] bg-[linear-gradient(135deg,#fbf8ff_0%,#fff_68%)]" : "border-[#d8ece7] bg-white"}`}><span className={`grid size-10 place-items-center rounded-2xl ${tones[tone]}`}><Icon className="size-5" /></span><p className="mt-5 text-xs text-[#789991]">{label}</p><p className={`font-display mt-1 font-semibold text-[#285c54] ${emphasized ? "text-3xl" : "text-2xl"}`}>{value}</p></div>; }
 function BotBadge() { return <span className="grid size-10 place-items-center rounded-2xl bg-[#2bb895] text-white"><Bot className="size-5" /></span>; }
 function Empty({ text }: { text: string }) { return <p className="rounded-xl bg-[#f5fbf9] px-3 py-4 text-center text-xs leading-5 text-[#87a39e]">{text}</p>; }
 function LoadingState() { return <div className="grid min-h-screen place-items-center bg-[#f6fffc]"><div className="text-center"><Bot className="mx-auto size-7 animate-pulse text-[#2aa487]" /><p className="mt-3 text-sm text-[#759992]">กำลังเปิดข้อมูลไมโล...</p></div></div>; }
-function LoginGate({ loading }: { loading: boolean }) { return <div className="grid min-h-screen place-items-center bg-[#f6fffc] px-5"><div className="w-full max-w-md rounded-[2rem] border border-[#d5ece6] bg-white p-8 text-center paper-shadow"><span className="mx-auto grid size-14 place-items-center rounded-2xl bg-[#dff8e9] text-[#168b6f]"><Bot className={`size-7 ${loading ? "animate-pulse" : ""}`} /></span><h1 className="font-display mt-5 text-3xl font-semibold">ยินดีต้อนรับสู่ไมโล</h1><p className="mt-3 leading-7 text-[#6d908a]">ลงชื่อเข้าใช้ก่อน เพื่อเปิดแดชบอร์ดและเชื่อมข้อมูล LINE ของคุณ</p><Button onClick={() => startLogin()} className="mt-7 w-full rounded-xl bg-[#238f76] text-white hover:bg-[#157a62]">ลงชื่อเข้าใช้</Button><Link href="/" className="mt-4 block text-sm text-[#398978] hover:underline">กลับหน้าแรก</Link></div></div>; }
-function ErrorState({ message, onRetry }: { message: string; onRetry: () => void }) { return <div className="grid min-h-screen place-items-center bg-[#f6fffc] px-5"><div className="max-w-md rounded-3xl border border-[#f2d5ce] bg-white p-8 text-center paper-shadow"><p className="font-display text-xl font-semibold text-[#9a4f44]">เปิดข้อมูลไมโลไม่สำเร็จ</p><p className="mt-2 text-sm leading-6 text-[#8a756e]">{message}</p><Button onClick={onRetry} className="mt-5 rounded-xl bg-[#238f76] text-white">ลองอีกครั้ง</Button></div></div>; }
+function LoginGate({ loading }: { loading: boolean }) {
+  const [username, setUsername] = useState("admin");
+  const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showForgotModal, setShowForgotModal] = useState(false);
+  const utils = trpc.useUtils();
 
-
-
-
-function AdminProfileModal({ user, onClose, onLogout, onSaved }: { user: any; onClose: () => void; onLogout: () => void; onSaved: () => void }) {
-  const [name, setName] = useState(user?.name || "ผู้ดูแลระบบ (Admin)");
-  const [newPassword, setNewPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
-  const [isSaving, setIsSaving] = useState(false);
-
-
-  const updateProfileMutation = trpc.milo.admin.updateAdminProfile.useMutation({
-    onSuccess: () => {
-      toast.success("บันทึกการตั้งค่าโปรไฟล์ผู้ดูแลระบบเรียบร้อยแล้ว");
-      setIsSaving(false);
-      setNewPassword("");
-      setConfirmPassword("");
-      onSaved();
-      onClose();
+  const adminLoginMutation = trpc.auth.adminLogin.useMutation({
+    onSuccess: async (data: any) => {
+      toast.success("เข้าสู่ระบบผู้ดูแลระบบสำเร็จ กำลังเปิดแดชบอร์ด...");
+      if (data?.token) {
+        try {
+          sessionStorage.setItem("manus-cookie", `app_session_id=${data.token}`);
+        } catch {}
+      }
+      localStorage.setItem("milo_admin_auth", "true");
+      await utils.auth.me.invalidate();
+      setTimeout(() => {
+        window.location.href = "/dashboard";
+      }, 350);
     },
     onError: (err: any) => {
-      toast.error(err.message || "บันทึกข้อมูลไม่สำเร็จ");
-      setIsSaving(false);
+      setIsSubmitting(false);
+      toast.error(err.message || "ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง");
     },
   });
 
-
-  const handleSave = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (newPassword && newPassword !== confirmPassword) {
-      toast.error("รหัสผ่านใหม่และการยืนยันรหัสผ่านไม่ตรงกัน");
+  const handleSubmit = (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!username.trim()) {
+      toast.error("กรุณากรอกชื่อผู้ดูแลระบบ (Username)");
       return;
     }
-    if (newPassword && newPassword.length < 4) {
-      toast.error("รหัสผ่านต้องมีอย่างน้อย 4 ตัวอักษร");
+    if (!password) {
+      toast.error("กรุณากรอกรหัสผ่าน (Password)");
       return;
     }
-    setIsSaving(true);
-    updateProfileMutation.mutate({
-      name: name.trim() || undefined,
-      newPassword: newPassword || undefined,
-    });
+    setIsSubmitting(true);
+    setTimeout(() => {
+      setIsSubmitting(false);
+    }, 6000);
+    adminLoginMutation.mutate({ username: username.trim(), password });
   };
 
-
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 backdrop-blur-sm p-4">
-      <div className="w-full max-w-md rounded-3xl border border-[#d2ebe5] bg-white p-6 shadow-2xl text-left">
-        <div className="flex items-center justify-between border-b border-[#edf5f2] pb-4">
-          <div className="flex items-center gap-3">
-            <span className="grid size-10 place-items-center rounded-xl bg-[#e4f7f1] text-[#1c8c72]">
-              <UserCog className="size-5" />
-            </span>
-            <div>
-              <h3 className="text-base font-bold text-[#1a3832]">จัดการโปรไฟล์ผู้ดูแลระบบ</h3>
-              <p className="text-xs text-[#5e877f]">Milo Admin Profile & Security</p>
-            </div>
-          </div>
-          <button type="button" onClick={onClose} className="rounded-lg p-1 text-[#83a19b] hover:bg-[#f0faf6]">✕</button>
+    <div className="grid min-h-screen place-items-center bg-[#f4faf7] px-5">
+      <div className="w-full max-w-md rounded-[2.2rem] border border-[#d2ebe5] bg-white p-8 text-center paper-shadow">
+        <div className="mx-auto grid size-16 place-items-center rounded-2xl bg-[#e4f7f1] text-[#1c8c72]">
+          <ShieldCheck className={`size-8 ${loading || isSubmitting ? "animate-pulse" : ""}`} />
         </div>
+        <h1 className="font-display mt-5 text-2xl font-bold text-[#1a3d36]">ระบบจัดการหลังบ้านไมโล</h1>
+        <p className="mt-1 text-xs text-[#208a71] font-semibold">Milo Admin Management Portal</p>
+        <p className="mt-2 text-xs leading-relaxed text-[#688e87]">
+          เข้าสู่ระบบสำหรับผู้ดูแลระบบ เพื่อจัดการการตั้งค่าและดูสถิติ
+        </p>
 
-
-        <form onSubmit={handleSave} className="mt-4 space-y-4">
+        <form onSubmit={handleSubmit} className="mt-6 space-y-4 text-left">
           <div>
-            <label className="text-xs font-semibold text-[#284f47] block mb-1">บัญชีผู้ดูแลระบบ (Username)</label>
+            <label className="text-xs font-semibold text-[#284f47] block mb-1">ชื่อผู้ใช้ (Username)</label>
             <input
               type="text"
-              disabled
-              value={user?.openId?.replace("admin_", "") || "admin"}
-              className="w-full h-10 rounded-xl border border-[#d8ebe5] bg-[#f8fcfa] px-3 text-xs text-[#527770] font-mono cursor-not-allowed"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              placeholder="admin"
+              disabled={isSubmitting}
+              className="w-full h-11 rounded-xl border border-[#cbe3dc] px-3.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#238f76]"
             />
           </div>
-
 
           <div>
-            <label className="text-xs font-semibold text-[#284f47] block mb-1">ชื่อแสดงผลของผู้ดูแลระบบ</label>
-            <input
-              type="text"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="ชื่อผู้ดูแลระบบ"
-              className="w-full h-10 rounded-xl border border-[#cbe3dc] px-3 text-xs focus:outline-none focus:ring-2 focus:ring-[#238f76]"
-            />
-          </div>
-
-
-          <div className="border-t border-[#edf5f2] pt-3">
-            <label className="text-xs font-semibold text-[#284f47] block mb-1">เปลี่ยนรหัสผ่านใหม่ (หากไม่เปลี่ยนให้เว้นว่างไว้)</label>
-            <input
-              type="password"
-              value={newPassword}
-              onChange={(e) => setNewPassword(e.target.value)}
-              placeholder="กรอกรหัสผ่านใหม่ (อย่างน้อย 4 ตัวอักษร)"
-              className="w-full h-10 rounded-xl border border-[#cbe3dc] px-3 text-xs focus:outline-none focus:ring-2 focus:ring-[#238f76] mb-2"
-            />
-            {newPassword && (
-              <input
-                type="password"
-                value={confirmPassword}
-                onChange={(e) => setConfirmPassword(e.target.value)}
-                placeholder="ยืนยันรหัสผ่านใหม่อีกครั้ง"
-                className="w-full h-10 rounded-xl border border-[#cbe3dc] px-3 text-xs focus:outline-none focus:ring-2 focus:ring-[#238f76]"
-              />
-            )}
-          </div>
-
-
-          <div className="pt-2 flex items-center justify-between">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={onLogout}
-              className="rounded-xl border-[#f1d2cd] text-[#b84857] hover:bg-[#fff5f5] text-xs h-9 px-3 flex items-center gap-1.5"
-            >
-              <LogOut className="size-3.5" /> ออกจากระบบ
-            </Button>
-
-
-            <div className="flex items-center gap-2">
-              <Button type="button" variant="outline" onClick={onClose} className="rounded-xl text-xs h-9 px-3">
-                ยกเลิก
-              </Button>
-              <Button
-                type="submit"
-                disabled={isSaving}
-                className="rounded-xl bg-[#238f76] text-white hover:bg-[#1b7e68] text-xs h-9 px-4 font-semibold"
+            <div className="flex items-center justify-between mb-1">
+              <label className="text-xs font-semibold text-[#284f47]">รหัสผ่าน (Password)</label>
+              <button
+                type="button"
+                onClick={() => setShowForgotModal(true)}
+                className="text-[11px] text-[#22a386] hover:underline font-medium"
               >
-                {isSaving ? "กำลังบันทึก..." : "บันทึกข้อมูล"}
-              </Button>
+                ลืมรหัสผ่าน?
+              </button>
             </div>
+            <div className="relative">
+              <input
+                type={showPassword ? "text" : "password"}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="กรอกรหัสผ่านผู้ดูแลระบบ"
+                disabled={isSubmitting}
+                className="w-full h-11 rounded-xl border border-[#cbe3dc] pl-3.5 pr-10 text-sm focus:outline-none focus:ring-2 focus:ring-[#238f76]"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(!showPassword)}
+                className="absolute right-3 top-3 text-[#79a098] hover:text-[#238f76] text-xs font-semibold"
+              >
+                {showPassword ? "ซ่อน" : "ดู"}
+              </button>
+            </div>
+          </div>
+
+          <Button
+            type="submit"
+            disabled={isSubmitting}
+            className="w-full h-11 rounded-xl bg-[#238f76] text-white hover:bg-[#187863] font-semibold text-sm mt-2"
+          >
+            {isSubmitting ? "กำลังเข้าสู่ระบบ..." : "ลงชื่อเข้าใช้ผู้ดูแลระบบ"}
+          </Button>
+
+          <div className="rounded-xl bg-[#f5fbf9] p-3 text-center border border-[#e4f5ef]">
+            <p className="text-[11px] text-[#5e877f]">
+              🔑 ค่าเริ่มต้น: Username <strong>admin</strong> | Password <strong>admin1234</strong>
+            </p>
           </div>
         </form>
+
+        <Link href="/" className="mt-6 block text-xs text-[#528c81] hover:underline">
+          กลับหน้าหลัก
+        </Link>
+
+        {showForgotModal && (
+          <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 backdrop-blur-sm p-4">
+            <div className="w-full max-w-sm rounded-3xl bg-white p-6 text-left shadow-2xl border border-[#d3ebe5]">
+              <h3 className="text-base font-bold text-[#1a3832]">กู้คืนรหัสผ่านผู้ดูแลระบบ</h3>
+              <p className="text-xs text-[#638b82] mt-2 leading-relaxed">
+                คุณสามารถเปลี่ยนหรือรีเซ็ตรหัสผ่านของ Admin ได้ทันทีผ่านการตั้งค่าตัวแปรในระบบโฮสติ้ง:
+              </p>
+              <div className="mt-3 rounded-xl bg-[#f5fbf9] p-3 text-xs text-[#315c53] font-mono border border-[#e0f2ec] space-y-1">
+                <p>ADMIN_USERNAME = ชื่อที่ต้องการ</p>
+                <p>ADMIN_PASSWORD = รหัสผ่านใหม่</p>
+              </div>
+              <p className="text-[11px] text-[#71968e] mt-2">
+                บน Vercel: ไปที่ Settings &gt; Environment Variables เพื่อกำหนดรหัสผ่านใหม่แล้ว Redeploy
+              </p>
+              <div className="mt-5 flex justify-end">
+                <Button
+                  size="sm"
+                  onClick={() => setShowForgotModal(false)}
+                  className="rounded-xl bg-[#238f76] text-white hover:bg-[#1b7e68] text-xs px-4 font-semibold"
+                >
+                  เข้าใจแล้ว ปิดหน้าต่าง
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
 }
+function ErrorState({ message, onRetry }: { message: string; onRetry: () => void }) { return <div className="grid min-h-screen place-items-center bg-[#f6fffc] px-5"><div className="max-w-md rounded-3xl border border-[#f2d5ce] bg-white p-8 text-center paper-shadow"><p className="font-display text-xl font-semibold text-[#9a4f44]">เปิดข้อมูลไมโลไม่สำเร็จ</p><p className="mt-2 text-sm leading-6 text-[#8a756e]">{message}</p><Button onClick={onRetry} className="mt-5 rounded-xl bg-[#238f76] text-white">ลองอีกครั้ง</Button></div></div>; }
