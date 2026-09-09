@@ -1,163 +1,23 @@
-﻿import {
-  ArrowUpRight,
-  ArrowDownLeft,
-  Handshake,
-  Award,
-  Building2,
-  CalendarRange,
-  Sparkles, useAuth } from "@/_core/hooks/useAuth";
+﻿import { useAuth } from "@/_core/hooks/useAuth";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { startLogin } from "@/const";
+import { scrollToDashboardSection, type DashboardSectionId } from "@/lib/dashboardNavigation";
+import { filterFinanceTransactions, filterVaultMetadata, isContentMutationPending, transactionPageWindow, vaultMetadataPayload } from "@/lib/dashboardMutation";
+import { isProductionSiteHostname } from "@/lib/dashboardEnvironment";
+import { environmentSwitchTarget, hasDashboardDraft } from "@/lib/environmentControls";
+import { buildMiloFinancePdfHtml } from "@/lib/financePdf";
+import { financeDelta, previousFinanceReportReference } from "@/lib/financeComparison";
+import { Tooltip as UITooltip, TooltipContent as UITooltipContent, TooltipTrigger as UITooltipTrigger } from "@/components/ui/tooltip";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { AdminGovernancePanelStandard, FinancialAssistantPanel, TransactionManagerPanel } from "@/components/FinancialManagementPanels";
+import { FinanceAccountManagerPanel, FinanceAccountSwitcher, type FinanceAccountRecord } from "@/components/FinanceAccountPanels";
+import { FinanceSettingsPanel } from "@/components/FinanceSettingsPanel";
+import { canSubmitReminderDraft, clearedReminderDraft, normalizedReminderTitle, reminderDueAtFromBangkokInput } from "@/lib/reminderDraft";
+import { trpc } from "@/lib/trpc";
+import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import {
-  ArrowUpRight,
-  ArrowDownLeft,
-  Handshake,
-  Award,
-  Building2,
-  CalendarRange,
-  Sparkles, Button } from "@/components/ui/button";
-import {
-  ArrowUpRight,
-  ArrowDownLeft,
-  Handshake,
-  Award,
-  Building2,
-  CalendarRange,
-  Sparkles, Input } from "@/components/ui/input";
-import {
-  ArrowUpRight,
-  ArrowDownLeft,
-  Handshake,
-  Award,
-  Building2,
-  CalendarRange,
-  Sparkles, Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import {
-  ArrowUpRight,
-  ArrowDownLeft,
-  Handshake,
-  Award,
-  Building2,
-  CalendarRange,
-  Sparkles, startLogin } from "@/const";
-import {
-  ArrowUpRight,
-  ArrowDownLeft,
-  Handshake,
-  Award,
-  Building2,
-  CalendarRange,
-  Sparkles, scrollToDashboardSection, type DashboardSectionId } from "@/lib/dashboardNavigation";
-import {
-  ArrowUpRight,
-  ArrowDownLeft,
-  Handshake,
-  Award,
-  Building2,
-  CalendarRange,
-  Sparkles, filterFinanceTransactions, filterVaultMetadata, isContentMutationPending, transactionPageWindow, vaultMetadataPayload } from "@/lib/dashboardMutation";
-import {
-  ArrowUpRight,
-  ArrowDownLeft,
-  Handshake,
-  Award,
-  Building2,
-  CalendarRange,
-  Sparkles, isProductionSiteHostname } from "@/lib/dashboardEnvironment";
-import {
-  ArrowUpRight,
-  ArrowDownLeft,
-  Handshake,
-  Award,
-  Building2,
-  CalendarRange,
-  Sparkles, environmentSwitchTarget, hasDashboardDraft } from "@/lib/environmentControls";
-import {
-  ArrowUpRight,
-  ArrowDownLeft,
-  Handshake,
-  Award,
-  Building2,
-  CalendarRange,
-  Sparkles, buildMiloFinancePdfHtml } from "@/lib/financePdf";
-import {
-  ArrowUpRight,
-  ArrowDownLeft,
-  Handshake,
-  Award,
-  Building2,
-  CalendarRange,
-  Sparkles, financeDelta, previousFinanceReportReference } from "@/lib/financeComparison";
-import {
-  ArrowUpRight,
-  ArrowDownLeft,
-  Handshake,
-  Award,
-  Building2,
-  CalendarRange,
-  Sparkles, Tooltip as UITooltip, TooltipContent as UITooltipContent, TooltipTrigger as UITooltipTrigger } from "@/components/ui/tooltip";
-import {
-  ArrowUpRight,
-  ArrowDownLeft,
-  Handshake,
-  Award,
-  Building2,
-  CalendarRange,
-  Sparkles, Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import {
-  ArrowUpRight,
-  ArrowDownLeft,
-  Handshake,
-  Award,
-  Building2,
-  CalendarRange,
-  Sparkles, AdminGovernancePanelStandard, FinancialAssistantPanel, TransactionManagerPanel } from "@/components/FinancialManagementPanels";
-import {
-  ArrowUpRight,
-  ArrowDownLeft,
-  Handshake,
-  Award,
-  Building2,
-  CalendarRange,
-  Sparkles, FinanceAccountManagerPanel, FinanceAccountSwitcher, type FinanceAccountRecord } from "@/components/FinanceAccountPanels";
-import {
-  ArrowUpRight,
-  ArrowDownLeft,
-  Handshake,
-  Award,
-  Building2,
-  CalendarRange,
-  Sparkles, FinanceSettingsPanel } from "@/components/FinanceSettingsPanel";
-import {
-  ArrowUpRight,
-  ArrowDownLeft,
-  Handshake,
-  Award,
-  Building2,
-  CalendarRange,
-  Sparkles, canSubmitReminderDraft, clearedReminderDraft, normalizedReminderTitle, reminderDueAtFromBangkokInput } from "@/lib/reminderDraft";
-import {
-  ArrowUpRight,
-  ArrowDownLeft,
-  Handshake,
-  Award,
-  Building2,
-  CalendarRange,
-  Sparkles, trpc } from "@/lib/trpc";
-import {
-  ArrowUpRight,
-  ArrowDownLeft,
-  Handshake,
-  Award,
-  Building2,
-  CalendarRange,
-  Sparkles, Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import {
-  ArrowUpRight,
-  ArrowDownLeft,
-  Handshake,
-  Award,
-  Building2,
-  CalendarRange,
-  Sparkles,
   BarChart3,
   BellRing,
   BrainCircuit,
@@ -189,50 +49,30 @@ import {
   Trash2,
   UserCog,
   UsersRound,
+  Sparkles,
+  Building2,
+  CalendarRange,
+  LogOut,
+  UserCog,
 } from "lucide-react";
-import {
-  ArrowUpRight,
-  ArrowDownLeft,
-  Handshake,
-  Award,
-  Building2,
-  CalendarRange,
-  Sparkles, useEffect, useMemo, useState } from "react";
-import {
-  ArrowUpRight,
-  ArrowDownLeft,
-  Handshake,
-  Award,
-  Building2,
-  CalendarRange,
-  Sparkles, Link } from "wouter";
-import {
-  ArrowUpRight,
-  ArrowDownLeft,
-  Handshake,
-  Award,
-  Building2,
-  CalendarRange,
-  Sparkles, toast } from "sonner";
+import { useEffect, useMemo, useState } from "react";
+import { Link } from "wouter";
+import { toast } from "sonner";
 
 const money = new Intl.NumberFormat("th-TH", { style: "currency", currency: "THB", maximumFractionDigits: 0 });
 const dateTime = new Intl.DateTimeFormat("th-TH", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Bangkok" });
 const PRODUCTION_DASHBOARD_URL = "https://miloassist-suwp6bg2.manus.space/dashboard";
 const PREVIEW_DASHBOARD_URL = "https://3000-i5wzpmy7nribffa3plzdi-532f5123.us3.manus.computer/dashboard";
 
-const navigation: Array<{ id: string; label: string; icon: any }> = [
+const navigation: Array<{ id: DashboardSectionId; label: string; icon: typeof LayoutDashboard }> = [
   { id: "overview", label: "ภาพรวม", icon: LayoutDashboard },
   { id: "analysis", label: "วิเคราะห์การเงิน", icon: BarChart3 },
-  { id: "cfo", label: "CFO & พยากรณ์เงินสด", icon: Sparkles },
   { id: "budgets", label: "หมวด / งบประมาณ", icon: WalletCards },
-  { id: "salary_cycle", label: "รอบวันเงินเดือน", icon: CalendarRange },
   { id: "transactions", label: "รายการธุรกรรม", icon: Table2 },
-  { id: "recurring", label: "บิลประจำ & สมาชิก", icon: Repeat2 },
-  { id: "business", label: "ธุรกิจ & ฟรีแลนซ์ P&L", icon: Building2 },
-  { id: "groups", label: "กลุ่ม LINE & หารบิล", icon: UsersRound },
-  { id: "vault", label: "คลังไฟล์ & สลิป", icon: FileArchive },
+  { id: "recurring", label: "การเตือนประจำ", icon: Repeat2 },
+  { id: "vault", label: "คลังไฟล์", icon: FileArchive },
   { id: "tasks", label: "โน้ตและงาน", icon: ListTodo },
-  { id: "admin_governance", label: "ผู้ดูแลระบบ", icon: ShieldCheck },
+  { id: "groups", label: "กลุ่ม LINE", icon: UsersRound },
   { id: "export", label: "ส่งออกข้อมูล", icon: Download },
 ];
 
@@ -241,6 +81,15 @@ type VaultMetadataItem = { id: number; title: string; tagsText: string | null; s
 
 export default function Dashboard() {
   const { user, loading, isAuthenticated, logout } = useAuth();
+  const [showAdminProfile, setShowAdminProfile] = useState(false);
+
+  const handleLogout = async () => {
+    try {
+      sessionStorage.removeItem("manus-cookie");
+      await logout.mutateAsync();
+    } catch {}
+    window.location.reload();
+  };
   const utils = trpc.useUtils();
   const overview = trpc.milo.overview.useQuery(undefined, { enabled: isAuthenticated });
   const [activeFinanceAccountId, setActiveFinanceAccountId] = useState<number | undefined>();
@@ -255,21 +104,6 @@ export default function Dashboard() {
   const [activeSection, setActiveSection] = useState<DashboardSectionId>("overview");
   const [schedulerError, setSchedulerError] = useState("");
   const [isEditingLineLink, setIsEditingLineLink] = useState(false);
-  const [showAdminProfile, setShowAdminProfile] = useState(false);
-  const [customSalaryDay, setCustomSalaryDay] = useState(25);
-
-  const logoutMutation = trpc.auth.logout.useMutation({
-    onSettled: () => {
-      sessionStorage.clear();
-      localStorage.removeItem("milo_admin_auth");
-      toast.success("ออกจากระบบเรียบร้อยแล้ว");
-      window.location.href = "/dashboard";
-    },
-  });
-
-  const handleLogout = () => {
-    logoutMutation.mutate();
-  };
   const [completingTodoId, setCompletingTodoId] = useState<number | null>(null);
   const [updatingVaultId, setUpdatingVaultId] = useState<number | null>(null);
   const [vaultEditor, setVaultEditor] = useState<VaultMetadataItem | null>(null);
@@ -334,7 +168,7 @@ export default function Dashboard() {
     }
   };
 
-  const goTo = (id: string) => {
+  const goTo = (id: DashboardSectionId) => {
     setActiveSection(id);
     scrollToDashboardSection(id);
   };
@@ -376,26 +210,33 @@ export default function Dashboard() {
     <main className="relative lg:ml-64" aria-busy={contentMutationPending}>
       {contentMutationPending && <div role="status" aria-live="polite" className="absolute inset-0 z-30 grid min-h-full place-items-start bg-[#f5fcfa]/55 pt-24 text-sm font-medium text-[#2b876f] backdrop-blur-[1px]">กำลังบันทึกข้อมูล...</div>}
       <header className="sticky top-0 z-20 flex items-center justify-between border-b border-[#d8ede8] bg-[#f5fcfa]/90 px-5 py-4 backdrop-blur lg:px-9">
-        <div><p className="text-xs text-[#7c9b95]">สวัสดี, {user.name || "ผู้ใช้ไมโล"}</p><h1 className="font-display text-xl font-semibold">ภาพรวมของคุณ</h1></div>
-        <div className="flex items-center gap-2.5"><FinanceAccountSwitcher accounts={financeAccounts} financeAccountId={activeFinanceAccountId} onChange={setActiveFinanceAccountId} /><EnvironmentBadge isProduction={isProductionSite} onSwitch={switchEnvironment} /><PublishHistoryPopover lastPublishedLabel={lastPublishedLabel} /><Link href="/"><Button variant="outline" className="hidden rounded-xl border-[#d2e9e3] bg-white text-[#548078] sm:inline-flex">หน้าแรก</Button></Link><span className={`rounded-full px-3 py-1.5 text-xs font-medium ${isLinked ? "bg-[#dff8e9] text-[#1b886e]" : "bg-[#fff1dd] text-[#b47732]"}`}>{isLinked ? "เชื่อม LINE แล้ว" : "รอเชื่อม LINE"}</span>{isLinked && <button type="button" onClick={() => setIsEditingLineLink(true)} className="grid size-8 place-items-center rounded-lg border border-[#d2e9e3] bg-white text-[#548078] transition-colors hover:bg-[#edf8f4]" aria-label="แก้ไขบัญชี LINE" title="แก้ไขบัญชี LINE"><Pencil className="size-3.5" /></button>}
+        <div>
+            <div className="flex items-center gap-2">
+              <p className="text-xs text-[#7c9b95]">สวัสดี, {user.name || "ผู้ดูแลระบบ (Admin)"}</p>
+              {user.role === "admin" && (
+                <button
+                  type="button"
+                  onClick={() => setShowAdminProfile(true)}
+                  className="flex items-center gap-1 rounded-md bg-[#e4f7f1] px-2 py-0.5 text-[10px] font-semibold text-[#1a886f] border border-[#c4ebdE] hover:bg-[#d6f3ea] transition"
+                  title="คลิกเพื่อจัดการโปรไฟล์ Admin"
+                >
+                  <UserCog className="size-3" /> จัดการโปรไฟล์
+                </button>
+              )}
+            </div>
+            <h1 className="font-display text-xl font-semibold">ภาพรวมของคุณ</h1>
+          </div>
+        <div className="flex items-center gap-2.5"><FinanceAccountSwitcher accounts={financeAccounts} financeAccountId={activeFinanceAccountId} onChange={setActiveFinanceAccountId} /><EnvironmentBadge isProduction={isProductionSite} onSwitch={switchEnvironment} /><PublishHistoryPopover lastPublishedLabel={lastPublishedLabel} /><Link href="/"><Button variant="outline" className="hidden rounded-xl border-[#d2e9e3] bg-white text-[#548078] sm:inline-flex">หน้าแรก</Button></Link>
           <Button
+            type="button"
             variant="outline"
-            size="sm"
-            onClick={() => setShowAdminProfile(true)}
-            className="hidden sm:inline-flex items-center gap-1.5 rounded-xl border-[#cde7df] bg-white px-3 text-xs font-semibold text-[#185c4f] hover:bg-[#ecf8f4]"
-            title="จัดการโปรไฟล์แอดมิน"
-          >
-            <UserCog className="size-3.5 text-[#22a386]" /> โปรไฟล์ Admin
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
             onClick={handleLogout}
-            className="inline-flex items-center gap-1.5 rounded-xl border-[#f3d4ce] bg-white px-3 text-xs font-semibold text-[#be4436] hover:bg-[#fef3f1]"
-            title="ออกจากระบบ"
+            className="rounded-xl border-[#f2d5ce] bg-white text-[#b54a3b] hover:bg-[#fff2ef] text-xs h-9 px-3 gap-1.5 inline-flex items-center"
+            title="ออกจากระบบแดชบอร์ด"
           >
-            <LogOut className="size-3.5" /> ออกจากระบบ
-          </Button></div>
+            <LogOut className="size-3.5" />
+            <span className="hidden sm:inline">ออกจากระบบ</span>
+          </Button><span className={`rounded-full px-3 py-1.5 text-xs font-medium ${isLinked ? "bg-[#dff8e9] text-[#1b886e]" : "bg-[#fff1dd] text-[#b47732]"}`}>{isLinked ? "เชื่อม LINE แล้ว" : "รอเชื่อม LINE"}</span>{isLinked && <button type="button" onClick={() => setIsEditingLineLink(true)} className="grid size-8 place-items-center rounded-lg border border-[#d2e9e3] bg-white text-[#548078] transition-colors hover:bg-[#edf8f4]" aria-label="แก้ไขบัญชี LINE" title="แก้ไขบัญชี LINE"><Pencil className="size-3.5" /></button>}</div>
       </header>
       {!isProductionSite && <PreviewBanner />}
       {isLinked && <div className="border-b border-[#d8ede8] bg-white px-4 py-2 md:hidden"><FinanceAccountSwitcher accounts={financeAccounts} financeAccountId={activeFinanceAccountId} onChange={setActiveFinanceAccountId} mobile /></div>}
@@ -418,183 +259,7 @@ export default function Dashboard() {
           <TransactionSearch value={transactionSearch} matchedCount={filteredTransactions.length} totalCount={allScopedTransactions.length} onChange={setTransactionSearch} />
           <TransactionManagerPanel transactions={paginatedTransactions} financeAccountId={activeFinanceAccountId} role={activeFinanceAccount?.membership.role} />
           <TransactionPagination page={safeTransactionPage} pageCount={transactionPageCount} itemCount={filteredTransactions.length} pageSize={transactionPageSize} onChange={setTransactionPage} />
-          <section id="cfo-section" className="scroll-mt-24 space-y-6">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="font-display text-lg font-bold text-[#1a3832]">CFO วางแผนการเงิน & ตรวจจับเงินรั่วไหล</h3>
-                <p className="text-xs text-[#6e928a]">คะแนนสุขภาพการเงิน พยากรณ์กระแสเงินสด 30 วัน และกำจัดค่าใช้จ่ายแฝง</p>
-              </div>
-              <span className="rounded-full bg-[#edf8f4] px-3 py-1 text-xs font-bold text-[#1f876e]">
-                AI Proactive CFO
-              </span>
-            </div>
-
-            <div className="grid gap-4 sm:grid-cols-3">
-              <div className="rounded-2xl border border-[#d6ebe5] bg-white p-5 soft-shadow">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs text-[#6c9088]">คะแนนสุขภาพการเงิน</span>
-                  <Award className="size-5 text-[#22a386]" />
-                </div>
-                <div className="mt-3 flex items-baseline gap-1.5">
-                  <span className="font-display text-3xl font-black text-[#1a3832]">85</span>
-                  <span className="text-xs text-[#71968e]">/100 (เกรด A)</span>
-                </div>
-                <p className="mt-2 text-[11px] text-[#4d736b]">วินัยการออมดีเยี่ยมและไม่มีความเสี่ยงเงินสดตึงตัว</p>
-              </div>
-
-              <div className="rounded-2xl border border-[#d6ebe5] bg-white p-5 soft-shadow">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs text-[#6c9088]">พยากรณ์เงินสด 30 วัน</span>
-                  <Sparkles className="size-5 text-[#2785ad]" />
-                </div>
-                <div className="mt-3 flex items-baseline gap-1.5">
-                  <span className="font-display text-2xl font-bold text-[#238f76]">
-                    {money.format(scopedFinance.availableBalance || scopedFinance.balance || 0)}
-                  </span>
-                </div>
-                <p className="mt-2 text-[11px] text-[#4d736b]">จุดต่ำสุดคาดการณ์อยู่ในเกณฑ์ปลอดภัย</p>
-              </div>
-
-              <div className="rounded-2xl border border-[#d6ebe5] bg-white p-5 soft-shadow">
-                <div className="flex items-center justify-between">
-                  <span className="text-xs text-[#6c9088]">กองทุนฉุกเฉินเป้าหมาย</span>
-                  <Target className="size-5 text-[#d97706]" />
-                </div>
-                <div className="mt-3 flex items-baseline gap-1.5">
-                  <span className="font-display text-2xl font-bold text-[#b46e2a]">6 เดือน</span>
-                </div>
-                <p className="mt-2 text-[11px] text-[#4d736b]">สำรองสำหรับค่าใช้จ่ายจำเป็นประจำเดือน</p>
-              </div>
-            </div>
-
-            <div className="rounded-[1.6rem] border border-[#d7ebe6] bg-white p-5 soft-shadow">
-              <div className="flex items-center gap-2 mb-3">
-                <div className="grid size-7 place-items-center rounded-lg bg-[#fef2f2] text-[#d14343]">
-                  <Sparkles className="size-4" />
-                </div>
-                <h4 className="text-xs font-bold text-[#1f423a]">ตรวจจับรอยรั่วทางการเงิน (Micro-Expense Leak Detector)</h4>
-              </div>
-              <div className="space-y-2 text-xs">
-                <div className="flex items-center justify-between rounded-xl border border-[#edf5f2] bg-[#fbfdfc] p-3">
-                  <div>
-                    <p className="font-semibold text-[#1a3832]">กาแฟและชานมไข่มุกเฉลี่ยวันละแก้ว (฿65/วัน)</p>
-                    <p className="text-[11px] text-[#71968e]">ผลกระทบรายปีคาดการณ์: ฿23,725 ต่อปี</p>
-                  </div>
-                  <span className="rounded-lg bg-[#fff4e5] px-2.5 py-1 text-[11px] font-bold text-[#b4621c]">
-                    💡 ชงกาแฟดื่มเองสัปดาห์ละ 3 วัน ประหยัดได้ ฿10,000/ปี
-                  </span>
-                </div>
-              </div>
-            </div>
-          </section>
-
-          <section id="salary-cycle-section" className="scroll-mt-24 rounded-[1.6rem] border border-[#d7ebe6] bg-white p-6 soft-shadow">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="flex items-center gap-2.5">
-                <div className="grid size-9 place-items-center rounded-2xl bg-[#effaf5] text-[#22a386]">
-                  <CalendarRange className="size-5" />
-                </div>
-                <div>
-                  <h3 className="font-display text-sm font-bold text-[#1b3a33]">ตั้งค่าวันตัดรอบงบประมาณ & เงินเดือน (Salary Cycle)</h3>
-                  <p className="text-xs text-[#739790]">ปรับรอบการคำนวณงบประมาณให้ตรงกับวันเงินเดือนออกจริง</p>
-                </div>
-              </div>
-              <span className="rounded-full bg-[#eaf8f2] px-3 py-1 text-xs font-bold text-[#1b856c]">
-                ตัดรอบทุกวันที่ {customSalaryDay} ของเดือน
-              </span>
-            </div>
-            <div className="mt-4 flex flex-wrap items-center gap-3">
-              <label className="text-xs font-semibold text-[#25463f]">เลือกวันเริ่มต้นรอบเดือนใหม่:</label>
-              <input
-                type="number"
-                min={1}
-                max={28}
-                value={customSalaryDay}
-                onChange={(e) => setCustomSalaryDay(Math.max(1, Math.min(28, parseInt(e.target.value) || 1)))}
-                className="w-24 h-9 rounded-xl border border-[#cbe3dc] px-3 text-xs font-bold text-center text-[#1a3832]"
-              />
-              <Button
-                size="sm"
-                onClick={() => toast.success(`บันทึกวันตัดรอบงบประมาณเป็นทุกวันที่ ${customSalaryDay} เรียบร้อยแล้ว`)}
-                className="rounded-xl bg-[#22a386] hover:bg-[#1a856d] text-xs font-semibold h-9 px-4"
-              >
-                <Save className="mr-1.5 size-3.5" /> บันทึกรอบเงินเดือน
-              </Button>
-            </div>
-            <p className="mt-2 text-[11px] text-[#71968e]">
-              รอบงบประมาณปัจจุบัน: วันที่ {customSalaryDay} เดือนนี้ ถึง วันที่ {customSalaryDay - 1} เดือนถัดไป
-            </p>
-          </section>
-
-          <section id="business-section" className="scroll-mt-24 space-y-4">
-            <div className="rounded-[1.6rem] border border-[#d7ebe6] bg-white p-6 soft-shadow">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div className="flex items-center gap-2.5">
-                  <div className="grid size-9 place-items-center rounded-2xl bg-[#eff6fb] text-[#2884a8]">
-                    <Building2 className="size-5" />
-                  </div>
-                  <div>
-                    <h3 className="font-display text-sm font-bold text-[#1b3a33]">การเงินธุรกิจ & ฟรีแลนซ์ (Business P&L)</h3>
-                    <p className="text-xs text-[#739790]">สรุปรายได้ กำไรสุทธิ ลูกหนี้ และเจ้าหนี้การค้า</p>
-                  </div>
-                </div>
-                <Button
-                  size="sm"
-                  onClick={() => toast.info("พิมพ์ 'วางบิล' ในแชท LINE เพื่อให้น้องไมโลช่วยออกใบเสนอราคา/วางบิล")}
-                  className="rounded-xl bg-[#22a386] text-xs font-semibold hover:bg-[#1b8870] h-9"
-                >
-                  <Plus className="mr-1 size-3.5" /> สร้างใบวางบิล / ใบเสนอราคา
-                </Button>
-              </div>
-
-              <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4 text-left">
-                <div className="rounded-xl border border-[#edf5f2] bg-[#fbfdfc] p-3">
-                  <span className="text-[11px] text-[#71938c]">รายได้ธุรกิจรวม</span>
-                  <p className="font-display text-base font-bold text-[#1e453c] mt-0.5">{money.format(scopedFinance.income || 0)}</p>
-                </div>
-                <div className="rounded-xl border border-[#edf5f2] bg-[#fbfdfc] p-3">
-                  <span className="text-[11px] text-[#71938c]">กำไรสุทธิ (Net)</span>
-                  <p className="font-display text-base font-bold text-[#22a386] mt-0.5">{money.format(scopedFinance.balance || 0)}</p>
-                </div>
-                <div className="rounded-xl border border-[#edf5f2] bg-[#fbfdfc] p-3">
-                  <span className="text-[11px] text-[#71938c]">ลูกหนี้การค้า (AR)</span>
-                  <p className="font-display text-base font-bold text-[#2083a6] mt-0.5">฿0</p>
-                </div>
-                <div className="rounded-xl border border-[#edf5f2] bg-[#fbfdfc] p-3">
-                  <span className="text-[11px] text-[#71938c]">เจ้าหนี้การค้า (AP)</span>
-                  <p className="font-display text-base font-bold text-[#cc4974] mt-0.5">฿0</p>
-                </div>
-              </div>
-            </div>
-          </section>
-
-          <section id="groups-section" className="scroll-mt-24 rounded-[1.6rem] border border-[#d7ebe6] bg-white p-6 soft-shadow">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="flex items-center gap-2.5">
-                <div className="grid size-9 place-items-center rounded-2xl bg-[#e8f7f2] text-[#22a386]">
-                  <UsersRound className="size-5" />
-                </div>
-                <div>
-                  <h3 className="font-display text-sm font-bold text-[#1a3832]">กลุ่ม LINE & ทวงเงินหารบิล (Group Finance)</h3>
-                  <p className="text-xs text-[#70958e]">ระบบคำนวณหนี้สุทธิ (Debt Simplification) และหารบิลอัตโนมัติ</p>
-                </div>
-              </div>
-              <Button
-                size="sm"
-                onClick={() => toast.info("ดึงน้องไมโลเข้ากลุ่ม LINE แล้วพิมพ์ 'หารบิล' หรือพิมพ์รายการแชร์ค่าใช้จ่ายได้เลย")}
-                className="rounded-xl bg-[#22a386] text-xs font-semibold hover:bg-[#1b8870] h-9"
-              >
-                <Handshake className="mr-1.5 size-3.5" /> หารบิลในกลุ่ม LINE
-              </Button>
-            </div>
-            <p className="mt-3 rounded-xl bg-[#f5faf8] p-3.5 text-xs text-[#5e857c]">
-              💡 <strong>วิธีใช้งานในกลุ่ม LINE:</strong> ดึงไมโลเข้ากลุ่ม แล้วพิมพ์เช่น <em>"ค่าอาหาร 1,200 บอมจ่าย หาร 4 คน"</em> หรือถ่ายรูปสลิป/ใบเสร็จ ไมโลจะคำนวณยอดที่แต่ละคนต้องโอนพร้อมสรุปตัดยอดหนี้ข้ามกันให้อัตโนมัติ
-            </p>
-          </section>
-
-          <div id="admin-governance-section" className="scroll-mt-24">
-            <AdminGovernancePanelStandard isAdmin={user.role === "admin"} />
-          </div>
+          <AdminGovernancePanelStandard isAdmin={user.role === "admin"} />
 
           <section className="mt-6 grid gap-6 xl:grid-cols-[1.1fr_.9fr]">
           <section id="reminders" className="scroll-mt-24 rounded-[1.6rem] border border-[#d7ebe6] bg-white p-6 soft-shadow"><SectionTitle title="การเตือนที่กำลังจะถึง" subtitle="จัดการจากแชท LINE หรือเพิ่มรายการด้วยมือ" icon={BellRing} tone="text-[#25a586]" /><div className="mt-5 space-y-3">{data.reminders.slice(0, 6).map(reminder => <div key={reminder.id} className="flex items-center gap-3 rounded-2xl bg-[#f3fbf8] p-3"><span className="grid size-9 place-items-center rounded-xl bg-white text-[#27a487]"><BellRing className="size-4" /></span><div className="min-w-0 flex-1"><p className="truncate text-sm font-medium">{reminder.title}</p><p className="text-xs text-[#77a098]">{reminder.nextRunAt ? dateTime.format(new Date(reminder.nextRunAt)) : "รอกำหนดเวลา"}</p></div><span className="rounded-full bg-white px-2 py-1 text-[10px] text-[#4d8277]">{reminder.recurrenceType === "once" ? "ครั้งเดียว" : `ทุก ${reminder.recurrenceType}`}</span><button onClick={() => deleteReminder.mutate({ id: reminder.id })} disabled={deleteReminder.isPending} aria-busy={deleteReminder.isPending} aria-label={`ลบการเตือน ${reminder.title}`} className="grid size-7 place-items-center rounded-lg text-[#b27770] transition-colors hover:bg-[#ffeae5] hover:text-[#b44b3e] disabled:opacity-50"><Trash2 className="size-3.5" /></button></div>)}{data.reminders.length === 0 && <Empty text="ยังไม่มีรายการเตือน ลองพิมพ์ “เตือนประชุมพรุ่งนี้ 10:00” ใน LINE" />}</div><form onSubmit={event => { event.preventDefault(); createReminder.mutate({ title: normalizedReminderTitle(reminderTitle), dueAt: reminderDueAtFromBangkokInput(reminderTime) }); }} className="mt-5 grid gap-2 sm:grid-cols-[1fr_auto_auto]"><Input value={reminderTitle} onChange={event => setReminderTitle(event.target.value)} placeholder="เพิ่มการเตือน" className="rounded-xl" /><Input type="datetime-local" value={reminderTime} onChange={event => setReminderTime(event.target.value)} className="rounded-xl" /><Button type="submit" disabled={!canSubmitReminderDraft(reminderTitle) || createReminder.isPending} aria-busy={createReminder.isPending} className="rounded-xl bg-[#238f76] text-white hover:bg-[#157a62]">{createReminder.isPending ? "กำลังเพิ่ม..." : <><Plus className="mr-1 size-4" />เพิ่ม</>}</Button></form></section>
@@ -613,88 +278,6 @@ export default function Dashboard() {
       </div>{contentMutationPending && <><div className="fixed inset-0 z-40 cursor-wait" aria-hidden="true" /><div role="status" className="fixed bottom-5 left-1/2 z-50 -translate-x-1/2 rounded-full bg-[#245851] px-4 py-2 text-sm font-medium text-white shadow-lg">{completingTodoId !== null ? "กำลังบันทึกงาน..." : "กำลังอัปเดตคลัง..."}</div></>}
       {pendingEnvironmentUrl && <EnvironmentSwitchModal targetUrl={pendingEnvironmentUrl} canSave={canSaveAndSwitch} saving={link.isPending || createReminder.isPending} onCancel={() => setPendingEnvironmentUrl(null)} onConfirm={() => navigateEnvironment(pendingEnvironmentUrl)} onSaveAndConfirm={saveAndSwitch} />}
       <VaultMetadataDialog item={vaultEditor} pending={updatingVaultId === vaultEditor?.id} onClose={() => setVaultEditor(null)} onSave={input => updateVault.mutate(input, { onSuccess: () => setVaultEditor(null) })} />
-          {/* Admin Profile Modal */}
-      {showAdminProfile && (
-        <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 backdrop-blur-sm p-4">
-          <div className="w-full max-w-md rounded-3xl bg-white p-6 text-left shadow-2xl border border-[#d3ebe5]">
-            <div className="flex items-center gap-3">
-              <div className="grid size-12 place-items-center rounded-2xl bg-[#e4f7f1] text-[#1c8c72]">
-                <ShieldCheck className="size-6" />
-              </div>
-              <div>
-                <h3 className="text-base font-bold text-[#1a3832]">จัดการโปรไฟล์ผู้ดูแลระบบ</h3>
-                <p className="text-xs text-[#6e928a]">Milo Admin Profile & Governance</p>
-              </div>
-            </div>
-
-            <div className="mt-4 space-y-2.5 text-xs">
-              <div className="rounded-xl border border-[#e4f2ee] bg-[#f8fbfb] p-3 space-y-2">
-                <div className="flex justify-between items-center">
-                  <span className="text-[#6c8f87]">ชื่อผู้ใช้ (Username)</span>
-                  <span className="font-bold text-[#1a3832] font-mono">admin</span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-[#6c8f87]">ระดับสิทธิ์ (Role)</span>
-                  <span className="rounded-full bg-[#dff8e9] px-2.5 py-0.5 text-[11px] font-bold text-[#16876c]">ผู้ดูแลระบบสูงสุด (Admin)</span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-[#6c8f87]">อีเมลระบบ</span>
-                  <span className="font-medium text-[#2d564e]">admin@milo.internal</span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-[#6c8f87]">LINE User ID</span>
-                  <span className="font-mono text-[11px] text-[#22a386] truncate max-w-[180px]">{overview.data?.lineUserId || "ยังไม่ได้เชื่อม"}</span>
-                </div>
-              </div>
-
-              <div className="rounded-xl border border-[#e4f2ee] bg-[#fdfaf5] p-3 space-y-1 text-[#83612b]">
-                <p className="font-bold text-xs">🔑 การเปลี่ยนรหัสผ่านแอดมิน</p>
-                <p className="text-[11px] leading-relaxed">
-                  เปลี่ยนได้ทันทีผ่าน Vercel Dashboard โดยไปที่:
-                  <br />
-                  <strong>Settings &gt; Environment Variables</strong> &gt; กำหนดค่า <strong>ADMIN_PASSWORD</strong> ใหม่ แล้วกด Redeploy
-                </p>
-              </div>
-
-              <div className="rounded-xl border border-[#e4f2ee] bg-[#f8fbfb] p-3 space-y-1.5">
-                <p className="font-semibold text-[#1e423a]">สถานะระบบหลังบ้าน</p>
-                <div className="grid grid-cols-2 gap-2 text-[11px]">
-                  <div className="flex items-center gap-1.5 text-[#21856d]">
-                    <CheckCircle2 className="size-3.5" /> ฐานข้อมูล TiDB Cloud
-                  </div>
-                  <div className="flex items-center gap-1.5 text-[#21856d]">
-                    <CheckCircle2 className="size-3.5" /> ระบบ LINE Webhook
-                  </div>
-                  <div className="flex items-center gap-1.5 text-[#21856d]">
-                    <CheckCircle2 className="size-3.5" /> Vercel Serverless
-                  </div>
-                  <div className="flex items-center gap-1.5 text-[#21856d]">
-                    <CheckCircle2 className="size-3.5" /> Vercel Cron
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-5 flex justify-between items-center">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleLogout}
-                className="rounded-xl border-[#f3d4ce] text-[#c04638] hover:bg-[#fff2ef] text-xs font-semibold"
-              >
-                <LogOut className="mr-1.5 size-3.5" /> ออกจากระบบ
-              </Button>
-              <Button
-                size="sm"
-                onClick={() => setShowAdminProfile(false)}
-                className="rounded-xl bg-[#238f76] text-white hover:bg-[#1a7f69] text-xs font-semibold px-4"
-              >
-                ปิดหน้าต่าง
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
     </main>
   </div>;
 }
@@ -879,22 +462,14 @@ function LoginGate({ loading }: { loading: boolean }) {
   const utils = trpc.useUtils();
 
   const adminLoginMutation = trpc.auth.adminLogin.useMutation({
-    onSuccess: async (data: any) => {
+    onSuccess: async () => {
       toast.success("เข้าสู่ระบบผู้ดูแลระบบสำเร็จ กำลังเปิดแดชบอร์ด...");
-      if (data?.token) {
-        try {
-          sessionStorage.setItem("manus-cookie", `app_session_id=${data.token}`);
-        } catch {}
-      }
-      localStorage.setItem("milo_admin_auth", "true");
       await utils.auth.me.invalidate();
-      setTimeout(() => {
-        window.location.href = "/dashboard";
-      }, 350);
+      window.location.reload();
     },
     onError: (err: any) => {
-      setIsSubmitting(false);
       toast.error(err.message || "ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง");
+      setIsSubmitting(false);
     },
   });
 
@@ -909,9 +484,6 @@ function LoginGate({ loading }: { loading: boolean }) {
       return;
     }
     setIsSubmitting(true);
-    setTimeout(() => {
-      setIsSubmitting(false);
-    }, 6000);
     adminLoginMutation.mutate({ username: username.trim(), password });
   };
 
@@ -963,7 +535,7 @@ function LoginGate({ loading }: { loading: boolean }) {
               <button
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3 top-3 text-[#79a098] hover:text-[#238f76] text-xs font-semibold"
+                className="absolute right-3 top-3 text-[#79a098] hover:text-[#238f76]"
               >
                 {showPassword ? "ซ่อน" : "ดู"}
               </button>
@@ -975,7 +547,7 @@ function LoginGate({ loading }: { loading: boolean }) {
             disabled={isSubmitting}
             className="w-full h-11 rounded-xl bg-[#238f76] text-white hover:bg-[#187863] font-semibold text-sm mt-2"
           >
-            {isSubmitting ? "กำลังเข้าสู่ระบบ..." : "ลงชื่อเข้าใช้ผู้ดูแลระบบ"}
+            {isSubmitting ? "กำลังตรวจสอบข้อมูล..." : "ลงชื่อเข้าใช้ผู้ดูแลระบบ"}
           </Button>
 
           <div className="rounded-xl bg-[#f5fbf9] p-3 text-center border border-[#e4f5ef]">
@@ -1007,7 +579,7 @@ function LoginGate({ loading }: { loading: boolean }) {
                 <Button
                   size="sm"
                   onClick={() => setShowForgotModal(false)}
-                  className="rounded-xl bg-[#238f76] text-white hover:bg-[#1b7e68] text-xs px-4 font-semibold"
+                  className="rounded-xl bg-[#238f76] text-white hover:bg-[#1b7e68] text-xs px-4"
                 >
                   เข้าใจแล้ว ปิดหน้าต่าง
                 </Button>
@@ -1020,3 +592,4 @@ function LoginGate({ loading }: { loading: boolean }) {
   );
 }
 function ErrorState({ message, onRetry }: { message: string; onRetry: () => void }) { return <div className="grid min-h-screen place-items-center bg-[#f6fffc] px-5"><div className="max-w-md rounded-3xl border border-[#f2d5ce] bg-white p-8 text-center paper-shadow"><p className="font-display text-xl font-semibold text-[#9a4f44]">เปิดข้อมูลไมโลไม่สำเร็จ</p><p className="mt-2 text-sm leading-6 text-[#8a756e]">{message}</p><Button onClick={onRetry} className="mt-5 rounded-xl bg-[#238f76] text-white">ลองอีกครั้ง</Button></div></div>; }
+
