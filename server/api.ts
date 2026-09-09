@@ -1,24 +1,26 @@
-import express from "express";
-import { createExpressMiddleware } from "@trpc/server/adapters/express";
-import { appRouter } from "./routers";
-import { createContext } from "./_core/context";
-import { registerLineWebhook, registerMiloCron } from "./milo/routes";
+import express, { Request, Response } from "express";
 
-const app = express();
+export const appRouter = express.Router();
 
-registerLineWebhook(app);
-app.use(express.json({ limit: "50mb" }));
-app.use(express.urlencoded({ limit: "50mb", extended: true }));
-
-const trpcMiddleware = createExpressMiddleware({
-  router: appRouter,
-  createContext,
+appRouter.get("/health", (_req: Request, res: Response) => {
+  res.status(200).json({ status: "ok", timestamp: new Date().toISOString() });
 });
 
-app.use("/api/trpc", trpcMiddleware);
-app.use("/trpc", trpcMiddleware);
-app.use("/", trpcMiddleware);
+appRouter.post("/webhook", (req: Request, res: Response) => {
+  const events = req.body?.events || [];
+  const summary = events.map((e: any) => e.type).join("\n");
+  res.status(200).json({ received: true, count: events.length, summary });
+});
 
-registerMiloCron(app);
+const app = express();
+app.use(express.json());
+app.use("/api", appRouter);
 
 export default app;
+
+if (process.env.NODE_ENV !== "production") {
+  const PORT = process.env.PORT || 3000;
+  app.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
+  });
+}
