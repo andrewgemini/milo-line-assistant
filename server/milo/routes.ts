@@ -123,7 +123,7 @@ async function handleText(event: LineEvent, lineChatId: string, lineUserId: stri
   }
   const command = parseMiloCommand(text);
   let message = "";
-  const financeCommands = new Set(["expense", "income", "transactionSearch", "transactionDelete", "transactionUpdate", "openingBalance", "financeReport", "aiSummary", "voiceConfirm", "voiceEditPrompt", "voiceCategoryChange", "voiceEdit", "budget", "categoryAdd", "categoryRemove", "categoryList", "imageConfirm"]);
+  const financeCommands = new Set(["expense", "income", "transactionSearch", "transactionDelete", "transactionUpdate", "openingBalance", "financeReport", "aiSummary", "budgetOverview", "transactionList", "voiceConfirm", "voiceEditPrompt", "voiceCategoryChange", "voiceEdit", "budget", "categoryAdd", "categoryRemove", "categoryList", "imageConfirm"]);
   const financeScope = financeCommands.has(command.type) ? await resolveFinanceScope(lineUserId, lineChatId, scope) : undefined;
   if (financeCommands.has(command.type) && !financeScope) {
     if (event.replyToken) await replyText(event.replyToken, financeAccessMessage(scope));
@@ -289,6 +289,16 @@ async function handleText(event: LineEvent, lineChatId: string, lineUserId: stri
         }
       }
     }
+  } else if (command.type === "recordGuide") {
+    message = "📝 จดบันทึกได้เลย\nตัวอย่าง: จ่าย 125 ค่าอาหาร\nหรือ: รับเงินเดือน 30000\nแล้วผมจะช่วยบันทึกให้ครับ";
+  } else if (command.type === "budgetOverview") {
+    const budgets = await db.listBudgets(lineUserId, undefined, financeScope!.financeAccountId);
+    message = budgets.length ? "📊 งบประมาณเดือนนี้\n" + budgets.slice(0, 10).map(item => `• ${item.category} ${Number(item.amount).toLocaleString("th-TH")} บาท`).join("\n") : "📊 ยังไม่มีงบประมาณที่ตั้งไว้ครับ\nตัวอย่าง: งบประมาณ ค่าอาหาร 5000";
+  } else if (command.type === "transactionList") {
+    const results = await db.searchTransactions(lineUserId, "", 10, financeScope!.financeAccountId);
+    message = results.length ? "📋 รายการล่าสุด\n" + results.map(item => `#${item.id} • ${item.transactionType === "expense" ? "รายจ่าย" : "รายรับ"} ${Number(item.amount).toLocaleString("th-TH")} บาท • ${item.category}`).join("\n") : "📋 ยังไม่มีรายการธุรกรรมครับ";
+  } else if (command.type === "greeting") {
+    message = "สวัสดีครับ 👋 ผมไมโล ผู้ช่วยการเงินของคุณ\nกดเมนูด้านล่างหรือพิมพ์ “ช่วย” เพื่อดูคำสั่งที่ใช้งานได้ครับ";
   } else if (command.type === "help") {
     message = helpText();
   } else {
