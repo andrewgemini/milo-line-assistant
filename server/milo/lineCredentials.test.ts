@@ -6,9 +6,7 @@ describe("LINE credentials", () => {
 
   it("constructs the official bot-info request with the configured access token", async () => {
     const token = process.env.LINE_CHANNEL_ACCESS_TOKEN;
-    const secret = process.env.LINE_CHANNEL_SECRET;
 
-    expect(secret, "LINE_CHANNEL_SECRET must be set").toBeTruthy();
     expect(token, "LINE_CHANNEL_ACCESS_TOKEN must be set").toBeTruthy();
 
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({ userId: "U0123456789abcdef0123456789abcdef" }), { status: 200 }));

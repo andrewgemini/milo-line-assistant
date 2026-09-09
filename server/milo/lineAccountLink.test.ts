@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("../db", async () => {
   const actual = await vi.importActual<typeof import("../db")>("../db");
-  return { ...actual, linkLineUser: vi.fn() };
+  return { ...actual, linkLineUser: vi.fn(), writeAuditLog: vi.fn() };
 });
 
 import * as db from "../db";
@@ -15,6 +15,7 @@ describe("milo.linkLineAccount", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(db.linkLineUser).mockResolvedValue(undefined);
+    vi.mocked(db.writeAuditLog).mockResolvedValue(undefined);
   });
 
   it("accepts and trims a valid LINE User ID before linking", async () => {

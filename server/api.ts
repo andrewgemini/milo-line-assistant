@@ -1,26 +1,40 @@
-import express, { Request, Response } from "express";
-
-export const appRouter = express.Router();
-
-appRouter.get("/health", (_req: Request, res: Response) => {
-  res.status(200).json({ status: "ok", timestamp: new Date().toISOString() });
-});
-
-appRouter.post("/webhook", (req: Request, res: Response) => {
-  const events = req.body?.events || [];
-  const summary = events.map((e: any) => e.type).join("\n");
-  res.status(200).json({ received: true, count: events.length, summary });
-});
+import express from "express";
+import { createExpressMiddleware } from "@trpc/server/adapters/express";
+import { appRouter } from "./routers";
+import { createContext } from "./_core/context";
+import { registerOAuthRoutes } from "./_core/oauth";
+import { registerStorageProxy } from "./_core/storageProxy";
+import { registerLineWebhook, registerMiloCron } from "./milo/routes";
 
 const app = express();
-app.use(express.json());
-app.use("/api", appRouter);
+
+app.set("trust proxy", 1);
+
+// Webhook routes verify their own payload/signature and therefore must be
+// registered before the generic JSON parser.
+registerLineWebhook(app);
+
+app.use(express.json({ limit: "50mb" }));
+app.use(express.urlencoded({ limit: "50mb", extended: true }));
+
+registerStorageProxy(app);
+registerOAuthRoutes(app);
+
+app.get("/api/health", (_req, res) => {
+  res.status(200).json({
+    status: "ok",
+    timestamp: new Date().toISOString(),
+  });
+});
+
+app.use(
+  "/api/trpc",
+  createExpressMiddleware({
+    router: appRouter,
+    createContext,
+  })
+);
+
+registerMiloCron(app);
 
 export default app;
-
-if (process.env.NODE_ENV !== "production") {
-  const PORT = process.env.PORT || 3000;
-  app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
-  });
-}

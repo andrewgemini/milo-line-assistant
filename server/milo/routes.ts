@@ -14,7 +14,7 @@ import { STANDARD_EXPENSE_CATEGORIES, STANDARD_INCOME_CATEGORIES } from "./finan
 import { financeReportCardText, getMessageContent, getProfile, lineCredentials, postSaveSummaryText, pushText, replyFinanceReportCard, replyFinanceReportCardFallback, replyMention, replyPostSaveSummary, replyPostSaveSummaryFallback, replyText, replyVoiceCategoryChoices, replyVoiceProposal, replyVoiceProposalFallback, sourceIdentity, type LineEvent, type VoiceTransactionProposal, verifyLineSignature } from "./line";
 
 function helpText() {
-  return "คู่มือการใช้งานน้องไมโล 🐱✨\n\n1. 💰 จดบันทึกรายรับ-รายจ่าย:\n   • จ่าย ข้าวมันไก่ 50\n   • รับ เงินเดือน 35000\n   • ส่งข้อความเสียง เช่น “จ่ายค่าไฟ 1200 บาท”\n   • ส่งรูปภาพสลิปโอนเงิน หรือใบเสร็จ\n\n2. 📊 ดูรายงานและสถิติ:\n   • สรุป (สรุปเดือนนี้ / สรุปวันนี้ / สรุปปีนี้)\n   • วิเคราะห์ (วิเคราะห์สุขภาพการเงิน AI)\n   • รายการ (ดูประวัติธุรกรรมล่าสุด 5 รายการ)\n   • ค้นหารายการ กาแฟ\n\n3. 🎯 จัดการงบประมาณและหมวดหมู่:\n   • หมวด / งบ (ดูสรุปการใช้งบเดือนนี้)\n   • ตั้งงบ อาหาร 5000 บาท\n   • ประเภท (ดูหมวดหมู่รายรับ-รายจ่ายทั้งหมด)\n   • เพิ่มหมวดรายจ่าย ช้อปปิ้ง\n\n4. ⏰ ตั้งเตือนและโน้ต:\n   • เตือน จ่ายค่าเน็ต ทุกวันที่ 25 เวลา 09:00\n   • เตือน ประชุม พรุ่งนี้ 10:00\n   • โน้ต รหัส Wi-Fi\n\n5. 🌐 Web Dashboard:\n   • พิมพ์ “ตั้งค่า” เพื่อรับลิงก์แดชบอร์ดจัดการระบบ";
+  return "สวัสดีครับ ผมไมโล ช่วยได้ในแชทเดียว\n• เตือน ประชุมพรุ่งนี้ 10:00\n• เตือนดื่มน้ำทุก 30 นาที\n• จ่ายกาแฟ 65 / จ่ายค่าไฟ 1200\n• รับเงินเดือน 45000 / รับค่าจ้าง 5000\n• ส่งสลิปหรือใบเสร็จ แล้วพิมพ์ “ยืนยันค่าใช้จ่าย”\n• ส่งข้อความเสียง แล้วพิมพ์ “ยืนยันเสียง”\n• ค้นหารายการ กาแฟ / แก้รายการ 12 เป็น 180 / ลบรายการ 12\n• สรุปวันนี้ / สรุปสัปดาห์นี้ / สรุปเดือนนี้ / สรุปปีนี้\n• เพิ่มหมวด เดินทาง / ดูหมวด\n• โน้ต รหัส Wi‑Fi ห้องประชุม\n• งาน ส่งสรุปรายสัปดาห์\n• เก็บ ลิงก์หรือข้อความสำคัญ\n• ค้นหา ใบเสร็จ\n\nเชื่อม dashboard: พิมพ์ “ไอดี” ในแชทส่วนตัวกับไมโล";
 }
 
 function formatDate(date: Date) {
@@ -289,80 +289,6 @@ async function handleText(event: LineEvent, lineChatId: string, lineUserId: stri
         }
       }
     }
-  } else if (command.type === "recordGuide") {
-    message = `จดบันทึกรายรับ-รายจ่ายกับน้องไมโล ทำได้ง่ายๆ 3 วิธีครับ:
-
-1. ✍️ พิมพ์ข้อความ เช่น:
-   • จ่าย ข้าวมันไก่ 50
-   • รับ เงินเดือน 30000
-   • จ่าย ค่าไฟ 1250 บิลบ้าน
-2. 🎙️ ส่งข้อความเสียง เช่น:
-   • "จ่ายค่ากาแฟ 65 บาท"
-   • "รับเงินโอน 500 บาท"
-3. 📸 ส่งรูปภาพสลิป หรือใบเสร็จ:
-   • ส่งรูปเข้าแชทได้ทันที ไมโลจะอ่านยอดและหมวดให้อัตโนมัติครับ`;
-  } else if (command.type === "greeting") {
-    message = `สวัสดีครับ! ผมชื่อ "น้องไมโล" ผู้ช่วยการเงินส่วนตัวบน LINE 🐱✨
-
-พร้อมช่วยคุณดูแลเรื่องเงิน 24 ชม.:
-• จดบันทึกรายรับ-รายจ่าย (พิมพ์, เสียง, สแกนสลิป)
-• สรุปยอดและวิเคราะห์สุขภาพการเงิน
-• คุมงบประมาณ และเตือนค่าใช้จ่าย
-• ตั้งเตือนบิล ค่างวด และบันทึกโน้ต
-
-ลองแตะเมนูด้านล่าง หรือพิมพ์ "วิธีใช้งาน" เพื่อดูคำสั่งได้เลยครับ!`;
-  } else if (command.type === "budgetOverview") {
-    const now = new Date();
-    const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-    const budgets = await db.listBudgets(lineUserId, monthKey, financeScope!.financeAccountId);
-    if (!budgets.length) {
-      message = `📊 หมวด / งบประมาณเดือนนี้:
-ยังไม่ได้ตั้งงบประมาณสำหรับเดือนนี้ครับ
-
-💡 วิธีตั้งงบประมาณ พิมพ์ เช่น:
-• ตั้งงบ อาหาร 5000 บาท
-• ตั้งงบ เดินทาง 2000 บาท
-• พิมพ์ "ประเภท" เพื่อดูหมวดทั้งหมด`;
-    } else {
-      const rows = await db.listTransactions(lineUserId, new Date(now.getFullYear(), now.getMonth(), 1), new Date(now.getFullYear(), now.getMonth() + 1, 1), false, financeScope!.financeAccountId);
-      const expenseByCat = rows.filter(r => r.transactionType === "expense").reduce<Record<string, number>>((all, r) => ({ ...all, [r.category]: (all[r.category] ?? 0) + Number(r.amount) }), {});
-      message = `📊 สรุปงบประมาณเดือนนี้:
-` + budgets.map(b => {
-        const spent = expenseByCat[b.category] ?? 0;
-        const limit = Number(b.amount);
-        const percent = limit > 0 ? Math.round((spent / limit) * 100) : 0;
-        return `• ${b.category}: ใช้ไป ${spent.toLocaleString("th-TH")} / ${limit.toLocaleString("th-TH")} บาท (${percent}%)`;
-      }).join("
-") + `
-
-💡 ตั้งงบเพิ่ม: "ตั้งงบ [ชื่อหมวด] [จำนวนเงิน] บาท"`;
-    }
-  } else if (command.type === "transactionList") {
-    const items = await db.listTransactions(lineUserId, undefined, undefined, false, financeScope!.financeAccountId);
-    const recent = items.slice(0, 5);
-    if (!recent.length) {
-      message = `📝 รายการธุรกรรม:
-ยังไม่มีรายการธุรกรรมในระบบครับ
-
-เริ่มบันทึกง่ายๆ โดยพิมพ์ เช่น "จ่าย ข้าวมันไก่ 50" หรือส่งรูปสลิปเข้ามาได้เลยครับ`;
-    } else {
-      message = `📝 รายการธุรกรรมล่าสุด (5 รายการ):
-` + recent.map(item => {
-        const sign = item.transactionType === "income" ? "+ (รับ)" : "- (จ่าย)";
-        return `• ${item.category} ${sign} ${Number(item.amount).toLocaleString("th-TH")} บาท${item.note ? ` (${item.note})` : ""}`;
-      }).join("
-") + `
-
-🔍 ค้นหารายการ พิมพ์ "ค้นหารายการ [คำค้น]" หรือดูทั้งหมดในเว็บแดชบอร์ดครับ`;
-    }
-  } else if (command.type === "settingGuide") {
-    message = `⚙️ จัดการระบบและตั้งค่าหลังบ้าน:
-
-🌐 เข้าสู่ Web Dashboard:
-https://milo-line-app.vercel.app/dashboard
-
-💡 เชื่อมต่อบัญชี:
-พิมพ์ "ไอดี" เพื่อคัดลอก LINE User ID ของคุณสำหรับตรวจสอบการเชื่อมต่อแดชบอร์ดครับ`;
   } else if (command.type === "help") {
     message = helpText();
   } else {
@@ -486,4 +412,3 @@ export function registerMiloCron(app: Express) {
   registerFinanceDigestRoute("/api/scheduled/finance-daily", "finance-digest-daily", "daily");
   registerFinanceDigestRoute("/api/scheduled/finance-weekly", "finance-digest-weekly", "weekly");
 }
-
