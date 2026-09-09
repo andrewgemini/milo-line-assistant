@@ -1,13 +1,27 @@
 {
+  "$schema": "https://openapi.vercel.sh/vercel.json",
   "version": 2,
   "buildCommand": "pnpm build",
   "outputDirectory": "dist/public",
   "rewrites": [
     {
+      "source": "/api",
+      "destination": "/api/index.js"
+    },
+    {
+      "source": "/api/(.*)",
+      "destination": "/api/index.js"
+    },
+    {
       "source": "/((?!api(?:/|$)).*)",
       "destination": "/index.html"
     }
   ],
+  "functions": {
+    "api/index.js": {
+      "maxDuration": 60
+    }
+  },
   "crons": [
     {
       "path": "/api/scheduled/reminders",
