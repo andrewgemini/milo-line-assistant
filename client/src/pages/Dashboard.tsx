@@ -88,9 +88,9 @@ export default function Dashboard() {
   const [reminderTime, setReminderTime] = useState("");
   const [search, setSearch] = useState("");
   const [activeSection, setActiveSection] = useState<DashboardSectionId>("overview");
-  const [showAdminProfile, setShowAdminProfile] = useState(false);
   const [schedulerError, setSchedulerError] = useState("");
   const [isEditingLineLink, setIsEditingLineLink] = useState(false);
+  const [showAdminProfileModal, setShowAdminProfileModal] = useState(false);
   const [completingTodoId, setCompletingTodoId] = useState<number | null>(null);
   const [updatingVaultId, setUpdatingVaultId] = useState<number | null>(null);
   const [vaultEditor, setVaultEditor] = useState<VaultMetadataItem | null>(null);
@@ -197,35 +197,10 @@ export default function Dashboard() {
     <main className="relative lg:ml-64" aria-busy={contentMutationPending}>
       {contentMutationPending && <div role="status" aria-live="polite" className="absolute inset-0 z-30 grid min-h-full place-items-start bg-[#f5fcfa]/55 pt-24 text-sm font-medium text-[#2b876f] backdrop-blur-[1px]">กำลังบันทึกข้อมูล...</div>}
       <header className="sticky top-0 z-20 flex items-center justify-between border-b border-[#d8ede8] bg-[#f5fcfa]/90 px-5 py-4 backdrop-blur lg:px-9">
-        <div>
-          <div className="flex items-center gap-2">
-            <p className="text-xs text-[#7c9b95]">สวัสดี, {user.name || "ผู้ใช้ไมโล"}</p>
-            <button
-              type="button"
-              onClick={() => setShowAdminProfile(true)}
-              className="inline-flex items-center gap-1 rounded-lg bg-[#e3f6f0] px-2 py-0.5 text-[11px] font-semibold text-[#187e67] transition hover:bg-[#d2f0e6]"
-              title="จัดการโปรไฟล์ผู้ดูแลระบบ"
-            >
-              <UserCog className="size-3" /> โปรไฟล์แอดมิน
-            </button>
-          </div>
-          <h1 className="font-display text-xl font-semibold">ภาพรวมของคุณ</h1>
-        </div>
-        <div className="flex items-center gap-2.5">
-          <FinanceAccountSwitcher accounts={financeAccounts} financeAccountId={activeFinanceAccountId} onChange={setActiveFinanceAccountId} />
-          <EnvironmentBadge isProduction={isProductionSite} onSwitch={switchEnvironment} />
-          <PublishHistoryPopover lastPublishedLabel={lastPublishedLabel} />
-          <Link href="/"><Button variant="outline" className="hidden rounded-xl border-[#d2e9e3] bg-white text-[#548078] sm:inline-flex">หน้าแรก</Button></Link>
-          <span className={`rounded-full px-3 py-1.5 text-xs font-medium ${isLinked ? "bg-[#dff8e9] text-[#1b886e]" : "bg-[#fff1dd] text-[#b47732]"}`}>{isLinked ? "เชื่อม LINE แล้ว" : "รอเชื่อม LINE"}</span>
-          {isLinked && <button type="button" onClick={() => setIsEditingLineLink(true)} className="grid size-8 place-items-center rounded-lg border border-[#d2e9e3] bg-white text-[#548078] transition-colors hover:bg-[#edf8f4]" aria-label="แก้ไขบัญชี LINE" title="แก้ไขบัญชี LINE"><Pencil className="size-3.5" /></button>}
-          <button
-            type="button"
-            onClick={logout}
-            className="inline-flex items-center gap-1.5 rounded-xl border border-[#f2d5ce] bg-white px-3 py-1.5 text-xs font-medium text-[#b54a3e] transition hover:bg-[#fff2ef] hover:text-[#9e382d]"
-            title="ออกจากระบบ"
-          >
-            <LogOut className="size-3.5" /> ออกจากระบบ
-          </button>
+        <div><p className="text-xs text-[#7c9b95]">สวัสดี, {user.name || "ผู้ใช้ไมโล"}</p><h1 className="font-display text-xl font-semibold">ภาพรวมของคุณ</h1></div>
+        <div className="flex items-center gap-2.5"><FinanceAccountSwitcher accounts={financeAccounts} financeAccountId={activeFinanceAccountId} onChange={setActiveFinanceAccountId} /><EnvironmentBadge isProduction={isProductionSite} onSwitch={switchEnvironment} /><PublishHistoryPopover lastPublishedLabel={lastPublishedLabel} /><Link href="/"><Button variant="outline" className="hidden rounded-xl border-[#d2e9e3] bg-white text-[#548078] sm:inline-flex">หน้าแรก</Button></Link><span className={`rounded-full px-3 py-1.5 text-xs font-medium ${isLinked ? "bg-[#dff8e9] text-[#1b886e]" : "bg-[#fff1dd] text-[#b47732]"}`}>{isLinked ? "เชื่อม LINE แล้ว" : "รอเชื่อม LINE"}</span>{isLinked && <button type="button" onClick={() => setIsEditingLineLink(true)} className="grid size-8 place-items-center rounded-lg border border-[#d2e9e3] bg-white text-[#548078] transition-colors hover:bg-[#edf8f4]" aria-label="แก้ไขบัญชี LINE" title="แก้ไขบัญชี LINE"><Pencil className="size-3.5" /></button>}
+          <button type="button" onClick={() => setShowAdminProfileModal(true)} className="flex items-center gap-1.5 rounded-xl border border-[#cbe4dd] bg-white px-3 py-1.5 text-xs font-medium text-[#238f76] transition hover:bg-[#edf8f4]" title="โปรไฟล์ผู้ดูแลระบบ"><User className="size-3.5" />โปรไฟล์ Admin</button>
+          <button type="button" onClick={() => { logout(); sessionStorage.clear(); localStorage.clear(); window.location.reload(); }} className="flex items-center gap-1.5 rounded-xl border border-[#edd5d1] bg-white px-3 py-1.5 text-xs font-medium text-[#c0534b] transition hover:bg-[#fff5f3]" title="ออกจากระบบ"><LogOut className="size-3.5" />ออกจากระบบ</button>
         </div>
       </header>
       {!isProductionSite && <PreviewBanner />}
@@ -250,6 +225,84 @@ export default function Dashboard() {
           <TransactionManagerPanel transactions={paginatedTransactions} financeAccountId={activeFinanceAccountId} role={activeFinanceAccount?.membership.role} />
           <TransactionPagination page={safeTransactionPage} pageCount={transactionPageCount} itemCount={filteredTransactions.length} pageSize={transactionPageSize} onChange={setTransactionPage} />
           <AdminGovernancePanelStandard isAdmin={user.role === "admin"} />
+        {showAdminProfileModal && (
+          <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 backdrop-blur-sm p-4">
+            <div className="w-full max-w-md rounded-3xl bg-white p-6 text-left shadow-2xl border border-[#d3ebe5]">
+              <div className="flex items-center justify-between border-b border-[#e5f2ee] pb-4">
+                <div className="flex items-center gap-3">
+                  <span className="grid size-10 place-items-center rounded-xl bg-[#e3f7f0] text-[#1c8c72]">
+                    <ShieldCheck className="size-5" />
+                  </span>
+                  <div>
+                    <h3 className="text-base font-bold text-[#1a3832]">โปรไฟล์ผู้ดูแลระบบ</h3>
+                    <p className="text-[11px] text-[#22977d] font-semibold">Milo System Administrator</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowAdminProfileModal(false)}
+                  className="rounded-lg p-1.5 text-[#8aa9a2] hover:bg-[#f0f9f6]"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <div className="mt-4 space-y-3 text-xs">
+                <div className="rounded-2xl bg-[#f5fbf9] p-4 border border-[#e2f1ec] space-y-2">
+                  <div className="flex justify-between">
+                    <span className="text-[#648b83]">ชื่อผู้ใช้ (Username):</span>
+                    <span className="font-semibold text-[#1f4a42]">admin</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-[#648b83]">ระดับสิทธิ์ (Role):</span>
+                    <span className="inline-block rounded-full bg-[#dff8e9] px-2.5 py-0.5 text-[11px] font-semibold text-[#187e67]">
+                      Admin (ผู้ดูแลระบบสูงสุด)
+                    </span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-[#648b83]">สถานะการเข้าสู่ระบบ:</span>
+                    <span className="font-medium text-[#187e67]">เข้าสู่ระบบแล้ว</span>
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-[#eddacf] bg-[#fffcf9] p-4 text-[#795d3e]">
+                  <p className="font-semibold text-xs text-[#845021]">🔑 การเปลี่ยนรหัสผ่านผู้ดูแลระบบ</p>
+                  <p className="mt-1 text-[11px] leading-relaxed text-[#8f6b43]">
+                    คุณสามารถกำหนดรหัสผ่านใหม่ได้อย่างปลอดภัย โดยไปที่ <strong>Vercel Dashboard</strong> &gt; <strong>Settings</strong> &gt; <strong>Environment Variables</strong> แล้วแก้ไขตัวแปร:
+                  </p>
+                  <code className="mt-2 block rounded-lg bg-white p-2 text-[11px] font-mono text-[#614120] border border-[#f0ded2]">
+                    ADMIN_PASSWORD = รหัสผ่านใหม่ที่คุณต้องการ
+                  </code>
+                </div>
+              </div>
+
+              <div className="mt-5 flex items-center justify-between border-t border-[#e5f2ee] pt-4">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    setShowAdminProfileModal(false);
+                    logout();
+                    sessionStorage.clear();
+                    localStorage.clear();
+                    window.location.reload();
+                  }}
+                  className="rounded-xl border-[#f0d5d1] text-xs font-semibold text-[#b84e46] hover:bg-[#fff5f3]"
+                >
+                  <LogOut className="mr-1.5 size-3.5" /> ออกจากระบบ
+                </Button>
+                <Button
+                  type="button"
+                  onClick={() => setShowAdminProfileModal(false)}
+                  className="rounded-xl bg-[#238f76] text-white hover:bg-[#187863] text-xs px-4"
+                >
+                  ปิดหน้าต่าง
+                </Button>
+              </div>
+            </div>
+          </div>
+        )}
+
 
           <section className="mt-6 grid gap-6 xl:grid-cols-[1.1fr_.9fr]">
           <section id="reminders" className="scroll-mt-24 rounded-[1.6rem] border border-[#d7ebe6] bg-white p-6 soft-shadow"><SectionTitle title="การเตือนที่กำลังจะถึง" subtitle="จัดการจากแชท LINE หรือเพิ่มรายการด้วยมือ" icon={BellRing} tone="text-[#25a586]" /><div className="mt-5 space-y-3">{data.reminders.slice(0, 6).map(reminder => <div key={reminder.id} className="flex items-center gap-3 rounded-2xl bg-[#f3fbf8] p-3"><span className="grid size-9 place-items-center rounded-xl bg-white text-[#27a487]"><BellRing className="size-4" /></span><div className="min-w-0 flex-1"><p className="truncate text-sm font-medium">{reminder.title}</p><p className="text-xs text-[#77a098]">{reminder.nextRunAt ? dateTime.format(new Date(reminder.nextRunAt)) : "รอกำหนดเวลา"}</p></div><span className="rounded-full bg-white px-2 py-1 text-[10px] text-[#4d8277]">{reminder.recurrenceType === "once" ? "ครั้งเดียว" : `ทุก ${reminder.recurrenceType}`}</span><button onClick={() => deleteReminder.mutate({ id: reminder.id })} disabled={deleteReminder.isPending} aria-busy={deleteReminder.isPending} aria-label={`ลบการเตือน ${reminder.title}`} className="grid size-7 place-items-center rounded-lg text-[#b27770] transition-colors hover:bg-[#ffeae5] hover:text-[#b44b3e] disabled:opacity-50"><Trash2 className="size-3.5" /></button></div>)}{data.reminders.length === 0 && <Empty text="ยังไม่มีรายการเตือน ลองพิมพ์ “เตือนประชุมพรุ่งนี้ 10:00” ใน LINE" />}</div><form onSubmit={event => { event.preventDefault(); createReminder.mutate({ title: normalizedReminderTitle(reminderTitle), dueAt: reminderDueAtFromBangkokInput(reminderTime) }); }} className="mt-5 grid gap-2 sm:grid-cols-[1fr_auto_auto]"><Input value={reminderTitle} onChange={event => setReminderTitle(event.target.value)} placeholder="เพิ่มการเตือน" className="rounded-xl" /><Input type="datetime-local" value={reminderTime} onChange={event => setReminderTime(event.target.value)} className="rounded-xl" /><Button type="submit" disabled={!canSubmitReminderDraft(reminderTitle) || createReminder.isPending} aria-busy={createReminder.isPending} className="rounded-xl bg-[#238f76] text-white hover:bg-[#157a62]">{createReminder.isPending ? "กำลังเพิ่ม..." : <><Plus className="mr-1 size-4" />เพิ่ม</>}</Button></form></section>
@@ -267,79 +320,6 @@ export default function Dashboard() {
         </>}
       </div>{contentMutationPending && <><div className="fixed inset-0 z-40 cursor-wait" aria-hidden="true" /><div role="status" className="fixed bottom-5 left-1/2 z-50 -translate-x-1/2 rounded-full bg-[#245851] px-4 py-2 text-sm font-medium text-white shadow-lg">{completingTodoId !== null ? "กำลังบันทึกงาน..." : "กำลังอัปเดตคลัง..."}</div></>}
       {pendingEnvironmentUrl && <EnvironmentSwitchModal targetUrl={pendingEnvironmentUrl} canSave={canSaveAndSwitch} saving={link.isPending || createReminder.isPending} onCancel={() => setPendingEnvironmentUrl(null)} onConfirm={() => navigateEnvironment(pendingEnvironmentUrl)} onSaveAndConfirm={saveAndSwitch} />}
-      {showAdminProfile && (
-        <div className="fixed inset-0 z-50 grid place-items-center bg-black/45 backdrop-blur-sm p-4">
-          <div className="w-full max-w-md rounded-[2rem] border border-[#d2ebe5] bg-white p-7 text-left shadow-2xl">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <span className="grid size-11 place-items-center rounded-2xl bg-[#e4f7f1] text-[#1c8c72]">
-                  <ShieldCheck className="size-6" />
-                </span>
-                <div>
-                  <h3 className="text-lg font-bold text-[#1a3d36]">โปรไฟล์ผู้ดูแลระบบ</h3>
-                  <p className="text-xs text-[#688e87]">Milo Master Administrator</p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowAdminProfile(false)}
-                className="grid size-8 place-items-center rounded-full text-[#81a09a] hover:bg-[#f3faf8] hover:text-[#335e56]"
-              >
-                ✕
-              </button>
-            </div>
-
-            <div className="mt-6 space-y-3">
-              <div className="rounded-2xl border border-[#e4f0ec] bg-[#fbfdfc] p-4 text-xs space-y-2.5">
-                <div className="flex justify-between">
-                  <span className="text-[#6d8e87]">ชื่อบัญชี (Username):</span>
-                  <span className="font-semibold text-[#1d4c44]">{user.name || "admin"}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-[#6d8e87]">สิทธิ์การใช้งาน (Role):</span>
-                  <span className="inline-flex rounded-full bg-[#dff8e9] px-2.5 py-0.5 font-semibold text-[#187e67]">
-                    {user.role === "admin" ? "ผู้ดูแลระบบสูงสุด (Master Admin)" : user.role}
-                  </span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-[#6d8e87]">อีเมลระบบ:</span>
-                  <span className="text-[#2d5951]">{user.email || "admin@milo.internal"}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-[#6d8e87]">LINE บัญชีเชื่อมโยง:</span>
-                  <span className="font-mono text-[#2d5951]">{isLinked ? data.lineUserId : "ยังไม่ได้เชื่อมต่อ"}</span>
-                </div>
-              </div>
-
-              <div className="rounded-2xl border border-[#e9f0ee] bg-[#f5fbf9] p-4 text-xs">
-                <p className="font-semibold text-[#28554c]">🔑 การเปลี่ยนรหัสผ่านผู้ดูแลระบบ</p>
-                <p className="mt-1 leading-5 text-[#6c8f87]">
-                  เพื่อความปลอดภัยสูงสุด สามารถเปลี่ยนรหัสผ่านได้โดยกำหนดตัวแปรใน <strong>Vercel Settings &gt; Environment Variables</strong>:
-                </p>
-                <div className="mt-2 rounded-xl bg-white p-2.5 font-mono text-[11px] text-[#2c7564] border border-[#d6ebe4]">
-                  ADMIN_PASSWORD = [รหัสผ่านใหม่ที่คุณต้องการ]
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-6 flex items-center justify-between pt-2 border-t border-[#edf4f2]">
-              <button
-                type="button"
-                onClick={() => { setShowAdminProfile(false); logout(); }}
-                className="inline-flex items-center gap-1.5 rounded-xl border border-[#f2d5ce] bg-[#fff6f4] px-4 py-2 text-xs font-semibold text-[#b54a3e] hover:bg-[#ffece8]"
-              >
-                <LogOut className="size-3.5" /> ออกจากระบบ
-              </button>
-              <Button
-                onClick={() => setShowAdminProfile(false)}
-                className="rounded-xl bg-[#238f76] px-5 text-xs text-white hover:bg-[#187863]"
-              >
-                ปิดหน้าต่าง
-              </Button>
-            </div>
-          </div>
-        </div>
-      )}
       <VaultMetadataDialog item={vaultEditor} pending={updatingVaultId === vaultEditor?.id} onClose={() => setVaultEditor(null)} onSave={input => updateVault.mutate(input, { onSuccess: () => setVaultEditor(null) })} />
     </main>
   </div>;
@@ -632,7 +612,7 @@ function LoginGate({ loading }: { loading: boolean }) {
         {showForgotModal && (
           <div className="fixed inset-0 z-50 grid place-items-center bg-black/40 backdrop-blur-sm p-4">
             <div className="w-full max-w-sm rounded-3xl bg-white p-6 text-left shadow-2xl border border-[#d3ebe5]">
-              <h3 className="text-base font-bold text-[#1a3d36]">กู้คืนรหัสผ่านผู้ดูแลระบบ</h3>
+              <h3 className="text-base font-bold text-[#1a3832]">กู้คืนรหัสผ่านผู้ดูแลระบบ</h3>
               <p className="text-xs text-[#638b82] mt-2 leading-relaxed">
                 คุณสามารถเปลี่ยนหรือรีเซ็ตรหัสผ่านของ Admin ได้ทันทีผ่านการตั้งค่าตัวแปรในระบบโฮสติ้ง:
               </p>
@@ -660,4 +640,3 @@ function LoginGate({ loading }: { loading: boolean }) {
   );
 }
 function ErrorState({ message, onRetry }: { message: string; onRetry: () => void }) { return <div className="grid min-h-screen place-items-center bg-[#f6fffc] px-5"><div className="max-w-md rounded-3xl border border-[#f2d5ce] bg-white p-8 text-center paper-shadow"><p className="font-display text-xl font-semibold text-[#9a4f44]">เปิดข้อมูลไมโลไม่สำเร็จ</p><p className="mt-2 text-sm leading-6 text-[#8a756e]">{message}</p><Button onClick={onRetry} className="mt-5 rounded-xl bg-[#238f76] text-white">ลองอีกครั้ง</Button></div></div>; }
-
