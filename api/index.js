@@ -3373,10 +3373,7 @@ async function handleMedia(event, lineChatId, lineUserId, scope) {
       await saveVoiceTranscription({ vaultItemId: vaultId, lineChatId, lineUserId, transcript: transcript.text, language: transcript.language, durationSeconds: transcript.duration, proposalJson: JSON.stringify(proposal) });
       if (event.replyToken) await sendVoiceProposal(event.replyToken, proposal);
     } catch (error) {
-      console.error("[Milo Voice] transcription failed", {
-        messageId: message.id,
-        error: error instanceof Error ? error.message : "unknown"
-      });
+      console.error("[Milo Voice] transcription failed", { messageId: message.id, error: error instanceof Error ? error.message : "unknown" });
       if (event.replyToken) await replyText(event.replyToken, "\u0E40\u0E01\u0E47\u0E1A\u0E02\u0E49\u0E2D\u0E04\u0E27\u0E32\u0E21\u0E40\u0E2A\u0E35\u0E22\u0E07\u0E44\u0E27\u0E49\u0E41\u0E25\u0E49\u0E27 \u0E41\u0E15\u0E48\u0E22\u0E31\u0E07\u0E16\u0E2D\u0E14\u0E40\u0E2A\u0E35\u0E22\u0E07\u0E44\u0E21\u0E48\u0E44\u0E14\u0E49\u0E43\u0E19\u0E04\u0E23\u0E31\u0E49\u0E07\u0E19\u0E35\u0E49 \u0E01\u0E23\u0E38\u0E13\u0E32\u0E25\u0E2D\u0E07\u0E2D\u0E31\u0E14\u0E43\u0E2B\u0E21\u0E48\u0E43\u0E2B\u0E49\u0E0A\u0E31\u0E14\u0E40\u0E08\u0E19 \u0E04\u0E27\u0E32\u0E21\u0E22\u0E32\u0E27\u0E2A\u0E31\u0E49\u0E19 \u0E46 \u0E41\u0E25\u0E30\u0E02\u0E19\u0E32\u0E14\u0E44\u0E21\u0E48\u0E40\u0E01\u0E34\u0E19 16MB \u0E04\u0E23\u0E31\u0E1A");
     }
     return;
@@ -3451,7 +3448,10 @@ function registerMiloCron(app2) {
       if (isVercelCron) {
         const secret = process.env.CRON_SECRET?.trim();
         const authorization = req.headers.authorization;
-        if (!secret || authorization !== `Bearer ${secret}`) return res.status(401).json({ error: "cron-unauthorized" });
+        const headerSecret = req.headers["x-cron-secret"];
+        const bearerValid = authorization === `Bearer ${secret}`;
+        const headerValid = headerSecret === secret;
+        if (!secret || !bearerValid && !headerValid) return res.status(401).json({ error: "cron-unauthorized" });
         const schedule = await getAutomationSetting("reminder-delivery-primary");
         if (!schedule?.isEnabled) return res.json({ ok: true, skipped: "disabled" });
         taskUid = schedule.scheduleCronTaskUid ?? "vercel-cron-reminders";
