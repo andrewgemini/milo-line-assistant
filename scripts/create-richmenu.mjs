@@ -1,9 +1,8 @@
 /**
- * Milo AI Financial OS - LINE Rich Menu Auto-Setup Script
+ * Milo LINE Assistant - LINE Rich Menu Sync
  * -------------------------------------------------------------
- * สร้าง Rich Menu 2500x1686 พร้อม action ที่ผูกกับ command parser ของ Milo โดยตรง
- * เมนู 9 ปุ่ม: จดบันทึก, สรุป, วิเคราะห์, งบประมาณ, รายการ, หมวดหมู่,
- * แดชบอร์ด, วิธีใช้งาน และ สวัสดีไมโล
+ * สร้างและซิงก์ Rich Menu 2500x1686 ให้ action ตรงกับ command parser
+ * และใช้ข้อความแถบเมนูด้านล่างว่า "เมนูไมโล"
  */
 
 import fs from "fs";
@@ -34,8 +33,8 @@ const messageAction = (label, text) => ({ type: "message", label, text });
 const richMenuConfig = {
   size: { width: 2500, height: 1686 },
   selected: true,
-  name: "Milo AI Financial OS - Master Rich Menu",
-  chatBarText: "เมนูการเงิน",
+  name: "Milo LINE Assistant - Master Rich Menu",
+  chatBarText: "เมนูไมโล",
   areas: [
     { bounds: { x: 0, y: 0, width: 1270, height: 1030 }, action: messageAction("จดบันทึก", "จดบันทึก") },
     { bounds: { x: 1270, y: 0, width: 615, height: 530 }, action: messageAction("สรุปการเงิน", "สรุป") },
@@ -44,7 +43,7 @@ const richMenuConfig = {
     { bounds: { x: 1885, y: 530, width: 615, height: 500 }, action: messageAction("ประวัติรายการ", "รายการ") },
     { bounds: { x: 0, y: 1030, width: 590, height: 656 }, action: messageAction("หมวดหมู่", "หมวดหมู่") },
     { bounds: { x: 590, y: 1030, width: 560, height: 656 }, action: { type: "uri", label: "แดชบอร์ดหลังบ้าน", uri: "https://milo-line-app.vercel.app/dashboard" } },
-    { bounds: { x: 1150, y: 1030, width: 570, height: 656 }, action: messageAction("วิธีใช้งาน", "วิธีใช้งาน") },
+    { bounds: { x: 1150, y: 1030, width: 570, height: 656 }, action: messageAction("เมนูไมโล", "เมนูไมโล") },
     { bounds: { x: 1720, y: 1030, width: 780, height: 656 }, action: messageAction("สวัสดีไมโล", "สวัสดีไมโล") },
   ],
 };
@@ -65,7 +64,12 @@ async function main() {
   const { richmenus = [] } = await listResp.json();
 
   for (const rm of richmenus) {
-    if (rm.name?.includes("Milo AI Financial OS") || rm.chatBarText === "เมนูการเงิน") {
+    if (
+      rm.name?.includes("Milo AI Financial OS") ||
+      rm.name?.includes("Milo LINE Assistant") ||
+      rm.chatBarText === "เมนูการเงิน" ||
+      rm.chatBarText === "เมนูจัดการการเงินไมโล"
+    ) {
       const deleteResp = await api(`/v2/bot/richmenu/${rm.richMenuId}`, { method: "DELETE" });
       if (!deleteResp.ok) throw new Error(`delete ${rm.richMenuId} failed (${deleteResp.status})`);
       console.log(`✓ removed old Milo menu ${rm.richMenuId}`);
@@ -83,24 +87,23 @@ async function main() {
 
   const imageCandidates = ["./richmenu_milo.png", "./richmenu_milo.jpg", "./server/milo/richmenu_milo.png", "./public/richmenu_milo.png"];
   const imagePath = imageCandidates.find(fs.existsSync);
-  if (imagePath) {
-    const contentType = imagePath.endsWith(".png") ? "image/png" : "image/jpeg";
-    const uploadResp = await fetch(`https://api-data.line.me/v2/bot/richmenu/${richMenuId}/content`, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${token}`, "Content-Type": contentType },
-      body: fs.readFileSync(imagePath),
-    });
-    if (!uploadResp.ok) throw new Error(`upload richmenu image failed (${uploadResp.status}): ${await uploadResp.text()}`);
-    console.log(`✓ uploaded ${imagePath}`);
-  } else {
-    console.log("ℹ️ no local Rich Menu image found; action mapping was still synchronized");
-  }
+  if (!imagePath) throw new Error("ไม่พบไฟล์ภาพ Rich Menu: richmenu_milo.png");
+
+  const contentType = imagePath.endsWith(".png") ? "image/png" : "image/jpeg";
+  const uploadResp = await fetch(`https://api-data.line.me/v2/bot/richmenu/${richMenuId}/content`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": contentType },
+    body: fs.readFileSync(imagePath),
+  });
+  if (!uploadResp.ok) throw new Error(`upload richmenu image failed (${uploadResp.status}): ${await uploadResp.text()}`);
+  console.log(`✓ uploaded ${imagePath}`);
 
   const defaultResp = await api(`/v2/bot/user/all/richmenu/${richMenuId}`, { method: "POST" });
   if (!defaultResp.ok) throw new Error(`set default richmenu failed (${defaultResp.status}): ${await defaultResp.text()}`);
 
   console.log("🎉 Milo Rich Menu is now the default menu for all users.");
   console.log(`📌 Rich Menu ID: ${richMenuId}`);
+  console.log("📌 chatBarText: เมนูไมโล");
 }
 
 main().catch(error => {

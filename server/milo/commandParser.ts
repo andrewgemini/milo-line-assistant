@@ -101,8 +101,8 @@ export function parseMiloCommand(text: string, now = new Date()): MiloCommand {
   // Rich Menu: สวัสดีไมโล
   if (/^(?:สวัสดี(?:ไมโล|ครับ|ค่ะ)?|หวัดดี(?:ไมโล)?|hello|hi|hey)$/i.test(value)) return { type: "greeting" };
 
-  // Rich Menu: วิธีใช้งาน
-  if (/^(?:วิธีใช้งาน|คู่มือ(?:การใช้งาน)?|คำสั่ง|ช่วย|เมนู|help|\?)$/i.test(value)) return { type: "help" };
+  // Rich Menu: เมนูไมโล / วิธีใช้งาน
+  if (/^(?:เมนูไมโล|วิธีใช้งาน|คู่มือ(?:การใช้งาน)?|คำสั่ง|ช่วย|เมนู|help|\?)$/i.test(value)) return { type: "help" };
 
   // Rich Menu: จดบันทึก
   if (/^(?:จดบันทึก|เริ่มจดบันทึก|บันทึกรายรับรายจ่าย|บันทึกรายรับ-รายจ่าย|จด)$/i.test(value)) return { type: "recordGuide" };
@@ -176,4 +176,3 @@ export function parseMiloCommand(text: string, now = new Date()): MiloCommand {
   if (/^(ช่วย|เมนู|help)$/i.test(value)) return { type: "help" };
   return { type: "unknown" };
 }
-
