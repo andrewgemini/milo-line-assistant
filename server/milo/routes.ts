@@ -14,7 +14,7 @@ import { STANDARD_EXPENSE_CATEGORIES, STANDARD_INCOME_CATEGORIES } from "./finan
 import { financeReportCardText, getMessageContent, getProfile, lineCredentials, postSaveSummaryText, pushText, replyFinanceReportCard, replyFinanceReportCardFallback, replyMention, replyPostSaveSummary, replyPostSaveSummaryFallback, replyText, replyVoiceCategoryChoices, replyVoiceProposal, replyVoiceProposalFallback, sourceIdentity, type LineEvent, type VoiceTransactionProposal, verifyLineSignature } from "./line";
 
 function helpText() {
-  return "à¸ªà¸§à¸±à¸ªà¸”à¸µà¸„à¸£à¸±à¸š à¸œà¸¡à¹„à¸¡à¹‚à¸¥ à¸Šà¹ˆà¸§à¸¢à¹„à¸”à¹‰à¹ƒà¸™à¹à¸Šà¸—à¹€à¸”à¸µà¸¢à¸§\nâ€¢ à¹€à¸•à¸·à¸­à¸™ à¸›à¸£à¸°à¸Šà¸¸à¸¡à¸žà¸£à¸¸à¹ˆà¸‡à¸™à¸µà¹‰ 10:00\nâ€¢ à¹€à¸•à¸·à¸­à¸™à¸”à¸·à¹ˆà¸¡à¸™à¹‰à¸³à¸—à¸¸à¸ 30 à¸™à¸²à¸—à¸µ\nâ€¢ à¸ˆà¹ˆà¸²à¸¢à¸à¸²à¹à¸Ÿ 65 / à¸ˆà¹ˆà¸²à¸¢à¸„à¹ˆà¸²à¹„à¸Ÿ 1200\nâ€¢ à¸£à¸±à¸šà¹€à¸‡à¸´à¸™à¹€à¸”à¸·à¸­à¸™ 45000 / à¸£à¸±à¸šà¸„à¹ˆà¸²à¸ˆà¹‰à¸²à¸‡ 5000\nâ€¢ à¸ªà¹ˆà¸‡à¸ªà¸¥à¸´à¸›à¸«à¸£à¸·à¸­à¹ƒà¸šà¹€à¸ªà¸£à¹‡à¸ˆ à¹à¸¥à¹‰à¸§à¸žà¸´à¸¡à¸žà¹Œ â€œà¸¢à¸·à¸™à¸¢à¸±à¸™à¸„à¹ˆà¸²à¹ƒà¸Šà¹‰à¸ˆà¹ˆà¸²à¸¢â€\nâ€¢ à¸ªà¹ˆà¸‡à¸‚à¹‰à¸­à¸„à¸§à¸²à¸¡à¹€à¸ªà¸µà¸¢à¸‡ à¹à¸¥à¹‰à¸§à¸žà¸´à¸¡à¸žà¹Œ â€œà¸¢à¸·à¸™à¸¢à¸±à¸™à¹€à¸ªà¸µà¸¢à¸‡â€\nâ€¢ à¸„à¹‰à¸™à¸«à¸²à¸£à¸²à¸¢à¸à¸²à¸£ à¸à¸²à¹à¸Ÿ / à¹à¸à¹‰à¸£à¸²à¸¢à¸à¸²à¸£ 12 à¹€à¸›à¹‡à¸™ 180 / à¸¥à¸šà¸£à¸²à¸¢à¸à¸²à¸£ 12\nâ€¢ à¸ªà¸£à¸¸à¸›à¸§à¸±à¸™à¸™à¸µà¹‰ / à¸ªà¸£à¸¸à¸›à¸ªà¸±à¸›à¸”à¸²à¸«à¹Œà¸™à¸µà¹‰ / à¸ªà¸£à¸¸à¸›à¹€à¸”à¸·à¸­à¸™à¸™à¸µà¹‰ / à¸ªà¸£à¸¸à¸›à¸›à¸µà¸™à¸µà¹‰\nâ€¢ à¹€à¸žà¸´à¹ˆà¸¡à¸«à¸¡à¸§à¸” à¹€à¸”à¸´à¸™à¸—à¸²à¸‡ / à¸”à¸¹à¸«à¸¡à¸§à¸”\nâ€¢ à¹‚à¸™à¹‰à¸• à¸£à¸«à¸±à¸ª Wiâ€‘Fi à¸«à¹‰à¸­à¸‡à¸›à¸£à¸°à¸Šà¸¸à¸¡\nâ€¢ à¸‡à¸²à¸™ à¸ªà¹ˆà¸‡à¸ªà¸£à¸¸à¸›à¸£à¸²à¸¢à¸ªà¸±à¸›à¸”à¸²à¸«à¹Œ\nâ€¢ à¹€à¸à¹‡à¸š à¸¥à¸´à¸‡à¸à¹Œà¸«à¸£à¸·à¸­à¸‚à¹‰à¸­à¸„à¸§à¸²à¸¡à¸ªà¸³à¸„à¸±à¸\nâ€¢ à¸„à¹‰à¸™à¸«à¸² à¹ƒà¸šà¹€à¸ªà¸£à¹‡à¸ˆ\n\nà¹€à¸Šà¸·à¹ˆà¸­à¸¡ dashboard: à¸žà¸´à¸¡à¸žà¹Œ â€œà¹„à¸­à¸”à¸µâ€ à¹ƒà¸™à¹à¸Šà¸—à¸ªà¹ˆà¸§à¸™à¸•à¸±à¸§à¸à¸±à¸šà¹„à¸¡à¹‚à¸¥";
+  return "สวัสดีครับ ผมไมโล ช่วยได้ในแชทเดียว\n• เตือน ประชุมพรุ่งนี้ 10:00\n• เตือนดื่มน้ำทุก 30 นาที\n• จ่ายกาแฟ 65 / จ่ายค่าไฟ 1200\n• รับเงินเดือน 45000 / รับค่าจ้าง 5000\n• ส่งสลิปหรือใบเสร็จ แล้วพิมพ์ “ยืนยันค่าใช้จ่าย”\n• ส่งข้อความเสียง แล้วพิมพ์ “ยืนยันเสียง”\n• ค้นหารายการ กาแฟ / แก้รายการ 12 เป็น 180 / ลบรายการ 12\n• สรุปวันนี้ / สรุปสัปดาห์นี้ / สรุปเดือนนี้ / สรุปปีนี้\n• เพิ่มหมวด เดินทาง / ดูหมวด\n• โน้ต รหัส Wi‑Fi ห้องประชุม\n• งาน ส่งสรุปรายสัปดาห์\n• เก็บ ลิงก์หรือข้อความสำคัญ\n• ค้นหา ใบเสร็จ\n\nเชื่อม dashboard: พิมพ์ “ไอดี” ในแชทส่วนตัวกับไมโล";
 }
 
 function formatDate(date: Date) {
@@ -23,16 +23,16 @@ function formatDate(date: Date) {
 
 function formatFinanceReport(report: Awaited<ReturnType<typeof db.financeReport>>) {
   const money = (amount: number) => amount.toLocaleString("th-TH", { maximumFractionDigits: 2 });
-  const label: Record<typeof report.period, string> = { day: "à¸§à¸±à¸™à¸™à¸µà¹‰", week: "à¸ªà¸±à¸›à¸”à¸²à¸«à¹Œà¸™à¸µà¹‰", month: "à¹€à¸”à¸·à¸­à¸™à¸™à¸µà¹‰", year: "à¸›à¸µà¸™à¸µà¹‰" };
-  const categories = Object.entries(report.categories).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([name, amount]) => `â€¢ ${name} ${money(amount)} à¸šà¸²à¸—`).join("\n");
-  return `à¸ªà¸£à¸¸à¸›à¸à¸²à¸£à¹€à¸‡à¸´à¸™${label[report.period]}\nà¸£à¸²à¸¢à¸£à¸±à¸š ${money(report.income)} à¸šà¸²à¸—\nà¸£à¸²à¸¢à¸ˆà¹ˆà¸²à¸¢ ${money(report.expense)} à¸šà¸²à¸—\nà¸à¸³à¹„à¸£/à¸„à¸‡à¹€à¸«à¸¥à¸·à¸­ ${money(report.balance)} à¸šà¸²à¸—\n${categories ? `\nà¸£à¸²à¸¢à¸ˆà¹ˆà¸²à¸¢à¸•à¸²à¸¡à¸«à¸¡à¸§à¸”\n${categories}` : "\nà¸¢à¸±à¸‡à¹„à¸¡à¹ˆà¸¡à¸µà¸£à¸²à¸¢à¸ˆà¹ˆà¸²à¸¢à¹ƒà¸™à¸Šà¹ˆà¸§à¸‡à¸™à¸µà¹‰"}`;
+  const label: Record<typeof report.period, string> = { day: "วันนี้", week: "สัปดาห์นี้", month: "เดือนนี้", year: "ปีนี้" };
+  const categories = Object.entries(report.categories).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([name, amount]) => `• ${name} ${money(amount)} บาท`).join("\n");
+  return `สรุปการเงิน${label[report.period]}\nรายรับ ${money(report.income)} บาท\nรายจ่าย ${money(report.expense)} บาท\nกำไร/คงเหลือ ${money(report.balance)} บาท\n${categories ? `\nรายจ่ายตามหมวด\n${categories}` : "\nยังไม่มีรายจ่ายในช่วงนี้"}`;
 }
 
 function formatFinancialInsight(insight: Awaited<ReturnType<typeof generateFinancialInsight>>) {
-  const quality = insight.dataSufficiency === "adequate" ? "à¸‚à¹‰à¸­à¸¡à¸¹à¸¥à¹€à¸žà¸µà¸¢à¸‡à¸žà¸­à¸ªà¸³à¸«à¸£à¸±à¸šà¸§à¸´à¹€à¸„à¸£à¸²à¸°à¸«à¹Œà¹€à¸šà¸·à¹‰à¸­à¸‡à¸•à¹‰à¸™" : insight.dataSufficiency === "limited" ? "à¸‚à¹‰à¸­à¸¡à¸¹à¸¥à¸¢à¸±à¸‡à¸¡à¸µà¹„à¸¡à¹ˆà¸¡à¸²à¸ à¸ˆà¸¶à¸‡à¹€à¸›à¹‡à¸™à¸‚à¹‰à¸­à¸ªà¸±à¸‡à¹€à¸à¸•à¹€à¸šà¸·à¹‰à¸­à¸‡à¸•à¹‰à¸™" : "à¸¢à¸±à¸‡à¹„à¸¡à¹ˆà¸¡à¸µà¸‚à¹‰à¸­à¸¡à¸¹à¸¥à¹€à¸žà¸µà¸¢à¸‡à¸žà¸­à¸ªà¸³à¸«à¸£à¸±à¸šà¸§à¸´à¹€à¸„à¸£à¸²à¸°à¸«à¹Œ";
-  const highlights = insight.highlights.map(item => `â€¢ ${item}`).join("\n");
-  const actions = insight.suggestedActions.map(item => `â€¢ ${item}`).join("\n");
-  return `AI à¸ªà¸£à¸¸à¸›à¸˜à¸¸à¸£à¸à¸´à¸ˆ\n${quality}\n${insight.summary}${highlights ? `\n\nà¸‚à¹‰à¸­à¸ªà¸±à¸‡à¹€à¸à¸•\n${highlights}` : ""}${actions ? `\n\nà¹à¸™à¸§à¸—à¸²à¸‡à¸ˆà¸±à¸”à¸à¸²à¸£\n${actions}` : ""}`;
+  const quality = insight.dataSufficiency === "adequate" ? "ข้อมูลเพียงพอสำหรับวิเคราะห์เบื้องต้น" : insight.dataSufficiency === "limited" ? "ข้อมูลยังมีไม่มาก จึงเป็นข้อสังเกตเบื้องต้น" : "ยังไม่มีข้อมูลเพียงพอสำหรับวิเคราะห์";
+  const highlights = insight.highlights.map(item => `• ${item}`).join("\n");
+  const actions = insight.suggestedActions.map(item => `• ${item}`).join("\n");
+  return `AI สรุปธุรกิจ\n${quality}\n${insight.summary}${highlights ? `\n\nข้อสังเกต\n${highlights}` : ""}${actions ? `\n\nแนวทางจัดการ\n${actions}` : ""}`;
 }
 
 async function buildVoiceProposal(transcript: string, lineUserId: string, financeAccountId?: number): Promise<VoiceTransactionProposal> {
@@ -107,17 +107,17 @@ async function resolveFinanceScope(lineUserId: string, lineChatId: string, scope
 
 function financeAccessMessage(scope: LineFinanceScope) {
   return scope === "user"
-    ? "à¸¢à¸±à¸‡à¹„à¸¡à¹ˆà¸žà¸šà¸šà¸±à¸à¸Šà¸µà¸à¸²à¸£à¹€à¸‡à¸´à¸™à¸ªà¹ˆà¸§à¸™à¸•à¸±à¸§ à¸¥à¸­à¸‡à¸ªà¹ˆà¸‡à¸„à¸³à¸ªà¸±à¹ˆà¸‡à¸­à¸µà¸à¸„à¸£à¸±à¹‰à¸‡à¸„à¸£à¸±à¸š"
-    : "à¸à¸¥à¸¸à¹ˆà¸¡à¸™à¸µà¹‰à¸¢à¸±à¸‡à¹„à¸¡à¹ˆà¹„à¸”à¹‰à¹€à¸›à¸´à¸”à¸ªà¸¡à¸¸à¸”à¸šà¸±à¸à¸Šà¸µà¸ªà¸³à¸«à¸£à¸±à¸šà¸ªà¸¡à¸²à¸Šà¸´à¸à¸‚à¸­à¸‡à¸„à¸¸à¸“ à¸ˆà¸¶à¸‡à¹„à¸¡à¹ˆà¸šà¸±à¸™à¸—à¸¶à¸à¸«à¸£à¸·à¸­à¹à¸ªà¸”à¸‡à¸à¸²à¸£à¹€à¸‡à¸´à¸™à¸£à¹ˆà¸§à¸¡à¹‚à¸”à¸¢à¸­à¸±à¸•à¹‚à¸™à¸¡à¸±à¸•à¸´ à¹€à¸žà¸·à¹ˆà¸­à¸›à¸à¸›à¹‰à¸­à¸‡à¸‚à¹‰à¸­à¸¡à¸¹à¸¥à¸ªà¹ˆà¸§à¸™à¸•à¸±à¸§ à¹ƒà¸«à¹‰à¹€à¸ˆà¹‰à¸²à¸‚à¸­à¸‡à¸à¸¥à¸¸à¹ˆà¸¡à¸•à¸±à¹‰à¸‡à¸„à¹ˆà¸²à¸šà¸±à¸à¸Šà¸µà¹à¸¥à¸°à¸šà¸—à¸šà¸²à¸—à¸ˆà¸²à¸ dashboard à¸à¹ˆà¸­à¸™à¸„à¸£à¸±à¸š";
+    ? "ยังไม่พบบัญชีการเงินส่วนตัว ลองส่งคำสั่งอีกครั้งครับ"
+    : "กลุ่มนี้ยังไม่ได้เปิดสมุดบัญชีสำหรับสมาชิกของคุณ จึงไม่บันทึกหรือแสดงการเงินร่วมโดยอัตโนมัติ เพื่อปกป้องข้อมูลส่วนตัว ให้เจ้าของกลุ่มตั้งค่าบัญชีและบทบาทจาก dashboard ก่อนครับ";
 }
 
 async function handleText(event: LineEvent, lineChatId: string, lineUserId: string, scope: LineFinanceScope) {
   const text = event.message?.text ?? "";
-  if (/^(?:à¹„à¸­à¸”à¸µ|id|user\s*id)$/i.test(text.trim())) {
+  if (/^(?:ไอดี|id|user\s*id)$/i.test(text.trim())) {
     if (event.source.type === "user") {
-      if (event.replyToken) await replyText(event.replyToken, `LINE User ID à¸‚à¸­à¸‡à¸„à¸¸à¸“à¸„à¸·à¸­\n${lineUserId}\n\nà¸„à¸±à¸”à¸¥à¸­à¸à¸£à¸«à¸±à¸ªà¸™à¸µà¹‰à¹„à¸›à¹€à¸Šà¸·à¹ˆà¸­à¸¡à¹ƒà¸™à¹à¸”à¸Šà¸šà¸­à¸£à¹Œà¸”à¹„à¸¡à¹‚à¸¥à¹„à¸”à¹‰à¹€à¸¥à¸¢à¸„à¸£à¸±à¸š`);
+      if (event.replyToken) await replyText(event.replyToken, `LINE User ID ของคุณคือ\n${lineUserId}\n\nคัดลอกรหัสนี้ไปเชื่อมในแดชบอร์ดไมโลได้เลยครับ`);
     } else if (event.replyToken) {
-      await replyText(event.replyToken, "à¹€à¸žà¸·à¹ˆà¸­à¸„à¸§à¸²à¸¡à¹€à¸›à¹‡à¸™à¸ªà¹ˆà¸§à¸™à¸•à¸±à¸§ à¸à¸£à¸¸à¸“à¸²à¸žà¸´à¸¡à¸žà¹Œ â€œà¹„à¸­à¸”à¸µâ€ à¹ƒà¸™à¹à¸Šà¸—à¸ªà¹ˆà¸§à¸™à¸•à¸±à¸§à¸à¸±à¸šà¹„à¸¡à¹‚à¸¥à¸„à¸£à¸±à¸š");
+      await replyText(event.replyToken, "เพื่อความเป็นส่วนตัว กรุณาพิมพ์ “ไอดี” ในแชทส่วนตัวกับไมโลครับ");
     }
     return;
   }
@@ -131,36 +131,36 @@ async function handleText(event: LineEvent, lineChatId: string, lineUserId: stri
   }
   if (command.type === "reminder") {
     const id = await db.createReminder({ lineChatId, createdByLineUserId: lineUserId, ...command.data, sourceMessageId: event.message?.id });
-    message = `à¸•à¸±à¹‰à¸‡à¹€à¸•à¸·à¸­à¸™ #${id} à¹€à¸£à¸µà¸¢à¸šà¸£à¹‰à¸­à¸¢\n${command.data.title}\nà¸„à¸£à¸±à¹‰à¸‡à¸–à¸±à¸”à¹„à¸›: ${formatDate(command.data.nextRunAt)}`;
+    message = `ตั้งเตือน #${id} เรียบร้อย\n${command.data.title}\nครั้งถัดไป: ${formatDate(command.data.nextRunAt)}`;
   } else if (command.type === "expense" || command.type === "income") {
-    if (!db.canCreateFinanceTransaction(financeScope!.role)) { message = "à¸ªà¸´à¸—à¸˜à¸´à¹Œà¸‚à¸­à¸‡à¸„à¸¸à¸“à¹ƒà¸™à¸ªà¸¡à¸¸à¸”à¸šà¸±à¸à¸Šà¸µà¸™à¸µà¹‰à¹€à¸›à¹‡à¸™à¸œà¸¹à¹‰à¸”à¸¹ à¸ˆà¸¶à¸‡à¸¢à¸±à¸‡à¹€à¸žà¸´à¹ˆà¸¡à¸£à¸²à¸¢à¸à¸²à¸£à¹„à¸¡à¹ˆà¹„à¸”à¹‰"; if (event.replyToken) await replyText(event.replyToken, message); return; }
+    if (!db.canCreateFinanceTransaction(financeScope!.role)) { message = "สิทธิ์ของคุณในสมุดบัญชีนี้เป็นผู้ดู จึงยังเพิ่มรายการไม่ได้"; if (event.replyToken) await replyText(event.replyToken, message); return; }
     let category = command.category;
-    if (command.type === "expense" && category === "à¸—à¸±à¹ˆà¸§à¹„à¸›") {
+    if (command.type === "expense" && category === "ทั่วไป") {
       try {
         const customCategories = (await db.listExpenseCategories(lineUserId, "expense", financeScope!.financeAccountId)).map(item => item.name);
-        const suggestion = await suggestExpenseCategory(command.note, Array.from(new Set(["à¸­à¸²à¸«à¸²à¸£", "à¹€à¸”à¸´à¸™à¸—à¸²à¸‡", "à¸„à¹ˆà¸²à¸ªà¸²à¸˜à¸²à¸£à¸“à¸¹à¸›à¹‚à¸ à¸„", "à¸ªà¸¸à¸‚à¸ à¸²à¸ž", "à¸à¸²à¸£à¸¨à¸¶à¸à¸©à¸²", "à¸šà¸±à¸™à¹€à¸—à¸´à¸‡", "à¸Šà¹‰à¸­à¸›à¸›à¸´à¹‰à¸‡", "à¸—à¹ˆà¸­à¸‡à¹€à¸—à¸µà¹ˆà¸¢à¸§", "à¸—à¸±à¹ˆà¸§à¹„à¸›", ...customCategories])));
+        const suggestion = await suggestExpenseCategory(command.note, Array.from(new Set(["อาหาร", "เดินทาง", "ค่าสาธารณูปโภค", "สุขภาพ", "การศึกษา", "บันเทิง", "ช้อปปิ้ง", "ท่องเที่ยว", "ทั่วไป", ...customCategories])));
         category = suggestion.category;
       } catch { /* keep deterministic fallback category */ }
     }
     await db.createTransaction({ lineChatId, lineUserId, financeAccountId: financeScope!.financeAccountId, transactionType: command.type, amount: command.amount, category, note: command.note, source: "line_text", sourceMessageId: event.message?.id });
     if (event.replyToken) { await sendPostSaveSummary(event.replyToken, lineUserId, lineChatId, financeScope!.financeAccountId, { transactionType: command.type, amount: command.amount, category }); return; }
-    message = `à¸šà¸±à¸™à¸—à¸¶à¸${command.type === "expense" ? "à¸£à¸²à¸¢à¸ˆà¹ˆà¸²à¸¢" : "à¸£à¸²à¸¢à¸£à¸±à¸š"} ${command.amount.toLocaleString("th-TH")} à¸šà¸²à¸— à¹ƒà¸™à¸«à¸¡à¸§à¸”${category}à¹à¸¥à¹‰à¸§`;
+    message = `บันทึก${command.type === "expense" ? "รายจ่าย" : "รายรับ"} ${command.amount.toLocaleString("th-TH")} บาท ในหมวด${category}แล้ว`;
   } else if (command.type === "transactionSearch") {
     const results = await db.searchTransactions(lineUserId, command.query, 10, financeScope!.financeAccountId);
-    message = results.length ? `à¸žà¸š ${results.length} à¸£à¸²à¸¢à¸à¸²à¸£\n${results.map(item => `#${item.id} Â· ${item.transactionType === "expense" ? "à¸ˆà¹ˆà¸²à¸¢" : "à¸£à¸±à¸š"} ${Number(item.amount).toLocaleString("th-TH")} à¸šà¸²à¸— Â· ${item.category}${item.note ? ` Â· ${item.note}` : ""}`).join("\n")}` : `à¸¢à¸±à¸‡à¹„à¸¡à¹ˆà¸žà¸šà¸˜à¸¸à¸£à¸à¸£à¸£à¸¡ â€œ${command.query}â€`;
+    message = results.length ? `พบ ${results.length} รายการ\n${results.map(item => `#${item.id} · ${item.transactionType === "expense" ? "จ่าย" : "รับ"} ${Number(item.amount).toLocaleString("th-TH")} บาท · ${item.category}${item.note ? ` · ${item.note}` : ""}`).join("\n")}` : `ยังไม่พบธุรกรรม “${command.query}”`;
   } else if (command.type === "transactionDelete") {
-    if (!db.canManageFinanceTransactions(financeScope!.role)) { message = "à¸ªà¸´à¸—à¸˜à¸´à¹Œà¸‚à¸­à¸‡à¸„à¸¸à¸“à¸¢à¸±à¸‡à¸¥à¸šà¸£à¸²à¸¢à¸à¸²à¸£à¹ƒà¸™à¸ªà¸¡à¸¸à¸”à¸šà¸±à¸à¸Šà¸µà¸™à¸µà¹‰à¹„à¸¡à¹ˆà¹„à¸”à¹‰"; if (event.replyToken) await replyText(event.replyToken, message); return; }
+    if (!db.canManageFinanceTransactions(financeScope!.role)) { message = "สิทธิ์ของคุณยังลบรายการในสมุดบัญชีนี้ไม่ได้"; if (event.replyToken) await replyText(event.replyToken, message); return; }
     const deleted = await db.deleteTransaction({ id: command.id, lineUserId, financeAccountId: financeScope!.financeAccountId });
-    message = deleted ? `à¸¥à¸šà¸£à¸²à¸¢à¸à¸²à¸£ #${command.id} à¹à¸¥à¹‰à¸§ à¹‚à¸”à¸¢à¹€à¸à¹‡à¸šà¸›à¸£à¸°à¸§à¸±à¸•à¸´à¸à¸²à¸£à¸•à¸£à¸§à¸ˆà¸ªà¸­à¸šà¹„à¸§à¹‰` : `à¹„à¸¡à¹ˆà¸žà¸šà¸£à¸²à¸¢à¸à¸²à¸£ #${command.id} à¸«à¸£à¸·à¸­à¸£à¸²à¸¢à¸à¸²à¸£à¸–à¸¹à¸à¸¥à¸šà¹à¸¥à¹‰à¸§`;
+    message = deleted ? `ลบรายการ #${command.id} แล้ว โดยเก็บประวัติการตรวจสอบไว้` : `ไม่พบรายการ #${command.id} หรือรายการถูกลบแล้ว`;
   } else if (command.type === "transactionUpdate") {
-    if (!db.canManageFinanceTransactions(financeScope!.role)) { message = "à¸ªà¸´à¸—à¸˜à¸´à¹Œà¸‚à¸­à¸‡à¸„à¸¸à¸“à¸¢à¸±à¸‡à¹à¸à¹‰à¹„à¸‚à¸£à¸²à¸¢à¸à¸²à¸£à¹ƒà¸™à¸ªà¸¡à¸¸à¸”à¸šà¸±à¸à¸Šà¸µà¸™à¸µà¹‰à¹„à¸¡à¹ˆà¹„à¸”à¹‰"; if (event.replyToken) await replyText(event.replyToken, message); return; }
+    if (!db.canManageFinanceTransactions(financeScope!.role)) { message = "สิทธิ์ของคุณยังแก้ไขรายการในสมุดบัญชีนี้ไม่ได้"; if (event.replyToken) await replyText(event.replyToken, message); return; }
     const updated = await db.updateTransaction({ id: command.id, lineUserId, financeAccountId: financeScope!.financeAccountId, amount: command.amount });
-    message = updated ? `à¹à¸à¹‰à¹„à¸‚à¸¢à¸­à¸”à¸‚à¸­à¸‡à¸£à¸²à¸¢à¸à¸²à¸£ #${command.id} à¹€à¸›à¹‡à¸™ ${command.amount.toLocaleString("th-TH")} à¸šà¸²à¸—à¹à¸¥à¹‰à¸§` : `à¹„à¸¡à¹ˆà¸žà¸šà¸£à¸²à¸¢à¸à¸²à¸£ #${command.id} à¸«à¸£à¸·à¸­à¸£à¸²à¸¢à¸à¸²à¸£à¸–à¸¹à¸à¸¥à¸šà¹à¸¥à¹‰à¸§`;
+    message = updated ? `แก้ไขยอดของรายการ #${command.id} เป็น ${command.amount.toLocaleString("th-TH")} บาทแล้ว` : `ไม่พบรายการ #${command.id} หรือรายการถูกลบแล้ว`;
   } else if (command.type === "openingBalance") {
-    if (!db.canManageFinanceSettings(financeScope!.role)) { message = "à¸ªà¸´à¸—à¸˜à¸´à¹Œà¸‚à¸­à¸‡à¸„à¸¸à¸“à¸¢à¸±à¸‡à¸•à¸±à¹‰à¸‡à¸„à¹ˆà¸²à¸¢à¸­à¸”à¹€à¸£à¸´à¹ˆà¸¡à¸•à¹‰à¸™à¹ƒà¸™à¸ªà¸¡à¸¸à¸”à¸šà¸±à¸à¸Šà¸µà¸™à¸µà¹‰à¹„à¸¡à¹ˆà¹„à¸”à¹‰"; if (event.replyToken) await replyText(event.replyToken, message); return; }
+    if (!db.canManageFinanceSettings(financeScope!.role)) { message = "สิทธิ์ของคุณยังตั้งค่ายอดเริ่มต้นในสมุดบัญชีนี้ไม่ได้"; if (event.replyToken) await replyText(event.replyToken, message); return; }
     await db.upsertOpeningBalance(lineUserId, command.amount, new Date(), financeScope!.financeAccountId);
     await db.writeAuditLog({ action: "finance_opening_balance.set", entityType: "finance_opening_balance", actorLineUserId: lineUserId, lineChatId, details: { amount: command.amount } });
-    message = `à¸•à¸±à¹‰à¸‡à¸¢à¸­à¸”à¹€à¸‡à¸´à¸™à¹€à¸£à¸´à¹ˆà¸¡à¸•à¹‰à¸™ ${command.amount.toLocaleString("th-TH")} à¸šà¸²à¸—à¹à¸¥à¹‰à¸§ à¸¢à¸­à¸”à¸™à¸µà¹‰à¸ˆà¸°à¹à¸ªà¸”à¸‡à¹à¸¢à¸à¸ˆà¸²à¸à¸£à¸²à¸¢à¸£à¸±à¸šà¹à¸¥à¸°à¸£à¸²à¸¢à¸ˆà¹ˆà¸²à¸¢`;
+    message = `ตั้งยอดเงินเริ่มต้น ${command.amount.toLocaleString("th-TH")} บาทแล้ว ยอดนี้จะแสดงแยกจากรายรับและรายจ่าย`;
   } else if (command.type === "financeReport") {
     const report = await db.financeReport(lineUserId, command.period, new Date(), financeScope!.financeAccountId);
     if (event.replyToken) { await sendFinanceReportCard(event.replyToken, lineChatId, report); return; }
@@ -169,140 +169,140 @@ async function handleText(event: LineEvent, lineChatId: string, lineUserId: stri
     const report = await db.financeReport(lineUserId, command.period, new Date(), financeScope!.financeAccountId);
     message = formatFinancialInsight(await generateFinancialInsight(report));
   } else if (command.type === "voiceConfirm") {
-    if (!db.canCreateFinanceTransaction(financeScope!.role)) { message = "à¸ªà¸´à¸—à¸˜à¸´à¹Œà¸‚à¸­à¸‡à¸„à¸¸à¸“à¹ƒà¸™à¸ªà¸¡à¸¸à¸”à¸šà¸±à¸à¸Šà¸µà¸™à¸µà¹‰à¹€à¸›à¹‡à¸™à¸œà¸¹à¹‰à¸”à¸¹ à¸ˆà¸¶à¸‡à¸¢à¸±à¸‡à¸¢à¸·à¸™à¸¢à¸±à¸™à¸£à¸²à¸¢à¸à¸²à¸£à¹„à¸¡à¹ˆà¹„à¸”à¹‰"; if (event.replyToken) await replyText(event.replyToken, message); return; }
+    if (!db.canCreateFinanceTransaction(financeScope!.role)) { message = "สิทธิ์ของคุณในสมุดบัญชีนี้เป็นผู้ดู จึงยังยืนยันรายการไม่ได้"; if (event.replyToken) await replyText(event.replyToken, message); return; }
     const voice = await db.latestProposedVoiceTranscription(lineUserId, lineChatId);
     if (!voice) {
-      message = "à¸¢à¸±à¸‡à¹„à¸¡à¹ˆà¸¡à¸µà¸‚à¹‰à¸­à¸„à¸§à¸²à¸¡à¹€à¸ªà¸µà¸¢à¸‡à¸—à¸µà¹ˆà¸£à¸­à¸¢à¸·à¸™à¸¢à¸±à¸™ à¸¥à¸­à¸‡à¸ªà¹ˆà¸‡à¸‚à¹‰à¸­à¸„à¸§à¸²à¸¡à¹€à¸ªà¸µà¸¢à¸‡à¸—à¸µà¹ˆà¸£à¸°à¸šà¸¸à¸£à¸²à¸¢à¸£à¸±à¸šà¸«à¸£à¸·à¸­à¸£à¸²à¸¢à¸ˆà¹ˆà¸²à¸¢à¸à¹ˆà¸­à¸™à¸„à¸£à¸±à¸š";
+      message = "ยังไม่มีข้อความเสียงที่รอยืนยัน ลองส่งข้อความเสียงที่ระบุรายรับหรือรายจ่ายก่อนครับ";
     } else {
       const proposed = proposalFromStoredTranscript(voice.transcript, voice.proposalJson);
       if (proposed.transactionType && proposed.amount && proposed.category) {
         const transactionId = await db.createTransaction({ lineChatId, lineUserId, financeAccountId: financeScope!.financeAccountId, transactionType: proposed.transactionType, amount: proposed.amount, category: proposed.category, note: proposed.note, source: "line_audio" });
-        await db.linkTransactionAttachment({ transactionId, vaultItemId: voice.vaultItemId, lineUserId, label: "à¹„à¸Ÿà¸¥à¹Œà¹€à¸ªà¸µà¸¢à¸‡à¸•à¹‰à¸™à¸‰à¸šà¸±à¸š" });
+        await db.linkTransactionAttachment({ transactionId, vaultItemId: voice.vaultItemId, lineUserId, label: "ไฟล์เสียงต้นฉบับ" });
         await db.updateVoiceTranscriptionStatus(voice.id, "accepted");
         if (event.replyToken) { await sendPostSaveSummary(event.replyToken, lineUserId, lineChatId, financeScope!.financeAccountId, proposed); return; }
-        message = `à¸šà¸±à¸™à¸—à¸¶à¸${proposed.transactionType === "expense" ? "à¸£à¸²à¸¢à¸ˆà¹ˆà¸²à¸¢" : "à¸£à¸²à¸¢à¸£à¸±à¸š"}à¸ˆà¸²à¸à¹€à¸ªà¸µà¸¢à¸‡ ${proposed.amount.toLocaleString("th-TH")} à¸šà¸²à¸— à¹ƒà¸™à¸«à¸¡à¸§à¸”${proposed.category}à¹à¸¥à¹‰à¸§`;
+        message = `บันทึก${proposed.transactionType === "expense" ? "รายจ่าย" : "รายรับ"}จากเสียง ${proposed.amount.toLocaleString("th-TH")} บาท ในหมวด${proposed.category}แล้ว`;
       } else {
-        message = `à¸–à¸­à¸”à¹€à¸ªà¸µà¸¢à¸‡à¹„à¸”à¹‰à¸§à¹ˆà¸² â€œ${voice.transcript}â€ à¹à¸•à¹ˆà¸¢à¸±à¸‡à¹„à¸¡à¹ˆà¸žà¸šà¸£à¸¹à¸›à¹à¸šà¸šà¸£à¸²à¸¢à¸£à¸±à¸š/à¸£à¸²à¸¢à¸ˆà¹ˆà¸²à¸¢ à¹€à¸Šà¹ˆà¸™ â€œà¸ˆà¹ˆà¸²à¸¢à¸à¸²à¹à¸Ÿ 65 à¸šà¸²à¸—â€ à¸ˆà¸¶à¸‡à¸¢à¸±à¸‡à¹„à¸¡à¹ˆà¸šà¸±à¸™à¸—à¸¶à¸à¸„à¸£à¸±à¸š`;
+        message = `ถอดเสียงได้ว่า “${voice.transcript}” แต่ยังไม่พบรูปแบบรายรับ/รายจ่าย เช่น “จ่ายกาแฟ 65 บาท” จึงยังไม่บันทึกครับ`;
       }
     }
   } else if (command.type === "voiceEditPrompt") {
     const voice = await db.latestProposedVoiceTranscription(lineUserId, lineChatId);
     if (voice && event.replyToken) { await replyVoiceCategoryChoices(event.replyToken); return; }
-    message = voice ? "à¸ªà¹ˆà¸‡à¸‚à¹‰à¸­à¸„à¸§à¸²à¸¡à¸—à¸µà¹ˆà¹à¸à¹‰à¹„à¸‚à¹ƒà¸«à¸¡à¹ˆà¹„à¸”à¹‰à¹€à¸¥à¸¢ à¹€à¸Šà¹ˆà¸™ â€œà¹à¸à¹‰à¹„à¸‚à¹€à¸ªà¸µà¸¢à¸‡ à¸ˆà¹ˆà¸²à¸¢à¸à¸²à¹à¸Ÿ 65 à¸šà¸²à¸—â€ à¹à¸¥à¹‰à¸§à¹„à¸¡à¹‚à¸¥à¸ˆà¸°à¹€à¸ªà¸™à¸­à¸£à¸²à¸¢à¸à¸²à¸£à¹ƒà¸«à¹‰à¸•à¸£à¸§à¸ˆà¸­à¸µà¸à¸„à¸£à¸±à¹‰à¸‡" : "à¸¢à¸±à¸‡à¹„à¸¡à¹ˆà¸¡à¸µà¸‚à¹‰à¸­à¸„à¸§à¸²à¸¡à¹€à¸ªà¸µà¸¢à¸‡à¸—à¸µà¹ˆà¸£à¸­à¹à¸à¹‰à¹„à¸‚ à¸¥à¸­à¸‡à¸ªà¹ˆà¸‡à¸‚à¹‰à¸­à¸„à¸§à¸²à¸¡à¹€à¸ªà¸µà¸¢à¸‡à¸à¹ˆà¸­à¸™à¸„à¸£à¸±à¸š";
+    message = voice ? "ส่งข้อความที่แก้ไขใหม่ได้เลย เช่น “แก้ไขเสียง จ่ายกาแฟ 65 บาท” แล้วไมโลจะเสนอรายการให้ตรวจอีกครั้ง" : "ยังไม่มีข้อความเสียงที่รอแก้ไข ลองส่งข้อความเสียงก่อนครับ";
   } else if (command.type === "voiceCategoryChange") {
     const voice = await db.latestProposedVoiceTranscription(lineUserId, lineChatId);
     const allowed = new Set([...STANDARD_EXPENSE_CATEGORIES, ...(await db.listExpenseCategories(lineUserId, "expense", financeScope!.financeAccountId)).map(item => item.name)]);
-    if (!voice) message = "à¸¢à¸±à¸‡à¹„à¸¡à¹ˆà¸¡à¸µà¸‚à¹‰à¸­à¸„à¸§à¸²à¸¡à¹€à¸ªà¸µà¸¢à¸‡à¸—à¸µà¹ˆà¸£à¸­à¹à¸à¹‰à¹„à¸‚ à¸¥à¸­à¸‡à¸ªà¹ˆà¸‡à¸‚à¹‰à¸­à¸„à¸§à¸²à¸¡à¹€à¸ªà¸µà¸¢à¸‡à¸à¹ˆà¸­à¸™à¸„à¸£à¸±à¸š";
-    else if (!allowed.has(command.category)) message = "à¹€à¸¥à¸·à¸­à¸à¸«à¸¡à¸§à¸”à¸—à¸µà¹ˆà¹à¸™à¸°à¸™à¸³à¹„à¸”à¹‰ à¸«à¸£à¸·à¸­à¸žà¸´à¸¡à¸žà¹Œà¹à¸à¹‰à¹„à¸‚à¸‚à¹‰à¸­à¸„à¸§à¸²à¸¡à¹ƒà¸«à¸¡à¹ˆà¹€à¸žà¸·à¹ˆà¸­à¸£à¸°à¸šà¸¸à¸£à¸²à¸¢à¸¥à¸°à¹€à¸­à¸µà¸¢à¸”à¸„à¸£à¸±à¸š";
+    if (!voice) message = "ยังไม่มีข้อความเสียงที่รอแก้ไข ลองส่งข้อความเสียงก่อนครับ";
+    else if (!allowed.has(command.category)) message = "เลือกหมวดที่แนะนำได้ หรือพิมพ์แก้ไขข้อความใหม่เพื่อระบุรายละเอียดครับ";
     else {
       const proposal = proposalFromStoredTranscript(voice.transcript, voice.proposalJson);
       proposal.category = command.category;
       const updated = await db.updateVoiceTranscript({ id: voice.id, lineUserId, transcript: voice.transcript, proposalJson: JSON.stringify(proposal) });
-      if (!updated) message = "à¸‚à¹‰à¸­à¸„à¸§à¸²à¸¡à¹€à¸ªà¸µà¸¢à¸‡à¸™à¸µà¹‰à¹„à¸¡à¹ˆà¸­à¸¢à¸¹à¹ˆà¹ƒà¸™à¸ªà¸–à¸²à¸™à¸°à¸—à¸µà¹ˆà¹à¸à¹‰à¹„à¸‚à¹„à¸”à¹‰à¹à¸¥à¹‰à¸§ à¸¥à¸­à¸‡à¸ªà¹ˆà¸‡à¸‚à¹‰à¸­à¸„à¸§à¸²à¸¡à¹€à¸ªà¸µà¸¢à¸‡à¹ƒà¸«à¸¡à¹ˆà¸„à¸£à¸±à¸š";
+      if (!updated) message = "ข้อความเสียงนี้ไม่อยู่ในสถานะที่แก้ไขได้แล้ว ลองส่งข้อความเสียงใหม่ครับ";
       else if (event.replyToken) { await sendVoiceProposal(event.replyToken, proposal); return; }
-      else message = `à¹€à¸›à¸¥à¸µà¹ˆà¸¢à¸™à¸«à¸¡à¸§à¸”à¸‚à¹‰à¸­à¹€à¸ªà¸™à¸­à¹€à¸›à¹‡à¸™ ${command.category} à¹à¸¥à¹‰à¸§`;
+      else message = `เปลี่ยนหมวดข้อเสนอเป็น ${command.category} แล้ว`;
     }
   } else if (command.type === "voiceEdit") {
     const voice = await db.latestProposedVoiceTranscription(lineUserId, lineChatId);
-    if (!voice) message = "à¸¢à¸±à¸‡à¹„à¸¡à¹ˆà¸¡à¸µà¸‚à¹‰à¸­à¸„à¸§à¸²à¸¡à¹€à¸ªà¸µà¸¢à¸‡à¸—à¸µà¹ˆà¸£à¸­à¹à¸à¹‰à¹„à¸‚ à¸¥à¸­à¸‡à¸ªà¹ˆà¸‡à¸‚à¹‰à¸­à¸„à¸§à¸²à¸¡à¹€à¸ªà¸µà¸¢à¸‡à¸à¹ˆà¸­à¸™à¸„à¸£à¸±à¸š";
+    if (!voice) message = "ยังไม่มีข้อความเสียงที่รอแก้ไข ลองส่งข้อความเสียงก่อนครับ";
     else {
       const proposal = await buildVoiceProposal(command.transcript, lineUserId, financeScope!.financeAccountId);
       const updated = await db.updateVoiceTranscript({ id: voice.id, lineUserId, transcript: command.transcript, proposalJson: JSON.stringify(proposal) });
-      if (!updated) message = "à¸‚à¹‰à¸­à¸„à¸§à¸²à¸¡à¹€à¸ªà¸µà¸¢à¸‡à¸™à¸µà¹‰à¹„à¸¡à¹ˆà¸­à¸¢à¸¹à¹ˆà¹ƒà¸™à¸ªà¸–à¸²à¸™à¸°à¸—à¸µà¹ˆà¹à¸à¹‰à¹„à¸‚à¹„à¸”à¹‰à¹à¸¥à¹‰à¸§ à¸¥à¸­à¸‡à¸ªà¹ˆà¸‡à¸‚à¹‰à¸­à¸„à¸§à¸²à¸¡à¹€à¸ªà¸µà¸¢à¸‡à¹ƒà¸«à¸¡à¹ˆà¸„à¸£à¸±à¸š";
+      if (!updated) message = "ข้อความเสียงนี้ไม่อยู่ในสถานะที่แก้ไขได้แล้ว ลองส่งข้อความเสียงใหม่ครับ";
       else if (event.replyToken) { await sendVoiceProposal(event.replyToken, proposal); return; }
-      else message = "à¹à¸à¹‰à¹„à¸‚à¸‚à¹‰à¸­à¸„à¸§à¸²à¸¡à¹€à¸ªà¸µà¸¢à¸‡à¹à¸¥à¹‰à¸§";
+      else message = "แก้ไขข้อความเสียงแล้ว";
     }
   } else if (command.type === "note") {
     await db.createNote(lineChatId, lineUserId, command.title, command.content);
-    message = "à¹€à¸à¹‡à¸šà¹‚à¸™à¹‰à¸•à¹„à¸§à¹‰à¹ƒà¸«à¹‰à¹à¸¥à¹‰à¸§ à¸„à¹‰à¸™à¸«à¸²à¹„à¸”à¹‰à¸—à¸¸à¸à¹€à¸¡à¸·à¹ˆà¸­";
+    message = "เก็บโน้ตไว้ให้แล้ว ค้นหาได้ทุกเมื่อ";
   } else if (command.type === "todo") {
     await db.createTodo(lineChatId, lineUserId, command.title);
-    message = `à¹€à¸žà¸´à¹ˆà¸¡à¸‡à¸²à¸™ â€œ${command.title}â€ à¹à¸¥à¹‰à¸§`;
+    message = `เพิ่มงาน “${command.title}” แล้ว`;
   } else if (command.type === "vault") {
     await db.createVaultItem({ lineChatId, createdByLineUserId: lineUserId, itemType: command.itemType, title: command.title, searchableText: command.content, tagsText: command.tagsText, sourceUrl: command.sourceUrl, lineMessageId: event.message?.id });
-    message = `à¹€à¸à¹‡à¸š${command.itemType === "link" ? "à¸¥à¸´à¸‡à¸à¹Œ" : "à¸‚à¹‰à¸­à¸„à¸§à¸²à¸¡"}à¸™à¸µà¹‰à¹„à¸§à¹‰à¹ƒà¸™à¸„à¸¥à¸±à¸‡à¹à¸¥à¹‰à¸§${command.tagsText ? ` à¸žà¸£à¹‰à¸­à¸¡à¹à¸—à¹‡à¸ ${command.tagsText}` : ""}`;
+    message = `เก็บ${command.itemType === "link" ? "ลิงก์" : "ข้อความ"}นี้ไว้ในคลังแล้ว${command.tagsText ? ` พร้อมแท็ก ${command.tagsText}` : ""}`;
   } else if (command.type === "search") {
     const results = await db.searchVault(lineUserId, command.query);
-    message = results.length ? `à¸žà¸š ${results.length} à¸£à¸²à¸¢à¸à¸²à¸£\n${results.slice(0, 5).map((item, index) => `${index + 1}. ${item.title}`).join("\n")}` : `à¸¢à¸±à¸‡à¹„à¸¡à¹ˆà¸žà¸šà¸£à¸²à¸¢à¸à¸²à¸£ â€œ${command.query}â€`;
+    message = results.length ? `พบ ${results.length} รายการ\n${results.slice(0, 5).map((item, index) => `${index + 1}. ${item.title}`).join("\n")}` : `ยังไม่พบรายการ “${command.query}”`;
   } else if (command.type === "mention") {
     const member = await db.findLineMemberByName(lineChatId, command.memberName);
     if (member && event.replyToken) {
       await replyMention(event.replyToken, command.message, member.lineUserId);
       return;
     }
-    message = `à¸¢à¸±à¸‡à¹„à¸¡à¹ˆà¸žà¸šà¸ªà¸¡à¸²à¸Šà¸´à¸à¸Šà¸·à¹ˆà¸­ â€œ${command.memberName}â€ à¹ƒà¸™à¸‚à¹‰à¸­à¸¡à¸¹à¸¥à¸‚à¸­à¸‡à¸à¸¥à¸¸à¹ˆà¸¡ à¸¥à¸­à¸‡à¹ƒà¸«à¹‰à¸ªà¸¡à¸²à¸Šà¸´à¸à¸ªà¹ˆà¸‡à¸‚à¹‰à¸­à¸„à¸§à¸²à¸¡à¸«à¸²à¹„à¸¡à¹‚à¸¥à¸à¹ˆà¸­à¸™à¸„à¸£à¸±à¸š`;
+    message = `ยังไม่พบสมาชิกชื่อ “${command.memberName}” ในข้อมูลของกลุ่ม ลองให้สมาชิกส่งข้อความหาไมโลก่อนครับ`;
   } else if (command.type === "budget") {
-    if (!db.canManageFinanceSettings(financeScope!.role)) { message = "à¸ªà¸´à¸—à¸˜à¸´à¹Œà¸‚à¸­à¸‡à¸„à¸¸à¸“à¸¢à¸±à¸‡à¸•à¸±à¹‰à¸‡à¸‡à¸šà¸›à¸£à¸°à¸¡à¸²à¸“à¹ƒà¸™à¸ªà¸¡à¸¸à¸”à¸šà¸±à¸à¸Šà¸µà¸™à¸µà¹‰à¹„à¸¡à¹ˆà¹„à¸”à¹‰"; if (event.replyToken) await replyText(event.replyToken, message); return; }
+    if (!db.canManageFinanceSettings(financeScope!.role)) { message = "สิทธิ์ของคุณยังตั้งงบประมาณในสมุดบัญชีนี้ไม่ได้"; if (event.replyToken) await replyText(event.replyToken, message); return; }
     const now = new Date();
     const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
     await db.upsertBudget(lineUserId, command.category, command.amount, monthKey, financeScope!.financeAccountId);
-    message = `à¸•à¸±à¹‰à¸‡à¸‡à¸šà¸«à¸¡à¸§à¸”${command.category} ${command.amount.toLocaleString("th-TH")} à¸šà¸²à¸— à¸ªà¸³à¸«à¸£à¸±à¸šà¹€à¸”à¸·à¸­à¸™à¸™à¸µà¹‰à¹à¸¥à¹‰à¸§`;
+    message = `ตั้งงบหมวด${command.category} ${command.amount.toLocaleString("th-TH")} บาท สำหรับเดือนนี้แล้ว`;
   } else if (command.type === "categoryAdd") {
-    if (!db.canManageFinanceSettings(financeScope!.role)) { message = "à¸ªà¸´à¸—à¸˜à¸´à¹Œà¸‚à¸­à¸‡à¸„à¸¸à¸“à¸¢à¸±à¸‡à¸ˆà¸±à¸”à¸à¸²à¸£à¸«à¸¡à¸§à¸”à¹ƒà¸™à¸ªà¸¡à¸¸à¸”à¸šà¸±à¸à¸Šà¸µà¸™à¸µà¹‰à¹„à¸¡à¹ˆà¹„à¸”à¹‰"; if (event.replyToken) await replyText(event.replyToken, message); return; }
+    if (!db.canManageFinanceSettings(financeScope!.role)) { message = "สิทธิ์ของคุณยังจัดการหมวดในสมุดบัญชีนี้ไม่ได้"; if (event.replyToken) await replyText(event.replyToken, message); return; }
     await db.addExpenseCategory(lineUserId, command.name, command.transactionType, financeScope!.financeAccountId);
-    message = `à¹€à¸žà¸´à¹ˆà¸¡à¸«à¸¡à¸§à¸”${command.transactionType === "income" ? "à¸£à¸²à¸¢à¸£à¸±à¸š" : "à¸£à¸²à¸¢à¸ˆà¹ˆà¸²à¸¢"} â€œ${command.name}â€ à¹à¸¥à¹‰à¸§`;
+    message = `เพิ่มหมวด${command.transactionType === "income" ? "รายรับ" : "รายจ่าย"} “${command.name}” แล้ว`;
   } else if (command.type === "categoryRemove") {
-    if (!db.canManageFinanceSettings(financeScope!.role)) { message = "à¸ªà¸´à¸—à¸˜à¸´à¹Œà¸‚à¸­à¸‡à¸„à¸¸à¸“à¸¢à¸±à¸‡à¸ˆà¸±à¸”à¸à¸²à¸£à¸«à¸¡à¸§à¸”à¹ƒà¸™à¸ªà¸¡à¸¸à¸”à¸šà¸±à¸à¸Šà¸µà¸™à¸µà¹‰à¹„à¸¡à¹ˆà¹„à¸”à¹‰"; if (event.replyToken) await replyText(event.replyToken, message); return; }
+    if (!db.canManageFinanceSettings(financeScope!.role)) { message = "สิทธิ์ของคุณยังจัดการหมวดในสมุดบัญชีนี้ไม่ได้"; if (event.replyToken) await replyText(event.replyToken, message); return; }
     const removed = await db.removeExpenseCategory(lineUserId, command.name, command.transactionType, financeScope!.financeAccountId);
-    message = removed ? `à¸¥à¸šà¸«à¸¡à¸§à¸”${command.transactionType === "income" ? "à¸£à¸²à¸¢à¸£à¸±à¸š" : "à¸£à¸²à¸¢à¸ˆà¹ˆà¸²à¸¢"} â€œ${command.name}â€ à¹à¸¥à¹‰à¸§` : `à¹„à¸¡à¹ˆà¸žà¸šà¸«à¸¡à¸§à¸” â€œ${command.name}â€ à¸—à¸µà¹ˆà¸ˆà¸°à¸¥à¸š`;
+    message = removed ? `ลบหมวด${command.transactionType === "income" ? "รายรับ" : "รายจ่าย"} “${command.name}” แล้ว` : `ไม่พบหมวด “${command.name}” ที่จะลบ`;
   } else if (command.type === "categoryList") {
     const categories = await db.listTransactionCategories(lineUserId, financeScope!.financeAccountId);
     const customExpense = categories.filter(item => item.transactionType === "expense" && !STANDARD_EXPENSE_CATEGORIES.includes(item.name as typeof STANDARD_EXPENSE_CATEGORIES[number]));
     const customIncome = categories.filter(item => item.transactionType === "income" && !STANDARD_INCOME_CATEGORIES.includes(item.name as typeof STANDARD_INCOME_CATEGORIES[number]));
-    const expenseSection = `à¸«à¸¡à¸§à¸”à¸£à¸²à¸¢à¸ˆà¹ˆà¸²à¸¢à¸¡à¸²à¸•à¸£à¸à¸²à¸™\n${STANDARD_EXPENSE_CATEGORIES.map(name => `â€¢ ${name}`).join("\n")}${customExpense.length ? `\nà¸«à¸¡à¸§à¸”à¸£à¸²à¸¢à¸ˆà¹ˆà¸²à¸¢à¸—à¸µà¹ˆà¸„à¸¸à¸“à¹€à¸žà¸´à¹ˆà¸¡\n${customExpense.map(item => `â€¢ ${item.name}`).join("\n")}` : ""}`;
-    const incomeSection = `à¸«à¸¡à¸§à¸”à¸£à¸²à¸¢à¸£à¸±à¸šà¸¡à¸²à¸•à¸£à¸à¸²à¸™\n${STANDARD_INCOME_CATEGORIES.map(name => `â€¢ ${name}`).join("\n")}${customIncome.length ? `\nà¸«à¸¡à¸§à¸”à¸£à¸²à¸¢à¸£à¸±à¸šà¸—à¸µà¹ˆà¸„à¸¸à¸“à¹€à¸žà¸´à¹ˆà¸¡\n${customIncome.map(item => `â€¢ ${item.name}`).join("\n")}` : ""}`;
-    message = command.transactionType === "income" ? incomeSection : command.transactionType === "expense" ? expenseSection : `${expenseSection}\n\n${incomeSection}\n\nà¹€à¸žà¸´à¹ˆà¸¡à¸«à¸¡à¸§à¸”à¹„à¸”à¹‰à¸”à¹‰à¸§à¸¢ â€œà¹€à¸žà¸´à¹ˆà¸¡à¸«à¸¡à¸§à¸”à¸£à¸²à¸¢à¸ˆà¹ˆà¸²à¸¢ à¸Šà¸·à¹ˆà¸­à¸«à¸¡à¸§à¸”â€ à¸«à¸£à¸·à¸­ â€œà¹€à¸žà¸´à¹ˆà¸¡à¸«à¸¡à¸§à¸”à¸£à¸²à¸¢à¸£à¸±à¸š à¸Šà¸·à¹ˆà¸­à¸«à¸¡à¸§à¸”â€`;
+    const expenseSection = `หมวดรายจ่ายมาตรฐาน\n${STANDARD_EXPENSE_CATEGORIES.map(name => `• ${name}`).join("\n")}${customExpense.length ? `\nหมวดรายจ่ายที่คุณเพิ่ม\n${customExpense.map(item => `• ${item.name}`).join("\n")}` : ""}`;
+    const incomeSection = `หมวดรายรับมาตรฐาน\n${STANDARD_INCOME_CATEGORIES.map(name => `• ${name}`).join("\n")}${customIncome.length ? `\nหมวดรายรับที่คุณเพิ่ม\n${customIncome.map(item => `• ${item.name}`).join("\n")}` : ""}`;
+    message = command.transactionType === "income" ? incomeSection : command.transactionType === "expense" ? expenseSection : `${expenseSection}\n\n${incomeSection}\n\nเพิ่มหมวดได้ด้วย “เพิ่มหมวดรายจ่าย ชื่อหมวด” หรือ “เพิ่มหมวดรายรับ ชื่อหมวด”`;
   } else if (command.type === "invalid") {
     message = command.message;
   } else if (command.type === "imageConfirm") {
-    if (!db.canCreateFinanceTransaction(financeScope!.role)) { message = "à¸ªà¸´à¸—à¸˜à¸´à¹Œà¸‚à¸­à¸‡à¸„à¸¸à¸“à¹ƒà¸™à¸ªà¸¡à¸¸à¸”à¸šà¸±à¸à¸Šà¸µà¸™à¸µà¹‰à¹€à¸›à¹‡à¸™à¸œà¸¹à¹‰à¸”à¸¹ à¸ˆà¸¶à¸‡à¸¢à¸±à¸‡à¸¢à¸·à¸™à¸¢à¸±à¸™à¸£à¸²à¸¢à¸à¸²à¸£à¹„à¸¡à¹ˆà¹„à¸”à¹‰"; if (event.replyToken) await replyText(event.replyToken, message); return; }
+    if (!db.canCreateFinanceTransaction(financeScope!.role)) { message = "สิทธิ์ของคุณในสมุดบัญชีนี้เป็นผู้ดู จึงยังยืนยันรายการไม่ได้"; if (event.replyToken) await replyText(event.replyToken, message); return; }
     const latest = await db.latestImageExtraction(lineUserId, lineChatId);
     if (!latest || latest.extraction.status !== "proposed") {
-      message = "à¸¢à¸±à¸‡à¹„à¸¡à¹ˆà¸¡à¸µà¸œà¸¥à¸§à¸´à¹€à¸„à¸£à¸²à¸°à¸«à¹Œà¸£à¸¹à¸›à¸—à¸µà¹ˆà¸£à¸­à¸¢à¸·à¸™à¸¢à¸±à¸™ à¸¥à¸­à¸‡à¸ªà¹ˆà¸‡à¸£à¸¹à¸›à¹ƒà¸šà¸™à¸±à¸”à¸«à¸£à¸·à¸­à¹ƒà¸šà¹€à¸ªà¸£à¹‡à¸ˆà¸à¹ˆà¸­à¸™à¸„à¸£à¸±à¸š";
+      message = "ยังไม่มีผลวิเคราะห์รูปที่รอยืนยัน ลองส่งรูปใบนัดหรือใบเสร็จก่อนครับ";
     } else {
       const analysis = JSON.parse(latest.extraction.extractedJson) as { proposals?: Array<Record<string, unknown>> };
       const proposal = selectImageProposal(analysis.proposals as never[]);
       if (!proposal) {
         await db.setImageExtractionStatus(latest.extraction.id, "rejected");
-        message = "à¸£à¸¹à¸›à¸™à¸µà¹‰à¸¢à¸±à¸‡à¹„à¸¡à¹ˆà¸¡à¸µà¸‚à¹‰à¸­à¸¡à¸¹à¸¥à¸—à¸µà¹ˆà¸šà¸±à¸™à¸—à¸¶à¸à¹„à¸”à¹‰à¸­à¸¢à¹ˆà¸²à¸‡à¸¡à¸±à¹ˆà¸™à¹ƒà¸ˆ à¸ˆà¸¶à¸‡à¸¢à¸±à¸‡à¹„à¸¡à¹ˆà¸ªà¸£à¹‰à¸²à¸‡à¸£à¸²à¸¢à¸à¸²à¸£à¹ƒà¸«à¹‰à¸„à¸£à¸±à¸š";
+        message = "รูปนี้ยังไม่มีข้อมูลที่บันทึกได้อย่างมั่นใจ จึงยังไม่สร้างรายการให้ครับ";
       } else if (proposal.kind === "expense" && Number(proposal.amount ?? 0) > 0) {
         const amount = Number(proposal.amount ?? 0);
         const category = normalizeExpenseCategory(proposal.category, `${proposal.title ?? ""} ${proposal.merchant ?? ""} ${proposal.note ?? ""}`);
         const occurredAt = parseExtractedDate(command.dateText) ?? parseExtractedDate(proposal.dateText);
         if (!occurredAt) {
-          message = `à¸­à¹ˆà¸²à¸™à¸¢à¸­à¸” ${amount.toLocaleString("th-TH")} à¸šà¸²à¸—à¹„à¸”à¹‰ à¹à¸•à¹ˆà¸§à¸±à¸™à¸—à¸µà¹ˆà¹ƒà¸™${proposal.documentType === "bank_slip" ? "à¸ªà¸¥à¸´à¸›" : "à¹ƒà¸šà¹€à¸ªà¸£à¹‡à¸ˆ"}à¹„à¸¡à¹ˆà¸Šà¸±à¸” à¸ˆà¸¶à¸‡à¸¢à¸±à¸‡à¹„à¸¡à¹ˆà¸šà¸±à¸™à¸—à¸¶à¸à¹€à¸žà¸·à¹ˆà¸­à¸›à¹‰à¸­à¸‡à¸à¸±à¸™à¸‚à¹‰à¸­à¸¡à¸¹à¸¥à¸œà¸´à¸”à¸žà¸¥à¸²à¸”\nà¸à¸£à¸¸à¸“à¸²à¸žà¸´à¸¡à¸žà¹Œ â€œà¸¢à¸·à¸™à¸¢à¸±à¸™à¸„à¹ˆà¸²à¹ƒà¸Šà¹‰à¸ˆà¹ˆà¸²à¸¢ à¸§à¸±à¸™à¸—à¸µà¹ˆ 27/08/2569â€ à¹‚à¸”à¸¢à¹à¸—à¸™à¸§à¸±à¸™à¸—à¸µà¹ˆà¸ˆà¸£à¸´à¸‡`;
+          message = `อ่านยอด ${amount.toLocaleString("th-TH")} บาทได้ แต่วันที่ใน${proposal.documentType === "bank_slip" ? "สลิป" : "ใบเสร็จ"}ไม่ชัด จึงยังไม่บันทึกเพื่อป้องกันข้อมูลผิดพลาด\nกรุณาพิมพ์ “ยืนยันค่าใช้จ่าย วันที่ 27/08/2569” โดยแทนวันที่จริง`;
         } else {
           const transactionId = await db.createTransaction({ lineChatId, lineUserId, financeAccountId: financeScope!.financeAccountId, transactionType: "expense", amount, category, note: buildExpenseNote(proposal), occurredAt, source: "line_image" });
-          await db.linkTransactionAttachment({ transactionId, vaultItemId: latest.vault.id, lineUserId, label: proposal.documentType === "bank_slip" ? "à¸ªà¸¥à¸´à¸›à¸•à¹‰à¸™à¸‰à¸šà¸±à¸š" : "à¹ƒà¸šà¹€à¸ªà¸£à¹‡à¸ˆà¸•à¹‰à¸™à¸‰à¸šà¸±à¸š" });
+          await db.linkTransactionAttachment({ transactionId, vaultItemId: latest.vault.id, lineUserId, label: proposal.documentType === "bank_slip" ? "สลิปต้นฉบับ" : "ใบเสร็จต้นฉบับ" });
           await db.setImageExtractionStatus(latest.extraction.id, "accepted");
           if (event.replyToken) { await sendPostSaveSummary(event.replyToken, lineUserId, lineChatId, financeScope!.financeAccountId, { transactionType: "expense", amount, category }); return; }
-          message = `à¸šà¸±à¸™à¸—à¸¶à¸à¸£à¸²à¸¢à¸ˆà¹ˆà¸²à¸¢à¸ˆà¸²à¸${proposal.documentType === "bank_slip" ? "à¸ªà¸¥à¸´à¸›" : "à¹ƒà¸šà¹€à¸ªà¸£à¹‡à¸ˆ"} ${amount.toLocaleString("th-TH")} à¸šà¸²à¸— à¹ƒà¸™à¸«à¸¡à¸§à¸”${category}à¹à¸¥à¹‰à¸§`;
+          message = `บันทึกรายจ่ายจาก${proposal.documentType === "bank_slip" ? "สลิป" : "ใบเสร็จ"} ${amount.toLocaleString("th-TH")} บาท ในหมวด${category}แล้ว`;
         }
       } else {
-        const proposed = parseMiloCommand(`à¹€à¸•à¸·à¸­à¸™ ${proposal.title} ${proposal.dateText} ${proposal.timeText}`);
+        const proposed = parseMiloCommand(`เตือน ${proposal.title} ${proposal.dateText} ${proposal.timeText}`);
         if (proposed.type === "reminder") {
           const id = await db.createReminder({ lineChatId, createdByLineUserId: lineUserId, ...proposed.data, sourceImageKey: latest.vault.storageKey ?? undefined });
           await db.setImageExtractionStatus(latest.extraction.id, "accepted");
-          message = `à¸ªà¸£à¹‰à¸²à¸‡à¸£à¸²à¸¢à¸à¸²à¸£à¹€à¸•à¸·à¸­à¸™à¸ˆà¸²à¸à¸£à¸¹à¸› #${id} à¹à¸¥à¹‰à¸§: ${proposed.data.title}`;
+          message = `สร้างรายการเตือนจากรูป #${id} แล้ว: ${proposed.data.title}`;
         } else {
-          message = "à¸­à¹ˆà¸²à¸™à¸«à¸±à¸§à¸‚à¹‰à¸­à¸ˆà¸²à¸à¸£à¸¹à¸›à¹„à¸”à¹‰ à¹à¸•à¹ˆà¸¢à¸±à¸‡à¸­à¹ˆà¸²à¸™à¸§à¸±à¸™à¹€à¸§à¸¥à¸²à¸—à¸µà¹ˆà¹à¸™à¹ˆà¸Šà¸±à¸”à¹„à¸¡à¹ˆà¹„à¸”à¹‰ à¸¥à¸­à¸‡à¸žà¸´à¸¡à¸žà¹Œà¹€à¸§à¸¥à¸²à¸—à¸µà¹ˆà¸•à¹‰à¸­à¸‡à¸à¸²à¸£à¹€à¸žà¸´à¹ˆà¸¡ à¹à¸¥à¹‰à¸§à¸ªà¹ˆà¸‡à¸¡à¸²à¹ƒà¸«à¸¡à¹ˆà¹„à¸”à¹‰à¸„à¸£à¸±à¸š";
+          message = "อ่านหัวข้อจากรูปได้ แต่ยังอ่านวันเวลาที่แน่ชัดไม่ได้ ลองพิมพ์เวลาที่ต้องการเพิ่ม แล้วส่งมาใหม่ได้ครับ";
         }
       }
     }
   } else if (command.type === "recordGuide") {
-    message = "ðŸ“ à¸ˆà¸”à¸šà¸±à¸™à¸—à¸¶à¸à¹„à¸”à¹‰à¹€à¸¥à¸¢\nà¸•à¸±à¸§à¸­à¸¢à¹ˆà¸²à¸‡: à¸ˆà¹ˆà¸²à¸¢ 125 à¸„à¹ˆà¸²à¸­à¸²à¸«à¸²à¸£\nà¸«à¸£à¸·à¸­: à¸£à¸±à¸šà¹€à¸‡à¸´à¸™à¹€à¸”à¸·à¸­à¸™ 30000\nà¹à¸¥à¹‰à¸§à¸œà¸¡à¸ˆà¸°à¸Šà¹ˆà¸§à¸¢à¸šà¸±à¸™à¸—à¸¶à¸à¹ƒà¸«à¹‰à¸„à¸£à¸±à¸š";
+    message = "📝 จดบันทึกได้เลย\nตัวอย่าง: จ่าย 125 ค่าอาหาร\nหรือ: รับเงินเดือน 30000\nแล้วผมจะช่วยบันทึกให้ครับ";
   } else if (command.type === "budgetOverview") {
     const budgets = await db.listBudgets(lineUserId, undefined, financeScope!.financeAccountId);
-    message = budgets.length ? "ðŸ“Š à¸‡à¸šà¸›à¸£à¸°à¸¡à¸²à¸“à¹€à¸”à¸·à¸­à¸™à¸™à¸µà¹‰\n" + budgets.slice(0, 10).map(item => `â€¢ ${item.category} ${Number(item.amount).toLocaleString("th-TH")} à¸šà¸²à¸—`).join("\n") : "ðŸ“Š à¸¢à¸±à¸‡à¹„à¸¡à¹ˆà¸¡à¸µà¸‡à¸šà¸›à¸£à¸°à¸¡à¸²à¸“à¸—à¸µà¹ˆà¸•à¸±à¹‰à¸‡à¹„à¸§à¹‰à¸„à¸£à¸±à¸š\nà¸•à¸±à¸§à¸­à¸¢à¹ˆà¸²à¸‡: à¸‡à¸šà¸›à¸£à¸°à¸¡à¸²à¸“ à¸„à¹ˆà¸²à¸­à¸²à¸«à¸²à¸£ 5000";
+    message = budgets.length ? "📊 งบประมาณเดือนนี้\n" + budgets.slice(0, 10).map(item => `• ${item.category} ${Number(item.amount).toLocaleString("th-TH")} บาท`).join("\n") : "📊 ยังไม่มีงบประมาณที่ตั้งไว้ครับ\nตัวอย่าง: งบประมาณ ค่าอาหาร 5000";
   } else if (command.type === "transactionList") {
     const results = await db.searchTransactions(lineUserId, "", 10, financeScope!.financeAccountId);
-    message = results.length ? "ðŸ“‹ à¸£à¸²à¸¢à¸à¸²à¸£à¸¥à¹ˆà¸²à¸ªà¸¸à¸”\n" + results.map(item => `#${item.id} â€¢ ${item.transactionType === "expense" ? "à¸£à¸²à¸¢à¸ˆà¹ˆà¸²à¸¢" : "à¸£à¸²à¸¢à¸£à¸±à¸š"} ${Number(item.amount).toLocaleString("th-TH")} à¸šà¸²à¸— â€¢ ${item.category}`).join("\n") : "ðŸ“‹ à¸¢à¸±à¸‡à¹„à¸¡à¹ˆà¸¡à¸µà¸£à¸²à¸¢à¸à¸²à¸£à¸˜à¸¸à¸£à¸à¸£à¸£à¸¡à¸„à¸£à¸±à¸š";
+    message = results.length ? "📋 รายการล่าสุด\n" + results.map(item => `#${item.id} • ${item.transactionType === "expense" ? "รายจ่าย" : "รายรับ"} ${Number(item.amount).toLocaleString("th-TH")} บาท • ${item.category}`).join("\n") : "📋 ยังไม่มีรายการธุรกรรมครับ";
   } else if (command.type === "greeting") {
-    message = "à¸ªà¸§à¸±à¸ªà¸”à¸µà¸„à¸£à¸±à¸š ðŸ‘‹ à¸œà¸¡à¹„à¸¡à¹‚à¸¥ à¸œà¸¹à¹‰à¸Šà¹ˆà¸§à¸¢à¸à¸²à¸£à¹€à¸‡à¸´à¸™à¸‚à¸­à¸‡à¸„à¸¸à¸“\nà¸à¸”à¹€à¸¡à¸™à¸¹à¸”à¹‰à¸²à¸™à¸¥à¹ˆà¸²à¸‡à¸«à¸£à¸·à¸­à¸žà¸´à¸¡à¸žà¹Œ â€œà¸Šà¹ˆà¸§à¸¢â€ à¹€à¸žà¸·à¹ˆà¸­à¸”à¸¹à¸„à¸³à¸ªà¸±à¹ˆà¸‡à¸—à¸µà¹ˆà¹ƒà¸Šà¹‰à¸‡à¸²à¸™à¹„à¸”à¹‰à¸„à¸£à¸±à¸š";
+    message = "สวัสดีครับ 👋 ผมไมโล ผู้ช่วยการเงินของคุณ\nกดเมนูด้านล่างหรือพิมพ์ “ช่วย” เพื่อดูคำสั่งที่ใช้งานได้ครับ";
   } else if (command.type === "help") {
     message = helpText();
   } else {
-    message = "à¸œà¸¡à¸¢à¸±à¸‡à¹„à¸¡à¹ˆà¹€à¸‚à¹‰à¸²à¹ƒà¸ˆ à¸¥à¸­à¸‡à¸žà¸´à¸¡à¸žà¹Œ â€œà¸Šà¹ˆà¸§à¸¢â€ à¹€à¸žà¸·à¹ˆà¸­à¸”à¸¹à¸•à¸±à¸§à¸­à¸¢à¹ˆà¸²à¸‡à¸„à¸³à¸ªà¸±à¹ˆà¸‡à¹„à¸”à¹‰à¸„à¸£à¸±à¸š";
+    message = "ผมยังไม่เข้าใจ ลองพิมพ์ “ช่วย” เพื่อดูตัวอย่างคำสั่งได้ครับ";
   }
   if (event.replyToken) await replyText(event.replyToken, message);
 }
@@ -316,13 +316,13 @@ async function handleMedia(event: LineEvent, lineChatId: string, lineUserId: str
   const mimeType = isImage ? "image/jpeg" : isAudio ? "audio/m4a" : "application/octet-stream";
   const stored = await storagePut(`milo/${lineChatId}/${message.id}`, bytes, mimeType);
   const vaultId = await db.createVaultItem({
-    lineChatId, createdByLineUserId: lineUserId, itemType: isImage ? "image" : "file", title: message.fileName ?? (isImage ? "à¸£à¸¹à¸›à¸ˆà¸²à¸ LINE" : isAudio ? "à¸‚à¹‰à¸­à¸„à¸§à¸²à¸¡à¹€à¸ªà¸µà¸¢à¸‡à¸ˆà¸²à¸ LINE" : "à¹„à¸Ÿà¸¥à¹Œà¸ˆà¸²à¸ LINE"),
+    lineChatId, createdByLineUserId: lineUserId, itemType: isImage ? "image" : "file", title: message.fileName ?? (isImage ? "รูปจาก LINE" : isAudio ? "ข้อความเสียงจาก LINE" : "ไฟล์จาก LINE"),
     searchableText: message.fileName, originalFilename: message.fileName, mimeType, storageKey: stored.key, storageUrl: stored.url, lineMessageId: message.id,
   });
   if (isAudio) {
     try {
       const audioUrl = await storageGetSignedUrl(stored.key);
-      const transcript = await transcribeAudio({ audioUrl, language: "th", prompt: "à¸–à¸­à¸”à¸‚à¹‰à¸­à¸„à¸§à¸²à¸¡à¸ à¸²à¸©à¸²à¹„à¸—à¸¢à¹€à¸à¸µà¹ˆà¸¢à¸§à¸à¸±à¸šà¸£à¸²à¸¢à¸£à¸±à¸š à¸£à¸²à¸¢à¸ˆà¹ˆà¸²à¸¢ à¸ˆà¸³à¸™à¸§à¸™à¹€à¸‡à¸´à¸™ à¹à¸¥à¸°à¸«à¸¡à¸§à¸”à¸«à¸¡à¸¹à¹ˆ" });
+      const transcript = await transcribeAudio({ audioUrl, language: "th", prompt: "ถอดข้อความภาษาไทยเกี่ยวกับรายรับ รายจ่าย จำนวนเงิน และหมวดหมู่" });
       if ("error" in transcript) throw new Error(transcript.error);
       const financeScope = await resolveFinanceScope(lineUserId, lineChatId, scope);
       const proposal = await buildVoiceProposal(transcript.text, lineUserId, financeScope?.financeAccountId);
@@ -330,52 +330,27 @@ async function handleMedia(event: LineEvent, lineChatId: string, lineUserId: str
       if (event.replyToken) await sendVoiceProposal(event.replyToken, proposal);
     } catch (error) {
       console.error("[Milo Voice] transcription failed", { messageId: message.id, error: error instanceof Error ? error.message : "unknown" });
-      if (event.replyToken) await replyText(event.replyToken, "à¹€à¸à¹‡à¸šà¸‚à¹‰à¸­à¸„à¸§à¸²à¸¡à¹€à¸ªà¸µà¸¢à¸‡à¹„à¸§à¹‰à¹à¸¥à¹‰à¸§ à¹à¸•à¹ˆà¸¢à¸±à¸‡à¸–à¸­à¸”à¹€à¸ªà¸µà¸¢à¸‡à¹„à¸¡à¹ˆà¹„à¸”à¹‰à¹ƒà¸™à¸„à¸£à¸±à¹‰à¸‡à¸™à¸µà¹‰ à¸à¸£à¸¸à¸“à¸²à¸¥à¸­à¸‡à¸­à¸±à¸”à¹ƒà¸«à¸¡à¹ˆà¹ƒà¸«à¹‰à¸Šà¸±à¸”à¹€à¸ˆà¸™ à¸„à¸§à¸²à¸¡à¸¢à¸²à¸§à¸ªà¸±à¹‰à¸™ à¹† à¹à¸¥à¸°à¸‚à¸™à¸²à¸”à¹„à¸¡à¹ˆà¹€à¸à¸´à¸™ 16MB à¸„à¸£à¸±à¸š");
+      if (event.replyToken) await replyText(event.replyToken, "เก็บข้อความเสียงไว้แล้ว แต่ยังถอดเสียงไม่ได้ในครั้งนี้ กรุณาลองอัดใหม่ให้ชัดเจน ความยาวสั้น ๆ และขนาดไม่เกิน 16MB ครับ");
     }
     return;
   }
   if (!isImage) {
-    if (event.replyToken) await replyText(event.replyToken, "à¹€à¸à¹‡à¸šà¹„à¸Ÿà¸¥à¹Œà¸™à¸µà¹‰à¹„à¸§à¹‰à¹ƒà¸™à¸„à¸¥à¸±à¸‡à¸–à¸²à¸§à¸£à¹à¸¥à¹‰à¸§");
+    if (event.replyToken) await replyText(event.replyToken, "เก็บไฟล์นี้ไว้ในคลังถาวรแล้ว");
     return;
   }
   try {
     const analysis = await analyzeImage(`data:${mimeType};base64,${bytes.toString("base64")}`);
     await db.saveImageExtraction(vaultId, analysis.proposals.some(item => item.kind === "expense") ? "expense" : "reminder", JSON.stringify(analysis), analysis.confidence);
-    const proposals = analysis.proposals.slice(0, 2).map(item => `â€¢ ${formatImageProposal(item)}`).join("\n");
-    if (event.replyToken) await replyText(event.replyToken, `à¹€à¸à¹‡à¸šà¸£à¸¹à¸›à¹„à¸§à¹‰à¹à¸¥à¹‰à¸§\n${analysis.summary}\n${proposals || "à¸¢à¸±à¸‡à¹„à¸¡à¹ˆà¸žà¸šà¸£à¸²à¸¢à¸à¸²à¸£à¸—à¸µà¹ˆà¸„à¸§à¸£à¸šà¸±à¸™à¸—à¸¶à¸à¸­à¸±à¸•à¹‚à¸™à¸¡à¸±à¸•à¸´"}\nà¸•à¸£à¸§à¸ˆà¸¢à¸­à¸”à¹à¸¥à¸°à¸«à¸¡à¸§à¸”à¹ƒà¸«à¹‰à¸–à¸¹à¸à¸•à¹‰à¸­à¸‡à¸à¹ˆà¸­à¸™ à¹à¸¥à¹‰à¸§à¸žà¸´à¸¡à¸žà¹Œ â€œà¸¢à¸·à¸™à¸¢à¸±à¸™à¸„à¹ˆà¸²à¹ƒà¸Šà¹‰à¸ˆà¹ˆà¸²à¸¢â€ à¹€à¸žà¸·à¹ˆà¸­à¸šà¸±à¸™à¸—à¸¶à¸ à¸«à¸£à¸·à¸­ â€œà¸¢à¸·à¸™à¸¢à¸±à¸™à¸£à¸¹à¸›â€ à¸ªà¸³à¸«à¸£à¸±à¸šà¸£à¸²à¸¢à¸à¸²à¸£à¹€à¸•à¸·à¸­à¸™`);
+    const proposals = analysis.proposals.slice(0, 2).map(item => `• ${formatImageProposal(item)}`).join("\n");
+    if (event.replyToken) await replyText(event.replyToken, `เก็บรูปไว้แล้ว\n${analysis.summary}\n${proposals || "ยังไม่พบรายการที่ควรบันทึกอัตโนมัติ"}\nตรวจยอดและหมวดให้ถูกต้องก่อน แล้วพิมพ์ “ยืนยันค่าใช้จ่าย” เพื่อบันทึก หรือ “ยืนยันรูป” สำหรับรายการเตือน`);
   } catch {
-    if (event.replyToken) await replyText(event.replyToken, "à¹€à¸à¹‡à¸šà¸£à¸¹à¸›à¹„à¸§à¹‰à¹à¸¥à¹‰à¸§ à¹à¸•à¹ˆà¸¢à¸±à¸‡à¸­à¹ˆà¸²à¸™à¸£à¸²à¸¢à¸¥à¸°à¹€à¸­à¸µà¸¢à¸”à¸ˆà¸²à¸à¸£à¸¹à¸›à¹„à¸¡à¹ˆà¹„à¸”à¹‰ à¸¥à¸­à¸‡à¸ªà¹ˆà¸‡à¸ à¸²à¸žà¸—à¸µà¹ˆà¸„à¸¡à¸Šà¸±à¸”à¸‚à¸¶à¹‰à¸™à¹„à¸”à¹‰à¸„à¸£à¸±à¸š");
+    if (event.replyToken) await replyText(event.replyToken, "เก็บรูปไว้แล้ว แต่ยังอ่านรายละเอียดจากรูปไม่ได้ ลองส่งภาพที่คมชัดขึ้นได้ครับ");
   }
 }
 
 export async function processEvent(event: LineEvent, rawPayload: string) {
   const identity = sourceIdentity(event.source);
   if (!identity.lineUserId) return;
-  // Keep basic menu/navigation commands responsive even when persistence is degraded.
-  // These commands do not need a database round-trip and are the primary recovery path
-  // for Rich Menu taps such as "เมนูไมโล", "สวัสดีไมโล", and "จดบันทึก".
-  if (event.type === "message" && event.message?.type === "text" && event.replyToken) {
-    const quickCommand = parseMiloCommand(event.message.text ?? "");
-    if (["help", "greeting", "recordGuide", "settingGuide"].includes(quickCommand.type)) {
-      const quickMessage = quickCommand.type === "help"
-        ? helpText()
-        : quickCommand.type === "greeting"
-          ? "สวัสดีครับ 👋 ผมไมโล พร้อมช่วยบันทึกและดูภาพรวมการเงินให้ครับ"
-          : quickCommand.type === "recordGuide"
-            ? "เริ่มจดบันทึกได้เลยครับ เช่น: รายจ่าย 125 ค่าอาหาร หรือ รายรับ 30000 เงินเดือน"
-            : "เปิดแดชบอร์ดหลังบ้านได้ที่ https://milo-line-app.vercel.app/dashboard";
-      try {
-        await replyText(event.replyToken, quickMessage);
-        return;
-      } catch (error) {
-        console.error("[Milo Webhook] quick reply failed", {
-          webhookEventId: event.webhookEventId,
-          error: error instanceof Error ? error.message : "unknown",
-        });
-        throw error;
-      }
-    }
-  }
   const accepted = await db.registerWebhookEvent({ webhookEventId: event.webhookEventId, eventType: event.type, lineChatId: identity.lineChatId, occurredAt: new Date(event.timestamp), rawPayload });
   if (!accepted) return;
   try {
@@ -384,7 +359,7 @@ export async function processEvent(event: LineEvent, rawPayload: string) {
     await db.upsertLineMember(identity.lineChatId, identity.lineUserId, profile?.displayName);
     if (event.type !== "message" || !event.message) { await db.finishWebhookEvent(event.webhookEventId, "ignored"); return; }
     const isGroup = identity.scope !== "user";
-    const isMention = event.message.mention?.mentionees?.some(item => item.isSelf) || event.message.text?.trim().startsWith("@à¹„à¸¡à¹‚à¸¥");
+    const isMention = event.message.mention?.mentionees?.some(item => item.isSelf) || event.message.text?.trim().startsWith("@ไมโล");
     if (isGroup && event.message.type === "text" && !isMention) { await db.finishWebhookEvent(event.webhookEventId, "ignored"); return; }
     if (event.message.type === "text") await handleText(event, identity.lineChatId, identity.lineUserId, identity.scope);
     else if (event.message.type === "image" || event.message.type === "file" || event.message.type === "audio") await handleMedia(event, identity.lineChatId, identity.lineUserId, identity.scope);
