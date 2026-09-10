@@ -134,10 +134,41 @@ export default function Home() {
 
         <section id="faq" className="py-12"><div className="mx-auto grid max-w-5xl gap-8 px-5 lg:grid-cols-[.7fr_1.3fr] lg:px-10"><div><p className="text-sm font-bold text-[#0b9c70]">คำถามที่พบบ่อย</p><h2 className="font-display mt-2 text-3xl font-black text-[#184d43]">อยากรู้เรื่องไหน<br />ถามไมโลได้เลย</h2><div className="mt-5 rounded-2xl bg-[#effaf6] p-4 text-sm text-[#61877f]"><MousePointer2 className="mb-2 size-5 text-[#0ca974]" />กดคำถามเพื่อดูคำตอบ</div></div><Accordion type="single" collapsible className="rounded-3xl border border-[#dceee8] bg-white px-5 shadow-sm">{faq.map(([q,a],i) => <AccordionItem key={q} value={`q-${i}`}><AccordionTrigger className="text-left font-semibold text-[#2b5b52]">{q}</AccordionTrigger><AccordionContent className="text-sm leading-7 text-[#708d87]">{a}</AccordionContent></AccordionItem>)}</Accordion></div></section>
 
-        <section id="invite" className="mx-auto max-w-[1500px] px-5 pb-8 lg:px-10"><div className="relative overflow-hidden rounded-[28px] bg-gradient-to-r from-[#08785f] via-[#078d6b] to-[#0a6f61] px-7 py-8 text-white shadow-xl sm:px-12"><div className="absolute -right-20 -top-24 size-80 rounded-full bg-[#5ee5bb]/20 blur-3xl" /><div className="relative grid items-center gap-7 lg:grid-cols-[1fr_auto_auto]"><div><p className="font-display text-3xl font-black">✨ เริ่มใช้งานไมโลวันนี้ ✨</p><p className="mt-2 max-w-2xl text-sm leading-6 text-[#d4fff1]">เข้าแชทบอทหลังบ้าน เชื่อมบัญชี LINE ของคุณ และเริ่มบริหารการเงินอย่างอัจฉริยะได้ทันที</p></div><LineButton label="เพิ่มเพื่อน Milo" light /><div className="rounded-2xl bg-white p-2 shadow-lg"><img src="/milo-line-qr.png" alt="QR Code สำหรับเพิ่มเพื่อน Milo บน LINE" className="size-28 rounded-lg object-contain sm:size-32" /></div></div></div></section>
+        <section id="invite" className="mx-auto max-w-[1500px] px-5 pb-6 lg:px-10">
+          <div className="relative isolate overflow-hidden rounded-[28px] border border-[#ccefe2] bg-gradient-to-r from-[#e9fff6] via-[#dffaf0] to-[#effff9] shadow-sm">
+            <div className="absolute -left-16 -top-20 size-64 rounded-full bg-[#b5f1d9]/60 blur-3xl" />
+            <div className="absolute -right-20 -bottom-28 size-80 rounded-full bg-[#b8f4dc]/50 blur-3xl" />
+            <div className="relative grid min-h-[145px] items-center gap-6 px-5 py-5 sm:px-8 lg:grid-cols-[190px_1fr_auto_auto_240px] lg:px-10">
+              <div className="relative hidden h-[145px] self-end lg:block">
+                <div className="absolute -bottom-10 left-0 h-[190px] w-[190px]"><MiloMascot size="lg" /></div>
+              </div>
+              <div className="min-w-0">
+                <p className="font-display text-2xl font-black tracking-tight text-[#0d6554] sm:text-3xl">เริ่มใช้งานไมโลวันนี้ <span className="text-[#f2b632]">✦</span></p>
+                <p className="mt-1 max-w-xl text-sm font-medium leading-6 text-[#4e8277]">เข้าแชทบอทหลังบ้าน เชื่อมบัญชี LINE ของคุณ<br className="hidden sm:block" /> และเริ่มบริหารการเงินอย่างชาญฉลาดได้ทันที</p>
+              </div>
+              <div className="hidden h-16 w-px bg-[#c4e8dc] lg:block" />
+              <LineButton label="เพิ่มเพื่อน Milo" light />
+              <div className="flex items-center justify-center gap-4 lg:justify-end">
+                <div className="rounded-2xl bg-white p-2.5 shadow-md ring-1 ring-[#d5eee5]"><img src="/milo-line-qr.png" alt="QR Code สำหรับเพิ่มเพื่อน Milo บน LINE" className="size-24 rounded-xl object-contain sm:size-28" /></div>
+                <div className="hidden min-w-[115px] text-sm font-bold leading-6 text-[#287565] xl:block">สแกน QR Code<br /><span className="font-normal text-[#67958b]">เพื่อเพิ่มเพื่อนเลยครับ</span><span className="block text-xl">↗</span></div>
+              </div>
+            </div>
+          </div>
+        </section>
       </main>
 
-      <footer id="about" className="border-t border-[#dceee8] bg-[#101d28] px-5 py-7 text-white lg:px-10"><div className="mx-auto flex max-w-[1500px] flex-col items-center justify-between gap-4 md:flex-row"><div className="flex items-center gap-3"><div className="grid size-10 place-items-center overflow-hidden rounded-xl bg-white/10"><MiloMascot size="sm" /></div><div><p className="font-display font-black">Milo <span className="text-xs font-normal text-white/70">LINE Assistant</span></p><p className="mt-1 text-[10px] text-white/45">© 2025 Milo LINE AI Assistant. All rights reserved.</p></div></div><div className="flex items-center gap-5 text-xs text-white/65"><span>🛡 ปลอดภัย</span><span>⚡ รวดเร็ว</span><span>💬 ใช้งานง่าย</span><span>◉ พร้อมดูแล 24/7</span></div><a href={lineUrl} target="_blank" rel="noreferrer" className="text-sm font-bold text-[#59e1b5]">@684bxtsi →</a></div></footer>
+      <footer id="about" className="border-t border-[#e2f0ec] bg-white px-5 py-5 lg:px-10">
+        <div className="mx-auto flex max-w-[1500px] flex-col gap-5 md:flex-row md:items-center md:justify-between">
+          <div className="flex items-center gap-3">
+            <div className="grid size-11 place-items-center overflow-hidden rounded-xl bg-[#e8faf3]"><MiloMascot size="sm" /></div>
+            <div className="leading-tight"><p className="font-display text-base font-black text-[#0d5f50]">Milo <span className="font-normal text-[#4f8a7e]">LINE Assistant</span></p><p className="mt-1 text-[10px] text-[#8aa9a2]">© 2025 Milo LINE AI Assistant. All rights reserved.</p></div>
+          </div>
+          <div className="flex flex-wrap items-center justify-center gap-x-5 gap-y-2 text-xs font-semibold text-[#5d8a82]">
+            <span>🛡 ปลอดภัย</span><span>✦ รวดเร็ว</span><span>💬 ใช้งานง่าย</span><span>◉ พร้อมดูแล 24/7</span>
+          </div>
+          <a href={lineUrl} target="_blank" rel="noreferrer" className="flex items-center justify-center gap-2 text-xs font-bold text-[#118c69]">LINE <span className="text-[#5f8f86]">@684bxtsi</span> <ArrowRight className="size-4" /></a>
+        </div>
+      </footer>
     </div>
   );
 }
