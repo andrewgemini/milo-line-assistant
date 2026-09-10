@@ -321,7 +321,6 @@ async function handleMedia(event: LineEvent, lineChatId: string, lineUserId: str
   });
   if (isAudio) {
     try {
-      // The storage URL is relative to this app. Whisper must receive an absolute, time-limited S3 URL it can fetch independently.
       const audioUrl = await storageGetSignedUrl(stored.key);
       const transcript = await transcribeAudio({ audioUrl, language: "th", prompt: "ถอดข้อความภาษาไทยเกี่ยวกับรายรับ รายจ่าย จำนวนเงิน และหมวดหมู่" });
       if ("error" in transcript) throw new Error(transcript.error);
@@ -330,10 +329,7 @@ async function handleMedia(event: LineEvent, lineChatId: string, lineUserId: str
       await db.saveVoiceTranscription({ vaultItemId: vaultId, lineChatId, lineUserId, transcript: transcript.text, language: transcript.language, durationSeconds: transcript.duration, proposalJson: JSON.stringify(proposal) });
       if (event.replyToken) await sendVoiceProposal(event.replyToken, proposal);
     } catch (error) {
-      console.error("[Milo Voice] transcription failed", {
-        messageId: message.id,
-        error: error instanceof Error ? error.message : "unknown",
-      });
+      console.error("[Milo Voice] transcription failed", { messageId: message.id, error: error instanceof Error ? error.message : "unknown" });
       if (event.replyToken) await replyText(event.replyToken, "เก็บข้อความเสียงไว้แล้ว แต่ยังถอดเสียงไม่ได้ในครั้งนี้ กรุณาลองอัดใหม่ให้ชัดเจน ความยาวสั้น ๆ และขนาดไม่เกิน 16MB ครับ");
     }
     return;
@@ -398,7 +394,10 @@ export function registerMiloCron(app: Express) {
       if (isVercelCron) {
         const secret = process.env.CRON_SECRET?.trim();
         const authorization = req.headers.authorization;
-        if (!secret || authorization !== `Bearer ${secret}`) return res.status(401).json({ error: "cron-unauthorized" });
+        const headerSecret = req.headers["x-cron-secret"];
+        const bearerValid = authorization === `Bearer ${secret}`;
+        const headerValid = headerSecret === secret;
+        if (!secret || (!bearerValid && !headerValid)) return res.status(401).json({ error: "cron-unauthorized" });
         const schedule = await db.getAutomationSetting("reminder-delivery-primary");
         if (!schedule?.isEnabled) return res.json({ ok: true, skipped: "disabled" });
         taskUid = schedule.scheduleCronTaskUid ?? "vercel-cron-reminders";
@@ -418,7 +417,8 @@ export function registerMiloCron(app: Express) {
     } catch (error) {
       return res.status(500).json({ error: error instanceof Error ? error.message : "unknown", timestamp: new Date().toISOString() });
     }
-  });  const registerFinanceDigestRoute = (path: string, settingKey: string, digestType: FinanceDigestType) => {
+  });
+  const registerFinanceDigestRoute = (path: string, settingKey: string, digestType: FinanceDigestType) => {
     app.post(path, async (req: Request, res: Response) => {
       try {
         const user = await sdk.authenticateRequest(req);
