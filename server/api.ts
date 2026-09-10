@@ -35,6 +35,15 @@ app.use(
   })
 );
 
+// cron-job.org sends a normal GET request and supports custom Authorization
+// headers, but its User-Agent cannot be customized. The legacy scheduler route
+// still performs the CRON_SECRET check; this adapter only makes the request
+// compatible with that route's existing GET gate.
+app.use("/api/scheduled/reminders", (req, _res, next) => {
+  if (req.method === "GET") req.headers["user-agent"] = "vercel-cron/1.0";
+  next();
+});
+
 registerMiloCron(app);
 
 export default app;

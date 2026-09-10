@@ -32,28 +32,28 @@ describe("setupReminderDelivery mutation", () => {
     expect(db.saveAutomationSetting).not.toHaveBeenCalled();
   });
 
-  it("configures the Vercel Cron task without requiring the legacy Heartbeat service", async () => {
+  it("configures the External Cron task without requiring the legacy Heartbeat service", async () => {
     const caller = appRouter.createCaller({
       user: { id: 1, openId: "owner", name: "Owner", email: null, loginMethod: "manus", role: "admin", createdAt: new Date(), updatedAt: new Date(), lastSignedIn: new Date() },
       req: { headers: {} }, res: {},
     } as never);
 
     await expect(caller.milo.automation.setupReminderDelivery()).resolves.toMatchObject({
-      taskUid: "vercel-cron-reminders",
+      taskUid: "external-cron-reminders",
       status: "configured",
       nextExecutionAt: null,
     });
     expect(db.saveAutomationSetting).toHaveBeenCalledWith({
       settingKey: "reminder-delivery-primary",
-      scheduleCronTaskUid: "vercel-cron-reminders",
+      scheduleCronTaskUid: "external-cron-reminders",
       isEnabled: true,
     });
   });
 
-  it("keeps the Vercel Cron task stable when it is already active", async () => {
+  it("keeps the External Cron task stable when it is already active", async () => {
     vi.mocked(db.getAutomationSetting).mockResolvedValue({
       settingKey: "reminder-delivery-primary",
-      scheduleCronTaskUid: "vercel-cron-reminders",
+      scheduleCronTaskUid: "external-cron-reminders",
       isEnabled: true,
     } as never);
     const caller = appRouter.createCaller({
@@ -62,13 +62,13 @@ describe("setupReminderDelivery mutation", () => {
     } as never);
 
     await expect(caller.milo.automation.setupReminderDelivery()).resolves.toMatchObject({
-      taskUid: "vercel-cron-reminders",
+      taskUid: "external-cron-reminders",
       status: "already-active",
     });
     expect(db.saveAutomationSetting).toHaveBeenCalledTimes(1);
   });
 
-  it("repairs a legacy paused scheduler row to the Vercel Cron task", async () => {
+  it("repairs a legacy paused scheduler row to the External Cron task", async () => {
     vi.mocked(db.getAutomationSetting).mockResolvedValue({
       settingKey: "reminder-delivery-primary",
       scheduleCronTaskUid: "legacy-heartbeat-task",
@@ -80,12 +80,12 @@ describe("setupReminderDelivery mutation", () => {
     } as never);
 
     await expect(caller.milo.automation.setupReminderDelivery()).resolves.toMatchObject({
-      taskUid: "vercel-cron-reminders",
+      taskUid: "external-cron-reminders",
       status: "configured",
     });
     expect(db.saveAutomationSetting).toHaveBeenCalledWith({
       settingKey: "reminder-delivery-primary",
-      scheduleCronTaskUid: "vercel-cron-reminders",
+      scheduleCronTaskUid: "external-cron-reminders",
       isEnabled: true,
     });
   });

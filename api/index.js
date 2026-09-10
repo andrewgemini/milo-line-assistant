@@ -2034,35 +2034,18 @@ var appRouter = router({
       ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
       return { success: true };
     }),
-    adminLogin: publicProcedure.input(
-      z2.object({
-        username: z2.string().trim().min(1, "\u0E01\u0E23\u0E38\u0E13\u0E32\u0E01\u0E23\u0E2D\u0E01\u0E0A\u0E37\u0E48\u0E2D\u0E1C\u0E39\u0E49\u0E43\u0E0A\u0E49 (Username)"),
-        password: z2.string().min(1, "\u0E01\u0E23\u0E38\u0E13\u0E32\u0E01\u0E23\u0E2D\u0E01\u0E23\u0E2B\u0E31\u0E2A\u0E1C\u0E48\u0E32\u0E19 (Password)")
-      })
-    ).mutation(async ({ ctx, input }) => {
+    adminLogin: publicProcedure.input(z2.object({ username: z2.string().trim().min(1, "\u0E01\u0E23\u0E38\u0E13\u0E32\u0E01\u0E23\u0E2D\u0E01\u0E0A\u0E37\u0E48\u0E2D\u0E1C\u0E39\u0E49\u0E43\u0E0A\u0E49 (Username)"), password: z2.string().trim().min(1, "\u0E01\u0E23\u0E38\u0E13\u0E32\u0E01\u0E23\u0E2D\u0E01\u0E23\u0E2B\u0E31\u0E2A\u0E1C\u0E48\u0E32\u0E19 (Password)") })).mutation(async ({ ctx, input }) => {
       const expectedUser = (process.env.ADMIN_USERNAME || "admin").trim();
       const expectedPass = (process.env.ADMIN_PASSWORD || "admin1234").trim();
-      if (input.username !== expectedUser || input.password !== expectedPass) {
-        throw new Error("\u0E0A\u0E37\u0E48\u0E2D\u0E1C\u0E39\u0E49\u0E43\u0E0A\u0E49\u0E2B\u0E23\u0E37\u0E2D\u0E23\u0E2B\u0E31\u0E2A\u0E1C\u0E48\u0E32\u0E19\u0E1C\u0E39\u0E49\u0E14\u0E39\u0E41\u0E25\u0E23\u0E30\u0E1A\u0E1A\u0E44\u0E21\u0E48\u0E16\u0E39\u0E01\u0E15\u0E49\u0E2D\u0E07");
-      }
+      if (input.username !== expectedUser || input.password !== expectedPass) throw new Error("\u0E0A\u0E37\u0E48\u0E2D\u0E1C\u0E39\u0E49\u0E43\u0E0A\u0E49\u0E2B\u0E23\u0E37\u0E2D\u0E23\u0E2B\u0E31\u0E2A\u0E1C\u0E48\u0E32\u0E19\u0E1C\u0E39\u0E49\u0E14\u0E39\u0E41\u0E25\u0E23\u0E30\u0E1A\u0E1A\u0E44\u0E21\u0E48\u0E16\u0E39\u0E01\u0E15\u0E49\u0E2D\u0E07");
       const safeOpenId = `admin_${expectedUser}`;
       const name = "\u0E1C\u0E39\u0E49\u0E14\u0E39\u0E41\u0E25\u0E23\u0E30\u0E1A\u0E1A (Admin)";
       try {
-        await upsertUser({
-          openId: safeOpenId,
-          name,
-          email: "admin@milo.internal",
-          role: "admin",
-          loginMethod: "admin_password",
-          lastSignedIn: /* @__PURE__ */ new Date()
-        });
+        await upsertUser({ openId: safeOpenId, name, email: "admin@milo.internal", role: "admin", loginMethod: "admin_password", lastSignedIn: /* @__PURE__ */ new Date() });
       } catch (dbErr) {
         console.warn("[AdminLogin] DB user upsert skipped/warning:", dbErr);
       }
-      const sessionToken = await sdk.createSessionToken(safeOpenId, {
-        name,
-        expiresInMs: ONE_YEAR_MS
-      });
+      const sessionToken = await sdk.createSessionToken(safeOpenId, { name, expiresInMs: ONE_YEAR_MS });
       const cookieOptions = getSessionCookieOptions(ctx.req);
       ctx.res.cookie(COOKIE_NAME, sessionToken, { ...cookieOptions, maxAge: ONE_YEAR_MS });
       return { success: true, user: { openId: safeOpenId, name, role: "admin" } };
@@ -2106,17 +2089,7 @@ var appRouter = router({
       const lineUserId = await getLinkedLineUser(ctx.user.id);
       if (!lineUserId) return { lineUserId: null, reminders: [], todos: [], notes: [], vault: [], groups: [], budgets: [], finance: { income: 0, expense: 0, balance: 0, categories: {} }, financeAnalytics: { daily: [], transactionCount: 0, sevenDayIncome: 0, sevenDayExpense: 0 } };
       const personalAccount = await getOrCreatePersonalFinanceAccount(lineUserId);
-      const [reminders2, todos, notes2, vault, groups, budgets2, finance, financeAnalytics2, financeAccounts2] = await Promise.all([
-        listReminders(lineUserId),
-        listTodos(lineUserId),
-        listNotes(lineUserId),
-        searchVault(lineUserId),
-        listLineGroups(lineUserId),
-        listBudgets(lineUserId, void 0, personalAccount.id),
-        financeSummary(lineUserId, personalAccount.id),
-        financeAnalytics(lineUserId, personalAccount.id),
-        listFinanceAccounts(lineUserId)
-      ]);
+      const [reminders2, todos, notes2, vault, groups, budgets2, finance, financeAnalytics2, financeAccounts2] = await Promise.all([listReminders(lineUserId), listTodos(lineUserId), listNotes(lineUserId), searchVault(lineUserId), listLineGroups(lineUserId), listBudgets(lineUserId, void 0, personalAccount.id), financeSummary(lineUserId, personalAccount.id), financeAnalytics(lineUserId, personalAccount.id), listFinanceAccounts(lineUserId)]);
       return { lineUserId, reminders: reminders2, todos, notes: notes2, vault, groups, budgets: budgets2, finance, financeAnalytics: financeAnalytics2, financeAccounts: financeAccounts2, personalFinanceAccountId: personalAccount.id };
     }),
     reminders: router({
@@ -2130,20 +2103,14 @@ var appRouter = router({
         return { success: true };
       })
     }),
-    vault: router({
-      search: protectedProcedure.input(z2.object({ query: z2.string().max(255).default("") })).query(async ({ ctx, input }) => searchVault(await requireLinkedLineUser(ctx.user.id), input.query)),
-      updateMetadata: protectedProcedure.input(z2.object({ id: z2.number().int().positive(), tagsText: z2.string().max(500).nullable().optional(), sourceUrl: z2.string().url().max(2e3).nullable().optional() })).mutation(async ({ ctx, input }) => {
-        await updateVaultMetadata(input.id, await requireLinkedLineUser(ctx.user.id), { tagsText: input.tagsText, sourceUrl: input.sourceUrl });
-        return { success: true };
-      })
-    }),
-    todos: router({
-      list: protectedProcedure.query(async ({ ctx }) => listTodos(await requireLinkedLineUser(ctx.user.id))),
-      complete: protectedProcedure.input(z2.object({ id: z2.number().int().positive() })).mutation(async ({ ctx, input }) => {
-        await completeTodo(input.id, await requireLinkedLineUser(ctx.user.id));
-        return { success: true };
-      })
-    }),
+    vault: router({ search: protectedProcedure.input(z2.object({ query: z2.string().max(255).default("") })).query(async ({ ctx, input }) => searchVault(await requireLinkedLineUser(ctx.user.id), input.query)), updateMetadata: protectedProcedure.input(z2.object({ id: z2.number().int().positive(), tagsText: z2.string().max(500).nullable().optional(), sourceUrl: z2.string().url().max(2e3).nullable().optional() })).mutation(async ({ ctx, input }) => {
+      await updateVaultMetadata(input.id, await requireLinkedLineUser(ctx.user.id), { tagsText: input.tagsText, sourceUrl: input.sourceUrl });
+      return { success: true };
+    }) }),
+    todos: router({ list: protectedProcedure.query(async ({ ctx }) => listTodos(await requireLinkedLineUser(ctx.user.id))), complete: protectedProcedure.input(z2.object({ id: z2.number().int().positive() })).mutation(async ({ ctx, input }) => {
+      await completeTodo(input.id, await requireLinkedLineUser(ctx.user.id));
+      return { success: true };
+    }) }),
     finance: router({
       summary: protectedProcedure.input(z2.object({ financeAccountId: z2.number().int().positive().optional() }).optional()).query(async ({ ctx, input }) => {
         const scope = await requireFinanceAccountScope(ctx.user.id, input?.financeAccountId);
@@ -2173,18 +2140,7 @@ var appRouter = router({
           const scope = await requireFinanceAccountScope(ctx.user.id, input?.financeAccountId);
           return listRecurringTransactions(scope.lineUserId, scope.financeAccountId);
         }),
-        create: protectedProcedure.input(z2.object({
-          transactionType: z2.enum(["income", "expense"]),
-          amount: z2.number().positive(),
-          category: z2.string().trim().min(1).max(100),
-          note: z2.string().trim().max(1e3).optional(),
-          recurrenceType: z2.enum(["day", "week", "month"]),
-          recurrenceInterval: z2.number().int().min(1).max(365).default(1),
-          recurrenceWeekday: z2.number().int().min(0).max(6).optional(),
-          recurrenceDayOfMonth: z2.number().int().min(1).max(28).optional(),
-          nextRunAt: z2.coerce.date(),
-          financeAccountId: z2.number().int().positive().optional()
-        })).mutation(async ({ ctx, input }) => {
+        create: protectedProcedure.input(z2.object({ transactionType: z2.enum(["income", "expense"]), amount: z2.number().positive(), category: z2.string().trim().min(1).max(100), note: z2.string().trim().max(1e3).optional(), recurrenceType: z2.enum(["day", "week", "month"]), recurrenceInterval: z2.number().int().min(1).max(365).default(1), recurrenceWeekday: z2.number().int().min(0).max(6).optional(), recurrenceDayOfMonth: z2.number().int().min(1).max(28).optional(), nextRunAt: z2.coerce.date(), financeAccountId: z2.number().int().positive().optional() })).mutation(async ({ ctx, input }) => {
           const scope = await requireFinanceAccountScope(ctx.user.id, input.financeAccountId);
           requireFinancePermission(canManageFinanceSettings(scope.role), "\u0E2A\u0E34\u0E17\u0E18\u0E34\u0E4C\u0E02\u0E2D\u0E07\u0E04\u0E38\u0E13\u0E22\u0E31\u0E07\u0E15\u0E31\u0E49\u0E07\u0E04\u0E48\u0E32\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E2D\u0E31\u0E15\u0E42\u0E19\u0E21\u0E31\u0E15\u0E34\u0E43\u0E19\u0E2A\u0E21\u0E38\u0E14\u0E1A\u0E31\u0E0D\u0E0A\u0E35\u0E19\u0E35\u0E49\u0E44\u0E21\u0E48\u0E44\u0E14\u0E49");
           const id = await createRecurringTransaction({ ...input, financeAccountId: scope.financeAccountId, lineUserId: scope.lineUserId, lineChatId: scope.account.lineChatId ?? scope.lineUserId });
@@ -2272,21 +2228,17 @@ var appRouter = router({
         })
       })
     }),
-    admin: router({
-      auditLogs: protectedProcedure.input(z2.object({ limit: z2.number().int().min(1).max(250).default(100) }).optional()).query(async ({ ctx, input }) => {
-        requireAdminRole(ctx.user.role);
-        return listAuditLogs(input?.limit ?? 100);
-      }),
-      users: protectedProcedure.query(async ({ ctx }) => {
-        requireAdminRole(ctx.user.role);
-        return listDashboardUsers();
-      }),
-      updateUserRole: protectedProcedure.input(z2.object({ id: z2.number().int().positive(), role: z2.enum(["viewer", "user", "manager", "admin"]) })).mutation(async ({ ctx, input }) => {
-        requireAdminRole(ctx.user.role);
-        await updateDashboardUserRole(input.id, input.role, ctx.user.id);
-        return { success: true };
-      })
-    }),
+    admin: router({ auditLogs: protectedProcedure.input(z2.object({ limit: z2.number().int().min(1).max(250).default(100) }).optional()).query(async ({ ctx, input }) => {
+      requireAdminRole(ctx.user.role);
+      return listAuditLogs(input?.limit ?? 100);
+    }), users: protectedProcedure.query(async ({ ctx }) => {
+      requireAdminRole(ctx.user.role);
+      return listDashboardUsers();
+    }), updateUserRole: protectedProcedure.input(z2.object({ id: z2.number().int().positive(), role: z2.enum(["viewer", "user", "manager", "admin"]) })).mutation(async ({ ctx, input }) => {
+      requireAdminRole(ctx.user.role);
+      await updateDashboardUserRole(input.id, input.role, ctx.user.id);
+      return { success: true };
+    }) }),
     automation: router({
       runDueNow: protectedProcedure.mutation(async ({ ctx }) => {
         if (ctx.user.role !== "admin") throw new Error("\u0E40\u0E09\u0E1E\u0E32\u0E30\u0E1C\u0E39\u0E49\u0E14\u0E39\u0E41\u0E25\u0E42\u0E04\u0E23\u0E07\u0E01\u0E32\u0E23\u0E17\u0E35\u0E48\u0E2A\u0E31\u0E48\u0E07\u0E1B\u0E23\u0E30\u0E21\u0E27\u0E25\u0E1C\u0E25 reminder \u0E44\u0E14\u0E49");
@@ -2296,15 +2248,11 @@ var appRouter = router({
         if (ctx.user.role !== "admin") throw new Error("\u0E40\u0E09\u0E1E\u0E32\u0E30\u0E1C\u0E39\u0E49\u0E14\u0E39\u0E41\u0E25\u0E42\u0E04\u0E23\u0E07\u0E01\u0E32\u0E23\u0E17\u0E35\u0E48\u0E15\u0E31\u0E49\u0E07\u0E07\u0E32\u0E19\u0E2A\u0E48\u0E07\u0E40\u0E15\u0E37\u0E2D\u0E19\u0E44\u0E14\u0E49");
         if (!ENV.isProduction) throw new Error("\u0E15\u0E49\u0E2D\u0E07\u0E40\u0E1C\u0E22\u0E41\u0E1E\u0E23\u0E48\u0E40\u0E27\u0E47\u0E1A\u0E44\u0E0B\u0E15\u0E4C\u0E01\u0E48\u0E2D\u0E19 \u0E08\u0E36\u0E07\u0E08\u0E30\u0E15\u0E31\u0E49\u0E07\u0E07\u0E32\u0E19\u0E2A\u0E48\u0E07\u0E40\u0E15\u0E37\u0E2D\u0E19\u0E2D\u0E31\u0E15\u0E42\u0E19\u0E21\u0E31\u0E15\u0E34\u0E44\u0E14\u0E49");
         const key = "reminder-delivery-primary";
-        const taskUid = "vercel-cron-reminders";
+        const taskUid = "external-cron-reminders";
         const current = await getAutomationSetting(key);
         await saveAutomationSetting({ settingKey: key, scheduleCronTaskUid: taskUid, isEnabled: true });
-        console.info("[Milo Scheduler] Vercel Cron configured", { taskUid, wasEnabled: Boolean(current?.isEnabled) });
-        return {
-          taskUid,
-          status: current?.isEnabled ? "already-active" : "configured",
-          nextExecutionAt: null
-        };
+        console.info("[Milo Scheduler] External Cron configured", { taskUid, wasEnabled: Boolean(current?.isEnabled) });
+        return { taskUid, status: current?.isEnabled ? "already-active" : "configured", nextExecutionAt: null };
       })
     })
   })
@@ -3563,6 +3511,10 @@ app.use(
     createContext
   })
 );
+app.use("/api/scheduled/reminders", (req, _res, next) => {
+  if (req.method === "GET") req.headers["user-agent"] = "vercel-cron/1.0";
+  next();
+});
 registerMiloCron(app);
 var api_default = app;
 export {
