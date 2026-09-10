@@ -119,11 +119,11 @@ export default function Home() {
           <a href="#faq" className="hover:text-[#198f73] transition-colors">คำถามที่พบบ่อย</a>
         </nav>
         <div className="flex items-center gap-3">
-          <Link href="/dashboard">
+          <a href="#invite">
             <Button className="rounded-full bg-[#238f76] px-5 text-white hover:bg-[#157a62]">
-              เข้าสู่ระบบหลังบ้าน <ArrowRight className="ml-1 size-4" />
+              เชิญใช้งาน <ArrowRight className="ml-1 size-4" />
             </Button>
-          </Link>
+          </a>
         </div>
       </header>
 
@@ -146,11 +146,11 @@ export default function Home() {
               จดบันทึกรายรับ-รายจ่าย สแกนสลิป ตรวจจับค่าสมาชิก ตั้งรอบบิลเงินเดือนจริง หารบิลในกลุ่ม และออกใบแจ้งหนี้ในแชท LINE เดียว
             </p>
             <div className="mt-8 flex flex-wrap gap-3">
-              <Link href="/dashboard">
+              <a href="#invite">
                 <Button size="lg" className="rounded-full bg-[#238f76] px-7 text-base text-white hover:bg-[#157a62]">
-                  เปิดแดชบอร์ดจัดการระบบ <ArrowRight className="ml-2 size-4" />
+                  เชิญใช้งาน <ArrowRight className="ml-2 size-4" />
                 </Button>
-              </Link>
+              </a>
               <a href="#features">
                 <Button size="lg" variant="outline" className="rounded-full border-[#b8ded4] bg-white px-7 text-base text-[#357269] hover:bg-[#effbf7]">
                   สำรวจฟีเจอร์ทั้งหมด
@@ -440,25 +440,27 @@ export default function Home() {
           </div>
         </section>
 
-        {/* CTA Bottom Banner */}
-        <section className="mx-auto max-w-6xl px-5 py-20 lg:px-8">
-          <div className="relative overflow-hidden rounded-[2.4rem] bg-[#226e61] px-7 py-14 text-center text-white shadow-2xl">
-            <div className="absolute inset-0 opacity-20 mint-grid" />
-            <div className="relative">
-              <span className="mx-auto grid size-14 place-items-center rounded-2xl bg-white/15 shadow-inner">
-                <Sparkles className="size-7 text-[#a5f3df]" />
-              </span>
-              <h2 className="font-display mt-5 text-4xl font-bold sm:text-5xl">
-                เริ่มใช้งานไมโลวันนี้
-              </h2>
-              <p className="mx-auto mt-4 max-w-2xl text-lg text-[#d2f6ee] leading-relaxed">
-                เข้าแดชบอร์ดหลังบ้าน เชื่อมบัญชี LINE ของคุณ แล้วเริ่มบริหารการเงินอย่างอัจฉริยะได้ทันที
-              </p>
-              <Link href="/dashboard">
-                <Button size="lg" className="mt-8 rounded-full bg-white px-9 py-6 text-base font-bold text-[#16725f] hover:bg-[#dcf7ef] shadow-lg">
-                  เข้าสู่ระบบหลังบ้าน (Dashboard) <ArrowRight className="ml-2 size-5" />
-                </Button>
-              </Link>
+        {/* Invite users to Milo on LINE */}
+        <section id="invite" className="mx-auto max-w-6xl px-5 py-16 lg:px-8">
+          <div className="relative overflow-hidden rounded-[2.4rem] bg-[#0f7665] px-7 py-10 text-white shadow-2xl sm:px-10">
+            <div className="absolute inset-0 mint-grid opacity-20" />
+            <div className="relative grid items-center gap-8 lg:grid-cols-[1fr_auto]">
+              <div>
+                <p className="text-sm font-semibold uppercase tracking-[0.18em] text-[#a5f3df]">Milo LINE Assistant</p>
+                <h2 className="font-display mt-3 text-3xl font-bold sm:text-4xl">เชิญใช้งาน Milo บน LINE</h2>
+                <p className="mt-3 max-w-2xl text-base leading-7 text-[#d2f6ee] sm:text-lg">เพียงเพิ่มเพื่อน Milo แล้วเริ่มใช้งานผู้ช่วยสำหรับธุรกิจของคุณได้ทันที</p>
+                <div className="mt-6 flex flex-wrap items-center gap-3">
+                  <a href="https://line.me/R/ti/p/%40684bxtsi" target="_blank" rel="noreferrer">
+                    <Button size="lg" className="rounded-full bg-white px-7 text-[#16725f] shadow-lg hover:bg-[#e5faf3]">
+                      เพิ่มเพื่อน Milo <ArrowRight className="ml-2 size-5" />
+                    </Button>
+                  </a>
+                  <span className="text-sm text-[#bdeee1]">สแกน QR Code เพื่อเพิ่มเพื่อนได้เลย</span>
+                </div>
+              </div>
+              <div className="mx-auto rounded-[1.8rem] bg-white p-4 shadow-xl lg:mx-0">
+                <img src="/milo-line-qr.png" alt="QR Code สำหรับเพิ่มเพื่อน Milo บน LINE" className="size-44 rounded-xl object-contain sm:size-52" />
+              </div>
             </div>
           </div>
         </section>
