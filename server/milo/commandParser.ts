@@ -33,6 +33,7 @@ export type MiloCommand =
   | { type: "budgetOverview" }
   | { type: "transactionList" }
   | { type: "settingGuide" }
+  | { type: "dashboardGuide" }
   | { type: "greeting" }
   | { type: "help" | "unknown" };
 
@@ -69,8 +70,9 @@ export function parseMiloCommand(text: string, now = new Date()): MiloCommand {
   if (/^(?:จดบันทึก|เริ่มจดบันทึก|บันทึกรายรับรายจ่าย|บันทึกรายรับ-รายจ่าย|จด)$/i.test(value)) return { type: "recordGuide" };
   if (/^(?:หมวด\s*\/?\s*งบ|งบประมาณ|คุมงบประมาณ|ดูงบ|งบ)$/i.test(value)) return { type: "budgetOverview" };
   if (/^(?:รายการ|ประวัติ|ประวัติธุรกรรม|รายการธุรกรรม|ดูย้อนหลัง)$/i.test(value)) return { type: "transactionList" };
+  if (/^ตั้งค่า$/i.test(value)) return { type: "settingGuide" };
+  if (/^(?:dashboard|แดชบอร์ด|เว็บแดชบอร์ด|จัดการระบบหลังบ้าน|หลังบ้าน|แดชบอร์ดหลังบ้าน)$/i.test(value)) return { type: "dashboardGuide" };
   if (/^(?:ประเภท|หมวดหมู่|หมวดหมู่รายรับ-?จ่าย|ดูหมวดหมู่)$/i.test(value)) return { type: "categoryList" };
-  if (/^(?:ตั้งค่า|dashboard|แดชบอร์ด|เว็บแดชบอร์ด|จัดการระบบหลังบ้าน|หลังบ้าน)$/i.test(value)) return { type: "settingGuide" };
   if (/^(?:วิเคราะห์|สุขภาพการเงิน|วิเคราะห์การเงิน|วิเคราะห์รายจ่าย|สรุปธุรกิจ)(?:ของ)?(วันนี้|สัปดาห์นี้|เดือนนี้|ปีนี้)?$/i.test(value)) { const m = value.match(/(วันนี้|สัปดาห์นี้|เดือนนี้|ปีนี้)/i); const periods: Record<string, "day" | "week" | "month" | "year"> = { "วันนี้": "day", "สัปดาห์นี้": "week", "เดือนนี้": "month", "ปีนี้": "year" }; return { type: "aiSummary", period: m ? (periods[m[1]] ?? "month") : "month" }; }
   const financeReport = value.match(/^สรุป(?:การเงิน|รายรับรายจ่าย|ยอด(?:ประจำเดือน)?)?(?:ของ)?(วันนี้|สัปดาห์นี้|เดือนนี้|ปีนี้)?$/i); if (financeReport) { const periodKey = financeReport[1] ?? "เดือนนี้"; const periods: Record<string, "day" | "week" | "month" | "year"> = { "วันนี้": "day", "สัปดาห์นี้": "week", "เดือนนี้": "month", "ปีนี้": "year" }; return { type: "financeReport", period: periods[periodKey] ?? "month" }; }
   if (/^(?:ยืนยันเสียง|บันทึกจากเสียง)$/i.test(value)) return { type: "voiceConfirm" }; if (/^แก้ไขข้อความเสียง$/i.test(value)) return { type: "voiceEditPrompt" }; const voiceCategory = value.match(/^เปลี่ยนหมวดเสียง\s+(.+)$/i); if (voiceCategory) return { type: "voiceCategoryChange", category: voiceCategory[1].trim() }; const voiceEdit = value.match(/^แก้ไข(?:ข้อความ)?เสียง\s+(.+)$/i); if (voiceEdit) return { type: "voiceEdit", transcript: voiceEdit[1].trim() };
