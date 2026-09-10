@@ -2085,7 +2085,7 @@ var appRouter = router({
         return { success: true };
       })
     }),
-    overview: protectedProcedure.query(async ({ ctx }) => {
+    overview: adminProcedure.query(async ({ ctx }) => {
       const lineUserId = await getLinkedLineUser(ctx.user.id);
       if (!lineUserId) return { lineUserId: null, reminders: [], todos: [], notes: [], vault: [], groups: [], budgets: [], finance: { income: 0, expense: 0, balance: 0, categories: {} }, financeAnalytics: { daily: [], transactionCount: 0, sevenDayIncome: 0, sevenDayExpense: 0 } };
       const personalAccount = await getOrCreatePersonalFinanceAccount(lineUserId);
@@ -2220,7 +2220,7 @@ var appRouter = router({
         }),
         remove: protectedProcedure.input(z2.object({ name: z2.string().trim().min(1).max(100), transactionType: z2.enum(["income", "expense"]), financeAccountId: z2.number().int().positive().optional() })).mutation(async ({ ctx, input }) => {
           const scope = await requireFinanceAccountScope(ctx.user.id, input.financeAccountId);
-          requireFinancePermission(canManageFinanceSettings(scope.role), "\u0E2A\u0E34\u0E17\u0E18\u0E34\u0E4C\u0E02\u0E2D\u0E07\u0E04\u0E38\u0E13\u0E22\u0E31\u0E07\u0E08\u0E31\u0E14\u0E01\u0E32\u0E23\u0E2B\u0E21\u0E27\u0E14\u0E43\u0E19\u0E2A\u0E21\u0E38\u0E14\u0E1A\u0E31\u0E0D\u0E0A\u0E35\u0E19\u0E35\u0E49\u0E44\u0E21\u0E48\u0E44\u0E14\u0E49");
+          requireFinancePermission(canManageFinanceSettings(scope.role), "\u0E40\u0E09\u0E1E\u0E32\u0E30\u0E40\u0E08\u0E49\u0E32\u0E02\u0E2D\u0E07\u0E2A\u0E21\u0E38\u0E14\u0E1A\u0E31\u0E0D\u0E0A\u0E35\u0E17\u0E35\u0E48\u0E08\u0E31\u0E14\u0E01\u0E32\u0E23\u0E2B\u0E21\u0E27\u0E14\u0E43\u0E19\u0E2A\u0E21\u0E38\u0E14\u0E1A\u0E31\u0E0D\u0E0A\u0E35\u0E19\u0E35\u0E49\u0E44\u0E21\u0E48\u0E44\u0E14\u0E49");
           const removed = await removeExpenseCategory(scope.lineUserId, input.name, input.transactionType, scope.financeAccountId);
           if (!removed) throw new Error("\u0E44\u0E21\u0E48\u0E1E\u0E1A\u0E2B\u0E21\u0E27\u0E14\u0E17\u0E35\u0E48\u0E15\u0E49\u0E2D\u0E07\u0E01\u0E32\u0E23\u0E25\u0E1A");
           await writeAuditLog({ action: "finance_category.delete", entityType: "expense_category", dashboardUserId: ctx.user.id, actorLineUserId: scope.lineUserId, lineChatId: scope.account.lineChatId ?? void 0, details: { financeAccountId: scope.financeAccountId, name: input.name, transactionType: input.transactionType } });
@@ -3498,20 +3498,25 @@ app.use(express2.json({ limit: "50mb" }));
 app.use(express2.urlencoded({ limit: "50mb", extended: true }));
 registerStorageProxy(app);
 registerOAuthRoutes(app);
-app.get("/api/health", (_req, res) => {
+var healthHandler = (_req, res) => {
   res.status(200).json({
     status: "ok",
     timestamp: (/* @__PURE__ */ new Date()).toISOString()
   });
+};
+app.get("/api/health", healthHandler);
+app.get("/health", healthHandler);
+var trpcMiddleware = createExpressMiddleware({
+  router: appRouter,
+  createContext
 });
-app.use(
-  "/api/trpc",
-  createExpressMiddleware({
-    router: appRouter,
-    createContext
-  })
-);
+app.use("/api/trpc", trpcMiddleware);
+app.use("/trpc", trpcMiddleware);
 app.use("/api/scheduled/reminders", (req, _res, next) => {
+  if (req.method === "GET") req.headers["user-agent"] = "vercel-cron/1.0";
+  next();
+});
+app.use("/scheduled/reminders", (req, _res, next) => {
   if (req.method === "GET") req.headers["user-agent"] = "vercel-cron/1.0";
   next();
 });
