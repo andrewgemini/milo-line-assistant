@@ -2651,9 +2651,7 @@ function titleWithoutSchedule(text2) {
 }
 function clock(text2) {
   const match = text2.match(/(?:เวลา\s*)?(\d{1,2})(?:(?::|\.)(\d{2}))?\s*(?:น\.?|โมง)?/i);
-  const hour = Number(match?.[1] ?? 9);
-  const minute = Number(match?.[2] ?? 0);
-  return { hour: Math.min(Math.max(hour, 0), 23), minute: Math.min(Math.max(minute, 0), 59) };
+  return { hour: Math.min(Math.max(Number(match?.[1] ?? 9), 0), 23), minute: Math.min(Math.max(Number(match?.[2] ?? 0), 0), 59) };
 }
 function bangkokParts(date) {
   const shifted = new Date(date.getTime() + BANGKOK_OFFSET_MS);
@@ -2670,11 +2668,11 @@ function reminderFrom(text2, now) {
   if (!/^(?:@?ไมโล\s*)?(?:ตั้ง)?เตือน(?:ฉัน)?\s*/i.test(text2.trim())) return void 0;
   const body = text2.trim().replace(/^(?:@?ไมโล\s*)?(?:ตั้ง)?เตือน(?:ฉัน)?\s*/i, "");
   const time = clock(body);
+  const title = titleWithoutSchedule(body);
   const setTime = (date) => {
     const parts2 = bangkokParts(date);
     return atBangkok(parts2.year, parts2.month, parts2.day, time.hour, time.minute);
   };
-  const title = titleWithoutSchedule(body);
   const minutes = body.match(/ทุก\s*(\d+)\s*นาที/i);
   if (minutes) {
     const interval = Math.max(1, Number(minutes[1]));
@@ -2748,7 +2746,7 @@ function parseMiloCommand(text2, now = /* @__PURE__ */ new Date()) {
   const openingBalance = value.match(/^(?:ตั้ง)?ยอด(?:เงิน)?เริ่มต้น\s*(\d[\d,]*(?:\.\d{1,2})?)\s*(?:บาท)?$/i);
   if (openingBalance) return { type: "openingBalance", amount: Number(openingBalance[1].replace(/,/g, "")) };
   if (/^(?:สวัสดี(?:ไมโล|ครับ|ค่ะ)?|หวัดดี(?:ไมโล)?|hello|hi|hey)$/i.test(value)) return { type: "greeting" };
-  if (/^(?:วิธีใช้งาน|คู่มือ(?:การใช้งาน)?|คำสั่ง|ช่วย|เมนู|help|\?)$/i.test(value)) return { type: "help" };
+  if (/^(?:เมนูไมโล|วิธีใช้งาน|คู่มือ(?:การใช้งาน)?|คำสั่ง|ช่วย|เมนู|help|\?)$/i.test(value)) return { type: "help" };
   if (/^(?:จดบันทึก|เริ่มจดบันทึก|บันทึกรายรับรายจ่าย|บันทึกรายรับ-รายจ่าย|จด)$/i.test(value)) return { type: "recordGuide" };
   if (/^(?:หมวด\s*\/?\s*งบ|งบประมาณ|คุมงบประมาณ|ดูงบ|งบ)$/i.test(value)) return { type: "budgetOverview" };
   if (/^(?:รายการ|ประวัติ|ประวัติธุรกรรม|รายการธุรกรรม|ดูย้อนหลัง)$/i.test(value)) return { type: "transactionList" };
@@ -2796,7 +2794,7 @@ function parseMiloCommand(text2, now = /* @__PURE__ */ new Date()) {
   if (categoryRemove) {
     const transactionType = categoryRemove[1] === "\u0E23\u0E32\u0E22\u0E23\u0E31\u0E1A" ? "income" : "expense";
     const name = categoryRemove[2].trim();
-    return name ? { type: "categoryRemove", name, transactionType } : { type: "invalid", message: "\u0E01\u0E23\u0E38\u0E13\u0E32\u0E23\u0E30\u0E1A\u0E38\u0E2B\u0E21\u0E27\u0E14\u0E17\u0E35\u0E48\u0E15\u0E49\u0E2D\u0E07\u0E01\u0E32\u0E23\u0E25\u0E1A \u0E40\u0E0A\u0E48\u0E19 \u0E25\u0E1A\u0E2B\u0E21\u0E27\u0E14\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22 \u0E40\u0E14\u0E34\u0E19\u0E17\u0E32\u0E07" };
+    return name ? { type: "categoryRemove", name, transactionType } : { type: "invalid", message: "\u0E01\u0E23\u0E38\u0E13\u0E32\u0E23\u0E30\u0E1A\u0E38\u0E2B\u0E21\u0E27\u0E14\u0E17\u0E35\u0E48\u0E15\u0E49\u0E2D\u0E07\u0E01\u0E32\u0E23\u0E25\u0E1A" };
   }
   const categoryList = value.match(/^(?:ดู)?หมวด(?:หมู่)?(?:\s*(รายรับ|รายจ่าย))?$/i);
   if (categoryList) return { type: "categoryList", transactionType: categoryList[1] === "\u0E23\u0E32\u0E22\u0E23\u0E31\u0E1A" ? "income" : categoryList[1] === "\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22" ? "expense" : void 0 };
