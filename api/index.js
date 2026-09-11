@@ -56,6 +56,7 @@ var users = mysqlTable("users", {
   email: varchar("email", { length: 320 }),
   loginMethod: varchar("loginMethod", { length: 64 }),
   role: mysqlEnum("role", ["viewer", "user", "manager", "admin"]).default("user").notNull(),
+  passwordHash: varchar("passwordHash", { length: 255 }),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
   lastSignedIn: timestamp("lastSignedIn").defaultNow().notNull()
@@ -420,14 +421,14 @@ var database = null;
 async function getDb() {
   if (!database && process.env.DATABASE_URL) {
     try {
-      const pool = mysql.createPool({
+      const pool2 = mysql.createPool({
         uri: process.env.DATABASE_URL,
         ssl: {
           minVersion: "TLSv1.2",
           rejectUnauthorized: true
         }
       });
-      database = drizzle(pool);
+      database = drizzle(pool2);
     } catch (e) {
       console.error("[DB Pool Error]", e);
       database = drizzle(process.env.DATABASE_URL);
@@ -2007,6 +2008,102 @@ async function generateFinancialInsight(input) {
   return JSON.parse(content);
 }
 
+// server/adminPassword.ts
+import crypto3 from "node:crypto";
+import mysql2 from "mysql2/promise";
+var SCRYPT_N = 16384;
+var SCRYPT_R = 8;
+var SCRYPT_P = 1;
+var KEYLEN = 64;
+var SALT_BYTES = 16;
+var pool = null;
+function getPool() {
+  if (!pool && process.env.DATABASE_URL) {
+    pool = mysql2.createPool({
+      uri: process.env.DATABASE_URL,
+      ssl: { minVersion: "TLSv1.2", rejectUnauthorized: true },
+      connectionLimit: 5
+    });
+  }
+  if (!pool) throw new Error("Database unavailable");
+  return pool;
+}
+function scrypt(password, salt) {
+  return new Promise((resolve, reject) => {
+    crypto3.scrypt(password, salt, KEYLEN, { N: SCRYPT_N, r: SCRYPT_R, p: SCRYPT_P }, (error, derived) => {
+      if (error) reject(error);
+      else resolve(derived);
+    });
+  });
+}
+async function hashAdminPassword(password) {
+  const salt = crypto3.randomBytes(SALT_BYTES);
+  const derived = await scrypt(password, salt);
+  return `scrypt$${SCRYPT_N}$${SCRYPT_R}$${SCRYPT_P}$${salt.toString("hex")}$${derived.toString("hex")}`;
+}
+async function verifyAdminPassword(password, encoded) {
+  const parts = encoded.split("$");
+  if (parts.length !== 7 || parts[0] !== "scrypt") return false;
+  const [, n, r, p, saltHex, hashHex] = parts;
+  const salt = Buffer.from(saltHex, "hex");
+  const expected = Buffer.from(hashHex, "hex");
+  if (!salt.length || !expected.length) return false;
+  const derived = await new Promise((resolve, reject) => {
+    crypto3.scrypt(password, salt, expected.length, { N: Number(n), r: Number(r), p: Number(p) }, (error, value) => error ? reject(error) : resolve(value));
+  });
+  return crypto3.timingSafeEqual(expected, derived);
+}
+function configuredUsername() {
+  const username = (process.env.ADMIN_USERNAME ?? "").trim();
+  if (!username) throw new Error("ADMIN_USERNAME is not configured");
+  return username;
+}
+function configuredBootstrapPassword() {
+  const password = (process.env.ADMIN_PASSWORD ?? "").trim();
+  if (!password) throw new Error("Admin password has not been configured");
+  return password;
+}
+function adminOpenId(username) {
+  return `admin_${username}`;
+}
+async function authenticateAdminPassword(username, password) {
+  const expectedUsername = configuredUsername();
+  if (username !== expectedUsername) return false;
+  const db = getPool();
+  const openId = adminOpenId(expectedUsername);
+  const [rows] = await db.query("SELECT id, passwordHash FROM users WHERE openId = ? AND role = 'admin' LIMIT 1", [openId]);
+  const row = rows[0];
+  if (row?.passwordHash) return verifyAdminPassword(password, row.passwordHash);
+  const bootstrapPassword = configuredBootstrapPassword();
+  if (password !== bootstrapPassword) return false;
+  const passwordHash = await hashAdminPassword(password);
+  if (row) {
+    await db.query("UPDATE users SET passwordHash = ?, updatedAt = CURRENT_TIMESTAMP WHERE id = ?", [passwordHash, row.id]);
+  } else {
+    await db.query(
+      "INSERT INTO users (openId, name, email, loginMethod, role, passwordHash, lastSignedIn) VALUES (?, ?, ?, ?, 'admin', ?, CURRENT_TIMESTAMP)",
+      [openId, "\u0E1C\u0E39\u0E49\u0E14\u0E39\u0E41\u0E25\u0E23\u0E30\u0E1A\u0E1A (Admin)", "admin@milo.internal", "admin_password", passwordHash]
+    );
+  }
+  return true;
+}
+async function changeAdminPassword(input) {
+  const expectedUsername = configuredUsername();
+  if (input.username !== expectedUsername) throw new Error("\u0E44\u0E21\u0E48\u0E2A\u0E32\u0E21\u0E32\u0E23\u0E16\u0E40\u0E1B\u0E25\u0E35\u0E48\u0E22\u0E19\u0E23\u0E2B\u0E31\u0E2A\u0E1C\u0E48\u0E32\u0E19\u0E02\u0E2D\u0E07\u0E1C\u0E39\u0E49\u0E14\u0E39\u0E41\u0E25\u0E23\u0E30\u0E1A\u0E1A\u0E19\u0E35\u0E49\u0E44\u0E14\u0E49");
+  if (input.newPassword.length < 10) throw new Error("\u0E23\u0E2B\u0E31\u0E2A\u0E1C\u0E48\u0E32\u0E19\u0E43\u0E2B\u0E21\u0E48\u0E15\u0E49\u0E2D\u0E07\u0E21\u0E35\u0E2D\u0E22\u0E48\u0E32\u0E07\u0E19\u0E49\u0E2D\u0E22 10 \u0E15\u0E31\u0E27\u0E2D\u0E31\u0E01\u0E29\u0E23");
+  if (input.currentPassword === input.newPassword) throw new Error("\u0E23\u0E2B\u0E31\u0E2A\u0E1C\u0E48\u0E32\u0E19\u0E43\u0E2B\u0E21\u0E48\u0E15\u0E49\u0E2D\u0E07\u0E41\u0E15\u0E01\u0E15\u0E48\u0E32\u0E07\u0E08\u0E32\u0E01\u0E23\u0E2B\u0E31\u0E2A\u0E1C\u0E48\u0E32\u0E19\u0E40\u0E14\u0E34\u0E21");
+  const db = getPool();
+  const openId = adminOpenId(expectedUsername);
+  const [rows] = await db.query("SELECT id, passwordHash FROM users WHERE openId = ? AND role = 'admin' LIMIT 1", [openId]);
+  const row = rows[0];
+  if (!row) throw new Error("\u0E44\u0E21\u0E48\u0E1E\u0E1A\u0E1A\u0E31\u0E0D\u0E0A\u0E35\u0E1C\u0E39\u0E49\u0E14\u0E39\u0E41\u0E25\u0E23\u0E30\u0E1A\u0E1A");
+  const validCurrent = row.passwordHash ? await verifyAdminPassword(input.currentPassword, row.passwordHash) : input.currentPassword === configuredBootstrapPassword();
+  if (!validCurrent) throw new Error("\u0E23\u0E2B\u0E31\u0E2A\u0E1C\u0E48\u0E32\u0E19\u0E40\u0E14\u0E34\u0E21\u0E44\u0E21\u0E48\u0E16\u0E39\u0E01\u0E15\u0E49\u0E2D\u0E07");
+  const passwordHash = await hashAdminPassword(input.newPassword);
+  await db.query("UPDATE users SET passwordHash = ?, updatedAt = CURRENT_TIMESTAMP WHERE id = ?", [passwordHash, row.id]);
+  return { userId: row.id };
+}
+
 // server/routers.ts
 async function requireLinkedLineUser(dashboardUserId) {
   const lineUserId = await getLinkedLineUser(dashboardUserId);
@@ -2034,11 +2131,11 @@ var appRouter = router({
       ctx.res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
       return { success: true };
     }),
-    adminLogin: publicProcedure.input(z2.object({ username: z2.string().trim().min(1, "\u0E01\u0E23\u0E38\u0E13\u0E32\u0E01\u0E23\u0E2D\u0E01\u0E0A\u0E37\u0E48\u0E2D\u0E1C\u0E39\u0E49\u0E43\u0E0A\u0E49 (Username)"), password: z2.string().trim().min(1, "\u0E01\u0E23\u0E38\u0E13\u0E32\u0E01\u0E23\u0E2D\u0E01\u0E23\u0E2B\u0E31\u0E2A\u0E1C\u0E48\u0E32\u0E19 (Password)") })).mutation(async ({ ctx, input }) => {
-      const expectedUser = (process.env.ADMIN_USERNAME || "admin").trim();
-      const expectedPass = (process.env.ADMIN_PASSWORD || "admin1234").trim();
-      if (input.username !== expectedUser || input.password !== expectedPass) throw new Error("\u0E0A\u0E37\u0E48\u0E2D\u0E1C\u0E39\u0E49\u0E43\u0E0A\u0E49\u0E2B\u0E23\u0E37\u0E2D\u0E23\u0E2B\u0E31\u0E2A\u0E1C\u0E48\u0E32\u0E19\u0E1C\u0E39\u0E49\u0E14\u0E39\u0E41\u0E25\u0E23\u0E30\u0E1A\u0E1A\u0E44\u0E21\u0E48\u0E16\u0E39\u0E01\u0E15\u0E49\u0E2D\u0E07");
-      const safeOpenId = `admin_${expectedUser}`;
+    adminLogin: publicProcedure.input(z2.object({ username: z2.string().trim().min(1, "\u0E01\u0E23\u0E38\u0E13\u0E32\u0E01\u0E23\u0E2D\u0E01\u0E0A\u0E37\u0E48\u0E2D\u0E1C\u0E39\u0E49\u0E43\u0E0A\u0E49 (Username)"), password: z2.string().min(1, "\u0E01\u0E23\u0E38\u0E13\u0E32\u0E01\u0E23\u0E2D\u0E01\u0E23\u0E2B\u0E31\u0E2A\u0E1C\u0E48\u0E32\u0E19 (Password)") })).mutation(async ({ ctx, input }) => {
+      const username = input.username.trim();
+      const valid = await authenticateAdminPassword(username, input.password);
+      if (!valid) throw new Error("\u0E0A\u0E37\u0E48\u0E2D\u0E1C\u0E39\u0E49\u0E43\u0E0A\u0E49\u0E2B\u0E23\u0E37\u0E2D\u0E23\u0E2B\u0E31\u0E2A\u0E1C\u0E48\u0E32\u0E19\u0E1C\u0E39\u0E49\u0E14\u0E39\u0E41\u0E25\u0E23\u0E30\u0E1A\u0E1A\u0E44\u0E21\u0E48\u0E16\u0E39\u0E01\u0E15\u0E49\u0E2D\u0E07");
+      const safeOpenId = `admin_${username}`;
       const name = "\u0E1C\u0E39\u0E49\u0E14\u0E39\u0E41\u0E25\u0E23\u0E30\u0E1A\u0E1A (Admin)";
       try {
         await upsertUser({ openId: safeOpenId, name, email: "admin@milo.internal", role: "admin", loginMethod: "admin_password", lastSignedIn: /* @__PURE__ */ new Date() });
@@ -2152,7 +2249,7 @@ var appRouter = router({
           requireFinancePermission(canManageFinanceSettings(scope.role), "\u0E2A\u0E34\u0E17\u0E18\u0E34\u0E4C\u0E02\u0E2D\u0E07\u0E04\u0E38\u0E13\u0E22\u0E31\u0E07\u0E1B\u0E23\u0E31\u0E1A\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E2D\u0E31\u0E15\u0E42\u0E19\u0E21\u0E31\u0E15\u0E34\u0E43\u0E19\u0E2A\u0E21\u0E38\u0E14\u0E1A\u0E31\u0E0D\u0E0A\u0E35\u0E19\u0E35\u0E49\u0E44\u0E21\u0E48\u0E44\u0E14\u0E49");
           const updated = await updateRecurringTransactionStatus(input.id, scope.lineUserId, input.status, scope.financeAccountId);
           if (!updated) throw new Error("\u0E44\u0E21\u0E48\u0E1E\u0E1A\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E2D\u0E31\u0E15\u0E42\u0E19\u0E21\u0E31\u0E15\u0E34\u0E17\u0E35\u0E48\u0E15\u0E49\u0E2D\u0E07\u0E01\u0E32\u0E23\u0E1B\u0E23\u0E31\u0E1A\u0E2A\u0E16\u0E32\u0E19\u0E30");
-          await writeAuditLog({ action: "recurring_transaction.status.update", entityType: "recurring_transaction", entityId: input.id, dashboardUserId: ctx.user.id, actorLineUserId: scope.lineUserId, lineChatId: scope.account.lineChatId ?? void 0, details: { financeAccountId: scope.financeAccountId, status: input.status } });
+          await writeAuditLog({ action: "recurring_transaction.status.update", entityType: "recurring_transaction", entityId: input.id, dashboardUserId: ctx.user.id, actorLineUserId: scope.lineUserId, lineChatId: scope.account.lineChatId ?? scope.lineUserId, details: { financeAccountId: scope.financeAccountId, status: input.status } });
           return { success: true };
         })
       }),
@@ -3502,17 +3599,31 @@ app.use(express2.urlencoded({ limit: "50mb", extended: true }));
 registerStorageProxy(app);
 registerOAuthRoutes(app);
 var healthHandler = (_req, res) => {
-  res.status(200).json({
-    status: "ok",
-    timestamp: (/* @__PURE__ */ new Date()).toISOString()
-  });
+  res.status(200).json({ status: "ok", timestamp: (/* @__PURE__ */ new Date()).toISOString() });
 };
 app.get("/api/health", healthHandler);
 app.get("/health", healthHandler);
-var trpcMiddleware = createExpressMiddleware({
-  router: appRouter,
-  createContext
+app.post("/api/admin/password", async (req, res) => {
+  try {
+    const user = await sdk.authenticateRequest(req);
+    if (!user || user.role !== "admin") return res.status(403).json({ error: "\u0E40\u0E09\u0E1E\u0E32\u0E30\u0E1C\u0E39\u0E49\u0E14\u0E39\u0E41\u0E25\u0E23\u0E30\u0E1A\u0E1A\u0E40\u0E17\u0E48\u0E32\u0E19\u0E31\u0E49\u0E19" });
+    const currentPassword = typeof req.body?.currentPassword === "string" ? req.body.currentPassword : "";
+    const newPassword = typeof req.body?.newPassword === "string" ? req.body.newPassword : "";
+    const confirmPassword = typeof req.body?.confirmPassword === "string" ? req.body.confirmPassword : "";
+    if (!currentPassword || !newPassword || !confirmPassword) return res.status(400).json({ error: "\u0E01\u0E23\u0E38\u0E13\u0E32\u0E01\u0E23\u0E2D\u0E01\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E43\u0E2B\u0E49\u0E04\u0E23\u0E1A\u0E17\u0E38\u0E01\u0E0A\u0E48\u0E2D\u0E07" });
+    if (newPassword !== confirmPassword) return res.status(400).json({ error: "\u0E23\u0E2B\u0E31\u0E2A\u0E1C\u0E48\u0E32\u0E19\u0E43\u0E2B\u0E21\u0E48\u0E41\u0E25\u0E30\u0E01\u0E32\u0E23\u0E22\u0E37\u0E19\u0E22\u0E31\u0E19\u0E23\u0E2B\u0E31\u0E2A\u0E1C\u0E48\u0E32\u0E19\u0E44\u0E21\u0E48\u0E15\u0E23\u0E07\u0E01\u0E31\u0E19" });
+    const username = (process.env.ADMIN_USERNAME ?? "").trim();
+    const result = await changeAdminPassword({ username, currentPassword, newPassword });
+    await writeAuditLog({ action: "admin.password.change", entityType: "admin_credential", entityId: result.userId, dashboardUserId: user.id, details: { username } });
+    const cookieOptions = getSessionCookieOptions(req);
+    res.clearCookie(COOKIE_NAME, { ...cookieOptions, maxAge: -1 });
+    return res.status(200).json({ success: true, requiresRelogin: true });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "\u0E44\u0E21\u0E48\u0E2A\u0E32\u0E21\u0E32\u0E23\u0E16\u0E40\u0E1B\u0E25\u0E35\u0E48\u0E22\u0E19\u0E23\u0E2B\u0E31\u0E2A\u0E1C\u0E48\u0E32\u0E19\u0E44\u0E14\u0E49";
+    return res.status(400).json({ error: message });
+  }
 });
+var trpcMiddleware = createExpressMiddleware({ router: appRouter, createContext });
 app.use("/api/trpc", trpcMiddleware);
 app.use("/trpc", trpcMiddleware);
 app.use("/api/scheduled/reminders", (req, _res, next) => {
