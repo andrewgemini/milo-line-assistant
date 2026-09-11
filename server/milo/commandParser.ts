@@ -61,11 +61,11 @@ export function parseMiloCommand(text: string, now = new Date()): MiloCommand {
   const reminder = reminderFrom(text, now); if (reminder) return { type: "reminder", data: reminder };
   const value = text.trim().replace(/^@?ไมโล\s*/i, "");
   // Explicit LINE Rich Menu labels: keep these mappings stable even if other command aliases evolve.
-  if (/^\u0e2b\u0e19\u0e49\u0e32\u0e2b\u0e25\u0e31\u0e01$/u.test(value)) return { type: "dashboardGuide" };
-  if (/^\u0e27\u0e34\u0e40\u0e04\u0e23\u0e32\u0e30\u0e2b\u0e4c$/u.test(value)) return { type: "aiSummary", period: "month" };
-  if (/^\u0e08\u0e14\u0e1a\u0e31\u0e19\u0e17\u0e36\u0e01$/u.test(value)) return { type: "recordGuide" };
-  if (/^\u0e01\u0e23\u0e30\u0e40\u0e1b\u0e4b\u0e32\u0e40\u0e07\u0e34\u0e19$/u.test(value)) return { type: "budgetOverview" };
-  if (/^\u0e15\u0e31\u0e49\u0e07\u0e04\u0e48\u0e32$/u.test(value)) return { type: "settingGuide" };
+  if (value === "หน้าหลัก") return { type: "dashboardGuide" };
+  if (value === "วิเคราะห์") return { type: "aiSummary", period: "month" };
+  if (value === "จดบันทึก") return { type: "recordGuide" };
+  if (value === "กระเป๋าเงิน") return { type: "budgetOverview" };
+  if (value === "ตั้งค่า") return { type: "settingGuide" };
   const money = value.match(/^(จ่าย|รายจ่าย|รับ|รายรับ)\s*(.+?)\s+(\d[\d,]*(?:\.\d{1,2})?)\s*(?:บาท)?$/i); if (money) { const income = /รับ|รายรับ/i.test(money[1]); const note = money[2].trim(); const transactionType = income ? "income" : "expense"; return { type: transactionType, amount: Number(money[3].replace(/,/g, "")), category: suggestStandardCategory(transactionType, note), note }; }
   const transactionSearch = value.match(/^(?:ค้นหา|หา)รายการ\s+(.+)$/i); if (transactionSearch) return { type: "transactionSearch", query: transactionSearch[1].trim() };
   const transactionDelete = value.match(/^ลบรายการ\s*#?(\d+)$/i); if (transactionDelete) return { type: "transactionDelete", id: Number(transactionDelete[1]) };

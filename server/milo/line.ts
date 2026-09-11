@@ -69,6 +69,7 @@ export type PostSaveSummary = {
   transactionType: "expense" | "income";
   amount: number;
   category: string;
+  note?: string;
   dailyIncome: number;
   dailyExpense: number;
   dailyBalance: number;
@@ -109,7 +110,8 @@ export function mascotExpenseCopy(transactionType: PostSaveSummary["transactionT
 
 export function postSaveSummaryText(summary: PostSaveSummary) {
   const label = summary.transactionType === "expense" ? "รายจ่าย" : "รายรับ";
-  return `บันทึก${label} ${summary.amount.toLocaleString("th-TH")} บาท หมวด${summary.category}แล้ว\n${mascotExpenseCopy(summary.transactionType, summary.amount)}\nวันนี้: รายรับ ${summary.dailyIncome.toLocaleString("th-TH")} บาท · รายจ่าย ${summary.dailyExpense.toLocaleString("th-TH")} บาท · คงเหลือ ${summary.dailyBalance.toLocaleString("th-TH")} บาท`;
+  const note = summary.note?.trim();
+  return `บันทึก${label} ${summary.amount.toLocaleString("th-TH")} บาท หมวด${summary.category}แล้ว${note ? `\nรายการที่จด: ${note}` : ""}\n${mascotExpenseCopy(summary.transactionType, summary.amount)}\nวันนี้: รายรับ ${summary.dailyIncome.toLocaleString("th-TH")} บาท · รายจ่าย ${summary.dailyExpense.toLocaleString("th-TH")} บาท · คงเหลือ ${summary.dailyBalance.toLocaleString("th-TH")} บาท`;
 }
 
 export function financeReportCardText(report: FinanceReportCard) {
@@ -249,6 +251,7 @@ export async function replyPostSaveSummary(replyToken: string, summary: PostSave
               { type: "text", text: "บันทึกแล้ว", size: "xxs", color: "#8B809B", align: "end" },
             ] },
             { type: "text", text: `${summary.amount.toLocaleString("th-TH")} บาท`, size: "xxl", weight: "bold", color: "#3F3552" },
+            ...(summary.note?.trim() ? [{ type: "text", text: `รายการที่จด: ${summary.note.trim()}`, size: "sm", color: "#675B7C", wrap: true }] : []),
             { type: "separator", color: "#E9E4F1" },
             { type: "text", text: "สรุปยอดวันนี้", size: "xs", weight: "bold", color: "#76688E" },
             { type: "box", layout: "horizontal", spacing: "sm", contents: [

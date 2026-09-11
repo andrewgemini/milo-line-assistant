@@ -67,9 +67,9 @@ async function sendVoiceProposal(replyToken: string, proposal: VoiceTransactionP
   }
 }
 
-async function sendPostSaveSummary(replyToken: string, lineUserId: string, lineChatId: string, financeAccountId: number, transaction: Pick<VoiceTransactionProposal, "transactionType" | "amount" | "category">) {
+async function sendPostSaveSummary(replyToken: string, lineUserId: string, lineChatId: string, financeAccountId: number, transaction: Pick<VoiceTransactionProposal, "transactionType" | "amount" | "category" | "note">) {
   const report = await db.financeReport(lineUserId, "day", new Date(), financeAccountId);
-  const summary = { transactionType: transaction.transactionType!, amount: transaction.amount!, category: transaction.category!, dailyIncome: report.income, dailyExpense: report.expense, dailyBalance: report.balance };
+  const summary = { transactionType: transaction.transactionType!, amount: transaction.amount!, category: transaction.category!, note: transaction.note, dailyIncome: report.income, dailyExpense: report.expense, dailyBalance: report.balance };
   try {
     await replyPostSaveSummary(replyToken, summary);
   } catch (error) {
@@ -155,7 +155,7 @@ async function handleText(event: LineEvent, lineChatId: string, lineUserId: stri
       } catch { /* keep deterministic fallback category */ }
     }
     await db.createTransaction({ lineChatId, lineUserId, financeAccountId: financeScope!.financeAccountId, transactionType: command.type, amount: command.amount, category, note: command.note, source: "line_text", sourceMessageId: event.message?.id });
-    if (event.replyToken) { await sendPostSaveSummary(event.replyToken, lineUserId, lineChatId, financeScope!.financeAccountId, { transactionType: command.type, amount: command.amount, category }); return; }
+    if (event.replyToken) { await sendPostSaveSummary(event.replyToken, lineUserId, lineChatId, financeScope!.financeAccountId, { transactionType: command.type, amount: command.amount, category, note: command.note }); return; }
     message = `บันทึก${command.type === "expense" ? "รายจ่าย" : "รายรับ"} ${command.amount.toLocaleString("th-TH")} บาท ในหมวด${category}แล้ว`;
   } else if (command.type === "transactionSearch") {
     const results = await db.searchTransactions(lineUserId, command.query, 10, financeScope!.financeAccountId);
@@ -287,7 +287,7 @@ async function handleText(event: LineEvent, lineChatId: string, lineUserId: stri
           const transactionId = await db.createTransaction({ lineChatId, lineUserId, financeAccountId: financeScope!.financeAccountId, transactionType: "expense", amount, category, note: buildExpenseNote(proposal), occurredAt, source: "line_image" });
           await db.linkTransactionAttachment({ transactionId, vaultItemId: latest.vault.id, lineUserId, label: proposal.documentType === "bank_slip" ? "สลิปต้นฉบับ" : "ใบเสร็จต้นฉบับ" });
           await db.setImageExtractionStatus(latest.extraction.id, "accepted");
-          if (event.replyToken) { await sendPostSaveSummary(event.replyToken, lineUserId, lineChatId, financeScope!.financeAccountId, { transactionType: "expense", amount, category }); return; }
+          if (event.replyToken) { await sendPostSaveSummary(event.replyToken, lineUserId, lineChatId, financeScope!.financeAccountId, { transactionType: "expense", amount, category, note: buildExpenseNote(proposal) }); return; }
           message = `บันทึกรายจ่ายจาก${proposal.documentType === "bank_slip" ? "สลิป" : "ใบเสร็จ"} ${amount.toLocaleString("th-TH")} บาท ในหมวด${category}แล้ว`;
         }
       } else {
