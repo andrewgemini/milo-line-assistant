@@ -2017,6 +2017,7 @@ var SCRYPT_P = 1;
 var KEYLEN = 64;
 var SALT_BYTES = 16;
 var pool = null;
+var passwordColumnReady = null;
 function getPool() {
   if (!pool && process.env.DATABASE_URL) {
     pool = mysql2.createPool({
@@ -2027,6 +2028,15 @@ function getPool() {
   }
   if (!pool) throw new Error("Database unavailable");
   return pool;
+}
+async function ensurePasswordColumn(db) {
+  if (!passwordColumnReady) {
+    passwordColumnReady = db.query("ALTER TABLE `users` ADD COLUMN IF NOT EXISTS `passwordHash` VARCHAR(255) NULL AFTER `role`").then(() => void 0).catch((error) => {
+      passwordColumnReady = null;
+      throw error;
+    });
+  }
+  await passwordColumnReady;
 }
 function scrypt(password, salt) {
   return new Promise((resolve, reject) => {
@@ -2043,13 +2053,16 @@ async function hashAdminPassword(password) {
 }
 async function verifyAdminPassword(password, encoded) {
   const parts = encoded.split("$");
-  if (parts.length !== 7 || parts[0] !== "scrypt") return false;
+  if (parts.length !== 6 || parts[0] !== "scrypt") return false;
   const [, n, r, p, saltHex, hashHex] = parts;
   const salt = Buffer.from(saltHex, "hex");
   const expected = Buffer.from(hashHex, "hex");
-  if (!salt.length || !expected.length) return false;
+  const costN = Number(n);
+  const costR = Number(r);
+  const costP = Number(p);
+  if (!salt.length || !expected.length || !Number.isInteger(costN) || !Number.isInteger(costR) || !Number.isInteger(costP) || costN < 1024 || costR < 1 || costP < 1 || expected.length !== KEYLEN) return false;
   const derived = await new Promise((resolve, reject) => {
-    crypto3.scrypt(password, salt, expected.length, { N: Number(n), r: Number(r), p: Number(p) }, (error, value) => error ? reject(error) : resolve(value));
+    crypto3.scrypt(password, salt, expected.length, { N: costN, r: costR, p: costP }, (error, value) => error ? reject(error) : resolve(value));
   });
   return crypto3.timingSafeEqual(expected, derived);
 }
@@ -2070,6 +2083,7 @@ async function authenticateAdminPassword(username, password) {
   const expectedUsername = configuredUsername();
   if (username !== expectedUsername) return false;
   const db = getPool();
+  await ensurePasswordColumn(db);
   const openId = adminOpenId(expectedUsername);
   const [rows] = await db.query("SELECT id, passwordHash FROM users WHERE openId = ? AND role = 'admin' LIMIT 1", [openId]);
   const row = rows[0];
@@ -2093,6 +2107,7 @@ async function changeAdminPassword(input) {
   if (input.newPassword.length < 10) throw new Error("\u0E23\u0E2B\u0E31\u0E2A\u0E1C\u0E48\u0E32\u0E19\u0E43\u0E2B\u0E21\u0E48\u0E15\u0E49\u0E2D\u0E07\u0E21\u0E35\u0E2D\u0E22\u0E48\u0E32\u0E07\u0E19\u0E49\u0E2D\u0E22 10 \u0E15\u0E31\u0E27\u0E2D\u0E31\u0E01\u0E29\u0E23");
   if (input.currentPassword === input.newPassword) throw new Error("\u0E23\u0E2B\u0E31\u0E2A\u0E1C\u0E48\u0E32\u0E19\u0E43\u0E2B\u0E21\u0E48\u0E15\u0E49\u0E2D\u0E07\u0E41\u0E15\u0E01\u0E15\u0E48\u0E32\u0E07\u0E08\u0E32\u0E01\u0E23\u0E2B\u0E31\u0E2A\u0E1C\u0E48\u0E32\u0E19\u0E40\u0E14\u0E34\u0E21");
   const db = getPool();
+  await ensurePasswordColumn(db);
   const openId = adminOpenId(expectedUsername);
   const [rows] = await db.query("SELECT id, passwordHash FROM users WHERE openId = ? AND role = 'admin' LIMIT 1", [openId]);
   const row = rows[0];
