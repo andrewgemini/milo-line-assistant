@@ -8,6 +8,7 @@ const KEYLEN = 64;
 const SALT_BYTES = 16;
 
 let pool: mysql.Pool | null = null;
+let passwordColumnReady: Promise<void> | null = null;
 
 function getPool() {
   if (!pool && process.env.DATABASE_URL) {
@@ -19,6 +20,19 @@ function getPool() {
   }
   if (!pool) throw new Error("Database unavailable");
   return pool;
+}
+
+async function ensurePasswordColumn(db: mysql.Pool) {
+  if (!passwordColumnReady) {
+    passwordColumnReady = db
+      .query("ALTER TABLE `users` ADD COLUMN IF NOT EXISTS `passwordHash` VARCHAR(255) NULL AFTER `role`")
+      .then(() => undefined)
+      .catch(error => {
+        passwordColumnReady = null;
+        throw error;
+      });
+  }
+  await passwordColumnReady;
 }
 
 function scrypt(password: string, salt: Buffer) {
@@ -42,9 +56,12 @@ export async function verifyAdminPassword(password: string, encoded: string) {
   const [, n, r, p, saltHex, hashHex] = parts;
   const salt = Buffer.from(saltHex, "hex");
   const expected = Buffer.from(hashHex, "hex");
-  if (!salt.length || !expected.length) return false;
+  const costN = Number(n);
+  const costR = Number(r);
+  const costP = Number(p);
+  if (!salt.length || !expected.length || !Number.isInteger(costN) || !Number.isInteger(costR) || !Number.isInteger(costP) || costN < 1024 || costR < 1 || costP < 1 || expected.length !== KEYLEN) return false;
   const derived = await new Promise<Buffer>((resolve, reject) => {
-    crypto.scrypt(password, salt, expected.length, { N: Number(n), r: Number(r), p: Number(p) }, (error, value) => error ? reject(error) : resolve(value));
+    crypto.scrypt(password, salt, expected.length, { N: costN, r: costR, p: costP }, (error, value) => error ? reject(error) : resolve(value));
   });
   return crypto.timingSafeEqual(expected, derived);
 }
@@ -70,6 +87,7 @@ export async function authenticateAdminPassword(username: string, password: stri
   if (username !== expectedUsername) return false;
 
   const db = getPool();
+  await ensurePasswordColumn(db);
   const openId = adminOpenId(expectedUsername);
   const [rows] = await db.query("SELECT id, passwordHash FROM users WHERE openId = ? AND role = 'admin' LIMIT 1", [openId]);
   const row = (rows as Array<{ id: number; passwordHash: string | null }>)[0];
@@ -98,6 +116,7 @@ export async function changeAdminPassword(input: { username: string; currentPass
   if (input.currentPassword === input.newPassword) throw new Error("รหัสผ่านใหม่ต้องแตกต่างจากรหัสผ่านเดิม");
 
   const db = getPool();
+  await ensurePasswordColumn(db);
   const openId = adminOpenId(expectedUsername);
   const [rows] = await db.query("SELECT id, passwordHash FROM users WHERE openId = ? AND role = 'admin' LIMIT 1", [openId]);
   const row = (rows as Array<{ id: number; passwordHash: string | null }>)[0];
