@@ -2165,8 +2165,11 @@ var appRouter = router({
   }),
   milo: router({
     linkLineAccount: protectedProcedure.input(z2.object({ lineUserId: z2.string().trim().regex(/^U[0-9a-fA-F]{32}$/, "LINE User ID \u0E15\u0E49\u0E2D\u0E07\u0E02\u0E36\u0E49\u0E19\u0E15\u0E49\u0E19\u0E14\u0E49\u0E27\u0E22 U \u0E41\u0E25\u0E30\u0E15\u0E32\u0E21\u0E14\u0E49\u0E27\u0E22\u0E2D\u0E31\u0E01\u0E02\u0E23\u0E30 32 \u0E15\u0E31\u0E27") })).mutation(async ({ ctx, input }) => {
-      await linkLineUser(ctx.user.id, input.lineUserId.trim());
-      await writeAuditLog({ action: "line_account.link", entityType: "line_account_link", dashboardUserId: ctx.user.id, actorLineUserId: input.lineUserId.trim(), details: { lineUserId: input.lineUserId.trim() } });
+      const lineUserId = input.lineUserId.trim();
+      await linkLineUser(ctx.user.id, lineUserId);
+      void writeAuditLog({ action: "line_account.link", entityType: "line_account_link", dashboardUserId: ctx.user.id, actorLineUserId: lineUserId, details: { lineUserId } }).catch((auditError) => {
+        console.warn("[Milo LINE Link] audit log skipped", { dashboardUserId: ctx.user.id, error: auditError instanceof Error ? auditError.message : "unknown" });
+      });
       return { success: true };
     }),
     connection: protectedProcedure.query(async ({ ctx }) => ({ lineUserId: await getLinkedLineUser(ctx.user.id) ?? null })),
