@@ -7,7 +7,6 @@ import { systemRouter } from "./_core/systemRouter";
 import { adminProcedure, protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import * as db from "./db";
 import { ENV } from "./_core/env";
-import { createHeartbeatJob, updateHeartbeatJob } from "./_core/heartbeat";
 import { deliverDueReminders } from "./milo/reminderDelivery";
 import { generateFinancialInsight } from "./milo/financialAssistant";
 import { authenticateAdminPassword } from "./adminPassword";
@@ -68,7 +67,14 @@ export const appRouter = router({
       }),
   }),
   milo: router({
-    linkLineAccount: protectedProcedure.input(z.object({ lineUserId: z.string().trim().regex(/^U[0-9a-fA-F]{32}$/, "LINE User ID ต้องขึ้นต้นด้วย U และตามด้วยอักขระ 32 ตัว") })).mutation(async ({ ctx, input }) => { await db.linkLineUser(ctx.user.id, input.lineUserId.trim()); await db.writeAuditLog({ action: "line_account.link", entityType: "line_account_link", dashboardUserId: ctx.user.id, actorLineUserId: input.lineUserId.trim(), details: { lineUserId: input.lineUserId.trim() } }); return { success: true } as const; }),
+    linkLineAccount: protectedProcedure.input(z.object({ lineUserId: z.string().trim().regex(/^U[0-9a-fA-F]{32}$/, "LINE User ID ต้องขึ้นต้นด้วย U และตามด้วยอักขระ 32 ตัว") })).mutation(async ({ ctx, input }) => {
+      const lineUserId = input.lineUserId.trim();
+      await db.linkLineUser(ctx.user.id, lineUserId);
+      void db.writeAuditLog({ action: "line_account.link", entityType: "line_account_link", dashboardUserId: ctx.user.id, actorLineUserId: lineUserId, details: { lineUserId } }).catch(auditError => {
+        console.warn("[Milo LINE Link] audit log skipped", { dashboardUserId: ctx.user.id, error: auditError instanceof Error ? auditError.message : "unknown" });
+      });
+      return { success: true } as const;
+    }),
     connection: protectedProcedure.query(async ({ ctx }) => ({ lineUserId: await db.getLinkedLineUser(ctx.user.id) ?? null })),
     financeAccounts: router({
       list: protectedProcedure.query(async ({ ctx }) => db.listFinanceAccounts(await requireLinkedLineUser(ctx.user.id))),
