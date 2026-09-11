@@ -81,8 +81,9 @@ export default function Dashboard() {
   const [activeFinanceAccountId, setActiveFinanceAccountId] = useState<number | undefined>();
   const [transactionPage, setTransactionPage] = useState(0);
   const [transactionSearch, setTransactionSearch] = useState("");
+  const [linkedLineUserId, setLinkedLineUserId] = useState<string | null>(null);
   const financeScopeInput = useMemo(() => activeFinanceAccountId ? { financeAccountId: activeFinanceAccountId } : undefined, [activeFinanceAccountId]);
-  const transactions = trpc.milo.finance.transactions.useQuery(financeScopeInput, { enabled: Boolean(overview.data?.lineUserId) });
+  const transactions = trpc.milo.finance.transactions.useQuery(financeScopeInput, { enabled: Boolean(overview.data?.lineUserId || linkedLineUserId) });
   const [lineUserId, setLineUserId] = useState("");
   const [reminderTitle, setReminderTitle] = useState("");
   const [reminderTime, setReminderTime] = useState("");
@@ -98,10 +99,10 @@ export default function Dashboard() {
   const [isPreviewFading, setIsPreviewFading] = useState(false);
   const [reportPeriod, setReportPeriod] = useState<"day" | "week" | "month" | "year">("month");
   const reportInput = useMemo(() => ({ period: reportPeriod, financeAccountId: activeFinanceAccountId }), [reportPeriod, activeFinanceAccountId]);
-  const financeReport = trpc.milo.finance.report.useQuery(reportInput, { enabled: Boolean(overview.data?.lineUserId) });
-  const financeSummary = trpc.milo.finance.summary.useQuery(financeScopeInput, { enabled: Boolean(overview.data?.lineUserId) && Boolean(activeFinanceAccountId) });
-  const financeAnalytics = trpc.milo.finance.analytics.useQuery(financeScopeInput, { enabled: Boolean(overview.data?.lineUserId) && Boolean(activeFinanceAccountId) });
-  const financeBudgets = trpc.milo.finance.budgets.useQuery(financeScopeInput, { enabled: Boolean(overview.data?.lineUserId) && Boolean(activeFinanceAccountId) });
+  const financeReport = trpc.milo.finance.report.useQuery(reportInput, { enabled: Boolean(overview.data?.lineUserId || linkedLineUserId) });
+  const financeSummary = trpc.milo.finance.summary.useQuery(financeScopeInput, { enabled: Boolean(overview.data?.lineUserId || linkedLineUserId) && Boolean(activeFinanceAccountId) });
+  const financeAnalytics = trpc.milo.finance.analytics.useQuery(financeScopeInput, { enabled: Boolean(overview.data?.lineUserId || linkedLineUserId) && Boolean(activeFinanceAccountId) });
+  const financeBudgets = trpc.milo.finance.budgets.useQuery(financeScopeInput, { enabled: Boolean(overview.data?.lineUserId || linkedLineUserId) && Boolean(activeFinanceAccountId) });
   const isProductionSite = typeof window !== "undefined" && isProductionSiteHostname(window.location.hostname);
   const lastPublishedLabel = typeof document !== "undefined" && document.lastModified && !Number.isNaN(new Date(document.lastModified).getTime()) ? dateTime.format(new Date(document.lastModified)) : "กำลังตรวจสอบ";
   const hasUnsavedChanges = hasDashboardDraft({ reminderTitle, reminderTime, isEditingLineLink, lineUserId });
@@ -110,7 +111,7 @@ export default function Dashboard() {
   useEffect(() => { setTransactionPage(0); }, [activeFinanceAccountId, transactionSearch]);
 
   const link = trpc.milo.linkLineAccount.useMutation({
-    onSuccess: () => { setIsEditingLineLink(false); setLineUserId(""); toast.success("เชื่อมบัญชี LINE แล้ว"); void utils.milo.overview.invalidate(); },
+    onSuccess: (_result, input) => { setLinkedLineUserId(input.lineUserId); setIsEditingLineLink(false); setLineUserId(""); toast.success("เชื่อมบัญชี LINE แล้ว"); void utils.milo.overview.invalidate(); },
     onError: error => toast.error(error.message),
   });
   const createReminder = trpc.milo.reminders.create.useMutation({
@@ -165,7 +166,7 @@ export default function Dashboard() {
   if (!overview.data) return <LoadingState />;
 
   const data = overview.data;
-  const isLinked = Boolean(data.lineUserId) || link.isSuccess;
+  const isLinked = Boolean(data.lineUserId || linkedLineUserId);
   const financeAccounts = (data.financeAccounts ?? []) as FinanceAccountRecord[];
   const activeFinanceAccount = activeFinanceAccountId ? financeAccounts.find(item => item.account.id === activeFinanceAccountId) : financeAccounts.find(item => item.account.accountType === "personal");
   const scopedFinance: ScopedFinanceSummary = activeFinanceAccountId ? (financeSummary.data ?? { income: 0, expense: 0, balance: 0, openingBalance: 0, availableBalance: 0, categories: {} }) : data.finance as ScopedFinanceSummary;
