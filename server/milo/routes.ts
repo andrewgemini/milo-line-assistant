@@ -11,7 +11,7 @@ import { deliverDueRecurringTransactions } from "./recurringTransactionDelivery"
 import { deliverFinanceDigest, type FinanceDigestType } from "./financeDigest";
 import { buildExpenseNote, formatImageProposal, normalizeExpenseCategory, parseExtractedDate, selectImageProposal } from "./receiptUtils";
 import { STANDARD_EXPENSE_CATEGORIES, STANDARD_INCOME_CATEGORIES } from "./financeCategories";
-import { financeReportCardText, getMessageContent, getProfile, lineCredentials, postSaveSummaryText, pushText, replyFinanceReportCard, replyFinanceReportCardFallback, replyMention, replyPostSaveSummary, replyPostSaveSummaryFallback, replyText, replyVoiceCategoryChoices, replyVoiceProposal, replyVoiceProposalFallback, sourceIdentity, type LineEvent, type VoiceTransactionProposal, verifyLineSignature } from "./line";
+import { financeReportCardText, getMessageContent, getProfile, lineCredentials, postSaveSummaryText, pushText, replyFinanceReportCard, replyFinanceReportCardFallback, replyMention, replyPostSaveSummary, replyPostSaveSummaryFallback, replyText, replyVoiceCategoryChoices, replyVoiceProposal, replyVoiceProposalFallback, replyImage, sourceIdentity, type LineEvent, type VoiceTransactionProposal, verifyLineSignature } from "./line";
 
 function helpText() {
   return "สวัสดีครับ ผมไมโล ช่วยได้ในแชทเดียว\n• เตือน ประชุมพรุ่งนี้ 10:00\n• เตือนดื่มน้ำทุก 30 นาที\n• จ่ายกาแฟ 65 / จ่ายค่าไฟ 1200\n• รับเงินเดือน 45000 / รับค่าจ้าง 5000\n• ส่งสลิปหรือใบเสร็จ แล้วพิมพ์ “ยืนยันค่าใช้จ่าย”\n• ส่งข้อความเสียง แล้วพิมพ์ “ยืนยันเสียง”\n• ค้นหารายการ กาแฟ / แก้รายการ 12 เป็น 180 / ลบรายการ 12\n• สรุปวันนี้ / สรุปสัปดาห์นี้ / สรุปเดือนนี้ / สรุปปีนี้\n• เพิ่มหมวด เดินทาง / ดูหมวด\n• โน้ต รหัส Wi‑Fi ห้องประชุม\n• งาน ส่งสรุปรายสัปดาห์\n• เก็บ ลิงก์หรือข้อความสำคัญ\n• ค้นหา ใบเสร็จ\n\nเชื่อม dashboard: พิมพ์ “ไอดี” ในแชทส่วนตัวกับไมโล";
@@ -122,6 +122,18 @@ async function handleText(event: LineEvent, lineChatId: string, lineUserId: stri
     return;
   }
   const command = parseMiloCommand(text);
+  const richMenuImageByCommand: Partial<Record<ReturnType<typeof parseMiloCommand>["type"], "home" | "analysis" | "record" | "wallet" | "settings">> = {
+    dashboardGuide: "home",
+    aiSummary: "analysis",
+    recordGuide: "record",
+    budgetOverview: "wallet",
+    settingGuide: "settings",
+  };
+  const richMenuImageKey = richMenuImageByCommand[command.type];
+  if (richMenuImageKey && event.replyToken) {
+    await replyImage(event.replyToken, richMenuImageKey);
+    return;
+  }
   let message = "";
   const financeCommands = new Set(["expense", "income", "transactionSearch", "transactionDelete", "transactionUpdate", "openingBalance", "financeReport", "aiSummary", "budgetOverview", "transactionList", "voiceConfirm", "voiceEditPrompt", "voiceCategoryChange", "voiceEdit", "budget", "categoryAdd", "categoryRemove", "categoryList", "imageConfirm"]);
   const financeScope = financeCommands.has(command.type) ? await resolveFinanceScope(lineUserId, lineChatId, scope) : undefined;

@@ -31,6 +31,26 @@ async function callLine(path: string, credentials: LineCredentials, init: Reques
   return response;
 }
 
+const MILO_RICH_MENU_IMAGE_BASE_URL = (process.env.MILO_RICH_MENU_IMAGE_BASE_URL ?? "https://milo-line-app.vercel.app/milo-richmenu").replace(/\/+$/, "");
+
+export type MiloRichMenuImageKey = "home" | "analysis" | "record" | "wallet" | "settings" | "save-complete" | "save-complete-preview";
+
+export function miloRichMenuImageUrl(key: MiloRichMenuImageKey) {
+  const extension = key === "save-complete-preview" ? "jpg" : "png";
+  return `${MILO_RICH_MENU_IMAGE_BASE_URL}/${key}.${extension}`;
+}
+
+export async function replyImage(replyToken: string, key: MiloRichMenuImageKey, credentials = lineCredentials()) {
+  const url = miloRichMenuImageUrl(key);
+  return callLine("/v2/bot/message/reply", credentials, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      replyToken,
+      messages: [{ type: "image", originalContentUrl: url, previewImageUrl: url }],
+    }),
+  });
+}
 export async function replyText(replyToken: string, text: string, credentials = lineCredentials()) {
   return callLine("/v2/bot/message/reply", credentials, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ replyToken, messages: [{ type: "text", text: text.slice(0, 5000) }] }) });
 }
@@ -245,12 +265,14 @@ export async function replyPostSaveSummary(replyToken: string, summary: PostSave
           { type: "button", style: "primary", color: "#7657AA", height: "sm", action: { type: "message", label: "ดูสรุปยอดวันนี้", text: "สรุปวันนี้" } },
         ] },
       },
-    }] }),
+      },
+      { type: "image", originalContentUrl: miloRichMenuImageUrl("save-complete"), previewImageUrl: miloRichMenuImageUrl("save-complete-preview") }
+    ] }),
   });
 }
 
 export async function replyPostSaveSummaryFallback(replyToken: string, summary: PostSaveSummary, credentials = lineCredentials()) {
-  return callLine("/v2/bot/message/reply", credentials, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ replyToken, messages: [{ type: "text", text: postSaveSummaryText(summary).slice(0, 5000), quickReply: { items: [{ type: "action", action: { type: "message", label: "ดูสรุปยอดวันนี้", text: "สรุปวันนี้" } }] } }] }) });
+  return callLine("/v2/bot/message/reply", credentials, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ replyToken, messages: [{ type: "text", text: postSaveSummaryText(summary).slice(0, 5000), quickReply: { items: [{ type: "action", action: { type: "message", label: "ดูสรุปยอดวันนี้", text: "สรุปวันนี้" } }] } }, { type: "image", originalContentUrl: miloRichMenuImageUrl("save-complete"), previewImageUrl: miloRichMenuImageUrl("save-complete-preview") }] }) });
 }
 
 export async function replyVoiceCategoryChoices(replyToken: string, credentials = lineCredentials()) {
