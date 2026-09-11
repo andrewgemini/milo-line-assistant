@@ -52,7 +52,7 @@ export async function hashAdminPassword(password: string) {
 
 export async function verifyAdminPassword(password: string, encoded: string) {
   const parts = encoded.split("$");
-  if (parts.length !== 7 || parts[0] !== "scrypt") return false;
+  if (parts.length !== 6 || parts[0] !== "scrypt") return false;
   const [, n, r, p, saltHex, hashHex] = parts;
   const salt = Buffer.from(saltHex, "hex");
   const expected = Buffer.from(hashHex, "hex");

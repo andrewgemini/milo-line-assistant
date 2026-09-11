@@ -6,17 +6,25 @@ import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import Home from "./pages/Home";
 import Dashboard from "./pages/Dashboard";
+import AdminLogin from "./pages/AdminLogin";
 import AdminPassword from "./pages/AdminPassword";
+import { useAuth } from "@/_core/hooks/useAuth";
 
 const DASHBOARD_PATH = "/milo-ops-7f3c9a";
+
+function DashboardEntry() {
+  const { user, loading } = useAuth();
+  if (loading) return <div className="grid min-h-screen place-items-center bg-[#f4faf7] text-sm text-[#6d918a]">กำลังตรวจสอบสิทธิ์...</div>;
+  return user ? <Dashboard /> : <AdminLogin />;
+}
 
 function Router() {
   return (
     <Switch>
       <Route path="/" component={Home} />
-      <Route path="/dashboard" component={Dashboard} />
+      <Route path="/dashboard" component={DashboardEntry} />
       <Route path="/admin/password" component={AdminPassword} />
-      <Route path={DASHBOARD_PATH} component={Dashboard} />
+      <Route path={DASHBOARD_PATH} component={DashboardEntry} />
       <Route path="/404" component={NotFound} />
       <Route component={NotFound} />
     </Switch>
