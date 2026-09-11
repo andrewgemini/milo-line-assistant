@@ -1,4 +1,4 @@
-﻿import { useAuth } from "@/_core/hooks/useAuth";
+import { useAuth } from "@/_core/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -165,7 +165,7 @@ export default function Dashboard() {
   if (!overview.data) return <LoadingState />;
 
   const data = overview.data;
-  const isLinked = Boolean(data.lineUserId);
+  const isLinked = Boolean(data.lineUserId) || link.isSuccess;
   const financeAccounts = (data.financeAccounts ?? []) as FinanceAccountRecord[];
   const activeFinanceAccount = activeFinanceAccountId ? financeAccounts.find(item => item.account.id === activeFinanceAccountId) : financeAccounts.find(item => item.account.accountType === "personal");
   const scopedFinance: ScopedFinanceSummary = activeFinanceAccountId ? (financeSummary.data ?? { income: 0, expense: 0, balance: 0, openingBalance: 0, availableBalance: 0, categories: {} }) : data.finance as ScopedFinanceSummary;
