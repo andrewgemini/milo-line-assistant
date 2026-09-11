@@ -5,6 +5,7 @@ import {
   ArrowRight, BarChart3, BellRing, BriefcaseBusiness, Check, CheckCircle2, FileText,
   Globe2, LockKeyhole, MessageCircle, MousePointer2, ReceiptText, Search, ShieldCheck,
   Sparkles, UsersRound, WalletCards, Zap,
+  type LucideIcon,
 } from "lucide-react";
 import { Link } from "wouter";
 
@@ -18,14 +19,14 @@ const featureCards = [
   { icon: ShieldCheck, title: "ปลอดภัย มั่นคง", detail: "มาตรฐานความปลอดภัยระดับองค์กร รองรับการใช้งานจริง" },
 ];
 
-const capabilities = [
+const capabilities: Array<[LucideIcon, string, string, string]> = [
   [MessageCircle, "ตอบคำถามอัจฉริยะ", "ตอบได้ทั้งข้อมูลทั่วไป และเรื่องเฉพาะทาง", "bg-emerald-50 text-emerald-600"],
   [Sparkles, "ช่วยคิด ช่วยวางแผน", "ไอเดีย คำแนะนำ และแนวทางที่ใช้ได้จริง", "bg-sky-50 text-sky-600"],
   [FileText, "ทำงานได้หลากหลาย", "สรุปข้อมูล แปลภาษา และจัดการงานต่างๆ", "bg-violet-50 text-violet-600"],
   [BellRing, "พร้อมดูแล 24 ชั่วโมง", "ไม่ว่าเรื่องไหน ก็มีไมโลอยู่ข้างๆ เสมอ", "bg-orange-50 text-orange-500"],
 ];
 
-const useCases = [
+const useCases: Array<[LucideIcon, string, string, string]> = [
   [Search, "ค้นหาข้อมูล", "วันนี้มีข่าวอะไรบ้าง?", "bg-sky-50 text-sky-600"],
   [ReceiptText, "ช่วยสรุป", "สรุปข่าววันนี้ให้หน่อย", "bg-rose-50 text-rose-500"],
   [Sparkles, "แนะนำไอเดีย", "ไอเดียทำคอนเทนต์หน่อย", "bg-emerald-50 text-emerald-600"],
@@ -104,7 +105,7 @@ export default function Home() {
               <div className="flex items-center gap-3"><span className="grid size-10 place-items-center rounded-full bg-[#e1f8ed] text-[#08a971]"><Check className="size-6" /></span><div><h3 className="font-display text-xl font-black text-[#11604f]">ระบบพร้อมใช้งาน</h3><p className="text-xs text-[#6a8e87]">Milo พร้อมดูแลธุรกิจของคุณแล้ว</p></div></div>
               <a href={lineUrl} target="_blank" rel="noreferrer" className="mt-5 block"><Button className="h-14 w-full rounded-full bg-[#10b779] text-lg font-black text-white shadow-lg hover:bg-[#0a9f6a]">เชิญใช้งาน <ArrowRight className="ml-auto size-5" /></Button></a>
               <div className="mt-4 divide-y divide-[#e9f3f0]">
-                {[["ใช้งานได้ทันที", "ไม่ต้องติดตั้ง พร้อมใช้งานผ่าน LINE"], ["ปลอดภัย มั่นคง", "ข้อมูลของคุณถูกเก็บเป็นความลับ"], ["รองรับทุกธุรกิจ", "ร้านค้าในทุกขนาด ใช้งานได้จริง"]].map(([a,b]) => <div key={a} className="flex gap-3 py-3"><CheckCircle2 className="mt-0.5 size-5 shrink-0 text-[#0da974]" /><div><p className="text-sm font-bold text-[#24564e]">{a}</p><p className="text-[11px] text-[#71928c]">{b}</p></div></div>)}
+                {[['ใช้งานได้ทันที', 'ไม่ต้องติดตั้ง พร้อมใช้งานผ่าน LINE'], ['ปลอดภัย มั่นคง', 'ข้อมูลของคุณถูกเก็บเป็นความลับ'], ['รองรับทุกธุรกิจ', 'ร้านค้าในทุกขนาด ใช้งานได้จริง']].map(([a,b]) => <div key={a} className="flex gap-3 py-3"><CheckCircle2 className="mt-0.5 size-5 shrink-0 text-[#0da974]" /><div><p className="text-sm font-bold text-[#24564e]">{a}</p><p className="text-[11px] text-[#71928c]">{b}</p></div></div>)}
               </div>
             </div>
           </div>

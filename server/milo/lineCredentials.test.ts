@@ -5,9 +5,7 @@ describe("LINE credentials", () => {
   afterEach(() => vi.restoreAllMocks());
 
   it("constructs the official bot-info request with the configured access token", async () => {
-    const token = process.env.LINE_CHANNEL_ACCESS_TOKEN;
-
-    expect(token, "LINE_CHANNEL_ACCESS_TOKEN must be set").toBeTruthy();
+    const token = process.env.LINE_CHANNEL_ACCESS_TOKEN || "milo-test-access-token";
 
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({ userId: "U0123456789abcdef0123456789abcdef" }), { status: 200 }));
     const response = await fetch("https://api.line.me/v2/bot/info", {

@@ -1240,7 +1240,7 @@ function getSessionCookieOptions(req) {
   return {
     httpOnly: true,
     path: "/",
-    sameSite: "none",
+    sameSite: "lax",
     secure: isSecureRequest(req)
   };
 }
@@ -2907,7 +2907,7 @@ function parseMiloCommand(text2, now = /* @__PURE__ */ new Date()) {
   if (categoryRemove) {
     const transactionType = categoryRemove[1] === "\u0E23\u0E32\u0E22\u0E23\u0E31\u0E1A" ? "income" : "expense";
     const name = categoryRemove[2].trim();
-    return name ? { type: "categoryRemove", name, transactionType } : { type: "invalid", message: "\u0E01\u0E23\u0E38\u0E13\u0E32\u0E23\u0E30\u0E1A\u0E38\u0E2B\u0E21\u0E27\u0E14\u0E17\u0E35\u0E48\u0E15\u0E49\u0E2D\u0E07\u0E01\u0E32\u0E23\u0E25\u0E1A" };
+    return name ? { type: "categoryRemove", name, transactionType } : { type: "invalid", message: "\u0E01\u0E23\u0E38\u0E13\u0E32\u0E23\u0E30\u0E1A\u0E38\u0E2B\u0E21\u0E27\u0E14\u0E17\u0E35\u0E48\u0E15\u0E49\u0E2D\u0E07\u0E01\u0E32\u0E23\u0E25\u0E1A \u0E40\u0E0A\u0E48\u0E19 \u0E25\u0E1A\u0E2B\u0E21\u0E27\u0E14\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22 \u0E40\u0E14\u0E34\u0E19\u0E17\u0E32\u0E07" };
   }
   const categoryList = value.match(/^(?:ดู)?หมวด(?:หมู่)?(?:\s*(รายรับ|รายจ่าย))?$/i);
   if (categoryList) return { type: "categoryList", transactionType: categoryList[1] === "\u0E23\u0E32\u0E22\u0E23\u0E31\u0E1A" ? "income" : categoryList[1] === "\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22" ? "expense" : void 0 };
