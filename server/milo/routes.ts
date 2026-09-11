@@ -289,6 +289,10 @@ async function handleText(event: LineEvent, lineChatId: string, lineUserId: stri
         }
       }
     }
+  } else if (command.type === "settingGuide") {
+    message = "⚙️ ตั้งค่า Milo\nตั้งค่าการใช้งาน Milo ได้จากเมนูและคำสั่งใน LINE ครับ\n• พิมพ์ “ช่วย” เพื่อดูคำสั่งทั้งหมด\n• พิมพ์ “หมวดหมู่” เพื่อจัดการหมวดหมู่\n• พิมพ์ “งบประมาณ” เพื่อดูและจัดการงบประมาณ\n🔐 “แดชบอร์ดหลังบ้าน” เป็นเมนูสำหรับผู้ดูแลระบบโดยเฉพาะครับ";
+  } else if (command.type === "dashboardGuide") {
+    message = "🔐 แดชบอร์ดหลังบ้าน Milo\nhttps://milo-line-app.vercel.app/dashboard";
   } else if (command.type === "recordGuide") {
     message = "📝 จดบันทึกได้เลย\nตัวอย่าง: จ่าย 125 ค่าอาหาร\nหรือ: รับเงินเดือน 30000\nแล้วผมจะช่วยบันทึกให้ครับ";
   } else if (command.type === "budgetOverview") {
