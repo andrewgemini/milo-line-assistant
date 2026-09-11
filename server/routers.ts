@@ -10,6 +10,7 @@ import { ENV } from "./_core/env";
 import { createHeartbeatJob, updateHeartbeatJob } from "./_core/heartbeat";
 import { deliverDueReminders } from "./milo/reminderDelivery";
 import { generateFinancialInsight } from "./milo/financialAssistant";
+import { authenticateAdminPassword } from "./adminPassword";
 
 export function getSchedulerSessionToken(headers: { cookie?: string; authorization?: string }) {
   const cookieToken = parseCookie(headers.cookie ?? "")[COOKIE_NAME];
@@ -51,12 +52,12 @@ export const appRouter = router({
       return { success: true } as const;
     }),
     adminLogin: publicProcedure
-      .input(z.object({ username: z.string().trim().min(1, "กรุณากรอกชื่อผู้ใช้ (Username)"), password: z.string().trim().min(1, "กรุณากรอกรหัสผ่าน (Password)") }))
+      .input(z.object({ username: z.string().trim().min(1, "กรุณากรอกชื่อผู้ใช้ (Username)"), password: z.string().min(1, "กรุณากรอกรหัสผ่าน (Password)") }))
       .mutation(async ({ ctx, input }) => {
-        const expectedUser = (process.env.ADMIN_USERNAME || "admin").trim();
-        const expectedPass = (process.env.ADMIN_PASSWORD || "admin1234").trim();
-        if (input.username !== expectedUser || input.password !== expectedPass) throw new Error("ชื่อผู้ใช้หรือรหัสผ่านผู้ดูแลระบบไม่ถูกต้อง");
-        const safeOpenId = `admin_${expectedUser}`;
+        const username = input.username.trim();
+        const valid = await authenticateAdminPassword(username, input.password);
+        if (!valid) throw new Error("ชื่อผู้ใช้หรือรหัสผ่านผู้ดูแลระบบไม่ถูกต้อง");
+        const safeOpenId = `admin_${username}`;
         const name = "ผู้ดูแลระบบ (Admin)";
         try { await db.upsertUser({ openId: safeOpenId, name, email: "admin@milo.internal", role: "admin", loginMethod: "admin_password", lastSignedIn: new Date() }); }
         catch (dbErr) { console.warn("[AdminLogin] DB user upsert skipped/warning:", dbErr); }
@@ -93,7 +94,7 @@ export const appRouter = router({
       recurring: router({
         list: protectedProcedure.input(z.object({ financeAccountId: z.number().int().positive().optional() }).optional()).query(async ({ ctx, input }) => { const scope = await requireFinanceAccountScope(ctx.user.id, input?.financeAccountId); return db.listRecurringTransactions(scope.lineUserId, scope.financeAccountId); }),
         create: protectedProcedure.input(z.object({ transactionType: z.enum(["income", "expense"]), amount: z.number().positive(), category: z.string().trim().min(1).max(100), note: z.string().trim().max(1_000).optional(), recurrenceType: z.enum(["day", "week", "month"]), recurrenceInterval: z.number().int().min(1).max(365).default(1), recurrenceWeekday: z.number().int().min(0).max(6).optional(), recurrenceDayOfMonth: z.number().int().min(1).max(28).optional(), nextRunAt: z.coerce.date(), financeAccountId: z.number().int().positive().optional() })).mutation(async ({ ctx, input }) => { const scope = await requireFinanceAccountScope(ctx.user.id, input.financeAccountId); requireFinancePermission(db.canManageFinanceSettings(scope.role), "สิทธิ์ของคุณยังตั้งค่ารายการอัตโนมัติในสมุดบัญชีนี้ไม่ได้"); const id = await db.createRecurringTransaction({ ...input, financeAccountId: scope.financeAccountId, lineUserId: scope.lineUserId, lineChatId: scope.account.lineChatId ?? scope.lineUserId }); await db.writeAuditLog({ action: "recurring_transaction.create", entityType: "recurring_transaction", entityId: id, dashboardUserId: ctx.user.id, actorLineUserId: scope.lineUserId, lineChatId: scope.account.lineChatId ?? scope.lineUserId, details: { financeAccountId: scope.financeAccountId, transactionType: input.transactionType, category: input.category, amount: input.amount, recurrenceType: input.recurrenceType } }); return { id }; }),
-        updateStatus: protectedProcedure.input(z.object({ id: z.number().int().positive(), status: z.enum(["active", "paused", "cancelled"]), financeAccountId: z.number().int().positive().optional() })).mutation(async ({ ctx, input }) => { const scope = await requireFinanceAccountScope(ctx.user.id, input.financeAccountId); requireFinancePermission(db.canManageFinanceSettings(scope.role), "สิทธิ์ของคุณยังปรับรายการอัตโนมัติในสมุดบัญชีนี้ไม่ได้"); const updated = await db.updateRecurringTransactionStatus(input.id, scope.lineUserId, input.status, scope.financeAccountId); if (!updated) throw new Error("ไม่พบรายการอัตโนมัติที่ต้องการปรับสถานะ"); await db.writeAuditLog({ action: "recurring_transaction.status.update", entityType: "recurring_transaction", entityId: input.id, dashboardUserId: ctx.user.id, actorLineUserId: scope.lineUserId, lineChatId: scope.account.lineChatId ?? undefined, details: { financeAccountId: scope.financeAccountId, status: input.status } }); return { success: true } as const; }),
+        updateStatus: protectedProcedure.input(z.object({ id: z.number().int().positive(), status: z.enum(["active", "paused", "cancelled"]), financeAccountId: z.number().int().positive().optional() })).mutation(async ({ ctx, input }) => { const scope = await requireFinanceAccountScope(ctx.user.id, input.financeAccountId); requireFinancePermission(db.canManageFinanceSettings(scope.role), "สิทธิ์ของคุณยังปรับรายการอัตโนมัติในสมุดบัญชีนี้ไม่ได้"); const updated = await db.updateRecurringTransactionStatus(input.id, scope.lineUserId, input.status, scope.financeAccountId); if (!updated) throw new Error("ไม่พบรายการอัตโนมัติที่ต้องการปรับสถานะ"); await db.writeAuditLog({ action: "recurring_transaction.status.update", entityType: "recurring_transaction", entityId: input.id, dashboardUserId: ctx.user.id, actorLineUserId: scope.lineUserId, lineChatId: scope.account.lineChatId ?? scope.lineUserId, details: { financeAccountId: scope.financeAccountId, status: input.status } }); return { success: true } as const; }),
       }),
       report: protectedProcedure.input(z.object({ period: z.enum(["day", "week", "month", "year"]), reference: z.coerce.date().optional(), financeAccountId: z.number().int().positive().optional() })).query(async ({ ctx, input }) => { const scope = await requireFinanceAccountScope(ctx.user.id, input.financeAccountId); return db.financeReport(scope.lineUserId, input.period, input.reference, scope.financeAccountId); }),
       reportRange: protectedProcedure.input(z.object({ start: z.coerce.date(), end: z.coerce.date(), financeAccountId: z.number().int().positive().optional() })).query(async ({ ctx, input }) => { const scope = await requireFinanceAccountScope(ctx.user.id, input.financeAccountId); return db.financeReportRange(scope.lineUserId, input.start, input.end, scope.financeAccountId); }),
