@@ -2931,7 +2931,6 @@ async function analyzeImage(dataUrl) {
 }
 
 // server/milo/pdfAnalysis.ts
-import { PDFParse } from "pdf-parse";
 var schema3 = {
   type: "object",
   properties: {
@@ -2965,6 +2964,7 @@ var schema3 = {
   additionalProperties: false
 };
 async function extractPdfText(buffer) {
+  const { PDFParse } = await import("pdf-parse");
   const parser = new PDFParse({ data: new Uint8Array(buffer) });
   try {
     const result = await parser.getText({ first: 20 });

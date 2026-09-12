@@ -1,4 +1,3 @@
-import { PDFParse } from "pdf-parse";
 import { invokeLLM } from "../_core/llm";
 import type { ImageAnalysis, ImageProposal } from "./imageAnalysis";
 
@@ -26,6 +25,10 @@ const schema = {
 } as const;
 
 export async function extractPdfText(buffer: Buffer) {
+  // Load pdf-parse only when a PDF is actually received. Keeping it out of the
+  // serverless cold-start path prevents optional native canvas dependencies from
+  // breaking unrelated endpoints such as /api/health on platforms like Vercel.
+  const { PDFParse } = await import("pdf-parse");
   const parser = new PDFParse({ data: new Uint8Array(buffer) });
   try {
     const result = await parser.getText({ first: 20 });
