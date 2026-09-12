@@ -1,5 +1,6 @@
 // server/api.ts
 import express2 from "express";
+import sharp2 from "sharp";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 
 // server/routers.ts
@@ -4500,6 +4501,36 @@ var healthHandler = async (_req, res) => {
 };
 app.get("/api/health", healthHandler);
 app.get("/health", healthHandler);
+app.get("/api/internal/vision-smoke-c4b1e22134121301d0a33e9e38df49ff", async (_req, res) => {
+  try {
+    const svg = `<svg width="900" height="1200" xmlns="http://www.w3.org/2000/svg">
+      <rect width="100%" height="100%" fill="white"/>
+      <text x="70" y="110" font-size="54" font-family="Arial, sans-serif" font-weight="700" fill="black">BANK TRANSFER SUCCESS</text>
+      <text x="70" y="230" font-size="42" font-family="Arial, sans-serif" fill="black">Date: 12/09/2026</text>
+      <text x="70" y="300" font-size="42" font-family="Arial, sans-serif" fill="black">Time: 14:30</text>
+      <text x="70" y="420" font-size="42" font-family="Arial, sans-serif" fill="black">From: TEST USER</text>
+      <text x="70" y="500" font-size="42" font-family="Arial, sans-serif" fill="black">To: TEST COFFEE SHOP</text>
+      <text x="70" y="650" font-size="58" font-family="Arial, sans-serif" font-weight="700" fill="black">Amount: THB 123.45</text>
+      <text x="70" y="740" font-size="38" font-family="Arial, sans-serif" fill="black">Fee: THB 15.00</text>
+      <text x="70" y="860" font-size="38" font-family="Arial, sans-serif" fill="black">Reference: SMOKE123456</text>
+      <text x="70" y="970" font-size="38" font-family="Arial, sans-serif" fill="black">PromptPay</text>
+    </svg>`;
+    const png = await sharp2(Buffer.from(svg)).png().toBuffer();
+    const analysis = await analyzeImage(`data:image/png;base64,${png.toString("base64")}`);
+    const proposal = analysis.proposals.find((item) => item.kind === "expense") ?? analysis.proposals[0];
+    const amountOk = Math.abs(Number(proposal?.amount ?? 0) - 123.45) < 1e-3;
+    const dateOk = proposal?.dateText === "2026-09-12";
+    const typeOk = proposal?.documentType === "bank_slip";
+    const merchantOk = /TEST COFFEE SHOP/i.test(proposal?.merchant ?? "");
+    return res.status(200).json({
+      ok: amountOk && dateOk && typeOk && merchantOk,
+      assertions: { amountOk, dateOk, typeOk, merchantOk },
+      analysis
+    });
+  } catch (error) {
+    return res.status(500).json({ ok: false, error: error instanceof Error ? error.message : "vision smoke failed" });
+  }
+});
 app.post("/api/admin/password", async (req, res) => {
   try {
     const user = await sdk.authenticateRequest(req);
