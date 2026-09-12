@@ -1490,6 +1490,19 @@ function miloRichMenuImageUrl(key) {
   const extension = key === "save-complete-preview" ? "jpg" : "png";
   return `${MILO_RICH_MENU_IMAGE_BASE_URL}/${key}.${extension}`;
 }
+function miloSaveResultImageUrl(summary) {
+  const appBaseUrl = (process.env.MILO_SAVE_RESULT_IMAGE_BASE_URL ?? "https://milo-line-app.vercel.app").replace(/\/+$/, "");
+  const params = new URLSearchParams({
+    item: (summary.note?.trim() || summary.category).slice(0, 80),
+    category: summary.category.slice(0, 50),
+    amount: String(summary.amount),
+    occurredAt: summary.occurredAt.toISOString(),
+    budgetSpent: String(summary.budgetSpent),
+    budgetLimit: String(summary.budgetLimit),
+    budgetPercent: summary.budgetPercent === void 0 ? "" : String(summary.budgetPercent)
+  });
+  return `${appBaseUrl}/api/milo/save-result.png?${params.toString()}`;
+}
 async function replyText(replyToken, text2, credentials = lineCredentials()) {
   return callLine("/v2/bot/message/reply", credentials, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ replyToken, messages: [{ type: "text", text: text2.slice(0, 5e3) }] }) });
 }
@@ -1531,13 +1544,13 @@ ${mascotExpenseCopy(summary.transactionType, summary.amount)}
 }
 function financeReportCardText(report) {
   const periodLabel = { day: "\u0E27\u0E31\u0E19\u0E19\u0E35\u0E49", week: "\u0E2A\u0E31\u0E1B\u0E14\u0E32\u0E2B\u0E4C\u0E19\u0E35\u0E49", month: "\u0E40\u0E14\u0E37\u0E2D\u0E19\u0E19\u0E35\u0E49", year: "\u0E1B\u0E35\u0E19\u0E35\u0E49" };
-  const money = (amount) => amount.toLocaleString("th-TH", { maximumFractionDigits: 2 });
-  const categories = Object.entries(report.categories).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([name, amount]) => `\u2022 ${name} ${money(amount)} \u0E1A\u0E32\u0E17`).join("\n");
+  const money2 = (amount) => amount.toLocaleString("th-TH", { maximumFractionDigits: 2 });
+  const categories = Object.entries(report.categories).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([name, amount]) => `\u2022 ${name} ${money2(amount)} \u0E1A\u0E32\u0E17`).join("\n");
   return `${report.title ?? `\u0E2A\u0E23\u0E38\u0E1B\u0E01\u0E32\u0E23\u0E40\u0E07\u0E34\u0E19${periodLabel[report.period]}`}
 ${report.subtitle ? `${report.subtitle}
-` : ""}\u0E23\u0E32\u0E22\u0E23\u0E31\u0E1A ${money(report.income)} \u0E1A\u0E32\u0E17
-\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22 ${money(report.expense)} \u0E1A\u0E32\u0E17
-\u0E01\u0E33\u0E44\u0E23/\u0E04\u0E07\u0E40\u0E2B\u0E25\u0E37\u0E2D ${money(report.balance)} \u0E1A\u0E32\u0E17
+` : ""}\u0E23\u0E32\u0E22\u0E23\u0E31\u0E1A ${money2(report.income)} \u0E1A\u0E32\u0E17
+\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22 ${money2(report.expense)} \u0E1A\u0E32\u0E17
+\u0E01\u0E33\u0E44\u0E23/\u0E04\u0E07\u0E40\u0E2B\u0E25\u0E37\u0E2D ${money2(report.balance)} \u0E1A\u0E32\u0E17
 ${categories ? `
 \u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22\u0E15\u0E32\u0E21\u0E2B\u0E21\u0E27\u0E14
 ${categories}` : "\n\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E21\u0E35\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22\u0E43\u0E19\u0E0A\u0E48\u0E27\u0E07\u0E19\u0E35\u0E49"}`;
@@ -1556,11 +1569,11 @@ async function replyFinanceReportCard(replyToken, report, credentials = lineCred
   const periodLabel = { day: "\u0E27\u0E31\u0E19\u0E19\u0E35\u0E49", week: "\u0E2A\u0E31\u0E1B\u0E14\u0E32\u0E2B\u0E4C\u0E19\u0E35\u0E49", month: "\u0E40\u0E14\u0E37\u0E2D\u0E19\u0E19\u0E35\u0E49", year: "\u0E1B\u0E35\u0E19\u0E35\u0E49" };
   const title = report.title ?? `\u0E2A\u0E23\u0E38\u0E1B\u0E01\u0E32\u0E23\u0E40\u0E07\u0E34\u0E19${periodLabel[report.period]}`;
   const subtitle = report.subtitle ?? "\u0E22\u0E2D\u0E14\u0E23\u0E27\u0E21\u0E08\u0E32\u0E01\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E17\u0E35\u0E48\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E44\u0E27\u0E49";
-  const money = (amount) => amount.toLocaleString("th-TH", { maximumFractionDigits: 2 });
+  const money2 = (amount) => amount.toLocaleString("th-TH", { maximumFractionDigits: 2 });
   const categories = Object.entries(report.categories).sort((a, b) => b[1] - a[1]).slice(0, 5);
   const categoryRows = categories.length ? categories.map(([name, amount]) => ({ type: "box", layout: "horizontal", margin: "sm", contents: [
     { type: "text", text: name, size: "xs", color: "#675B7C", flex: 1, wrap: true },
-    { type: "text", text: `${money(amount)} \u0E1A\u0E32\u0E17`, size: "xs", weight: "bold", color: "#B9517B", align: "end" }
+    { type: "text", text: `${money2(amount)} \u0E1A\u0E32\u0E17`, size: "xs", weight: "bold", color: "#B9517B", align: "end" }
   ] })) : [{ type: "text", text: "\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E21\u0E35\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22\u0E43\u0E19\u0E0A\u0E48\u0E27\u0E07\u0E19\u0E35\u0E49", size: "xs", color: "#8A8097" }];
   return callLine("/v2/bot/message/reply", credentials, {
     method: "POST",
@@ -1584,12 +1597,12 @@ async function replyFinanceReportCard(replyToken, report, credentials = lineCred
           { type: "box", layout: "vertical", spacing: "md", paddingAll: "16px", cornerRadius: "md", backgroundColor: "#FFFEFB", contents: [
             { type: "text", text: "\u0E20\u0E32\u0E1E\u0E23\u0E27\u0E21\u0E01\u0E32\u0E23\u0E40\u0E07\u0E34\u0E19", size: "xs", weight: "bold", color: "#76688E" },
             { type: "box", layout: "horizontal", spacing: "sm", contents: [
-              { type: "box", layout: "vertical", flex: 1, paddingAll: "10px", cornerRadius: "md", backgroundColor: "#EAF8F4", contents: [{ type: "text", text: "\u0E23\u0E32\u0E22\u0E23\u0E31\u0E1A", size: "xxs", color: "#5B8E81" }, { type: "text", text: `${money(report.income)} \u0E1A\u0E32\u0E17`, size: "sm", weight: "bold", color: "#267C68", wrap: true }] },
-              { type: "box", layout: "vertical", flex: 1, paddingAll: "10px", cornerRadius: "md", backgroundColor: "#FDECF2", contents: [{ type: "text", text: "\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22", size: "xxs", color: "#A57086" }, { type: "text", text: `${money(report.expense)} \u0E1A\u0E32\u0E17`, size: "sm", weight: "bold", color: "#BB527C", wrap: true }] }
+              { type: "box", layout: "vertical", flex: 1, paddingAll: "10px", cornerRadius: "md", backgroundColor: "#EAF8F4", contents: [{ type: "text", text: "\u0E23\u0E32\u0E22\u0E23\u0E31\u0E1A", size: "xxs", color: "#5B8E81" }, { type: "text", text: `${money2(report.income)} \u0E1A\u0E32\u0E17`, size: "sm", weight: "bold", color: "#267C68", wrap: true }] },
+              { type: "box", layout: "vertical", flex: 1, paddingAll: "10px", cornerRadius: "md", backgroundColor: "#FDECF2", contents: [{ type: "text", text: "\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22", size: "xxs", color: "#A57086" }, { type: "text", text: `${money2(report.expense)} \u0E1A\u0E32\u0E17`, size: "sm", weight: "bold", color: "#BB527C", wrap: true }] }
             ] },
             { type: "box", layout: "horizontal", alignItems: "center", paddingAll: "11px", cornerRadius: "md", backgroundColor: "#EEEAF8", contents: [
               { type: "text", text: "\u0E01\u0E33\u0E44\u0E23 / \u0E04\u0E07\u0E40\u0E2B\u0E25\u0E37\u0E2D", size: "xs", color: "#6B6080", flex: 1 },
-              { type: "text", text: `${money(report.balance)} \u0E1A\u0E32\u0E17`, size: "sm", weight: "bold", color: "#4D4263", align: "end" }
+              { type: "text", text: `${money2(report.balance)} \u0E1A\u0E32\u0E17`, size: "sm", weight: "bold", color: "#4D4263", align: "end" }
             ] },
             { type: "separator", color: "#E9E4F1" },
             { type: "text", text: "\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22\u0E15\u0E32\u0E21\u0E2B\u0E21\u0E27\u0E14", size: "xs", weight: "bold", color: "#76688E" },
@@ -1611,11 +1624,11 @@ async function replyFinanceReportCardFallback(replyToken, report, credentials = 
   return replyText(replyToken, financeReportCardText(report), credentials);
 }
 async function pushFinanceReportCard(to, report, credentials = lineCredentials()) {
-  const money = (amount) => amount.toLocaleString("th-TH", { maximumFractionDigits: 2 });
+  const money2 = (amount) => amount.toLocaleString("th-TH", { maximumFractionDigits: 2 });
   const categories = Object.entries(report.categories).sort((a, b) => b[1] - a[1]).slice(0, 4);
   const categoryRows = categories.length ? categories.map(([name, amount]) => ({ type: "box", layout: "horizontal", margin: "sm", contents: [
     { type: "text", text: name, size: "xs", color: "#675B7C", flex: 1, wrap: true },
-    { type: "text", text: `${money(amount)} \u0E1A\u0E32\u0E17`, size: "xs", weight: "bold", color: "#B9517B", align: "end" }
+    { type: "text", text: `${money2(amount)} \u0E1A\u0E32\u0E17`, size: "xs", weight: "bold", color: "#B9517B", align: "end" }
   ] })) : [{ type: "text", text: "\u0E44\u0E21\u0E48\u0E21\u0E35\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E43\u0E19\u0E0A\u0E48\u0E27\u0E07\u0E40\u0E27\u0E25\u0E32\u0E19\u0E35\u0E49", size: "xs", color: "#8A8097" }];
   const title = report.title ?? "\u0E2A\u0E23\u0E38\u0E1B\u0E01\u0E32\u0E23\u0E40\u0E07\u0E34\u0E19\u0E08\u0E32\u0E01\u0E44\u0E21\u0E42\u0E25";
   return callLine("/v2/bot/message/push", credentials, {
@@ -1636,10 +1649,10 @@ async function pushFinanceReportCard(to, report, credentials = lineCredentials()
           miloFinanceBrandStrip(),
           { type: "box", layout: "vertical", spacing: "sm", paddingAll: "14px", cornerRadius: "md", backgroundColor: "#FFFEFB", contents: [
             { type: "box", layout: "horizontal", spacing: "sm", contents: [
-              { type: "box", layout: "vertical", flex: 1, paddingAll: "10px", cornerRadius: "md", backgroundColor: "#EAF8F4", contents: [{ type: "text", text: "\u0E23\u0E32\u0E22\u0E23\u0E31\u0E1A", size: "xxs", color: "#5B8E81" }, { type: "text", text: `${money(report.income)} \u0E1A\u0E32\u0E17`, size: "sm", weight: "bold", color: "#267C68", wrap: true }] },
-              { type: "box", layout: "vertical", flex: 1, paddingAll: "10px", cornerRadius: "md", backgroundColor: "#FDECF2", contents: [{ type: "text", text: "\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22", size: "xxs", color: "#A57086" }, { type: "text", text: `${money(report.expense)} \u0E1A\u0E32\u0E17`, size: "sm", weight: "bold", color: "#BB527C", wrap: true }] }
+              { type: "box", layout: "vertical", flex: 1, paddingAll: "10px", cornerRadius: "md", backgroundColor: "#EAF8F4", contents: [{ type: "text", text: "\u0E23\u0E32\u0E22\u0E23\u0E31\u0E1A", size: "xxs", color: "#5B8E81" }, { type: "text", text: `${money2(report.income)} \u0E1A\u0E32\u0E17`, size: "sm", weight: "bold", color: "#267C68", wrap: true }] },
+              { type: "box", layout: "vertical", flex: 1, paddingAll: "10px", cornerRadius: "md", backgroundColor: "#FDECF2", contents: [{ type: "text", text: "\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22", size: "xxs", color: "#A57086" }, { type: "text", text: `${money2(report.expense)} \u0E1A\u0E32\u0E17`, size: "sm", weight: "bold", color: "#BB527C", wrap: true }] }
             ] },
-            { type: "box", layout: "horizontal", paddingAll: "10px", cornerRadius: "md", backgroundColor: "#EEEAF8", contents: [{ type: "text", text: "\u0E01\u0E33\u0E44\u0E23 / \u0E04\u0E07\u0E40\u0E2B\u0E25\u0E37\u0E2D", size: "xs", color: "#6B6080", flex: 1 }, { type: "text", text: `${money(report.balance)} \u0E1A\u0E32\u0E17`, size: "sm", weight: "bold", color: "#4D4263", align: "end" }] },
+            { type: "box", layout: "horizontal", paddingAll: "10px", cornerRadius: "md", backgroundColor: "#EEEAF8", contents: [{ type: "text", text: "\u0E01\u0E33\u0E44\u0E23 / \u0E04\u0E07\u0E40\u0E2B\u0E25\u0E37\u0E2D", size: "xs", color: "#6B6080", flex: 1 }, { type: "text", text: `${money2(report.balance)} \u0E1A\u0E32\u0E17`, size: "sm", weight: "bold", color: "#4D4263", align: "end" }] },
             { type: "separator", color: "#E9E4F1" },
             { type: "text", text: "\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22\u0E15\u0E32\u0E21\u0E2B\u0E21\u0E27\u0E14", size: "xs", weight: "bold", color: "#76688E" },
             { type: "box", layout: "vertical", paddingAll: "10px", cornerRadius: "md", backgroundColor: "#FFF7FA", contents: categoryRows }
@@ -1649,65 +1662,9 @@ async function pushFinanceReportCard(to, report, credentials = lineCredentials()
     }] })
   });
 }
-async function replyPostSaveSummary(replyToken, summary, credentials = lineCredentials()) {
-  const isExpense = summary.transactionType === "expense";
-  const label = isExpense ? "\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22" : "\u0E23\u0E32\u0E22\u0E23\u0E31\u0E1A";
-  const accent = isExpense ? "#C9578A" : "#24977B";
-  const softAccent = isExpense ? "#FDE9F1" : "#E2F8F0";
-  return callLine("/v2/bot/message/reply", credentials, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ replyToken, messages: [
-      {
-        type: "flex",
-        altText: postSaveSummaryText(summary),
-        contents: {
-          type: "bubble",
-          size: "mega",
-          body: { type: "box", layout: "vertical", spacing: "md", paddingAll: "16px", backgroundColor: "#F2F0FF", contents: [
-            { type: "box", layout: "horizontal", alignItems: "center", spacing: "md", paddingAll: "12px", cornerRadius: "md", backgroundColor: "#E4F8F2", contents: [
-              { type: "box", layout: "vertical", justifyContent: "center", alignItems: "center", width: "38px", height: "38px", cornerRadius: "md", backgroundColor: "#5AC6AD", contents: [{ type: "text", text: "\u2713", align: "center", weight: "bold", size: "xl", color: "#FFFFFF" }] },
-              { type: "box", layout: "vertical", flex: 1, contents: [
-                { type: "text", text: "\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E2A\u0E33\u0E40\u0E23\u0E47\u0E08", weight: "bold", size: "lg", color: "#4B3D69" },
-                { type: "text", text: mascotExpenseCopy(summary.transactionType, summary.amount), size: "xs", wrap: true, color: "#7B6E97" }
-              ] }
-            ] },
-            { type: "box", layout: "vertical", spacing: "md", paddingAll: "16px", cornerRadius: "md", backgroundColor: "#FFFEFB", contents: [
-              { type: "box", layout: "horizontal", alignItems: "center", contents: [
-                { type: "text", text: `${isExpense ? "\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22" : "\u0E23\u0E32\u0E22\u0E23\u0E31\u0E1A"}  \u2022  ${summary.category}`, size: "sm", weight: "bold", color: accent, flex: 1 },
-                { type: "text", text: "\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E41\u0E25\u0E49\u0E27", size: "xxs", color: "#8B809B", align: "end" }
-              ] },
-              { type: "text", text: `${summary.amount.toLocaleString("th-TH")} \u0E1A\u0E32\u0E17`, size: "xxl", weight: "bold", color: "#3F3552" },
-              ...summary.note?.trim() ? [{ type: "text", text: `\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E17\u0E35\u0E48\u0E08\u0E14: ${summary.note.trim()}`, size: "sm", color: "#675B7C", wrap: true }] : [],
-              { type: "text", text: "\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48 - \u0E40\u0E27\u0E25\u0E32", size: "xs", weight: "bold", color: "#76688E", margin: "md" },
-              { type: "text", text: new Intl.DateTimeFormat("th-TH", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Bangkok" }).format(summary.occurredAt), size: "sm", color: "#4D4263" },
-              ...summary.budgetLimit > 0 && summary.budgetPercent !== void 0 ? [{ type: "box", layout: "vertical", spacing: "sm", margin: "md", paddingAll: "12px", cornerRadius: "md", backgroundColor: "#F3FBF8", contents: [
-                { type: "text", text: "\u0E2A\u0E16\u0E32\u0E19\u0E30\u0E07\u0E1A\u0E1B\u0E23\u0E30\u0E21\u0E32\u0E13\u0E2B\u0E21\u0E27\u0E14\u0E2B\u0E21\u0E39\u0E48", size: "xs", weight: "bold", color: "#267C68" },
-                { type: "box", layout: "horizontal", alignItems: "center", spacing: "sm", contents: [{ type: "text", text: summary.category, size: "sm", color: "#4D4263", flex: 1 }, { type: "text", text: `\u0E43\u0E0A\u0E49\u0E44\u0E1B ${summary.budgetPercent}%`, size: "sm", weight: "bold", color: "#267C68", align: "end" }] },
-                { type: "text", text: `(${summary.budgetSpent.toLocaleString("th-TH")} / ${summary.budgetLimit.toLocaleString("th-TH")} \u0E1A\u0E32\u0E17)`, size: "xxs", color: "#6B6080", align: "end" }
-              ] }] : [],
-              { type: "separator", color: "#E9E4F1" },
-              { type: "text", text: "\u0E2A\u0E23\u0E38\u0E1B\u0E22\u0E2D\u0E14\u0E27\u0E31\u0E19\u0E19\u0E35\u0E49", size: "xs", weight: "bold", color: "#76688E" },
-              { type: "box", layout: "horizontal", spacing: "sm", contents: [
-                { type: "box", layout: "vertical", flex: 1, paddingAll: "10px", cornerRadius: "md", backgroundColor: "#EAF8F4", contents: [{ type: "text", text: "\u0E23\u0E32\u0E22\u0E23\u0E31\u0E1A", size: "xxs", color: "#5B8E81" }, { type: "text", text: `${summary.dailyIncome.toLocaleString("th-TH")} \u0E1A\u0E32\u0E17`, size: "sm", weight: "bold", color: "#267C68" }] },
-                { type: "box", layout: "vertical", flex: 1, paddingAll: "10px", cornerRadius: "md", backgroundColor: "#FDECF2", contents: [{ type: "text", text: "\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22", size: "xxs", color: "#A57086" }, { type: "text", text: `${summary.dailyExpense.toLocaleString("th-TH")} \u0E1A\u0E32\u0E17`, size: "sm", weight: "bold", color: "#BB527C" }] }
-              ] },
-              { type: "box", layout: "horizontal", alignItems: "center", paddingAll: "11px", cornerRadius: "md", backgroundColor: softAccent, contents: [
-                { type: "text", text: "\u0E22\u0E2D\u0E14\u0E04\u0E07\u0E40\u0E2B\u0E25\u0E37\u0E2D\u0E27\u0E31\u0E19\u0E19\u0E35\u0E49", size: "xs", color: "#6B6080", flex: 1 },
-                { type: "text", text: `${summary.dailyBalance.toLocaleString("th-TH")} \u0E1A\u0E32\u0E17`, size: "sm", weight: "bold", color: "#4D4263", align: "end" }
-              ] }
-            ] }
-          ] },
-          footer: { type: "box", layout: "vertical", paddingAll: "16px", backgroundColor: "#F2F0FF", contents: [
-            { type: "button", style: "primary", color: "#7657AA", height: "sm", action: { type: "message", label: "\u0E14\u0E39\u0E2A\u0E23\u0E38\u0E1B\u0E22\u0E2D\u0E14\u0E27\u0E31\u0E19\u0E19\u0E35\u0E49", text: "\u0E2A\u0E23\u0E38\u0E1B\u0E27\u0E31\u0E19\u0E19\u0E35\u0E49" } }
-          ] }
-        }
-      }
-    ] })
-  });
-}
 async function replyPostSaveSummaryFallback(replyToken, summary, credentials = lineCredentials()) {
-  return callLine("/v2/bot/message/reply", credentials, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ replyToken, messages: [{ type: "text", text: postSaveSummaryText(summary).slice(0, 5e3), quickReply: { items: [{ type: "action", action: { type: "message", label: "\u0E14\u0E39\u0E2A\u0E23\u0E38\u0E1B\u0E22\u0E2D\u0E14\u0E27\u0E31\u0E19\u0E19\u0E35\u0E49", text: "\u0E2A\u0E23\u0E38\u0E1B\u0E27\u0E31\u0E19\u0E19\u0E35\u0E49" } }] } }] }) });
+  const imageUrl = miloSaveResultImageUrl(summary);
+  return callLine("/v2/bot/message/reply", credentials, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ replyToken, messages: [{ type: "image", originalContentUrl: imageUrl, previewImageUrl: imageUrl }, { type: "text", text: postSaveSummaryText(summary).slice(0, 5e3), quickReply: { items: [{ type: "action", action: { type: "message", label: "\u0E14\u0E39\u0E2A\u0E23\u0E38\u0E1B\u0E22\u0E2D\u0E14\u0E27\u0E31\u0E19\u0E19\u0E35\u0E49", text: "\u0E2A\u0E23\u0E38\u0E1B\u0E27\u0E31\u0E19\u0E19\u0E35\u0E49" } }] } }] }) });
 }
 async function replyVoiceCategoryChoices(replyToken, credentials = lineCredentials()) {
   const popular = ["\u0E2D\u0E32\u0E2B\u0E32\u0E23", "\u0E40\u0E14\u0E34\u0E19\u0E17\u0E32\u0E07", "\u0E04\u0E48\u0E32\u0E2A\u0E32\u0E18\u0E32\u0E23\u0E13\u0E39\u0E1B\u0E42\u0E20\u0E04", "\u0E0A\u0E49\u0E2D\u0E1B\u0E1B\u0E34\u0E49\u0E07", "\u0E2A\u0E38\u0E02\u0E20\u0E32\u0E1E"];
@@ -2956,12 +2913,12 @@ function parseMiloCommand(text2, now = /* @__PURE__ */ new Date()) {
   if (value === "\u0E08\u0E14\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01") return { type: "recordGuide" };
   if (value === "\u0E01\u0E23\u0E30\u0E40\u0E1B\u0E4B\u0E32\u0E40\u0E07\u0E34\u0E19") return { type: "budgetOverview" };
   if (value === "\u0E15\u0E31\u0E49\u0E07\u0E04\u0E48\u0E32") return { type: "settingGuide" };
-  const money = value.match(/^(จ่าย|รายจ่าย|รับ|รายรับ)\s*(.+?)\s+(\d[\d,]*(?:\.\d{1,2})?)\s*(?:บาท)?$/i);
-  if (money) {
-    const income = /รับ|รายรับ/i.test(money[1]);
-    const note2 = money[2].trim();
+  const money2 = value.match(/^(จ่าย|รายจ่าย|รับ|รายรับ)\s*(.+?)\s+(\d[\d,]*(?:\.\d{1,2})?)\s*(?:บาท)?$/i);
+  if (money2) {
+    const income = /รับ|รายรับ/i.test(money2[1]);
+    const note2 = money2[2].trim();
     const transactionType = income ? "income" : "expense";
-    return { type: transactionType, amount: Number(money[3].replace(/,/g, "")), category: suggestStandardCategory(transactionType, note2), note: note2 };
+    return { type: transactionType, amount: Number(money2[3].replace(/,/g, "")), category: suggestStandardCategory(transactionType, note2), note: note2 };
   }
   const naturalMoney = value.match(/^(.+?)\s+(\d[\d,]*(?:\.\d{1,2})?)\s*(?:บาท)?$/i);
   if (naturalMoney) {
@@ -3219,13 +3176,13 @@ function formatDate(date) {
   return new Intl.DateTimeFormat("th-TH", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Bangkok" }).format(date);
 }
 function formatFinanceReport(report) {
-  const money = (amount) => amount.toLocaleString("th-TH", { maximumFractionDigits: 2 });
+  const money2 = (amount) => amount.toLocaleString("th-TH", { maximumFractionDigits: 2 });
   const label = { day: "\u0E27\u0E31\u0E19\u0E19\u0E35\u0E49", week: "\u0E2A\u0E31\u0E1B\u0E14\u0E32\u0E2B\u0E4C\u0E19\u0E35\u0E49", month: "\u0E40\u0E14\u0E37\u0E2D\u0E19\u0E19\u0E35\u0E49", year: "\u0E1B\u0E35\u0E19\u0E35\u0E49" };
-  const categories = Object.entries(report.categories).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([name, amount]) => `\u2022 ${name} ${money(amount)} \u0E1A\u0E32\u0E17`).join("\n");
+  const categories = Object.entries(report.categories).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([name, amount]) => `\u2022 ${name} ${money2(amount)} \u0E1A\u0E32\u0E17`).join("\n");
   return `\u0E2A\u0E23\u0E38\u0E1B\u0E01\u0E32\u0E23\u0E40\u0E07\u0E34\u0E19${label[report.period]}
-\u0E23\u0E32\u0E22\u0E23\u0E31\u0E1A ${money(report.income)} \u0E1A\u0E32\u0E17
-\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22 ${money(report.expense)} \u0E1A\u0E32\u0E17
-\u0E01\u0E33\u0E44\u0E23/\u0E04\u0E07\u0E40\u0E2B\u0E25\u0E37\u0E2D ${money(report.balance)} \u0E1A\u0E32\u0E17
+\u0E23\u0E32\u0E22\u0E23\u0E31\u0E1A ${money2(report.income)} \u0E1A\u0E32\u0E17
+\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22 ${money2(report.expense)} \u0E1A\u0E32\u0E17
+\u0E01\u0E33\u0E44\u0E23/\u0E04\u0E07\u0E40\u0E2B\u0E25\u0E37\u0E2D ${money2(report.balance)} \u0E1A\u0E32\u0E17
 ${categories ? `
 \u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22\u0E15\u0E32\u0E21\u0E2B\u0E21\u0E27\u0E14
 ${categories}` : "\n\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E21\u0E35\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22\u0E43\u0E19\u0E0A\u0E48\u0E27\u0E07\u0E19\u0E35\u0E49"}`;
@@ -3288,7 +3245,7 @@ async function sendPostSaveSummary(replyToken, lineUserId, lineChatId, financeAc
   const budgetPercent = budgetLimit > 0 ? Math.round(budgetSpent / budgetLimit * 100) : void 0;
   const summary = { transactionType: transaction.transactionType, amount: transaction.amount, category: transaction.category, note: transaction.note, occurredAt, dailyIncome: report.income, dailyExpense: report.expense, dailyBalance: report.balance, budgetSpent, budgetLimit, budgetPercent };
   try {
-    await replyPostSaveSummary(replyToken, summary);
+    await replyPostSaveSummaryFallback(replyToken, summary);
   } catch (error) {
     console.error("[Milo Save] post-save Flex failed; sending Quick Reply fallback", { error: error instanceof Error ? error.message : "unknown" });
     try {
@@ -3753,9 +3710,69 @@ function registerMiloCron(app2) {
   registerFinanceDigestRoute("/api/scheduled/finance-weekly", "finance-digest-weekly", "weekly");
 }
 
+// server/milo/saveResultImage.ts
+import sharp from "sharp";
+var money = (value) => value.toLocaleString("th-TH", { maximumFractionDigits: 2 });
+var thaiDateTime = (value) => new Intl.DateTimeFormat("th-TH", {
+  dateStyle: "medium",
+  timeStyle: "short",
+  timeZone: "Asia/Bangkok"
+}).format(value);
+function escapeXml(value) {
+  return value.replace(/[<>&'\"]/g, (char) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", "'": "&apos;", '"': "&quot;" })[char]);
+}
+function parseDate(value) {
+  const date = value ? new Date(value) : /* @__PURE__ */ new Date();
+  return Number.isNaN(date.getTime()) ? /* @__PURE__ */ new Date() : date;
+}
+function registerSaveResultImageRoute(app2) {
+  app2.get("/api/milo/save-result.png", async (req, res) => {
+    try {
+      const item = String(req.query.item ?? "\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23").trim().slice(0, 80) || "\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23";
+      const category = String(req.query.category ?? "\u0E2D\u0E32\u0E2B\u0E32\u0E23").trim().slice(0, 50) || "\u0E2D\u0E32\u0E2B\u0E32\u0E23";
+      const amount = Number(req.query.amount ?? 0);
+      const budgetSpent = Number(req.query.budgetSpent ?? 0);
+      const budgetLimit = Number(req.query.budgetLimit ?? 0);
+      const budgetPercent = Number.isFinite(Number(req.query.budgetPercent)) ? Number(req.query.budgetPercent) : budgetLimit > 0 ? Math.round(budgetSpent / budgetLimit * 100) : 0;
+      const occurredAt = parseDate(typeof req.query.occurredAt === "string" ? req.query.occurredAt : null);
+      const percent = Math.max(0, Math.min(100, Math.round(budgetPercent)));
+      if (!Number.isFinite(amount) || amount <= 0) return res.status(400).type("text/plain").send("Invalid amount");
+      const baseUrl = (process.env.MILO_RICH_MENU_IMAGE_BASE_URL ?? "https://milo-line-app.vercel.app/milo-richmenu").replace(/\/+$/, "");
+      const templateResponse = await fetch(`${baseUrl}/save-complete.png`, { cache: "no-store" });
+      if (!templateResponse.ok) return res.status(502).type("text/plain").send("Save result template unavailable");
+      const template = Buffer.from(await templateResponse.arrayBuffer());
+      const svg = `<svg width="933" height="1085" viewBox="0 0 933 1085" xmlns="http://www.w3.org/2000/svg">
+        <defs><filter id="shadow"><feDropShadow dx="0" dy="2" stdDeviation="4" flood-opacity=".12"/></filter></defs>
+        <rect x="245" y="390" width="640" height="165" rx="24" fill="#F7FFFB" opacity=".97" filter="url(#shadow)"/>
+        <text x="280" y="435" font-family="sans-serif" font-size="25" font-weight="700" fill="#24977B">\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23</text>
+        <text x="280" y="492" font-family="sans-serif" font-size="48" font-weight="800" fill="#25425A">${escapeXml(item)}</text>
+        <rect x="245" y="555" width="640" height="145" rx="24" fill="#FFF5FA" opacity=".98" filter="url(#shadow)"/>
+        <text x="280" y="600" font-family="sans-serif" font-size="24" font-weight="700" fill="#D74475">\u0E2B\u0E21\u0E27\u0E14\u0E2B\u0E21\u0E39\u0E48</text>
+        <text x="280" y="655" font-family="sans-serif" font-size="45" font-weight="800" fill="#D74475">${escapeXml(category)}</text>
+        <rect x="245" y="700" width="640" height="145" rx="24" fill="#F2FCF8" opacity=".98" filter="url(#shadow)"/>
+        <text x="280" y="745" font-family="sans-serif" font-size="24" font-weight="700" fill="#168C70">\u0E08\u0E33\u0E19\u0E27\u0E19\u0E40\u0E07\u0E34\u0E19</text>
+        <text x="280" y="802" font-family="sans-serif" font-size="46" font-weight="800" fill="#168C70">\u0E3F${money(amount)} \u0E1A\u0E32\u0E17</text>
+        <rect x="245" y="845" width="640" height="145" rx="24" fill="#F5F4FF" opacity=".98" filter="url(#shadow)"/>
+        <text x="280" y="890" font-family="sans-serif" font-size="24" font-weight="700" fill="#7567A7">\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48 - \u0E40\u0E27\u0E25\u0E32</text>
+        <text x="280" y="944" font-family="sans-serif" font-size="31" font-weight="700" fill="#2F4055">${escapeXml(thaiDateTime(occurredAt))}</text>
+        ${budgetLimit > 0 ? `<rect x="155" y="990" width="730" height="78" rx="20" fill="#F3FBF8" stroke="#B8E9D9"/>
+          <text x="190" y="1025" font-family="sans-serif" font-size="20" font-weight="700" fill="#267C68">${escapeXml(category)} \xB7 \u0E43\u0E0A\u0E49\u0E44\u0E1B ${percent}%</text>
+          <text x="190" y="1052" font-family="sans-serif" font-size="17" fill="#58706A">(${money(budgetSpent)} / ${money(budgetLimit)} \u0E1A\u0E32\u0E17) \xB7 ${percent <= 80 ? "\u0E22\u0E31\u0E07\u0E2D\u0E22\u0E39\u0E48\u0E43\u0E19\u0E40\u0E01\u0E13\u0E11\u0E4C\u0E17\u0E35\u0E48\u0E14\u0E35\u0E2D\u0E22\u0E39\u0E48\u0E08\u0E49\u0E32 \u0E19\u0E48\u0E30\u0E08\u0E4A\u0E30" : percent <= 100 ? "\u0E43\u0E01\u0E25\u0E49\u0E40\u0E15\u0E47\u0E21\u0E07\u0E1A\u0E41\u0E25\u0E49\u0E27\u0E19\u0E30 \u0E19\u0E48\u0E30\u0E08\u0E4A\u0E30" : "\u0E40\u0E01\u0E34\u0E19\u0E07\u0E1A\u0E41\u0E25\u0E49\u0E27\u0E19\u0E30 \u0E19\u0E48\u0E30\u0E08\u0E4A\u0E30"}</text>` : ""}
+      </svg>`;
+      const output = await sharp(template).composite([{ input: Buffer.from(svg), top: 0, left: 0 }]).png().toBuffer();
+      res.set({ "Content-Type": "image/png", "Cache-Control": "private, no-store, max-age=0" });
+      return res.status(200).send(output);
+    } catch (error) {
+      console.error("[Milo Save Image] render failed", error);
+      return res.status(500).type("text/plain").send("Unable to render save result");
+    }
+  });
+}
+
 // server/api.ts
 var app = express2();
 app.set("trust proxy", 1);
+registerSaveResultImageRoute(app);
 registerLineWebhook(app);
 app.use(express2.json({ limit: "50mb" }));
 app.use(express2.urlencoded({ limit: "50mb", extended: true }));

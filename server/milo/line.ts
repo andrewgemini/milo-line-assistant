@@ -41,6 +41,19 @@ export function miloRichMenuImageUrl(key: MiloRichMenuImageKey) {
   return `${MILO_RICH_MENU_IMAGE_BASE_URL}/${key}.${extension}`;
 }
 
+export function miloSaveResultImageUrl(summary: PostSaveSummary) {
+  const appBaseUrl = (process.env.MILO_SAVE_RESULT_IMAGE_BASE_URL ?? "https://milo-line-app.vercel.app").replace(/\/+$/, "");
+  const params = new URLSearchParams({
+    item: (summary.note?.trim() || summary.category).slice(0, 80),
+    category: summary.category.slice(0, 50),
+    amount: String(summary.amount),
+    occurredAt: summary.occurredAt.toISOString(),
+    budgetSpent: String(summary.budgetSpent),
+    budgetLimit: String(summary.budgetLimit),
+    budgetPercent: summary.budgetPercent === undefined ? "" : String(summary.budgetPercent),
+  });
+  return `${appBaseUrl}/api/milo/save-result.png?${params.toString()}`;
+}
 export async function replyImage(replyToken: string, key: MiloRichMenuImageKey, credentials = lineCredentials()) {
   const url = miloRichMenuImageUrl(key);
   return callLine("/v2/bot/message/reply", credentials, {
@@ -287,7 +300,8 @@ export async function replyPostSaveSummary(replyToken: string, summary: PostSave
 }
 
 export async function replyPostSaveSummaryFallback(replyToken: string, summary: PostSaveSummary, credentials = lineCredentials()) {
-  return callLine("/v2/bot/message/reply", credentials, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ replyToken, messages: [{ type: "text", text: postSaveSummaryText(summary).slice(0, 5000), quickReply: { items: [{ type: "action", action: { type: "message", label: "ดูสรุปยอดวันนี้", text: "สรุปวันนี้" } }] } }] }) });
+  const imageUrl = miloSaveResultImageUrl(summary);
+  return callLine("/v2/bot/message/reply", credentials, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ replyToken, messages: [{ type: "image", originalContentUrl: imageUrl, previewImageUrl: imageUrl }, { type: "text", text: postSaveSummaryText(summary).slice(0, 5000), quickReply: { items: [{ type: "action", action: { type: "message", label: "ดูสรุปยอดวันนี้", text: "สรุปวันนี้" } }] } }] }) });
 }
 
 export async function replyVoiceCategoryChoices(replyToken: string, credentials = lineCredentials()) {

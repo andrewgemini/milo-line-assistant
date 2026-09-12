@@ -5,6 +5,7 @@ import { createContext } from "./_core/context";
 import { registerOAuthRoutes } from "./_core/oauth";
 import { registerStorageProxy } from "./_core/storageProxy";
 import { registerLineWebhook, registerMiloCron } from "./milo/routes";
+import { registerSaveResultImageRoute } from "./milo/saveResultImage";
 import { sdk } from "./_core/sdk";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { COOKIE_NAME } from "@shared/const";
@@ -17,6 +18,7 @@ app.set("trust proxy", 1);
 
 // Webhook routes verify their own payload/signature and therefore must be
 // registered before the generic JSON parser.
+registerSaveResultImageRoute(app);
 registerLineWebhook(app);
 
 app.use(express.json({ limit: "50mb" }));

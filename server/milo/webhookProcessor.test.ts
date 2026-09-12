@@ -29,7 +29,7 @@ vi.mock("../db", () => ({
   canCreateFinanceTransaction: vi.fn(() => true),
   canManageFinanceTransactions: vi.fn(() => true),
   canManageFinanceSettings: vi.fn(() => true),
-  financeReport: vi.fn(), listBudgets: vi.fn(), listTransactions: vi.fn(), searchTransactions: vi.fn(),
+  financeReport: vi.fn(), listBudgets: vi.fn(() => []), listTransactions: vi.fn(), searchTransactions: vi.fn(),
 }));
 vi.mock("../storage", () => ({ storageGetSignedUrl: vi.fn(), storagePut: vi.fn() }));
 vi.mock("./imageAnalysis", () => ({ analyzeImage: vi.fn() }));
@@ -42,7 +42,7 @@ vi.mock("./line", () => ({
 }));
 
 import * as db from "../db";
-import { replyRichMenu, getMessageContent, getProfile, replyFinanceReportCard, replyMention, replyPostSaveSummary, replyText, replyVoiceCategoryChoices, replyVoiceProposal, sourceIdentity, verifyLineSignature } from "./line";
+import { replyRichMenu, getMessageContent, getProfile, replyFinanceReportCard, replyMention, replyPostSaveSummary, replyPostSaveSummaryFallback, replyText, replyVoiceCategoryChoices, replyVoiceProposal, sourceIdentity, verifyLineSignature } from "./line";
 import { storageGetSignedUrl, storagePut } from "../storage";
 import { analyzeImage } from "./imageAnalysis";
 import { transcribeAudio } from "../_core/voiceTranscription";
@@ -142,7 +142,7 @@ describe("LINE webhook processor", () => {
     expect(db.addExpenseCategory).toHaveBeenCalledWith("U1", "เดินทาง", "expense", 7);
     expect(db.addExpenseCategory).toHaveBeenCalledWith("U1", "โบนัส", "income", 7);
     expect(db.listTransactionCategories).toHaveBeenCalledWith("U1", 7);
-    expect(replyPostSaveSummary).toHaveBeenCalledWith("token", expect.objectContaining({ transactionType: "expense", amount: 65, category: "อาหาร", dailyExpense: 65 }));
+    expect(replyPostSaveSummaryFallback).toHaveBeenCalledWith("token", expect.objectContaining({ transactionType: "expense", amount: 65, category: "อาหาร", dailyExpense: 65 }));
     expect(replyRichMenu).toHaveBeenCalledWith("token", expect.stringContaining("สวัสดีครับ ผมไมโล"), "help");
   });
 
@@ -172,7 +172,7 @@ describe("LINE webhook processor", () => {
     expect(db.createTransaction).toHaveBeenCalledWith(expect.objectContaining({ note: expect.stringContaining("ร้านค้า/คู่ค้า: ร้านกาแฟ") }));
     expect(db.linkTransactionAttachment).toHaveBeenCalledWith({ transactionId: 155, vaultItemId: 9, lineUserId: "U1", label: "ใบเสร็จต้นฉบับ" });
     expect(db.setImageExtractionStatus).toHaveBeenCalledWith(3, "accepted");
-    expect(replyPostSaveSummary).toHaveBeenCalledWith("token", expect.objectContaining({ transactionType: "expense", amount: 125, category: "อาหาร", dailyExpense: 125 }));
+    expect(replyPostSaveSummaryFallback).toHaveBeenCalledWith("token", expect.objectContaining({ transactionType: "expense", amount: 125, category: "อาหาร", dailyExpense: 125 }));
   });
 
   it("does not record a receipt with an unreadable date until the user supplies an explicit date", async () => {
@@ -268,7 +268,7 @@ describe("LINE webhook processor", () => {
     vi.mocked(getProfile).mockResolvedValue({ displayName: "ผู้ส่ง" });
     vi.mocked(sourceIdentity).mockReturnValue({ lineChatId: "U1", lineUserId: "U1", scope: "user" });
     vi.mocked(db.financeReport).mockResolvedValue({ period: "day", income: 0, expense: 100, balance: -100, categories: { อาหาร: 100 } } as never);
-    vi.mocked(replyPostSaveSummary).mockRejectedValue(new Error("invalid Flex"));
+    vi.mocked(replyPostSaveSummaryFallback).mockRejectedValue(new Error("invalid reply token"));
     const line = await import("./line");
     vi.mocked(line.replyPostSaveSummaryFallback).mockRejectedValue(new Error("invalid reply token"));
     vi.mocked(line.pushText).mockResolvedValue(new Response());

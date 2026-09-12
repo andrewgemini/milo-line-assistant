@@ -82,7 +82,7 @@ async function sendPostSaveSummary(replyToken: string, lineUserId: string, lineC
   const budgetPercent = budgetLimit > 0 ? Math.round((budgetSpent / budgetLimit) * 100) : undefined;
   const summary = { transactionType: transaction.transactionType!, amount: transaction.amount!, category: transaction.category!, note: transaction.note, occurredAt, dailyIncome: report.income, dailyExpense: report.expense, dailyBalance: report.balance, budgetSpent, budgetLimit, budgetPercent };
   try {
-    await replyPostSaveSummary(replyToken, summary);
+    await replyPostSaveSummaryFallback(replyToken, summary);
   } catch (error) {
     console.error("[Milo Save] post-save Flex failed; sending Quick Reply fallback", { error: error instanceof Error ? error.message : "unknown" });
     try {
