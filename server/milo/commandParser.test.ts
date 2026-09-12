@@ -48,6 +48,20 @@ describe("Milo command parser", () => {
   it("recognizes requests to edit a pending voice transcript", () => { expect(parseMiloCommand("แก้ไขข้อความเสียง", now)).toEqual({ type: "voiceEditPrompt" }); expect(parseMiloCommand("แก้ไขเสียง จ่ายกาแฟ 65 บาท", now)).toEqual({ type: "voiceEdit", transcript: "จ่ายกาแฟ 65 บาท" }); });
   it("recognizes a popular-category action from the voice editing Quick Reply", () => expect(parseMiloCommand("เปลี่ยนหมวดเสียง เดินทาง", now)).toEqual({ type: "voiceCategoryChange", category: "เดินทาง" }));
   it("recognizes the AI business-summary command", () => expect(parseMiloCommand("สรุปธุรกิจ", now)).toEqual({ type: "aiSummary", period: "month" }));
+  it("recognizes budget-cycle, export and PDF commands", () => {
+    expect(parseMiloCommand("ตั้งวันเริ่มงบ 14", now)).toEqual({ type: "budgetCycleStart", day: 14 });
+    expect(parseMiloCommand("ส่งออก CSV", now)).toEqual({ type: "exportFinance", format: "csv" });
+    expect(parseMiloCommand("ส่งออก Excel", now)).toEqual({ type: "exportFinance", format: "xlsx" });
+    expect(parseMiloCommand("ยืนยัน PDF", now)).toEqual({ type: "pdfConfirm" });
+  });
+  it("recognizes recurring transaction commands from LINE", () => {
+    const monthly = parseMiloCommand("ตั้งจดอัตโนมัติ ค่าเช่า 5000 ทุกเดือนวันที่ 1 09:00", now);
+    expect(monthly).toMatchObject({ type: "recurringCreate", transactionType: "expense", amount: 5000, recurrenceType: "month", recurrenceDayOfMonth: 1 });
+    if (monthly.type === "recurringCreate") expect(monthly.nextRunAt.toISOString()).toBe("2026-09-01T02:00:00.000Z");
+    expect(parseMiloCommand("รายการประจำ", now)).toEqual({ type: "recurringList" });
+    expect(parseMiloCommand("พักรายการประจำ 12", now)).toEqual({ type: "recurringStatus", id: 12, status: "paused" });
+    expect(parseMiloCommand("เปิดรายการประจำ 12", now)).toEqual({ type: "recurringStatus", id: 12, status: "active" });
+  });
 });
 
 describe("LINE signature verification", () => {

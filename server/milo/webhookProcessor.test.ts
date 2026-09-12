@@ -29,10 +29,12 @@ vi.mock("../db", () => ({
   canCreateFinanceTransaction: vi.fn(() => true),
   canManageFinanceTransactions: vi.fn(() => true),
   canManageFinanceSettings: vi.fn(() => true),
-  financeReport: vi.fn(), listBudgets: vi.fn(() => []), listTransactions: vi.fn(), searchTransactions: vi.fn(),
+  financeReport: vi.fn(), financeBudgetCycleReport: vi.fn(), getFinanceAccountBudgetCycleStartDay: vi.fn(() => 1), updateFinanceAccountBudgetCycleStartDay: vi.fn(), listBudgets: vi.fn(() => []), listTransactions: vi.fn(), searchTransactions: vi.fn(), createRecurringTransaction: vi.fn(), listRecurringTransactions: vi.fn(), updateRecurringTransactionStatus: vi.fn(), writeAuditLog: vi.fn(),
 }));
 vi.mock("../storage", () => ({ storageGetSignedUrl: vi.fn(), storagePut: vi.fn() }));
 vi.mock("./imageAnalysis", () => ({ analyzeImage: vi.fn() }));
+vi.mock("./pdfAnalysis", () => ({ analyzePdfBuffer: vi.fn() }));
+vi.mock("./financeExport", () => ({ buildFinanceExportUrl: vi.fn(() => "https://example.com/export") }));
 vi.mock("../_core/voiceTranscription", () => ({ transcribeAudio: vi.fn() }));
 vi.mock("./financialAssistant", () => ({ generateFinancialInsight: vi.fn(), suggestExpenseCategory: vi.fn() }));
 vi.mock("./line", () => ({
@@ -56,6 +58,8 @@ describe("LINE webhook processor", () => {
     vi.mocked(db.canCreateFinanceTransaction).mockReturnValue(true);
     vi.mocked(db.canManageFinanceTransactions).mockReturnValue(true);
     vi.mocked(db.canManageFinanceSettings).mockReturnValue(true);
+    vi.mocked(db.financeBudgetCycleReport).mockResolvedValue({ key: "2026-09", categories: {}, income: 0, expense: 0, balance: 0, rows: [] } as never);
+    vi.mocked(db.getFinanceAccountBudgetCycleStartDay).mockResolvedValue(1 as never);
   });
 
   it("skips a redelivered webhook event that was already registered", async () => {
@@ -302,6 +306,8 @@ describe("rich menu webhook regression", () => {
     vi.mocked(db.listTransactions).mockResolvedValue([]);
     vi.mocked(db.searchTransactions).mockResolvedValue([]);
     vi.mocked(db.financeReport).mockResolvedValue({period:"month",income:0,expense:0,balance:0,categories:{}} as never);
+    vi.mocked(db.financeBudgetCycleReport).mockResolvedValue({key:"2026-09",period:"budget-cycle",income:0,expense:0,balance:0,categories:{},rows:[]} as never);
+    vi.mocked(db.getFinanceAccountBudgetCycleStartDay).mockResolvedValue(1 as never);
     vi.mocked(db.listTransactionCategories).mockResolvedValue([]);
   });
   const event = (text: string) => ({ type: "message", webhookEventId: "richmenu-test", timestamp: Date.now(), replyToken: "token", source: { type: "user" as const, userId: "U1" }, message: { id: "menu", type: "text" as const, text } });
@@ -332,7 +338,7 @@ describe("rich menu webhook regression", () => {
   });
   it("budget overview includes real category spending", async () => {
     vi.mocked(db.listBudgets).mockResolvedValue([{category:"อาหาร",amount:"5000"}] as never);
-    vi.mocked(db.financeReport).mockResolvedValue({period:"month",categories:{อาหาร:125}} as never);
+    vi.mocked(db.financeBudgetCycleReport).mockResolvedValue({key:"2026-09",period:"budget-cycle",categories:{อาหาร:125},income:0,expense:125,balance:-125,rows:[]} as never);
     await processEvent(event("งบประมาณ"), "{}");
     expect(replyRichMenu).toHaveBeenCalledWith("token",expect.stringContaining("ใช้ไป 125 / งบ 5,000"),"budget");
   });
@@ -340,5 +346,21 @@ describe("rich menu webhook regression", () => {
     vi.mocked(replyRichMenu).mockRejectedValueOnce(new Error("image rejected"));
     await processEvent(event("จดบันทึก"), "{}");
     expect(replyText).toHaveBeenCalledWith("token", expect.stringContaining("จดบันทึก"));
+  });
+
+  it("handles recurring, export and custom budget-cycle commands", async () => {
+    vi.mocked(db.registerWebhookEvent).mockResolvedValue(true);
+    vi.mocked(getProfile).mockResolvedValue({ displayName: "ผู้ส่ง" });
+    vi.mocked(sourceIdentity).mockReturnValue({ lineChatId: "U1", lineUserId: "U1", scope: "user" });
+    vi.mocked(replyText).mockResolvedValue(new Response());
+    vi.mocked(db.createRecurringTransaction).mockResolvedValue(91 as never);
+    vi.mocked(db.updateFinanceAccountBudgetCycleStartDay).mockResolvedValue(14 as never);
+    const event = (id: string, text: string) => ({ type: "message", webhookEventId: id, timestamp: new Date("2026-09-12T14:00:00Z").getTime(), replyToken: "token", source: { type: "user" as const, userId: "U1" }, message: { id, type: "text" as const, text } });
+    await processEvent(event("evt-cycle", "ตั้งวันเริ่มงบ 14"), "{}");
+    expect(db.updateFinanceAccountBudgetCycleStartDay).toHaveBeenCalledWith(7, 14);
+    await processEvent(event("evt-rec", "ตั้งจดอัตโนมัติ ค่าเช่า 5000 ทุกเดือนวันที่ 1 09:00"), "{}");
+    expect(db.createRecurringTransaction).toHaveBeenCalledWith(expect.objectContaining({ financeAccountId: 7, amount: 5000, recurrenceType: "month" }));
+    await processEvent(event("evt-export", "ส่งออก CSV"), "{}");
+    expect(replyText).toHaveBeenCalledWith("token", expect.stringContaining("https://example.com/export"));
   });
 });

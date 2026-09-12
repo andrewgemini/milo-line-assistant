@@ -31,6 +31,7 @@ import {
 import { ENV } from "./_core/env";
 import { buildFinanceAnalytics } from "./milo/financeAnalytics";
 import { buildFinanceReport, financeReportWindow, summarizeFinanceRows, type FinancePeriod } from "./milo/financeReport";
+import { budgetCycleWindow, normalizeBudgetCycleStartDay } from "./milo/budgetCycle";
 
 import mysql from "mysql2/promise";
 
@@ -156,6 +157,19 @@ export async function getOrCreatePersonalFinanceAccount(lineUserId: string) {
     await db.insert(financeAccountMembers).values({ financeAccountId: created.id, lineUserId, role: "owner" }).onDuplicateKeyUpdate({ set: { role: "owner" } });
     return created;
   }
+}
+
+export async function getFinanceAccountBudgetCycleStartDay(financeAccountId: number) {
+  const db = await requireDb();
+  const row = (await db.select({ budgetCycleStartDay: financeAccounts.budgetCycleStartDay }).from(financeAccounts).where(eq(financeAccounts.id, financeAccountId)).limit(1))[0];
+  return normalizeBudgetCycleStartDay(row?.budgetCycleStartDay ?? 1);
+}
+
+export async function updateFinanceAccountBudgetCycleStartDay(financeAccountId: number, day: number) {
+  const db = await requireDb();
+  const normalized = normalizeBudgetCycleStartDay(day);
+  const result = await db.update(financeAccounts).set({ budgetCycleStartDay: normalized }).where(eq(financeAccounts.id, financeAccountId));
+  return result[0].affectedRows > 0 ? normalized : undefined;
 }
 
 export async function listFinanceAccounts(lineUserId: string) {
@@ -396,6 +410,14 @@ export async function listTransactions(lineUserId: string, start?: Date, end?: D
   return db.select().from(transactions).where(and(...conditions)).orderBy(desc(transactions.occurredAt)).limit(250);
 }
 
+export async function listTransactionsForExport(lineUserId: string, financeAccountId?: number, start?: Date, end?: Date) {
+  const db = await requireDb();
+  const conditions = [financeAccountId === undefined ? eq(transactions.lineUserId, lineUserId) : eq(transactions.financeAccountId, financeAccountId), eq(transactions.status, "active")];
+  if (start) conditions.push(gte(transactions.occurredAt, start));
+  if (end) conditions.push(lte(transactions.occurredAt, end));
+  return db.select().from(transactions).where(and(...conditions)).orderBy(desc(transactions.occurredAt)).limit(10_000);
+}
+
 export async function searchTransactions(lineUserId: string, query: string, limit = 10, financeAccountId?: number) {
   const db = await requireDb();
   const term = query.trim();
@@ -571,6 +593,13 @@ export async function financeReport(lineUserId: string, period: FinancePeriod, r
   const { start, end } = financeReportWindow(period, reference);
   const rows = await listTransactions(lineUserId, start, new Date(end.getTime() - 1), false, financeAccountId);
   return { ...buildFinanceReport(rows, period, reference), rows };
+}
+
+export async function financeBudgetCycleReport(lineUserId: string, reference = new Date(), financeAccountId?: number) {
+  const startDay = financeAccountId === undefined ? 1 : await getFinanceAccountBudgetCycleStartDay(financeAccountId);
+  const cycle = budgetCycleWindow(reference, startDay);
+  const rows = await listTransactions(lineUserId, cycle.start, new Date(cycle.end.getTime() - 1), false, financeAccountId);
+  return { period: "budget-cycle" as const, ...cycle, ...summarizeFinanceRows(rows), rows };
 }
 
 export async function financeReportRange(lineUserId: string, start: Date, end: Date, financeAccountId?: number) {

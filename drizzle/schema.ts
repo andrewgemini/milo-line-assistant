@@ -48,6 +48,7 @@ export const financeAccounts = mysqlTable("finance_accounts", {
   name: varchar("name", { length: 120 }).notNull(),
   ownerLineUserId: varchar("ownerLineUserId", { length: 128 }).notNull(),
   lineChatId: varchar("lineChatId", { length: 128 }),
+  budgetCycleStartDay: int("budgetCycleStartDay").default(1).notNull(),
   isActive: boolean("isActive").default(true).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),

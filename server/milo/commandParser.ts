@@ -14,8 +14,14 @@ export type MiloCommand =
   | { type: "search"; query: string }
   | { type: "mention"; message: string; memberName: string }
   | { type: "budget"; category: string; amount: number }
+  | { type: "budgetCycleStart"; day: number }
   | { type: "openingBalance"; amount: number }
+  | { type: "exportFinance"; format: "csv" | "xlsx" }
+  | { type: "recurringCreate"; transactionType: "income" | "expense"; amount: number; category: string; note: string; recurrenceType: "day" | "week" | "month"; recurrenceInterval: number; recurrenceWeekday?: number; recurrenceDayOfMonth?: number; nextRunAt: Date }
+  | { type: "recurringList" }
+  | { type: "recurringStatus"; id: number; status: "active" | "paused" | "cancelled" }
   | { type: "imageConfirm"; dateText?: string }
+  | { type: "pdfConfirm" }
   | { type: "invalid"; message: string }
   | { type: "categoryAdd"; name: string; transactionType: "income" | "expense" }
   | { type: "categoryRemove"; name: string; transactionType: "income" | "expense" }
@@ -43,6 +49,48 @@ function clock(text: string) { const match = text.match(/เวลา\s*(\d{1,2}
 function bangkokParts(date: Date) { const shifted = new Date(date.getTime() + BANGKOK_OFFSET_MS); return { year: shifted.getUTCFullYear(), month: shifted.getUTCMonth() + 1, day: shifted.getUTCDate(), weekday: shifted.getUTCDay() }; }
 function atBangkok(year: number, month: number, day: number, hour: number, minute: number) { return new Date(Date.UTC(year, month - 1, day, hour - 7, minute)); }
 function addBangkokDays(parts: ReturnType<typeof bangkokParts>, days: number) { const calendar = new Date(Date.UTC(parts.year, parts.month - 1, parts.day + days)); return { year: calendar.getUTCFullYear(), month: calendar.getUTCMonth() + 1, day: calendar.getUTCDate() }; }
+function recurringFrom(value: string, now: Date): Extract<MiloCommand, { type: "recurringCreate" }> | undefined {
+  const prefix = value.match(/^(?:ตั้ง)?(?:จดอัตโนมัติ|จดประจำ|รายการประจำ)\s+(.+)$/i);
+  if (!prefix) return undefined;
+  const body = prefix[1].trim();
+  const scheduleMatch = body.match(/\s+(ทุกวัน|ทุกสัปดาห์(?:วัน)?(?:อาทิตย์|จันทร์|อังคาร|พุธ|พฤหัส|ศุกร์|เสาร์)?|ทุกเดือน(?:วันที่)?\s*\d{1,2})(?:\s+(?:เวลา\s*)?(\d{1,2})(?::|\.)(\d{2}))?\s*$/i);
+  if (!scheduleMatch || scheduleMatch.index === undefined) return undefined;
+  const transactionText = body.slice(0, scheduleMatch.index).trim();
+  const amountMatch = transactionText.match(/^(?:(รายรับ|รับ|รายจ่าย|จ่าย)\s*)?(.+?)\s+(\d[\d,]*(?:\.\d{1,2})?)\s*(?:บาท)?$/i);
+  if (!amountMatch) return undefined;
+  const transactionType: "income" | "expense" = /รายรับ|รับ/i.test(amountMatch[1] ?? "") ? "income" : "expense";
+  const note = amountMatch[2].trim().replace(/^ค่า(?=กาแฟ)/i, "");
+  const amount = Number(amountMatch[3].replace(/,/g, ""));
+  if (!Number.isFinite(amount) || amount <= 0 || !note) return undefined;
+  const schedule = scheduleMatch[1];
+  const hour = Math.min(Math.max(Number(scheduleMatch[2] ?? 9), 0), 23);
+  const minute = Math.min(Math.max(Number(scheduleMatch[3] ?? 0), 0), 59);
+  const parts = bangkokParts(now);
+  if (/ทุกวัน/i.test(schedule)) {
+    let nextRunAt = atBangkok(parts.year, parts.month, parts.day, hour, minute);
+    if (nextRunAt <= now) { const next = addBangkokDays(parts, 1); nextRunAt = atBangkok(next.year, next.month, next.day, hour, minute); }
+    return { type: "recurringCreate", transactionType, amount, category: suggestStandardCategory(transactionType, note), note, recurrenceType: "day", recurrenceInterval: 1, nextRunAt };
+  }
+  const weekly = schedule.match(/ทุกสัปดาห์(?:วัน)?(อาทิตย์|จันทร์|อังคาร|พุธ|พฤหัส|ศุกร์|เสาร์)?/i);
+  if (weekly) {
+    const map: Record<string, number> = { "อาทิตย์": 0, "จันทร์": 1, "อังคาร": 2, "พุธ": 3, "พฤหัส": 4, "ศุกร์": 5, "เสาร์": 6 };
+    const recurrenceWeekday = map[weekly[1] ?? "จันทร์"];
+    let days = (recurrenceWeekday - parts.weekday + 7) % 7;
+    let date = addBangkokDays(parts, days);
+    let nextRunAt = atBangkok(date.year, date.month, date.day, hour, minute);
+    if (nextRunAt <= now) { days += 7; date = addBangkokDays(parts, days); nextRunAt = atBangkok(date.year, date.month, date.day, hour, minute); }
+    return { type: "recurringCreate", transactionType, amount, category: suggestStandardCategory(transactionType, note), note, recurrenceType: "week", recurrenceInterval: 1, recurrenceWeekday, nextRunAt };
+  }
+  const monthly = schedule.match(/ทุกเดือน(?:วันที่)?\s*(\d{1,2})/i);
+  if (monthly) {
+    const recurrenceDayOfMonth = Math.min(Math.max(Number(monthly[1]), 1), 28);
+    let nextRunAt = atBangkok(parts.year, parts.month, recurrenceDayOfMonth, hour, minute);
+    if (nextRunAt <= now) nextRunAt = atBangkok(parts.year, parts.month + 1, recurrenceDayOfMonth, hour, minute);
+    return { type: "recurringCreate", transactionType, amount, category: suggestStandardCategory(transactionType, note), note, recurrenceType: "month", recurrenceInterval: 1, recurrenceDayOfMonth, nextRunAt };
+  }
+  return undefined;
+}
+
 function reminderFrom(text: string, now: Date): ReminderDraft | undefined {
   if (!/^(?:@?ไมโล\s*)?(?:ตั้ง)?เตือน(?:ฉัน)?\s*/i.test(text.trim())) return undefined;
   const body = text.trim().replace(/^(?:@?ไมโล\s*)?(?:ตั้ง)?เตือน(?:ฉัน)?\s*/i, ""); const time = clock(body); const title = titleWithoutSchedule(body);
@@ -60,6 +108,15 @@ function reminderFrom(text: string, now: Date): ReminderDraft | undefined {
 export function parseMiloCommand(text: string, now = new Date()): MiloCommand {
   const reminder = reminderFrom(text, now); if (reminder) return { type: "reminder", data: reminder };
   const value = text.trim().replace(/^@?ไมโล\s*/i, "");
+  const recurring = recurringFrom(value, now); if (recurring) return recurring;
+  if (/^(?:ดู)?(?:รายการประจำ|จดอัตโนมัติ)$/i.test(value)) return { type: "recurringList" };
+  const recurringStatus = value.match(/^(เปิด|พัก|หยุด|ยกเลิก)(?:รายการประจำ|จดอัตโนมัติ)\s*#?(\d+)$/i);
+  if (recurringStatus) return { type: "recurringStatus", id: Number(recurringStatus[2]), status: recurringStatus[1] === "เปิด" ? "active" : recurringStatus[1] === "ยกเลิก" ? "cancelled" : "paused" };
+  const budgetStart = value.match(/^(?:ตั้ง)?วันเริ่ม(?:รอบ)?งบ(?:ประมาณ)?\s*(\d{1,2})$/i);
+  if (budgetStart) { const day = Number(budgetStart[1]); return day >= 1 && day <= 28 ? { type: "budgetCycleStart", day } : { type: "invalid", message: "วันเริ่มรอบงบต้องอยู่ระหว่างวันที่ 1–28" }; }
+  const exportMatch = value.match(/^(?:ส่งออก|export)(?:ข้อมูล|รายการ|ธุรกรรม)?\s*(excel|xlsx|csv)$/i);
+  if (exportMatch) return { type: "exportFinance", format: /csv/i.test(exportMatch[1]) ? "csv" : "xlsx" };
+  if (/^(?:ยืนยัน|บันทึกจาก)\s*pdf$/i.test(value)) return { type: "pdfConfirm" };
   if (value === "หน้าหลัก") return { type: "dashboardGuide" };
   if (value === "วิเคราะห์") return { type: "aiSummary", period: "month" };
   if (value === "จดบันทึก") return { type: "recordGuide" };

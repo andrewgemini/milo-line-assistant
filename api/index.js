@@ -93,6 +93,7 @@ var financeAccounts = mysqlTable("finance_accounts", {
   name: varchar("name", { length: 120 }).notNull(),
   ownerLineUserId: varchar("ownerLineUserId", { length: 128 }).notNull(),
   lineChatId: varchar("lineChatId", { length: 128 }),
+  budgetCycleStartDay: int("budgetCycleStartDay").default(1).notNull(),
   isActive: boolean("isActive").default(true).notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull()
@@ -415,6 +416,44 @@ function buildFinanceReport(rows, period, reference = /* @__PURE__ */ new Date()
   return { period, start, end, ...summarizeFinanceRows(rows) };
 }
 
+// server/milo/budgetCycle.ts
+var BANGKOK_OFFSET_MS = 7 * 60 * 60 * 1e3;
+function bangkokParts(date) {
+  const shifted = new Date(date.getTime() + BANGKOK_OFFSET_MS);
+  return {
+    year: shifted.getUTCFullYear(),
+    month: shifted.getUTCMonth() + 1,
+    day: shifted.getUTCDate()
+  };
+}
+function normalizeMonth(year, month) {
+  const value = new Date(Date.UTC(year, month - 1, 1));
+  return { year: value.getUTCFullYear(), month: value.getUTCMonth() + 1 };
+}
+function atBangkokMidnight2(year, month, day) {
+  const normalized = new Date(Date.UTC(year, month - 1, day));
+  return new Date(Date.UTC(normalized.getUTCFullYear(), normalized.getUTCMonth(), normalized.getUTCDate(), -7, 0, 0));
+}
+function normalizeBudgetCycleStartDay(day) {
+  return Math.min(Math.max(Math.trunc(day || 1), 1), 28);
+}
+function budgetCycleWindow(reference = /* @__PURE__ */ new Date(), configuredStartDay = 1) {
+  const startDay = normalizeBudgetCycleStartDay(configuredStartDay);
+  const parts = bangkokParts(reference);
+  const startMonth = parts.day >= startDay ? { year: parts.year, month: parts.month } : normalizeMonth(parts.year, parts.month - 1);
+  const nextMonth = normalizeMonth(startMonth.year, startMonth.month + 1);
+  const start = atBangkokMidnight2(startMonth.year, startMonth.month, startDay);
+  const end = atBangkokMidnight2(nextMonth.year, nextMonth.month, startDay);
+  const key = `${startMonth.year}-${String(startMonth.month).padStart(2, "0")}`;
+  return { startDay, start, end, key };
+}
+function formatBudgetCycleLabel(reference = /* @__PURE__ */ new Date(), configuredStartDay = 1) {
+  const { start, end } = budgetCycleWindow(reference, configuredStartDay);
+  const endInclusive = new Date(end.getTime() - 1);
+  const format = new Intl.DateTimeFormat("th-TH-u-nu-latn", { day: "numeric", month: "short", year: "numeric", timeZone: "Asia/Bangkok" });
+  return `${format.format(start)} \u2013 ${format.format(endInclusive)}`;
+}
+
 // server/db.ts
 import mysql from "mysql2/promise";
 var database = null;
@@ -522,6 +561,17 @@ async function getOrCreatePersonalFinanceAccount(lineUserId) {
     await db.insert(financeAccountMembers).values({ financeAccountId: created.id, lineUserId, role: "owner" }).onDuplicateKeyUpdate({ set: { role: "owner" } });
     return created;
   }
+}
+async function getFinanceAccountBudgetCycleStartDay(financeAccountId) {
+  const db = await requireDb();
+  const row = (await db.select({ budgetCycleStartDay: financeAccounts.budgetCycleStartDay }).from(financeAccounts).where(eq(financeAccounts.id, financeAccountId)).limit(1))[0];
+  return normalizeBudgetCycleStartDay(row?.budgetCycleStartDay ?? 1);
+}
+async function updateFinanceAccountBudgetCycleStartDay(financeAccountId, day) {
+  const db = await requireDb();
+  const normalized = normalizeBudgetCycleStartDay(day);
+  const result = await db.update(financeAccounts).set({ budgetCycleStartDay: normalized }).where(eq(financeAccounts.id, financeAccountId));
+  return result[0].affectedRows > 0 ? normalized : void 0;
 }
 async function listFinanceAccounts(lineUserId) {
   const db = await requireDb();
@@ -870,6 +920,12 @@ async function financeReport(lineUserId, period, reference = /* @__PURE__ */ new
   const { start, end } = financeReportWindow(period, reference);
   const rows = await listTransactions(lineUserId, start, new Date(end.getTime() - 1), false, financeAccountId);
   return { ...buildFinanceReport(rows, period, reference), rows };
+}
+async function financeBudgetCycleReport(lineUserId, reference = /* @__PURE__ */ new Date(), financeAccountId) {
+  const startDay = financeAccountId === void 0 ? 1 : await getFinanceAccountBudgetCycleStartDay(financeAccountId);
+  const cycle = budgetCycleWindow(reference, startDay);
+  const rows = await listTransactions(lineUserId, cycle.start, new Date(cycle.end.getTime() - 1), false, financeAccountId);
+  return { period: "budget-cycle", ...cycle, ...summarizeFinanceRows(rows), rows };
 }
 async function financeReportRange(lineUserId, start, end, financeAccountId) {
   if (end < start) throw new Error("\u0E27\u0E31\u0E19\u0E2A\u0E34\u0E49\u0E19\u0E2A\u0E38\u0E14\u0E15\u0E49\u0E2D\u0E07\u0E44\u0E21\u0E48\u0E01\u0E48\u0E2D\u0E19\u0E27\u0E31\u0E19\u0E40\u0E23\u0E34\u0E48\u0E21\u0E15\u0E49\u0E19");
@@ -1975,17 +2031,17 @@ var normalizeResponseFormat = ({
     }
     return explicitFormat;
   }
-  const schema3 = outputSchema || output_schema;
-  if (!schema3) return void 0;
-  if (!schema3.name || !schema3.schema) {
+  const schema4 = outputSchema || output_schema;
+  if (!schema4) return void 0;
+  if (!schema4.name || !schema4.schema) {
     throw new Error("outputSchema requires both name and schema");
   }
   return {
     type: "json_schema",
     json_schema: {
-      name: schema3.name,
-      schema: schema3.schema,
-      ...typeof schema3.strict === "boolean" ? { strict: schema3.strict } : {}
+      name: schema4.name,
+      schema: schema4.schema,
+      ...typeof schema4.strict === "boolean" ? { strict: schema4.strict } : {}
     }
   };
 };
@@ -2389,6 +2445,23 @@ var appRouter = router({
       budgets: protectedProcedure.input(z2.object({ financeAccountId: z2.number().int().positive().optional(), monthKey: z2.string().regex(/^\d{4}-\d{2}$/).optional() }).optional()).query(async ({ ctx, input }) => {
         const scope = await requireFinanceAccountScope(ctx.user.id, input?.financeAccountId);
         return listBudgets(scope.lineUserId, input?.monthKey, scope.financeAccountId);
+      }),
+      budgetCycle: router({
+        get: protectedProcedure.input(z2.object({ financeAccountId: z2.number().int().positive().optional() }).optional()).query(async ({ ctx, input }) => {
+          const scope = await requireFinanceAccountScope(ctx.user.id, input?.financeAccountId);
+          const startDay = await getFinanceAccountBudgetCycleStartDay(scope.financeAccountId);
+          const cycle = budgetCycleWindow(/* @__PURE__ */ new Date(), startDay);
+          return { startDay, key: cycle.key, start: cycle.start, end: cycle.end, label: formatBudgetCycleLabel(/* @__PURE__ */ new Date(), startDay) };
+        }),
+        update: protectedProcedure.input(z2.object({ day: z2.number().int().min(1).max(28), financeAccountId: z2.number().int().positive().optional() })).mutation(async ({ ctx, input }) => {
+          const scope = await requireFinanceAccountScope(ctx.user.id, input.financeAccountId);
+          requireFinancePermission(canManageFinanceSettings(scope.role), "\u0E2A\u0E34\u0E17\u0E18\u0E34\u0E4C\u0E02\u0E2D\u0E07\u0E04\u0E38\u0E13\u0E22\u0E31\u0E07\u0E15\u0E31\u0E49\u0E07\u0E27\u0E31\u0E19\u0E40\u0E23\u0E34\u0E48\u0E21\u0E23\u0E2D\u0E1A\u0E07\u0E1A\u0E43\u0E19\u0E2A\u0E21\u0E38\u0E14\u0E1A\u0E31\u0E0D\u0E0A\u0E35\u0E19\u0E35\u0E49\u0E44\u0E21\u0E48\u0E44\u0E14\u0E49");
+          const startDay = await updateFinanceAccountBudgetCycleStartDay(scope.financeAccountId, input.day);
+          if (!startDay) throw new Error("\u0E44\u0E21\u0E48\u0E2A\u0E32\u0E21\u0E32\u0E23\u0E16\u0E15\u0E31\u0E49\u0E07\u0E27\u0E31\u0E19\u0E40\u0E23\u0E34\u0E48\u0E21\u0E23\u0E2D\u0E1A\u0E07\u0E1A\u0E44\u0E14\u0E49");
+          await writeAuditLog({ action: "finance_budget_cycle.update", entityType: "finance_account", entityId: scope.financeAccountId, dashboardUserId: ctx.user.id, actorLineUserId: scope.lineUserId, lineChatId: scope.account.lineChatId ?? void 0, details: { startDay } });
+          const cycle = budgetCycleWindow(/* @__PURE__ */ new Date(), startDay);
+          return { startDay, key: cycle.key, start: cycle.start, end: cycle.end, label: formatBudgetCycleLabel(/* @__PURE__ */ new Date(), startDay) };
+        })
       }),
       openingBalance: protectedProcedure.input(z2.object({ amount: z2.number().min(0), effectiveAt: z2.coerce.date().optional(), financeAccountId: z2.number().int().positive().optional() })).mutation(async ({ ctx, input }) => {
         const scope = await requireFinanceAccountScope(ctx.user.id, input.financeAccountId);
@@ -2857,6 +2930,91 @@ async function analyzeImage(dataUrl) {
   return JSON.parse(content);
 }
 
+// server/milo/pdfAnalysis.ts
+import { PDFParse } from "pdf-parse";
+var schema3 = {
+  type: "object",
+  properties: {
+    summary: { type: "string" },
+    confidence: { type: "number" },
+    proposals: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          kind: { type: "string", enum: ["expense", "unknown"] },
+          documentType: { type: "string", enum: ["receipt", "bank_slip", "unknown"] },
+          title: { type: "string" },
+          merchant: { type: "string" },
+          dateText: { type: "string" },
+          timeText: { type: "string" },
+          amount: { type: "number" },
+          currency: { type: "string" },
+          category: { type: "string" },
+          paymentMethod: { type: "string" },
+          receiptNumber: { type: "string" },
+          lineItems: { type: "array", items: { type: "string" } },
+          note: { type: "string" }
+        },
+        required: ["kind", "documentType", "title", "merchant", "dateText", "timeText", "amount", "currency", "category", "paymentMethod", "receiptNumber", "lineItems", "note"],
+        additionalProperties: false
+      }
+    }
+  },
+  required: ["summary", "confidence", "proposals"],
+  additionalProperties: false
+};
+async function extractPdfText(buffer) {
+  const parser = new PDFParse({ data: new Uint8Array(buffer) });
+  try {
+    const result = await parser.getText({ first: 20 });
+    return result.text.replace(/\u0000/g, "").trim().slice(0, 6e4);
+  } finally {
+    await parser.destroy();
+  }
+}
+async function analyzePdfBuffer(buffer) {
+  const text2 = await extractPdfText(buffer);
+  if (!text2) throw new Error("PDF does not contain readable text");
+  const response = await invokeLLM({
+    model: "gemini-3-flash-preview",
+    messages: [
+      { role: "system", content: "\u0E04\u0E38\u0E13\u0E04\u0E37\u0E2D Milo \u0E1C\u0E39\u0E49\u0E0A\u0E48\u0E27\u0E22\u0E01\u0E32\u0E23\u0E40\u0E07\u0E34\u0E19\u0E20\u0E32\u0E29\u0E32\u0E44\u0E17\u0E22 \u0E27\u0E34\u0E40\u0E04\u0E23\u0E32\u0E30\u0E2B\u0E4C\u0E02\u0E49\u0E2D\u0E04\u0E27\u0E32\u0E21\u0E17\u0E35\u0E48\u0E14\u0E36\u0E07\u0E08\u0E32\u0E01 PDF \u0E40\u0E0A\u0E48\u0E19 \u0E43\u0E1A\u0E40\u0E2A\u0E23\u0E47\u0E08 \u0E43\u0E1A\u0E41\u0E08\u0E49\u0E07\u0E22\u0E2D\u0E14 \u0E2B\u0E23\u0E37\u0E2D statement \u0E43\u0E2B\u0E49\u0E04\u0E37\u0E19 JSON \u0E15\u0E32\u0E21 schema \u0E40\u0E17\u0E48\u0E32\u0E19\u0E31\u0E49\u0E19 \u0E2B\u0E49\u0E32\u0E21\u0E40\u0E14\u0E32\u0E15\u0E31\u0E27\u0E40\u0E25\u0E02 \u0E27\u0E31\u0E19\u0E17\u0E35\u0E48 \u0E2B\u0E23\u0E37\u0E2D\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E17\u0E35\u0E48\u0E44\u0E21\u0E48\u0E1B\u0E23\u0E32\u0E01\u0E0F\u0E43\u0E19\u0E40\u0E2D\u0E01\u0E2A\u0E32\u0E23 \u0E43\u0E2B\u0E49\u0E2A\u0E23\u0E49\u0E32\u0E07 proposal \u0E40\u0E09\u0E1E\u0E32\u0E30\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22\u0E17\u0E35\u0E48\u0E40\u0E2B\u0E47\u0E19\u0E0A\u0E31\u0E14\u0E40\u0E08\u0E19 \u0E2A\u0E39\u0E07\u0E2A\u0E38\u0E14 100 \u0E23\u0E32\u0E22\u0E01\u0E32\u0E23 \u0E16\u0E49\u0E32\u0E40\u0E1B\u0E47\u0E19 statement \u0E43\u0E2B\u0E49\u0E41\u0E22\u0E01\u0E41\u0E15\u0E48\u0E25\u0E30\u0E1A\u0E23\u0E23\u0E17\u0E31\u0E14\u0E18\u0E38\u0E23\u0E01\u0E23\u0E23\u0E21\u0E40\u0E1B\u0E47\u0E19\u0E04\u0E19\u0E25\u0E30 proposal \u0E42\u0E14\u0E22\u0E43\u0E0A\u0E49 dateText \u0E23\u0E39\u0E1B\u0E41\u0E1A\u0E1A YYYY-MM-DD \u0E16\u0E49\u0E32\u0E23\u0E30\u0E1A\u0E38\u0E27\u0E31\u0E19\u0E44\u0E14\u0E49\u0E0A\u0E31\u0E14\u0E40\u0E08\u0E19 \u0E40\u0E25\u0E37\u0E2D\u0E01 category \u0E08\u0E32\u0E01 \u0E2D\u0E32\u0E2B\u0E32\u0E23, \u0E40\u0E14\u0E34\u0E19\u0E17\u0E32\u0E07, \u0E04\u0E48\u0E32\u0E2A\u0E32\u0E18\u0E32\u0E23\u0E13\u0E39\u0E1B\u0E42\u0E20\u0E04, \u0E2A\u0E38\u0E02\u0E20\u0E32\u0E1E, \u0E01\u0E32\u0E23\u0E28\u0E36\u0E01\u0E29\u0E32, \u0E1A\u0E31\u0E19\u0E40\u0E17\u0E34\u0E07, \u0E0A\u0E49\u0E2D\u0E1B\u0E1B\u0E34\u0E49\u0E07, \u0E17\u0E48\u0E2D\u0E07\u0E40\u0E17\u0E35\u0E48\u0E22\u0E27, \u0E17\u0E31\u0E48\u0E27\u0E44\u0E1B \u0E41\u0E25\u0E30 amount \u0E15\u0E49\u0E2D\u0E07\u0E40\u0E1B\u0E47\u0E19\u0E22\u0E2D\u0E14\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22\u0E08\u0E23\u0E34\u0E07\u0E15\u0E48\u0E2D\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23 \u0E44\u0E21\u0E48\u0E43\u0E0A\u0E48\u0E22\u0E2D\u0E14\u0E04\u0E07\u0E40\u0E2B\u0E25\u0E37\u0E2D" },
+      { role: "user", content: `\u0E27\u0E34\u0E40\u0E04\u0E23\u0E32\u0E30\u0E2B\u0E4C PDF \u0E19\u0E35\u0E49\u0E40\u0E1E\u0E37\u0E48\u0E2D\u0E40\u0E15\u0E23\u0E35\u0E22\u0E21\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22\u0E43\u0E2B\u0E49\u0E1C\u0E39\u0E49\u0E43\u0E0A\u0E49\u0E15\u0E23\u0E27\u0E08\u0E41\u0E25\u0E30\u0E22\u0E37\u0E19\u0E22\u0E31\u0E19\u0E01\u0E48\u0E2D\u0E19\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01
+
+${text2}` }
+    ],
+    response_format: { type: "json_schema", json_schema: { name: "milo_pdf_analysis", strict: true, schema: schema3 } }
+  });
+  const content = response.choices[0]?.message.content;
+  if (!content || typeof content !== "string") throw new Error("PDF model did not return JSON");
+  const parsed = JSON.parse(content);
+  parsed.proposals = parsed.proposals.filter((item) => item.kind === "expense" && Number(item.amount) > 0).slice(0, 100);
+  return parsed;
+}
+
+// server/milo/financeExport.ts
+import crypto4 from "node:crypto";
+import * as XLSX from "xlsx";
+function exportSecret() {
+  const value = process.env.LINE_CHANNEL_SECRET?.trim() || process.env.CRON_SECRET?.trim() || process.env.SESSION_SECRET?.trim();
+  if (!value) throw new Error("Export signing secret is not configured");
+  return value;
+}
+function signaturePayload(lineUserId, financeAccountId, format, expires) {
+  return `${lineUserId}|${financeAccountId}|${format}|${expires}`;
+}
+function sign(lineUserId, financeAccountId, format, expires) {
+  return crypto4.createHmac("sha256", exportSecret()).update(signaturePayload(lineUserId, financeAccountId, format, expires)).digest("hex");
+}
+function buildFinanceExportUrl(input) {
+  const expires = Math.floor(Date.now() / 1e3) + Math.min(Math.max(input.ttlSeconds ?? 600, 60), 3600);
+  const sig = sign(input.lineUserId, input.financeAccountId, input.format, expires);
+  const base = (process.env.MILO_APP_BASE_URL ?? process.env.MILO_SAVE_RESULT_IMAGE_BASE_URL ?? "https://milo-line-app.vercel.app").replace(/\/+$/, "");
+  const params = new URLSearchParams({ user: input.lineUserId, account: String(input.financeAccountId), format: input.format, expires: String(expires), sig });
+  return `${base}/api/milo/export?${params.toString()}`;
+}
+
 // server/milo/financeCategories.ts
 var STANDARD_EXPENSE_CATEGORIES = [
   "\u0E2D\u0E32\u0E2B\u0E32\u0E23",
@@ -2907,7 +3065,7 @@ function suggestStandardCategory(transactionType, note) {
 }
 
 // server/milo/commandParser.ts
-var BANGKOK_OFFSET_MS = 7 * 60 * 60 * 1e3;
+var BANGKOK_OFFSET_MS2 = 7 * 60 * 60 * 1e3;
 function titleWithoutSchedule(text2) {
   return text2.replace(/(?:ทุก\s*\d+\s*นาที|ทุกวัน|ทุกสัปดาห์(?:วัน)?(?:อาทิตย์|จันทร์|อังคาร|พุธ|พฤหัส|ศุกร์|เสาร์)?|ทุกเดือน(?:วันที่)?\s*\d+|พรุ่งนี้|วันนี้|วันที่\s*\d+\/\d+(?:\/\d+)?|\d{4}-\d{1,2}-\d{1,2}|(?:เวลา\s*)?\d{1,2}(?::|\.)?\d{0,2}\s*น?\.?)/gi, "").replace(/\s+/g, " ").trim() || "\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E40\u0E15\u0E37\u0E2D\u0E19";
 }
@@ -2915,8 +3073,8 @@ function clock(text2) {
   const match = text2.match(/เวลา\s*(\d{1,2})(?:(?::|\.)(\d{2}))?/) ?? text2.match(/(?:^|\s)(\d{1,2})(?::|\.)(\d{2})(?:\s|น|$)/);
   return { hour: Math.min(Math.max(Number(match?.[1] ?? 9), 0), 23), minute: Math.min(Math.max(Number(match?.[2] ?? 0), 0), 59) };
 }
-function bangkokParts(date) {
-  const shifted = new Date(date.getTime() + BANGKOK_OFFSET_MS);
+function bangkokParts2(date) {
+  const shifted = new Date(date.getTime() + BANGKOK_OFFSET_MS2);
   return { year: shifted.getUTCFullYear(), month: shifted.getUTCMonth() + 1, day: shifted.getUTCDate(), weekday: shifted.getUTCDay() };
 }
 function atBangkok(year, month, day, hour, minute) {
@@ -2926,13 +3084,61 @@ function addBangkokDays(parts, days) {
   const calendar = new Date(Date.UTC(parts.year, parts.month - 1, parts.day + days));
   return { year: calendar.getUTCFullYear(), month: calendar.getUTCMonth() + 1, day: calendar.getUTCDate() };
 }
+function recurringFrom(value, now) {
+  const prefix = value.match(/^(?:ตั้ง)?(?:จดอัตโนมัติ|จดประจำ|รายการประจำ)\s+(.+)$/i);
+  if (!prefix) return void 0;
+  const body = prefix[1].trim();
+  const scheduleMatch = body.match(/\s+(ทุกวัน|ทุกสัปดาห์(?:วัน)?(?:อาทิตย์|จันทร์|อังคาร|พุธ|พฤหัส|ศุกร์|เสาร์)?|ทุกเดือน(?:วันที่)?\s*\d{1,2})(?:\s+(?:เวลา\s*)?(\d{1,2})(?::|\.)(\d{2}))?\s*$/i);
+  if (!scheduleMatch || scheduleMatch.index === void 0) return void 0;
+  const transactionText = body.slice(0, scheduleMatch.index).trim();
+  const amountMatch = transactionText.match(/^(?:(รายรับ|รับ|รายจ่าย|จ่าย)\s*)?(.+?)\s+(\d[\d,]*(?:\.\d{1,2})?)\s*(?:บาท)?$/i);
+  if (!amountMatch) return void 0;
+  const transactionType = /รายรับ|รับ/i.test(amountMatch[1] ?? "") ? "income" : "expense";
+  const note = amountMatch[2].trim().replace(/^ค่า(?=กาแฟ)/i, "");
+  const amount = Number(amountMatch[3].replace(/,/g, ""));
+  if (!Number.isFinite(amount) || amount <= 0 || !note) return void 0;
+  const schedule = scheduleMatch[1];
+  const hour = Math.min(Math.max(Number(scheduleMatch[2] ?? 9), 0), 23);
+  const minute = Math.min(Math.max(Number(scheduleMatch[3] ?? 0), 0), 59);
+  const parts = bangkokParts2(now);
+  if (/ทุกวัน/i.test(schedule)) {
+    let nextRunAt = atBangkok(parts.year, parts.month, parts.day, hour, minute);
+    if (nextRunAt <= now) {
+      const next = addBangkokDays(parts, 1);
+      nextRunAt = atBangkok(next.year, next.month, next.day, hour, minute);
+    }
+    return { type: "recurringCreate", transactionType, amount, category: suggestStandardCategory(transactionType, note), note, recurrenceType: "day", recurrenceInterval: 1, nextRunAt };
+  }
+  const weekly = schedule.match(/ทุกสัปดาห์(?:วัน)?(อาทิตย์|จันทร์|อังคาร|พุธ|พฤหัส|ศุกร์|เสาร์)?/i);
+  if (weekly) {
+    const map = { "\u0E2D\u0E32\u0E17\u0E34\u0E15\u0E22\u0E4C": 0, "\u0E08\u0E31\u0E19\u0E17\u0E23\u0E4C": 1, "\u0E2D\u0E31\u0E07\u0E04\u0E32\u0E23": 2, "\u0E1E\u0E38\u0E18": 3, "\u0E1E\u0E24\u0E2B\u0E31\u0E2A": 4, "\u0E28\u0E38\u0E01\u0E23\u0E4C": 5, "\u0E40\u0E2A\u0E32\u0E23\u0E4C": 6 };
+    const recurrenceWeekday = map[weekly[1] ?? "\u0E08\u0E31\u0E19\u0E17\u0E23\u0E4C"];
+    let days = (recurrenceWeekday - parts.weekday + 7) % 7;
+    let date = addBangkokDays(parts, days);
+    let nextRunAt = atBangkok(date.year, date.month, date.day, hour, minute);
+    if (nextRunAt <= now) {
+      days += 7;
+      date = addBangkokDays(parts, days);
+      nextRunAt = atBangkok(date.year, date.month, date.day, hour, minute);
+    }
+    return { type: "recurringCreate", transactionType, amount, category: suggestStandardCategory(transactionType, note), note, recurrenceType: "week", recurrenceInterval: 1, recurrenceWeekday, nextRunAt };
+  }
+  const monthly = schedule.match(/ทุกเดือน(?:วันที่)?\s*(\d{1,2})/i);
+  if (monthly) {
+    const recurrenceDayOfMonth = Math.min(Math.max(Number(monthly[1]), 1), 28);
+    let nextRunAt = atBangkok(parts.year, parts.month, recurrenceDayOfMonth, hour, minute);
+    if (nextRunAt <= now) nextRunAt = atBangkok(parts.year, parts.month + 1, recurrenceDayOfMonth, hour, minute);
+    return { type: "recurringCreate", transactionType, amount, category: suggestStandardCategory(transactionType, note), note, recurrenceType: "month", recurrenceInterval: 1, recurrenceDayOfMonth, nextRunAt };
+  }
+  return void 0;
+}
 function reminderFrom(text2, now) {
   if (!/^(?:@?ไมโล\s*)?(?:ตั้ง)?เตือน(?:ฉัน)?\s*/i.test(text2.trim())) return void 0;
   const body = text2.trim().replace(/^(?:@?ไมโล\s*)?(?:ตั้ง)?เตือน(?:ฉัน)?\s*/i, "");
   const time = clock(body);
   const title = titleWithoutSchedule(body);
   const setTime = (date) => {
-    const parts2 = bangkokParts(date);
+    const parts2 = bangkokParts2(date);
     return atBangkok(parts2.year, parts2.month, parts2.day, time.hour, time.minute);
   };
   const minutes = body.match(/ทุก\s*(\d+)\s*นาที/i);
@@ -2944,7 +3150,7 @@ function reminderFrom(text2, now) {
   if (/ทุกวัน/i.test(body)) {
     let run2 = setTime(now);
     if (run2 <= now) {
-      const next = addBangkokDays(bangkokParts(now), 1);
+      const next = addBangkokDays(bangkokParts2(now), 1);
       run2 = atBangkok(next.year, next.month, next.day, time.hour, time.minute);
     }
     return { title, recurrenceType: "day", recurrenceInterval: 1, dueAt: run2, nextRunAt: run2 };
@@ -2953,7 +3159,7 @@ function reminderFrom(text2, now) {
   if (weekly) {
     const map = { "\u0E2D\u0E32\u0E17\u0E34\u0E15\u0E22\u0E4C": 0, "\u0E08\u0E31\u0E19\u0E17\u0E23\u0E4C": 1, "\u0E2D\u0E31\u0E07\u0E04\u0E32\u0E23": 2, "\u0E1E\u0E38\u0E18": 3, "\u0E1E\u0E24\u0E2B\u0E31\u0E2A": 4, "\u0E28\u0E38\u0E01\u0E23\u0E4C": 5, "\u0E40\u0E2A\u0E32\u0E23\u0E4C": 6 };
     const weekday = map[weekly[1] ?? "\u0E08\u0E31\u0E19\u0E17\u0E23\u0E4C"];
-    const parts2 = bangkokParts(now);
+    const parts2 = bangkokParts2(now);
     const days = (weekday - parts2.weekday + 7) % 7 || 7;
     const date = addBangkokDays(parts2, days);
     const run2 = atBangkok(date.year, date.month, date.day, time.hour, time.minute);
@@ -2961,13 +3167,13 @@ function reminderFrom(text2, now) {
   }
   const monthly = body.match(/ทุกเดือน(?:วันที่)?\s*(\d{1,2})?/i);
   if (monthly) {
-    const parts2 = bangkokParts(now);
+    const parts2 = bangkokParts2(now);
     const day = Math.min(Math.max(Number(monthly[1] ?? parts2.day), 1), 28);
     let run2 = atBangkok(parts2.year, parts2.month, day, time.hour, time.minute);
     if (run2 <= now) run2 = atBangkok(parts2.year, parts2.month + 1, day, time.hour, time.minute);
     return { title, recurrenceType: "month", recurrenceInterval: 1, recurrenceDayOfMonth: day, dueAt: run2, nextRunAt: run2 };
   }
-  const parts = bangkokParts(now);
+  const parts = bangkokParts2(now);
   let run = atBangkok(parts.year, parts.month, parts.day, time.hour, time.minute);
   if (/พรุ่งนี้/i.test(body)) {
     const tomorrow = addBangkokDays(parts, 1);
@@ -2992,6 +3198,19 @@ function parseMiloCommand(text2, now = /* @__PURE__ */ new Date()) {
   const reminder = reminderFrom(text2, now);
   if (reminder) return { type: "reminder", data: reminder };
   const value = text2.trim().replace(/^@?ไมโล\s*/i, "");
+  const recurring = recurringFrom(value, now);
+  if (recurring) return recurring;
+  if (/^(?:ดู)?(?:รายการประจำ|จดอัตโนมัติ)$/i.test(value)) return { type: "recurringList" };
+  const recurringStatus = value.match(/^(เปิด|พัก|หยุด|ยกเลิก)(?:รายการประจำ|จดอัตโนมัติ)\s*#?(\d+)$/i);
+  if (recurringStatus) return { type: "recurringStatus", id: Number(recurringStatus[2]), status: recurringStatus[1] === "\u0E40\u0E1B\u0E34\u0E14" ? "active" : recurringStatus[1] === "\u0E22\u0E01\u0E40\u0E25\u0E34\u0E01" ? "cancelled" : "paused" };
+  const budgetStart = value.match(/^(?:ตั้ง)?วันเริ่ม(?:รอบ)?งบ(?:ประมาณ)?\s*(\d{1,2})$/i);
+  if (budgetStart) {
+    const day = Number(budgetStart[1]);
+    return day >= 1 && day <= 28 ? { type: "budgetCycleStart", day } : { type: "invalid", message: "\u0E27\u0E31\u0E19\u0E40\u0E23\u0E34\u0E48\u0E21\u0E23\u0E2D\u0E1A\u0E07\u0E1A\u0E15\u0E49\u0E2D\u0E07\u0E2D\u0E22\u0E39\u0E48\u0E23\u0E30\u0E2B\u0E27\u0E48\u0E32\u0E07\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48 1\u201328" };
+  }
+  const exportMatch = value.match(/^(?:ส่งออก|export)(?:ข้อมูล|รายการ|ธุรกรรม)?\s*(excel|xlsx|csv)$/i);
+  if (exportMatch) return { type: "exportFinance", format: /csv/i.test(exportMatch[1]) ? "csv" : "xlsx" };
+  if (/^(?:ยืนยัน|บันทึกจาก)\s*pdf$/i.test(value)) return { type: "pdfConfirm" };
   if (value === "\u0E2B\u0E19\u0E49\u0E32\u0E2B\u0E25\u0E31\u0E01") return { type: "dashboardGuide" };
   if (value === "\u0E27\u0E34\u0E40\u0E04\u0E23\u0E32\u0E30\u0E2B\u0E4C") return { type: "aiSummary", period: "month" };
   if (value === "\u0E08\u0E14\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01") return { type: "recordGuide" };
@@ -3122,7 +3341,7 @@ async function deliverDueRecurringTransactions(now = /* @__PURE__ */ new Date())
 }
 
 // server/milo/financeDigest.ts
-function bangkokParts2(reference) {
+function bangkokParts3(reference) {
   const parts = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Bangkok", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(reference);
   const value = (name) => Number(parts.find((part) => part.type === name)?.value);
   return { year: value("year"), month: value("month"), day: value("day") };
@@ -3141,7 +3360,7 @@ function thaiDate(date) {
   return new Intl.DateTimeFormat("th-TH", { dateStyle: "long", timeZone: "Asia/Bangkok" }).format(date);
 }
 function financeDigestWindow(type, reference = /* @__PURE__ */ new Date()) {
-  const today = bangkokParts2(reference);
+  const today = bangkokParts3(reference);
   const todayStart = bangkokMidnightUtc(today.year, today.month, today.day);
   if (type === "daily") {
     const yesterday = shiftBangkokDate(today, -1);
@@ -3255,7 +3474,7 @@ function formatImageProposal(proposal) {
 
 // server/milo/routes.ts
 function helpText() {
-  return "\u0E2A\u0E27\u0E31\u0E2A\u0E14\u0E35\u0E04\u0E23\u0E31\u0E1A \u0E1C\u0E21\u0E44\u0E21\u0E42\u0E25 \u0E0A\u0E48\u0E27\u0E22\u0E44\u0E14\u0E49\u0E43\u0E19\u0E41\u0E0A\u0E17\u0E40\u0E14\u0E35\u0E22\u0E27\n\u2022 \u0E40\u0E15\u0E37\u0E2D\u0E19 \u0E1B\u0E23\u0E30\u0E0A\u0E38\u0E21\u0E1E\u0E23\u0E38\u0E48\u0E07\u0E19\u0E35\u0E49 10:00\n\u2022 \u0E40\u0E15\u0E37\u0E2D\u0E19\u0E14\u0E37\u0E48\u0E21\u0E19\u0E49\u0E33\u0E17\u0E38\u0E01 30 \u0E19\u0E32\u0E17\u0E35\n\u2022 \u0E08\u0E48\u0E32\u0E22\u0E01\u0E32\u0E41\u0E1F 65 / \u0E08\u0E48\u0E32\u0E22\u0E04\u0E48\u0E32\u0E44\u0E1F 1200\n\u2022 \u0E23\u0E31\u0E1A\u0E40\u0E07\u0E34\u0E19\u0E40\u0E14\u0E37\u0E2D\u0E19 45000 / \u0E23\u0E31\u0E1A\u0E04\u0E48\u0E32\u0E08\u0E49\u0E32\u0E07 5000\n\u2022 \u0E2A\u0E48\u0E07\u0E2A\u0E25\u0E34\u0E1B\u0E2B\u0E23\u0E37\u0E2D\u0E43\u0E1A\u0E40\u0E2A\u0E23\u0E47\u0E08 \u0E41\u0E25\u0E49\u0E27\u0E1E\u0E34\u0E21\u0E1E\u0E4C \u201C\u0E22\u0E37\u0E19\u0E22\u0E31\u0E19\u0E04\u0E48\u0E32\u0E43\u0E0A\u0E49\u0E08\u0E48\u0E32\u0E22\u201D\n\u2022 \u0E2A\u0E48\u0E07\u0E02\u0E49\u0E2D\u0E04\u0E27\u0E32\u0E21\u0E40\u0E2A\u0E35\u0E22\u0E07 \u0E41\u0E25\u0E49\u0E27\u0E1E\u0E34\u0E21\u0E1E\u0E4C \u201C\u0E22\u0E37\u0E19\u0E22\u0E31\u0E19\u0E40\u0E2A\u0E35\u0E22\u0E07\u201D\n\u2022 \u0E04\u0E49\u0E19\u0E2B\u0E32\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23 \u0E01\u0E32\u0E41\u0E1F / \u0E41\u0E01\u0E49\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23 12 \u0E40\u0E1B\u0E47\u0E19 180 / \u0E25\u0E1A\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23 12\n\u2022 \u0E2A\u0E23\u0E38\u0E1B\u0E27\u0E31\u0E19\u0E19\u0E35\u0E49 / \u0E2A\u0E23\u0E38\u0E1B\u0E2A\u0E31\u0E1B\u0E14\u0E32\u0E2B\u0E4C\u0E19\u0E35\u0E49 / \u0E2A\u0E23\u0E38\u0E1B\u0E40\u0E14\u0E37\u0E2D\u0E19\u0E19\u0E35\u0E49 / \u0E2A\u0E23\u0E38\u0E1B\u0E1B\u0E35\u0E19\u0E35\u0E49\n\u2022 \u0E40\u0E1E\u0E34\u0E48\u0E21\u0E2B\u0E21\u0E27\u0E14 \u0E40\u0E14\u0E34\u0E19\u0E17\u0E32\u0E07 / \u0E14\u0E39\u0E2B\u0E21\u0E27\u0E14\n\u2022 \u0E42\u0E19\u0E49\u0E15 \u0E23\u0E2B\u0E31\u0E2A Wi\u2011Fi \u0E2B\u0E49\u0E2D\u0E07\u0E1B\u0E23\u0E30\u0E0A\u0E38\u0E21\n\u2022 \u0E07\u0E32\u0E19 \u0E2A\u0E48\u0E07\u0E2A\u0E23\u0E38\u0E1B\u0E23\u0E32\u0E22\u0E2A\u0E31\u0E1B\u0E14\u0E32\u0E2B\u0E4C\n\u2022 \u0E40\u0E01\u0E47\u0E1A \u0E25\u0E34\u0E07\u0E01\u0E4C\u0E2B\u0E23\u0E37\u0E2D\u0E02\u0E49\u0E2D\u0E04\u0E27\u0E32\u0E21\u0E2A\u0E33\u0E04\u0E31\u0E0D\n\u2022 \u0E04\u0E49\u0E19\u0E2B\u0E32 \u0E43\u0E1A\u0E40\u0E2A\u0E23\u0E47\u0E08\n\n\u0E40\u0E0A\u0E37\u0E48\u0E2D\u0E21 dashboard: \u0E1E\u0E34\u0E21\u0E1E\u0E4C \u201C\u0E44\u0E2D\u0E14\u0E35\u201D \u0E43\u0E19\u0E41\u0E0A\u0E17\u0E2A\u0E48\u0E27\u0E19\u0E15\u0E31\u0E27\u0E01\u0E31\u0E1A\u0E44\u0E21\u0E42\u0E25";
+  return "\u0E2A\u0E27\u0E31\u0E2A\u0E14\u0E35\u0E04\u0E23\u0E31\u0E1A \u0E1C\u0E21\u0E44\u0E21\u0E42\u0E25 \u0E0A\u0E48\u0E27\u0E22\u0E44\u0E14\u0E49\u0E43\u0E19\u0E41\u0E0A\u0E17\u0E40\u0E14\u0E35\u0E22\u0E27\n\u2022 \u0E40\u0E15\u0E37\u0E2D\u0E19 \u0E1B\u0E23\u0E30\u0E0A\u0E38\u0E21\u0E1E\u0E23\u0E38\u0E48\u0E07\u0E19\u0E35\u0E49 10:00\n\u2022 \u0E40\u0E15\u0E37\u0E2D\u0E19\u0E14\u0E37\u0E48\u0E21\u0E19\u0E49\u0E33\u0E17\u0E38\u0E01 30 \u0E19\u0E32\u0E17\u0E35\n\u2022 \u0E08\u0E48\u0E32\u0E22\u0E01\u0E32\u0E41\u0E1F 65 / \u0E08\u0E48\u0E32\u0E22\u0E04\u0E48\u0E32\u0E44\u0E1F 1200\n\u2022 \u0E23\u0E31\u0E1A\u0E40\u0E07\u0E34\u0E19\u0E40\u0E14\u0E37\u0E2D\u0E19 45000 / \u0E23\u0E31\u0E1A\u0E04\u0E48\u0E32\u0E08\u0E49\u0E32\u0E07 5000\n\u2022 \u0E2A\u0E48\u0E07\u0E2A\u0E25\u0E34\u0E1B\u0E2B\u0E23\u0E37\u0E2D\u0E43\u0E1A\u0E40\u0E2A\u0E23\u0E47\u0E08 \u0E41\u0E25\u0E49\u0E27\u0E1E\u0E34\u0E21\u0E1E\u0E4C \u201C\u0E22\u0E37\u0E19\u0E22\u0E31\u0E19\u0E04\u0E48\u0E32\u0E43\u0E0A\u0E49\u0E08\u0E48\u0E32\u0E22\u201D\n\u2022 \u0E2A\u0E48\u0E07 PDF \u0E43\u0E1A\u0E41\u0E08\u0E49\u0E07\u0E22\u0E2D\u0E14 \u0E41\u0E25\u0E49\u0E27\u0E1E\u0E34\u0E21\u0E1E\u0E4C \u201C\u0E22\u0E37\u0E19\u0E22\u0E31\u0E19 PDF\u201D\n\u2022 \u0E2A\u0E48\u0E07\u0E02\u0E49\u0E2D\u0E04\u0E27\u0E32\u0E21\u0E40\u0E2A\u0E35\u0E22\u0E07 \u0E41\u0E25\u0E49\u0E27\u0E1E\u0E34\u0E21\u0E1E\u0E4C \u201C\u0E22\u0E37\u0E19\u0E22\u0E31\u0E19\u0E40\u0E2A\u0E35\u0E22\u0E07\u201D\n\u2022 \u0E15\u0E31\u0E49\u0E07\u0E08\u0E14\u0E2D\u0E31\u0E15\u0E42\u0E19\u0E21\u0E31\u0E15\u0E34 \u0E04\u0E48\u0E32\u0E40\u0E0A\u0E48\u0E32 5000 \u0E17\u0E38\u0E01\u0E40\u0E14\u0E37\u0E2D\u0E19\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48 1 09:00\n\u2022 \u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E1B\u0E23\u0E30\u0E08\u0E33 / \u0E1E\u0E31\u0E01\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E1B\u0E23\u0E30\u0E08\u0E33 12 / \u0E40\u0E1B\u0E34\u0E14\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E1B\u0E23\u0E30\u0E08\u0E33 12\n\u2022 \u0E2A\u0E48\u0E07\u0E2D\u0E2D\u0E01 CSV / \u0E2A\u0E48\u0E07\u0E2D\u0E2D\u0E01 Excel\n\u2022 \u0E15\u0E31\u0E49\u0E07\u0E27\u0E31\u0E19\u0E40\u0E23\u0E34\u0E48\u0E21\u0E07\u0E1A 14\n\u2022 \u0E04\u0E49\u0E19\u0E2B\u0E32\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23 \u0E01\u0E32\u0E41\u0E1F / \u0E41\u0E01\u0E49\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23 12 \u0E40\u0E1B\u0E47\u0E19 180 / \u0E25\u0E1A\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23 12\n\u2022 \u0E2A\u0E23\u0E38\u0E1B\u0E27\u0E31\u0E19\u0E19\u0E35\u0E49 / \u0E2A\u0E23\u0E38\u0E1B\u0E2A\u0E31\u0E1B\u0E14\u0E32\u0E2B\u0E4C\u0E19\u0E35\u0E49 / \u0E2A\u0E23\u0E38\u0E1B\u0E40\u0E14\u0E37\u0E2D\u0E19\u0E19\u0E35\u0E49 / \u0E2A\u0E23\u0E38\u0E1B\u0E1B\u0E35\u0E19\u0E35\u0E49\n\u2022 \u0E40\u0E1E\u0E34\u0E48\u0E21\u0E2B\u0E21\u0E27\u0E14 \u0E40\u0E14\u0E34\u0E19\u0E17\u0E32\u0E07 / \u0E14\u0E39\u0E2B\u0E21\u0E27\u0E14\n\u2022 \u0E42\u0E19\u0E49\u0E15 \u0E23\u0E2B\u0E31\u0E2A Wi\u2011Fi \u0E2B\u0E49\u0E2D\u0E07\u0E1B\u0E23\u0E30\u0E0A\u0E38\u0E21\n\u2022 \u0E07\u0E32\u0E19 \u0E2A\u0E48\u0E07\u0E2A\u0E23\u0E38\u0E1B\u0E23\u0E32\u0E22\u0E2A\u0E31\u0E1B\u0E14\u0E32\u0E2B\u0E4C\n\u2022 \u0E40\u0E01\u0E47\u0E1A \u0E25\u0E34\u0E07\u0E01\u0E4C\u0E2B\u0E23\u0E37\u0E2D\u0E02\u0E49\u0E2D\u0E04\u0E27\u0E32\u0E21\u0E2A\u0E33\u0E04\u0E31\u0E0D\n\u2022 \u0E04\u0E49\u0E19\u0E2B\u0E32 \u0E43\u0E1A\u0E40\u0E2A\u0E23\u0E47\u0E08\n\n\u0E40\u0E0A\u0E37\u0E48\u0E2D\u0E21 dashboard: \u0E1E\u0E34\u0E21\u0E1E\u0E4C \u201C\u0E44\u0E2D\u0E14\u0E35\u201D \u0E43\u0E19\u0E41\u0E0A\u0E17\u0E2A\u0E48\u0E27\u0E19\u0E15\u0E31\u0E27\u0E01\u0E31\u0E1A\u0E44\u0E21\u0E42\u0E25";
 }
 function formatDate(date) {
   return new Intl.DateTimeFormat("th-TH", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Bangkok" }).format(date);
@@ -3317,17 +3536,14 @@ async function sendVoiceProposal(replyToken, proposal) {
     await replyVoiceProposalFallback(replyToken, proposal);
   }
 }
-function monthKeyForBangkok(date) {
-  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Bangkok", year: "numeric", month: "2-digit" }).format(date).slice(0, 7);
-}
 async function sendPostSaveSummary(replyToken, lineUserId, lineChatId, financeAccountId, transaction) {
   const occurredAt = transaction.occurredAt ?? /* @__PURE__ */ new Date();
   const dailyReport = await financeReport(lineUserId, "day", occurredAt, financeAccountId);
-  const monthlyReport = await financeReport(lineUserId, "month", occurredAt, financeAccountId);
-  const budgets2 = await listBudgets(lineUserId, monthKeyForBangkok(occurredAt), financeAccountId);
+  const budgetCycleReport = await financeBudgetCycleReport(lineUserId, occurredAt, financeAccountId);
+  const budgets2 = await listBudgets(lineUserId, budgetCycleReport.key, financeAccountId);
   const budget = budgets2.find((item) => item.category === transaction.category);
   const budgetLimit = budget ? Number(budget.amount) : 0;
-  const budgetSpent = Number(monthlyReport.categories[transaction.category] ?? 0);
+  const budgetSpent = Number(budgetCycleReport.categories[transaction.category] ?? 0);
   const budgetPercent = budgetLimit > 0 ? Math.round(budgetSpent / budgetLimit * 100) : void 0;
   const summary = { transactionType: transaction.transactionType, amount: transaction.amount, category: transaction.category, note: transaction.note, occurredAt, dailyIncome: dailyReport.income, dailyExpense: dailyReport.expense, dailyBalance: dailyReport.balance, budgetSpent, budgetLimit, budgetPercent };
   try {
@@ -3378,7 +3594,7 @@ ${lineUserId}
   }
   const command = parseMiloCommand(text2);
   let message = "";
-  const financeCommands = /* @__PURE__ */ new Set(["expense", "income", "transactionSearch", "transactionDelete", "transactionUpdate", "openingBalance", "financeReport", "aiSummary", "budgetOverview", "transactionList", "voiceConfirm", "voiceEditPrompt", "voiceCategoryChange", "voiceEdit", "budget", "categoryAdd", "categoryRemove", "categoryList", "imageConfirm"]);
+  const financeCommands = /* @__PURE__ */ new Set(["expense", "income", "transactionSearch", "transactionDelete", "transactionUpdate", "openingBalance", "financeReport", "aiSummary", "budgetOverview", "transactionList", "voiceConfirm", "voiceEditPrompt", "voiceCategoryChange", "voiceEdit", "budget", "budgetCycleStart", "categoryAdd", "categoryRemove", "categoryList", "imageConfirm", "pdfConfirm", "recurringCreate", "recurringList", "recurringStatus", "exportFinance"]);
   const financeScope = financeCommands.has(command.type) ? await resolveFinanceScope(lineUserId, lineChatId, scope) : void 0;
   if (financeCommands.has(command.type) && !financeScope) {
     if (event.replyToken) await replyText(event.replyToken, financeAccessMessage(scope));
@@ -3535,10 +3751,58 @@ ${results.slice(0, 5).map((item, index2) => `${index2 + 1}. ${item.title}`).join
       if (event.replyToken) await replyText(event.replyToken, message);
       return;
     }
-    const now = /* @__PURE__ */ new Date();
-    const monthKey = new Date(now.getTime() + 7 * 60 * 60 * 1e3).toISOString().slice(0, 7);
-    await upsertBudget(lineUserId, command.category, command.amount, monthKey, financeScope.financeAccountId);
-    message = `\u0E15\u0E31\u0E49\u0E07\u0E07\u0E1A\u0E2B\u0E21\u0E27\u0E14${command.category} ${command.amount.toLocaleString("th-TH")} \u0E1A\u0E32\u0E17 \u0E2A\u0E33\u0E2B\u0E23\u0E31\u0E1A\u0E40\u0E14\u0E37\u0E2D\u0E19\u0E19\u0E35\u0E49\u0E41\u0E25\u0E49\u0E27`;
+    const startDay = await getFinanceAccountBudgetCycleStartDay(financeScope.financeAccountId);
+    const cycle = budgetCycleWindow(/* @__PURE__ */ new Date(), startDay);
+    await upsertBudget(lineUserId, command.category, command.amount, cycle.key, financeScope.financeAccountId);
+    message = `\u0E15\u0E31\u0E49\u0E07\u0E07\u0E1A\u0E2B\u0E21\u0E27\u0E14${command.category} ${command.amount.toLocaleString("th-TH")} \u0E1A\u0E32\u0E17 \u0E2A\u0E33\u0E2B\u0E23\u0E31\u0E1A\u0E23\u0E2D\u0E1A ${formatBudgetCycleLabel(/* @__PURE__ */ new Date(), startDay)} \u0E41\u0E25\u0E49\u0E27`;
+  } else if (command.type === "budgetCycleStart") {
+    if (!canManageFinanceSettings(financeScope.role)) {
+      message = "\u0E2A\u0E34\u0E17\u0E18\u0E34\u0E4C\u0E02\u0E2D\u0E07\u0E04\u0E38\u0E13\u0E22\u0E31\u0E07\u0E15\u0E31\u0E49\u0E07\u0E27\u0E31\u0E19\u0E40\u0E23\u0E34\u0E48\u0E21\u0E23\u0E2D\u0E1A\u0E07\u0E1A\u0E43\u0E19\u0E2A\u0E21\u0E38\u0E14\u0E1A\u0E31\u0E0D\u0E0A\u0E35\u0E19\u0E35\u0E49\u0E44\u0E21\u0E48\u0E44\u0E14\u0E49";
+      if (event.replyToken) await replyText(event.replyToken, message);
+      return;
+    }
+    const updated = await updateFinanceAccountBudgetCycleStartDay(financeScope.financeAccountId, command.day);
+    if (!updated) message = "\u0E44\u0E21\u0E48\u0E2A\u0E32\u0E21\u0E32\u0E23\u0E16\u0E15\u0E31\u0E49\u0E07\u0E27\u0E31\u0E19\u0E40\u0E23\u0E34\u0E48\u0E21\u0E23\u0E2D\u0E1A\u0E07\u0E1A\u0E44\u0E14\u0E49";
+    else {
+      await writeAuditLog({ action: "finance_budget_cycle.update", entityType: "finance_account", entityId: financeScope.financeAccountId, actorLineUserId: lineUserId, lineChatId, details: { startDay: updated } });
+      message = `\u0E15\u0E31\u0E49\u0E07\u0E27\u0E31\u0E19\u0E40\u0E23\u0E34\u0E48\u0E21\u0E23\u0E2D\u0E1A\u0E07\u0E1A\u0E40\u0E1B\u0E47\u0E19\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48 ${updated} \u0E02\u0E2D\u0E07\u0E17\u0E38\u0E01\u0E40\u0E14\u0E37\u0E2D\u0E19\u0E41\u0E25\u0E49\u0E27
+\u0E23\u0E2D\u0E1A\u0E1B\u0E31\u0E08\u0E08\u0E38\u0E1A\u0E31\u0E19: ${formatBudgetCycleLabel(/* @__PURE__ */ new Date(), updated)}`;
+    }
+  } else if (command.type === "recurringCreate") {
+    if (!canManageFinanceSettings(financeScope.role)) {
+      message = "\u0E2A\u0E34\u0E17\u0E18\u0E34\u0E4C\u0E02\u0E2D\u0E07\u0E04\u0E38\u0E13\u0E22\u0E31\u0E07\u0E15\u0E31\u0E49\u0E07\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E2D\u0E31\u0E15\u0E42\u0E19\u0E21\u0E31\u0E15\u0E34\u0E43\u0E19\u0E2A\u0E21\u0E38\u0E14\u0E1A\u0E31\u0E0D\u0E0A\u0E35\u0E19\u0E35\u0E49\u0E44\u0E21\u0E48\u0E44\u0E14\u0E49";
+      if (event.replyToken) await replyText(event.replyToken, message);
+      return;
+    }
+    let category = command.category;
+    if (command.transactionType === "expense" && category === "\u0E17\u0E31\u0E48\u0E27\u0E44\u0E1B") {
+      try {
+        const customCategories = (await listExpenseCategories(lineUserId, "expense", financeScope.financeAccountId)).map((item) => item.name);
+        category = (await suggestExpenseCategory(command.note, Array.from(/* @__PURE__ */ new Set([...STANDARD_EXPENSE_CATEGORIES, ...customCategories])))).category;
+      } catch {
+      }
+    }
+    const id = await createRecurringTransaction({ lineUserId, lineChatId, financeAccountId: financeScope.financeAccountId, transactionType: command.transactionType, amount: command.amount, category, note: command.note, recurrenceType: command.recurrenceType, recurrenceInterval: command.recurrenceInterval, recurrenceWeekday: command.recurrenceWeekday, recurrenceDayOfMonth: command.recurrenceDayOfMonth, nextRunAt: command.nextRunAt });
+    await writeAuditLog({ action: "recurring_transaction.create", entityType: "recurring_transaction", entityId: id, actorLineUserId: lineUserId, lineChatId, details: { financeAccountId: financeScope.financeAccountId, transactionType: command.transactionType, category, amount: command.amount, recurrenceType: command.recurrenceType } });
+    message = `\u0E15\u0E31\u0E49\u0E07\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E1B\u0E23\u0E30\u0E08\u0E33 #${id} \u0E41\u0E25\u0E49\u0E27
+${command.transactionType === "income" ? "\u0E23\u0E32\u0E22\u0E23\u0E31\u0E1A" : "\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22"} ${command.note} ${command.amount.toLocaleString("th-TH")} \u0E1A\u0E32\u0E17 \u2022 \u0E2B\u0E21\u0E27\u0E14${category}
+\u0E04\u0E23\u0E31\u0E49\u0E07\u0E16\u0E31\u0E14\u0E44\u0E1B: ${formatDate(command.nextRunAt)}`;
+  } else if (command.type === "recurringList") {
+    const items = await listRecurringTransactions(lineUserId, financeScope.financeAccountId);
+    message = items.length ? `\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E1B\u0E23\u0E30\u0E08\u0E33
+${items.slice(0, 20).map((item) => `#${item.id} \u2022 ${item.status === "active" ? "\u0E40\u0E1B\u0E34\u0E14" : item.status === "paused" ? "\u0E1E\u0E31\u0E01" : "\u0E22\u0E01\u0E40\u0E25\u0E34\u0E01"} \u2022 ${item.transactionType === "income" ? "\u0E23\u0E32\u0E22\u0E23\u0E31\u0E1A" : "\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22"} ${Number(item.amount).toLocaleString("th-TH")} \u0E1A\u0E32\u0E17 \u2022 ${item.category} \u2022 \u0E16\u0E31\u0E14\u0E44\u0E1B ${formatDate(item.nextRunAt)}`).join("\n")}` : "\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E21\u0E35\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E1B\u0E23\u0E30\u0E08\u0E33\u0E17\u0E35\u0E48\u0E15\u0E31\u0E49\u0E07\u0E44\u0E27\u0E49";
+  } else if (command.type === "recurringStatus") {
+    if (!canManageFinanceSettings(financeScope.role)) {
+      message = "\u0E2A\u0E34\u0E17\u0E18\u0E34\u0E4C\u0E02\u0E2D\u0E07\u0E04\u0E38\u0E13\u0E22\u0E31\u0E07\u0E1B\u0E23\u0E31\u0E1A\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E2D\u0E31\u0E15\u0E42\u0E19\u0E21\u0E31\u0E15\u0E34\u0E43\u0E19\u0E2A\u0E21\u0E38\u0E14\u0E1A\u0E31\u0E0D\u0E0A\u0E35\u0E19\u0E35\u0E49\u0E44\u0E21\u0E48\u0E44\u0E14\u0E49";
+      if (event.replyToken) await replyText(event.replyToken, message);
+      return;
+    }
+    const updated = await updateRecurringTransactionStatus(command.id, lineUserId, command.status, financeScope.financeAccountId);
+    message = updated ? `\u0E2D\u0E31\u0E1B\u0E40\u0E14\u0E15\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E1B\u0E23\u0E30\u0E08\u0E33 #${command.id} \u0E40\u0E1B\u0E47\u0E19 ${command.status === "active" ? "\u0E40\u0E1B\u0E34\u0E14\u0E43\u0E0A\u0E49\u0E07\u0E32\u0E19" : command.status === "paused" ? "\u0E1E\u0E31\u0E01\u0E44\u0E27\u0E49" : "\u0E22\u0E01\u0E40\u0E25\u0E34\u0E01"} \u0E41\u0E25\u0E49\u0E27` : `\u0E44\u0E21\u0E48\u0E1E\u0E1A\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E1B\u0E23\u0E30\u0E08\u0E33 #${command.id}`;
+  } else if (command.type === "exportFinance") {
+    const url = buildFinanceExportUrl({ lineUserId, financeAccountId: financeScope.financeAccountId, format: command.format });
+    message = `\u0E2A\u0E48\u0E07\u0E2D\u0E2D\u0E01\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25 ${command.format === "csv" ? "CSV" : "Excel"} \u0E44\u0E14\u0E49\u0E08\u0E32\u0E01\u0E25\u0E34\u0E07\u0E01\u0E4C\u0E19\u0E35\u0E49\u0E20\u0E32\u0E22\u0E43\u0E19 10 \u0E19\u0E32\u0E17\u0E35
+${url}`;
   } else if (command.type === "categoryAdd") {
     if (!canManageFinanceSettings(financeScope.role)) {
       message = "\u0E2A\u0E34\u0E17\u0E18\u0E34\u0E4C\u0E02\u0E2D\u0E07\u0E04\u0E38\u0E13\u0E22\u0E31\u0E07\u0E08\u0E31\u0E14\u0E01\u0E32\u0E23\u0E2B\u0E21\u0E27\u0E14\u0E43\u0E19\u0E2A\u0E21\u0E38\u0E14\u0E1A\u0E31\u0E0D\u0E0A\u0E35\u0E19\u0E35\u0E49\u0E44\u0E21\u0E48\u0E44\u0E14\u0E49";
@@ -3574,6 +3838,36 @@ ${incomeSection}
 \u0E40\u0E1E\u0E34\u0E48\u0E21\u0E2B\u0E21\u0E27\u0E14\u0E44\u0E14\u0E49\u0E14\u0E49\u0E27\u0E22 \u201C\u0E40\u0E1E\u0E34\u0E48\u0E21\u0E2B\u0E21\u0E27\u0E14\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22 \u0E0A\u0E37\u0E48\u0E2D\u0E2B\u0E21\u0E27\u0E14\u201D \u0E2B\u0E23\u0E37\u0E2D \u201C\u0E40\u0E1E\u0E34\u0E48\u0E21\u0E2B\u0E21\u0E27\u0E14\u0E23\u0E32\u0E22\u0E23\u0E31\u0E1A \u0E0A\u0E37\u0E48\u0E2D\u0E2B\u0E21\u0E27\u0E14\u201D`;
   } else if (command.type === "invalid") {
     message = command.message;
+  } else if (command.type === "pdfConfirm") {
+    if (!canCreateFinanceTransaction(financeScope.role)) {
+      message = "\u0E2A\u0E34\u0E17\u0E18\u0E34\u0E4C\u0E02\u0E2D\u0E07\u0E04\u0E38\u0E13\u0E43\u0E19\u0E2A\u0E21\u0E38\u0E14\u0E1A\u0E31\u0E0D\u0E0A\u0E35\u0E19\u0E35\u0E49\u0E40\u0E1B\u0E47\u0E19\u0E1C\u0E39\u0E49\u0E14\u0E39 \u0E08\u0E36\u0E07\u0E22\u0E31\u0E07\u0E22\u0E37\u0E19\u0E22\u0E31\u0E19\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E44\u0E21\u0E48\u0E44\u0E14\u0E49";
+      if (event.replyToken) await replyText(event.replyToken, message);
+      return;
+    }
+    const latest = await latestImageExtraction(lineUserId, lineChatId);
+    if (!latest || latest.extraction.status !== "proposed" || latest.vault.mimeType !== "application/pdf") {
+      message = "\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E21\u0E35 PDF \u0E17\u0E35\u0E48\u0E27\u0E34\u0E40\u0E04\u0E23\u0E32\u0E30\u0E2B\u0E4C\u0E41\u0E25\u0E49\u0E27\u0E41\u0E25\u0E30\u0E23\u0E2D\u0E22\u0E37\u0E19\u0E22\u0E31\u0E19 \u0E01\u0E23\u0E38\u0E13\u0E32\u0E2A\u0E48\u0E07\u0E44\u0E1F\u0E25\u0E4C PDF \u0E01\u0E48\u0E2D\u0E19\u0E04\u0E23\u0E31\u0E1A";
+    } else {
+      const analysis = JSON.parse(latest.extraction.extractedJson);
+      const proposals = (analysis.proposals ?? []).filter((item) => item.kind === "expense" && Number(item.amount ?? 0) > 0).slice(0, 100);
+      let created = 0;
+      let skipped = 0;
+      for (const raw of proposals) {
+        const proposal = raw;
+        const occurredAt = parseExtractedDate(String(proposal.dateText ?? ""));
+        if (!occurredAt) {
+          skipped += 1;
+          continue;
+        }
+        const amount = Number(proposal.amount);
+        const category = normalizeExpenseCategory(String(proposal.category ?? ""), `${proposal.title ?? ""} ${proposal.merchant ?? ""} ${proposal.note ?? ""}`);
+        const transactionId = await createTransaction({ lineChatId, lineUserId, financeAccountId: financeScope.financeAccountId, transactionType: "expense", amount, category, note: buildExpenseNote(proposal), occurredAt, source: "line_pdf" });
+        await linkTransactionAttachment({ transactionId, vaultItemId: latest.vault.id, lineUserId, label: "PDF \u0E15\u0E49\u0E19\u0E09\u0E1A\u0E31\u0E1A" });
+        created += 1;
+      }
+      if (created > 0) await setImageExtractionStatus(latest.extraction.id, "accepted");
+      message = created > 0 ? `\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22\u0E08\u0E32\u0E01 PDF \u0E41\u0E25\u0E49\u0E27 ${created} \u0E23\u0E32\u0E22\u0E01\u0E32\u0E23${skipped ? " \u2022 \u0E02\u0E49\u0E32\u0E21 " + skipped + " \u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E17\u0E35\u0E48\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48\u0E44\u0E21\u0E48\u0E0A\u0E31\u0E14" : ""}` : "PDF \u0E19\u0E35\u0E49\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E21\u0E35\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E17\u0E35\u0E48\u0E21\u0E35\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48\u0E41\u0E25\u0E30\u0E22\u0E2D\u0E14\u0E0A\u0E31\u0E14\u0E40\u0E08\u0E19\u0E1E\u0E2D\u0E2A\u0E33\u0E2B\u0E23\u0E31\u0E1A\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01";
+    }
   } else if (command.type === "imageConfirm") {
     if (!canCreateFinanceTransaction(financeScope.role)) {
       message = "\u0E2A\u0E34\u0E17\u0E18\u0E34\u0E4C\u0E02\u0E2D\u0E07\u0E04\u0E38\u0E13\u0E43\u0E19\u0E2A\u0E21\u0E38\u0E14\u0E1A\u0E31\u0E0D\u0E0A\u0E35\u0E19\u0E35\u0E49\u0E40\u0E1B\u0E47\u0E19\u0E1C\u0E39\u0E49\u0E14\u0E39 \u0E08\u0E36\u0E07\u0E22\u0E31\u0E07\u0E22\u0E37\u0E19\u0E22\u0E31\u0E19\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E44\u0E21\u0E48\u0E44\u0E14\u0E49";
@@ -3624,10 +3918,13 @@ ${incomeSection}
   } else if (command.type === "recordGuide") {
     message = "\u{1F4DD} \u0E08\u0E14\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E44\u0E14\u0E49\u0E40\u0E25\u0E22\n\u0E15\u0E31\u0E27\u0E2D\u0E22\u0E48\u0E32\u0E07: \u0E01\u0E34\u0E19\u0E01\u0E32\u0E41\u0E1F 80 \u0E2B\u0E23\u0E37\u0E2D \u0E08\u0E48\u0E32\u0E22 \u0E04\u0E48\u0E32\u0E2D\u0E32\u0E2B\u0E32\u0E23 125\n\u0E2B\u0E23\u0E37\u0E2D: \u0E23\u0E31\u0E1A\u0E40\u0E07\u0E34\u0E19\u0E40\u0E14\u0E37\u0E2D\u0E19 30000\n\u0E2A\u0E48\u0E07\u0E23\u0E39\u0E1B\u0E43\u0E1A\u0E40\u0E2A\u0E23\u0E47\u0E08\u0E41\u0E25\u0E49\u0E27\u0E1E\u0E34\u0E21\u0E1E\u0E4C \u201C\u0E22\u0E37\u0E19\u0E22\u0E31\u0E19\u0E04\u0E48\u0E32\u0E43\u0E0A\u0E49\u0E08\u0E48\u0E32\u0E22\u201D \u0E2B\u0E23\u0E37\u0E2D\u0E2A\u0E48\u0E07\u0E40\u0E2A\u0E35\u0E22\u0E07\u0E41\u0E25\u0E49\u0E27\u0E1E\u0E34\u0E21\u0E1E\u0E4C \u201C\u0E22\u0E37\u0E19\u0E22\u0E31\u0E19\u0E40\u0E2A\u0E35\u0E22\u0E07\u201D \u0E2B\u0E25\u0E31\u0E07\u0E15\u0E23\u0E27\u0E08\u0E23\u0E32\u0E22\u0E25\u0E30\u0E40\u0E2D\u0E35\u0E22\u0E14\u0E04\u0E23\u0E31\u0E1A";
   } else if (command.type === "budgetOverview") {
-    const monthKey = new Date(Date.now() + 7 * 60 * 60 * 1e3).toISOString().slice(0, 7);
-    const budgets2 = await listBudgets(lineUserId, monthKey, financeScope.financeAccountId);
-    const report = await financeReport(lineUserId, "month", /* @__PURE__ */ new Date(), financeScope.financeAccountId);
-    message = budgets2.length ? "\u{1F4CA} \u0E07\u0E1A\u0E1B\u0E23\u0E30\u0E21\u0E32\u0E13\u0E40\u0E14\u0E37\u0E2D\u0E19\u0E19\u0E35\u0E49\n" + budgets2.slice(0, 10).map((item) => `\u2022 ${item.category}: \u0E43\u0E0A\u0E49\u0E44\u0E1B ${(report.categories[item.category] ?? 0).toLocaleString("th-TH")} / \u0E07\u0E1A ${Number(item.amount).toLocaleString("th-TH")} \u0E1A\u0E32\u0E17`).join("\n") : "\u{1F4CA} \u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E21\u0E35\u0E07\u0E1A\u0E1B\u0E23\u0E30\u0E21\u0E32\u0E13\u0E17\u0E35\u0E48\u0E15\u0E31\u0E49\u0E07\u0E44\u0E27\u0E49\u0E04\u0E23\u0E31\u0E1A\n\u0E15\u0E31\u0E27\u0E2D\u0E22\u0E48\u0E32\u0E07: \u0E15\u0E31\u0E49\u0E07\u0E07\u0E1A \u0E2D\u0E32\u0E2B\u0E32\u0E23 5000";
+    const startDay = await getFinanceAccountBudgetCycleStartDay(financeScope.financeAccountId);
+    const report = await financeBudgetCycleReport(lineUserId, /* @__PURE__ */ new Date(), financeScope.financeAccountId);
+    const budgets2 = await listBudgets(lineUserId, report.key, financeScope.financeAccountId);
+    message = budgets2.length ? `\u{1F4CA} \u0E07\u0E1A\u0E1B\u0E23\u0E30\u0E21\u0E32\u0E13\u0E23\u0E2D\u0E1A ${formatBudgetCycleLabel(/* @__PURE__ */ new Date(), startDay)}
+` + budgets2.slice(0, 10).map((item) => `\u2022 ${item.category}: \u0E43\u0E0A\u0E49\u0E44\u0E1B ${(report.categories[item.category] ?? 0).toLocaleString("th-TH")} / \u0E07\u0E1A ${Number(item.amount).toLocaleString("th-TH")} \u0E1A\u0E32\u0E17`).join("\n") : `\u{1F4CA} \u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E21\u0E35\u0E07\u0E1A\u0E1B\u0E23\u0E30\u0E21\u0E32\u0E13\u0E17\u0E35\u0E48\u0E15\u0E31\u0E49\u0E07\u0E44\u0E27\u0E49\u0E43\u0E19\u0E23\u0E2D\u0E1A ${formatBudgetCycleLabel(/* @__PURE__ */ new Date(), startDay)}
+\u0E15\u0E31\u0E27\u0E2D\u0E22\u0E48\u0E32\u0E07: \u0E15\u0E31\u0E49\u0E07\u0E07\u0E1A \u0E2D\u0E32\u0E2B\u0E32\u0E23 5000
+\u0E40\u0E1B\u0E25\u0E35\u0E48\u0E22\u0E19\u0E27\u0E31\u0E19\u0E40\u0E23\u0E34\u0E48\u0E21\u0E23\u0E2D\u0E1A: \u0E15\u0E31\u0E49\u0E07\u0E27\u0E31\u0E19\u0E40\u0E23\u0E34\u0E48\u0E21\u0E07\u0E1A 14`;
   } else if (command.type === "transactionList") {
     const results = await searchTransactions(lineUserId, "", 10, financeScope.financeAccountId);
     message = results.length ? "\u{1F4CB} \u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E25\u0E48\u0E32\u0E2A\u0E38\u0E14\n" + results.map((item) => `#${item.id} \u2022 ${item.transactionType === "expense" ? "\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22" : "\u0E23\u0E32\u0E22\u0E23\u0E31\u0E1A"} ${Number(item.amount).toLocaleString("th-TH")} \u0E1A\u0E32\u0E17 \u2022 ${item.category}`).join("\n") : "\u{1F4CB} \u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E21\u0E35\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E18\u0E38\u0E23\u0E01\u0E23\u0E23\u0E21\u0E04\u0E23\u0E31\u0E1A";
@@ -3654,8 +3951,9 @@ async function handleMedia(event, lineChatId, lineUserId, scope) {
   if (!message) return;
   const isImage = message.type === "image";
   const isAudio = message.type === "audio";
+  const isPdf = message.type === "file" && /\.pdf$/i.test(message.fileName ?? "");
   const bytes = await getMessageContent(message.id);
-  const mimeType = isImage ? "image/jpeg" : isAudio ? "audio/m4a" : "application/octet-stream";
+  const mimeType = isImage ? "image/jpeg" : isAudio ? "audio/m4a" : isPdf ? "application/pdf" : "application/octet-stream";
   const stored = await storagePut(`milo/${lineChatId}/${message.id}`, bytes, mimeType);
   const vaultId = await createVaultItem({
     lineChatId,
@@ -3681,6 +3979,22 @@ async function handleMedia(event, lineChatId, lineUserId, scope) {
     } catch (error) {
       console.error("[Milo Voice] transcription failed", { messageId: message.id, error: error instanceof Error ? error.message : "unknown" });
       if (event.replyToken) await replyText(event.replyToken, "\u0E40\u0E01\u0E47\u0E1A\u0E02\u0E49\u0E2D\u0E04\u0E27\u0E32\u0E21\u0E40\u0E2A\u0E35\u0E22\u0E07\u0E44\u0E27\u0E49\u0E41\u0E25\u0E49\u0E27 \u0E41\u0E15\u0E48\u0E22\u0E31\u0E07\u0E16\u0E2D\u0E14\u0E40\u0E2A\u0E35\u0E22\u0E07\u0E44\u0E21\u0E48\u0E44\u0E14\u0E49\u0E43\u0E19\u0E04\u0E23\u0E31\u0E49\u0E07\u0E19\u0E35\u0E49 \u0E01\u0E23\u0E38\u0E13\u0E32\u0E25\u0E2D\u0E07\u0E2D\u0E31\u0E14\u0E43\u0E2B\u0E21\u0E48\u0E43\u0E2B\u0E49\u0E0A\u0E31\u0E14\u0E40\u0E08\u0E19 \u0E04\u0E27\u0E32\u0E21\u0E22\u0E32\u0E27\u0E2A\u0E31\u0E49\u0E19 \u0E46 \u0E41\u0E25\u0E30\u0E02\u0E19\u0E32\u0E14\u0E44\u0E21\u0E48\u0E40\u0E01\u0E34\u0E19 16MB \u0E04\u0E23\u0E31\u0E1A");
+    }
+    return;
+  }
+  if (isPdf) {
+    try {
+      const analysis = await analyzePdfBuffer(bytes);
+      await saveImageExtraction(vaultId, "expense", JSON.stringify(analysis), analysis.confidence);
+      const preview = analysis.proposals.slice(0, 5).map((item) => `\u2022 ${formatImageProposal(item)}`).join("\n");
+      const more = analysis.proposals.length > 5 ? `
+\u2026\u0E41\u0E25\u0E30\u0E2D\u0E35\u0E01 ${analysis.proposals.length - 5} \u0E23\u0E32\u0E22\u0E01\u0E32\u0E23` : "";
+      if (event.replyToken) await replyText(event.replyToken, `\u0E2D\u0E48\u0E32\u0E19 PDF \u0E41\u0E25\u0E49\u0E27 \u0E1E\u0E1A\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E17\u0E35\u0E48\u0E40\u0E2A\u0E19\u0E2D\u0E44\u0E14\u0E49 ${analysis.proposals.length} \u0E23\u0E32\u0E22\u0E01\u0E32\u0E23
+${preview || "\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E1E\u0E1A\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22\u0E17\u0E35\u0E48\u0E2D\u0E48\u0E32\u0E19\u0E44\u0E14\u0E49\u0E0A\u0E31\u0E14"}${more}
+\u0E15\u0E23\u0E27\u0E08\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E01\u0E48\u0E2D\u0E19 \u0E41\u0E25\u0E49\u0E27\u0E1E\u0E34\u0E21\u0E1E\u0E4C \u201C\u0E22\u0E37\u0E19\u0E22\u0E31\u0E19 PDF\u201D \u0E40\u0E1E\u0E37\u0E48\u0E2D\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E40\u0E09\u0E1E\u0E32\u0E30\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E17\u0E35\u0E48\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48\u0E41\u0E25\u0E30\u0E22\u0E2D\u0E14\u0E0A\u0E31\u0E14\u0E40\u0E08\u0E19`);
+    } catch (error) {
+      console.error("[Milo PDF] analysis failed", { messageId: message.id, error: error instanceof Error ? error.message : "unknown" });
+      if (event.replyToken) await replyText(event.replyToken, "\u0E40\u0E01\u0E47\u0E1A PDF \u0E44\u0E27\u0E49\u0E41\u0E25\u0E49\u0E27 \u0E41\u0E15\u0E48\u0E22\u0E31\u0E07\u0E2D\u0E48\u0E32\u0E19\u0E18\u0E38\u0E23\u0E01\u0E23\u0E23\u0E21\u0E08\u0E32\u0E01\u0E44\u0E1F\u0E25\u0E4C\u0E19\u0E35\u0E49\u0E44\u0E21\u0E48\u0E44\u0E14\u0E49 \u0E01\u0E23\u0E38\u0E13\u0E32\u0E25\u0E2D\u0E07\u0E44\u0E1F\u0E25\u0E4C\u0E17\u0E35\u0E48\u0E44\u0E21\u0E48\u0E25\u0E47\u0E2D\u0E01\u0E23\u0E2B\u0E31\u0E2A\u0E41\u0E25\u0E30\u0E21\u0E35\u0E02\u0E49\u0E2D\u0E04\u0E27\u0E32\u0E21\u0E2D\u0E48\u0E32\u0E19\u0E44\u0E14\u0E49\u0E04\u0E23\u0E31\u0E1A");
     }
     return;
   }

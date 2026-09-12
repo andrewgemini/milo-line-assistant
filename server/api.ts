@@ -6,6 +6,7 @@ import { registerOAuthRoutes } from "./_core/oauth";
 import { registerStorageProxy } from "./_core/storageProxy";
 import { registerLineWebhook, registerMiloCron } from "./milo/routes";
 import { registerSaveResultImageRoute } from "./milo/saveResultImage";
+import { registerFinanceExportRoute } from "./milo/financeExport";
 import { sdk } from "./_core/sdk";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { COOKIE_NAME } from "@shared/const";
