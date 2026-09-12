@@ -33,7 +33,7 @@ async function callLine(path: string, credentials: LineCredentials, init: Reques
 
 const MILO_RICH_MENU_IMAGE_BASE_URL = (process.env.MILO_RICH_MENU_IMAGE_BASE_URL ?? "https://milo-line-app.vercel.app/milo-richmenu").replace(/\/+$/, "");
 
-export type MiloRichMenuImageKey = "home" | "analysis" | "record" | "wallet" | "settings" | "save-complete" | "save-complete-preview";
+export type MiloRichMenuImageKey = "home" | "analysis" | "record" | "wallet" | "settings" | "summary" | "save-complete" | "save-complete-preview";
 
 export function miloRichMenuImageUrl(key: MiloRichMenuImageKey) {
   const extension = key === "save-complete-preview" ? "jpg" : "png";
@@ -123,7 +123,7 @@ export function financeReportCardText(report: FinanceReportCard) {
 
 function miloFinanceBrandStrip() {
   return { type: "box", layout: "horizontal", alignItems: "center", spacing: "sm", paddingAll: "9px", cornerRadius: "md", backgroundColor: "#FCEAF4", contents: [
-    { type: "image", url: MILO_VOICE_CAT_IMAGE_URL, size: "xs", aspectRatio: "1:1", aspectMode: "cover", flex: 0 },
+    { type: "image", url: miloRichMenuImageUrl("summary"), size: "xs", aspectRatio: "1:1", aspectMode: "cover", flex: 0 },
     { type: "box", layout: "vertical", flex: 1, contents: [
       { type: "text", text: "MILO  •  FINANCE", size: "xxs", weight: "bold", color: "#7657AA" },
       { type: "text", text: "น้องแมวช่วยดูแลยอดของคุณ", size: "xxs", color: "#9A7390", wrap: true },
@@ -148,7 +148,7 @@ export async function replyFinanceReportCard(replyToken: string, report: Finance
       type: "flex", altText: financeReportCardText(report),
       contents: {
         type: "bubble", size: "mega",
-        hero: { type: "image", url: MILO_VOICE_CAT_IMAGE_URL, size: "full", aspectRatio: "20:9", aspectMode: "cover" },
+        hero: { type: "image", url: miloRichMenuImageUrl("summary"), size: "full", aspectRatio: "20:9", aspectMode: "cover" },
         body: { type: "box", layout: "vertical", spacing: "md", paddingAll: "16px", backgroundColor: "#F2F0FF", contents: [
           { type: "box", layout: "horizontal", alignItems: "center", spacing: "md", paddingAll: "12px", cornerRadius: "md", backgroundColor: "#E4F8F2", contents: [
             { type: "box", layout: "vertical", justifyContent: "center", alignItems: "center", width: "38px", height: "38px", cornerRadius: "md", backgroundColor: "#5AC6AD", contents: [{ type: "text", text: "฿", align: "center", weight: "bold", size: "xl", color: "#FFFFFF" }] },
@@ -201,7 +201,7 @@ export async function pushFinanceReportCard(to: string, report: FinanceReportCar
     method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ to, messages: [{
       type: "flex", altText: financeReportCardText(report), contents: {
         type: "bubble", size: "mega",
-        hero: { type: "image", url: MILO_VOICE_CAT_IMAGE_URL, size: "full", aspectRatio: "20:9", aspectMode: "cover" },
+        hero: { type: "image", url: miloRichMenuImageUrl("summary"), size: "full", aspectRatio: "20:9", aspectMode: "cover" },
         body: { type: "box", layout: "vertical", spacing: "md", paddingAll: "16px", backgroundColor: "#F2F0FF", contents: [
           { type: "box", layout: "horizontal", alignItems: "center", spacing: "md", paddingAll: "12px", cornerRadius: "md", backgroundColor: "#E4F8F2", contents: [
             { type: "box", layout: "vertical", justifyContent: "center", alignItems: "center", width: "38px", height: "38px", cornerRadius: "md", backgroundColor: "#5AC6AD", contents: [{ type: "text", text: "฿", align: "center", weight: "bold", size: "xl", color: "#FFFFFF" }] },
@@ -236,7 +236,7 @@ export async function replyPostSaveSummary(replyToken: string, summary: PostSave
       type: "flex", altText: postSaveSummaryText(summary),
       contents: {
         type: "bubble", size: "mega",
-        hero: { type: "image", url: MILO_VOICE_CAT_IMAGE_URL, size: "full", aspectRatio: "20:9", aspectMode: "cover" },
+        hero: { type: "image", url: miloRichMenuImageUrl("save-complete"), size: "full", aspectRatio: "20:9", aspectMode: "cover" },
         body: { type: "box", layout: "vertical", spacing: "md", paddingAll: "16px", backgroundColor: "#F2F0FF", contents: [
           { type: "box", layout: "horizontal", alignItems: "center", spacing: "md", paddingAll: "12px", cornerRadius: "md", backgroundColor: "#E4F8F2", contents: [
             { type: "box", layout: "vertical", justifyContent: "center", alignItems: "center", width: "38px", height: "38px", cornerRadius: "md", backgroundColor: "#5AC6AD", contents: [{ type: "text", text: "✓", align: "center", weight: "bold", size: "xl", color: "#FFFFFF" }] },

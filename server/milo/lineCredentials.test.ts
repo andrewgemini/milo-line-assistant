@@ -78,7 +78,8 @@ describe("LINE credentials", () => {
     expect(String(init.body)).toContain("อาหาร");
     expect(String(init.body)).toContain("565 บาท");
     expect(String(init.body)).toContain("MILO  •  FINANCE");
-    expect(String(init.body)).toContain("milo-voice-proposal-cat");
+    expect(String(init.body)).toContain("milo-richmenu/summary.png");
+    expect(String(init.body)).not.toContain("milo-voice-proposal-cat");
     expect(String(init.body)).toContain("สรุปสัปดาห์นี้");
     expect(String(init.body)).toContain("สรุปเดือนนี้");
 
@@ -97,6 +98,7 @@ describe("LINE credentials", () => {
     expect(String(init.body)).toContain("MILO  •  FINANCE");
     expect(String(init.body)).toContain("1,200 บาท");
     expect(String(init.body)).toContain("อาหาร");
+    expect(String(init.body)).toContain("milo-richmenu/summary.png");
   });
 
   it("offers popular categories as Quick Reply actions when editing a voice proposal", async () => {

@@ -1410,6 +1410,22 @@ async function callLine(path, credentials, init) {
   console.info("[Milo LINE] message delivered", { endpoint: path, status: response.status });
   return response;
 }
+var MILO_RICH_MENU_IMAGE_BASE_URL = (process.env.MILO_RICH_MENU_IMAGE_BASE_URL ?? "https://milo-line-app.vercel.app/milo-richmenu").replace(/\/+$/, "");
+function miloRichMenuImageUrl(key) {
+  const extension = key === "save-complete-preview" ? "jpg" : "png";
+  return `${MILO_RICH_MENU_IMAGE_BASE_URL}/${key}.${extension}`;
+}
+async function replyImage(replyToken, key, credentials = lineCredentials()) {
+  const url = miloRichMenuImageUrl(key);
+  return callLine("/v2/bot/message/reply", credentials, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      replyToken,
+      messages: [{ type: "image", originalContentUrl: url, previewImageUrl: url }]
+    })
+  });
+}
 async function replyText(replyToken, text2, credentials = lineCredentials()) {
   return callLine("/v2/bot/message/reply", credentials, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ replyToken, messages: [{ type: "text", text: text2.slice(0, 5e3) }] }) });
 }
@@ -1437,7 +1453,9 @@ function mascotExpenseCopy(transactionType, amount) {
 }
 function postSaveSummaryText(summary) {
   const label = summary.transactionType === "expense" ? "\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22" : "\u0E23\u0E32\u0E22\u0E23\u0E31\u0E1A";
-  return `\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01${label} ${summary.amount.toLocaleString("th-TH")} \u0E1A\u0E32\u0E17 \u0E2B\u0E21\u0E27\u0E14${summary.category}\u0E41\u0E25\u0E49\u0E27
+  const note = summary.note?.trim();
+  return `\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01${label} ${summary.amount.toLocaleString("th-TH")} \u0E1A\u0E32\u0E17 \u0E2B\u0E21\u0E27\u0E14${summary.category}\u0E41\u0E25\u0E49\u0E27${note ? `
+\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E17\u0E35\u0E48\u0E08\u0E14: ${note}` : ""}
 ${mascotExpenseCopy(summary.transactionType, summary.amount)}
 \u0E27\u0E31\u0E19\u0E19\u0E35\u0E49: \u0E23\u0E32\u0E22\u0E23\u0E31\u0E1A ${summary.dailyIncome.toLocaleString("th-TH")} \u0E1A\u0E32\u0E17 \xB7 \u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22 ${summary.dailyExpense.toLocaleString("th-TH")} \u0E1A\u0E32\u0E17 \xB7 \u0E04\u0E07\u0E40\u0E2B\u0E25\u0E37\u0E2D ${summary.dailyBalance.toLocaleString("th-TH")} \u0E1A\u0E32\u0E17`;
 }
@@ -1456,7 +1474,7 @@ ${categories}` : "\n\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E21\u0E35\u0E23\u0E32
 }
 function miloFinanceBrandStrip() {
   return { type: "box", layout: "horizontal", alignItems: "center", spacing: "sm", paddingAll: "9px", cornerRadius: "md", backgroundColor: "#FCEAF4", contents: [
-    { type: "image", url: MILO_VOICE_CAT_IMAGE_URL, size: "xs", aspectRatio: "1:1", aspectMode: "cover", flex: 0 },
+    { type: "image", url: miloRichMenuImageUrl("summary"), size: "xs", aspectRatio: "1:1", aspectMode: "cover", flex: 0 },
     { type: "box", layout: "vertical", flex: 1, contents: [
       { type: "text", text: "MILO  \u2022  FINANCE", size: "xxs", weight: "bold", color: "#7657AA" },
       { type: "text", text: "\u0E19\u0E49\u0E2D\u0E07\u0E41\u0E21\u0E27\u0E0A\u0E48\u0E27\u0E22\u0E14\u0E39\u0E41\u0E25\u0E22\u0E2D\u0E14\u0E02\u0E2D\u0E07\u0E04\u0E38\u0E13", size: "xxs", color: "#9A7390", wrap: true }
@@ -1483,7 +1501,7 @@ async function replyFinanceReportCard(replyToken, report, credentials = lineCred
       contents: {
         type: "bubble",
         size: "mega",
-        hero: { type: "image", url: MILO_VOICE_CAT_IMAGE_URL, size: "full", aspectRatio: "20:9", aspectMode: "cover" },
+        hero: { type: "image", url: miloRichMenuImageUrl("summary"), size: "full", aspectRatio: "20:9", aspectMode: "cover" },
         body: { type: "box", layout: "vertical", spacing: "md", paddingAll: "16px", backgroundColor: "#F2F0FF", contents: [
           { type: "box", layout: "horizontal", alignItems: "center", spacing: "md", paddingAll: "12px", cornerRadius: "md", backgroundColor: "#E4F8F2", contents: [
             { type: "box", layout: "vertical", justifyContent: "center", alignItems: "center", width: "38px", height: "38px", cornerRadius: "md", backgroundColor: "#5AC6AD", contents: [{ type: "text", text: "\u0E3F", align: "center", weight: "bold", size: "xl", color: "#FFFFFF" }] },
@@ -1539,7 +1557,7 @@ async function pushFinanceReportCard(to, report, credentials = lineCredentials()
       contents: {
         type: "bubble",
         size: "mega",
-        hero: { type: "image", url: MILO_VOICE_CAT_IMAGE_URL, size: "full", aspectRatio: "20:9", aspectMode: "cover" },
+        hero: { type: "image", url: miloRichMenuImageUrl("summary"), size: "full", aspectRatio: "20:9", aspectMode: "cover" },
         body: { type: "box", layout: "vertical", spacing: "md", paddingAll: "16px", backgroundColor: "#F2F0FF", contents: [
           { type: "box", layout: "horizontal", alignItems: "center", spacing: "md", paddingAll: "12px", cornerRadius: "md", backgroundColor: "#E4F8F2", contents: [
             { type: "box", layout: "vertical", justifyContent: "center", alignItems: "center", width: "38px", height: "38px", cornerRadius: "md", backgroundColor: "#5AC6AD", contents: [{ type: "text", text: "\u0E3F", align: "center", weight: "bold", size: "xl", color: "#FFFFFF" }] },
@@ -1569,48 +1587,52 @@ async function replyPostSaveSummary(replyToken, summary, credentials = lineCrede
   return callLine("/v2/bot/message/reply", credentials, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ replyToken, messages: [{
-      type: "flex",
-      altText: postSaveSummaryText(summary),
-      contents: {
-        type: "bubble",
-        size: "mega",
-        hero: { type: "image", url: MILO_VOICE_CAT_IMAGE_URL, size: "full", aspectRatio: "20:9", aspectMode: "cover" },
-        body: { type: "box", layout: "vertical", spacing: "md", paddingAll: "16px", backgroundColor: "#F2F0FF", contents: [
-          { type: "box", layout: "horizontal", alignItems: "center", spacing: "md", paddingAll: "12px", cornerRadius: "md", backgroundColor: "#E4F8F2", contents: [
-            { type: "box", layout: "vertical", justifyContent: "center", alignItems: "center", width: "38px", height: "38px", cornerRadius: "md", backgroundColor: "#5AC6AD", contents: [{ type: "text", text: "\u2713", align: "center", weight: "bold", size: "xl", color: "#FFFFFF" }] },
-            { type: "box", layout: "vertical", flex: 1, contents: [
-              { type: "text", text: "\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E2A\u0E33\u0E40\u0E23\u0E47\u0E08", weight: "bold", size: "lg", color: "#4B3D69" },
-              { type: "text", text: mascotExpenseCopy(summary.transactionType, summary.amount), size: "xs", wrap: true, color: "#7B6E97" }
+    body: JSON.stringify({ replyToken, messages: [
+      {
+        type: "flex",
+        altText: postSaveSummaryText(summary),
+        contents: {
+          type: "bubble",
+          size: "mega",
+          hero: { type: "image", url: miloRichMenuImageUrl("save-complete"), size: "full", aspectRatio: "20:9", aspectMode: "cover" },
+          body: { type: "box", layout: "vertical", spacing: "md", paddingAll: "16px", backgroundColor: "#F2F0FF", contents: [
+            { type: "box", layout: "horizontal", alignItems: "center", spacing: "md", paddingAll: "12px", cornerRadius: "md", backgroundColor: "#E4F8F2", contents: [
+              { type: "box", layout: "vertical", justifyContent: "center", alignItems: "center", width: "38px", height: "38px", cornerRadius: "md", backgroundColor: "#5AC6AD", contents: [{ type: "text", text: "\u2713", align: "center", weight: "bold", size: "xl", color: "#FFFFFF" }] },
+              { type: "box", layout: "vertical", flex: 1, contents: [
+                { type: "text", text: "\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E2A\u0E33\u0E40\u0E23\u0E47\u0E08", weight: "bold", size: "lg", color: "#4B3D69" },
+                { type: "text", text: mascotExpenseCopy(summary.transactionType, summary.amount), size: "xs", wrap: true, color: "#7B6E97" }
+              ] }
+            ] },
+            { type: "box", layout: "vertical", spacing: "md", paddingAll: "16px", cornerRadius: "md", backgroundColor: "#FFFEFB", contents: [
+              { type: "box", layout: "horizontal", alignItems: "center", contents: [
+                { type: "text", text: `${isExpense ? "\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22" : "\u0E23\u0E32\u0E22\u0E23\u0E31\u0E1A"}  \u2022  ${summary.category}`, size: "sm", weight: "bold", color: accent, flex: 1 },
+                { type: "text", text: "\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E41\u0E25\u0E49\u0E27", size: "xxs", color: "#8B809B", align: "end" }
+              ] },
+              { type: "text", text: `${summary.amount.toLocaleString("th-TH")} \u0E1A\u0E32\u0E17`, size: "xxl", weight: "bold", color: "#3F3552" },
+              ...summary.note?.trim() ? [{ type: "text", text: `\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E17\u0E35\u0E48\u0E08\u0E14: ${summary.note.trim()}`, size: "sm", color: "#675B7C", wrap: true }] : [],
+              { type: "separator", color: "#E9E4F1" },
+              { type: "text", text: "\u0E2A\u0E23\u0E38\u0E1B\u0E22\u0E2D\u0E14\u0E27\u0E31\u0E19\u0E19\u0E35\u0E49", size: "xs", weight: "bold", color: "#76688E" },
+              { type: "box", layout: "horizontal", spacing: "sm", contents: [
+                { type: "box", layout: "vertical", flex: 1, paddingAll: "10px", cornerRadius: "md", backgroundColor: "#EAF8F4", contents: [{ type: "text", text: "\u0E23\u0E32\u0E22\u0E23\u0E31\u0E1A", size: "xxs", color: "#5B8E81" }, { type: "text", text: `${summary.dailyIncome.toLocaleString("th-TH")} \u0E1A\u0E32\u0E17`, size: "sm", weight: "bold", color: "#267C68" }] },
+                { type: "box", layout: "vertical", flex: 1, paddingAll: "10px", cornerRadius: "md", backgroundColor: "#FDECF2", contents: [{ type: "text", text: "\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22", size: "xxs", color: "#A57086" }, { type: "text", text: `${summary.dailyExpense.toLocaleString("th-TH")} \u0E1A\u0E32\u0E17`, size: "sm", weight: "bold", color: "#BB527C" }] }
+              ] },
+              { type: "box", layout: "horizontal", alignItems: "center", paddingAll: "11px", cornerRadius: "md", backgroundColor: softAccent, contents: [
+                { type: "text", text: "\u0E22\u0E2D\u0E14\u0E04\u0E07\u0E40\u0E2B\u0E25\u0E37\u0E2D\u0E27\u0E31\u0E19\u0E19\u0E35\u0E49", size: "xs", color: "#6B6080", flex: 1 },
+                { type: "text", text: `${summary.dailyBalance.toLocaleString("th-TH")} \u0E1A\u0E32\u0E17`, size: "sm", weight: "bold", color: "#4D4263", align: "end" }
+              ] }
             ] }
           ] },
-          { type: "box", layout: "vertical", spacing: "md", paddingAll: "16px", cornerRadius: "md", backgroundColor: "#FFFEFB", contents: [
-            { type: "box", layout: "horizontal", alignItems: "center", contents: [
-              { type: "text", text: `${isExpense ? "\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22" : "\u0E23\u0E32\u0E22\u0E23\u0E31\u0E1A"}  \u2022  ${summary.category}`, size: "sm", weight: "bold", color: accent, flex: 1 },
-              { type: "text", text: "\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E41\u0E25\u0E49\u0E27", size: "xxs", color: "#8B809B", align: "end" }
-            ] },
-            { type: "text", text: `${summary.amount.toLocaleString("th-TH")} \u0E1A\u0E32\u0E17`, size: "xxl", weight: "bold", color: "#3F3552" },
-            { type: "separator", color: "#E9E4F1" },
-            { type: "text", text: "\u0E2A\u0E23\u0E38\u0E1B\u0E22\u0E2D\u0E14\u0E27\u0E31\u0E19\u0E19\u0E35\u0E49", size: "xs", weight: "bold", color: "#76688E" },
-            { type: "box", layout: "horizontal", spacing: "sm", contents: [
-              { type: "box", layout: "vertical", flex: 1, paddingAll: "10px", cornerRadius: "md", backgroundColor: "#EAF8F4", contents: [{ type: "text", text: "\u0E23\u0E32\u0E22\u0E23\u0E31\u0E1A", size: "xxs", color: "#5B8E81" }, { type: "text", text: `${summary.dailyIncome.toLocaleString("th-TH")} \u0E1A\u0E32\u0E17`, size: "sm", weight: "bold", color: "#267C68" }] },
-              { type: "box", layout: "vertical", flex: 1, paddingAll: "10px", cornerRadius: "md", backgroundColor: "#FDECF2", contents: [{ type: "text", text: "\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22", size: "xxs", color: "#A57086" }, { type: "text", text: `${summary.dailyExpense.toLocaleString("th-TH")} \u0E1A\u0E32\u0E17`, size: "sm", weight: "bold", color: "#BB527C" }] }
-            ] },
-            { type: "box", layout: "horizontal", alignItems: "center", paddingAll: "11px", cornerRadius: "md", backgroundColor: softAccent, contents: [
-              { type: "text", text: "\u0E22\u0E2D\u0E14\u0E04\u0E07\u0E40\u0E2B\u0E25\u0E37\u0E2D\u0E27\u0E31\u0E19\u0E19\u0E35\u0E49", size: "xs", color: "#6B6080", flex: 1 },
-              { type: "text", text: `${summary.dailyBalance.toLocaleString("th-TH")} \u0E1A\u0E32\u0E17`, size: "sm", weight: "bold", color: "#4D4263", align: "end" }
-            ] }
+          footer: { type: "box", layout: "vertical", paddingAll: "16px", backgroundColor: "#F2F0FF", contents: [
+            { type: "button", style: "primary", color: "#7657AA", height: "sm", action: { type: "message", label: "\u0E14\u0E39\u0E2A\u0E23\u0E38\u0E1B\u0E22\u0E2D\u0E14\u0E27\u0E31\u0E19\u0E19\u0E35\u0E49", text: "\u0E2A\u0E23\u0E38\u0E1B\u0E27\u0E31\u0E19\u0E19\u0E35\u0E49" } }
           ] }
-        ] },
-        footer: { type: "box", layout: "vertical", paddingAll: "16px", backgroundColor: "#F2F0FF", contents: [
-          { type: "button", style: "primary", color: "#7657AA", height: "sm", action: { type: "message", label: "\u0E14\u0E39\u0E2A\u0E23\u0E38\u0E1B\u0E22\u0E2D\u0E14\u0E27\u0E31\u0E19\u0E19\u0E35\u0E49", text: "\u0E2A\u0E23\u0E38\u0E1B\u0E27\u0E31\u0E19\u0E19\u0E35\u0E49" } }
-        ] }
-      }
-    }] })
+        }
+      },
+      { type: "image", originalContentUrl: miloRichMenuImageUrl("save-complete"), previewImageUrl: miloRichMenuImageUrl("save-complete-preview") }
+    ] })
   });
 }
 async function replyPostSaveSummaryFallback(replyToken, summary, credentials = lineCredentials()) {
-  return callLine("/v2/bot/message/reply", credentials, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ replyToken, messages: [{ type: "text", text: postSaveSummaryText(summary).slice(0, 5e3), quickReply: { items: [{ type: "action", action: { type: "message", label: "\u0E14\u0E39\u0E2A\u0E23\u0E38\u0E1B\u0E22\u0E2D\u0E14\u0E27\u0E31\u0E19\u0E19\u0E35\u0E49", text: "\u0E2A\u0E23\u0E38\u0E1B\u0E27\u0E31\u0E19\u0E19\u0E35\u0E49" } }] } }] }) });
+  return callLine("/v2/bot/message/reply", credentials, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ replyToken, messages: [{ type: "text", text: postSaveSummaryText(summary).slice(0, 5e3), quickReply: { items: [{ type: "action", action: { type: "message", label: "\u0E14\u0E39\u0E2A\u0E23\u0E38\u0E1B\u0E22\u0E2D\u0E14\u0E27\u0E31\u0E19\u0E19\u0E35\u0E49", text: "\u0E2A\u0E23\u0E38\u0E1B\u0E27\u0E31\u0E19\u0E19\u0E35\u0E49" } }] } }, { type: "image", originalContentUrl: miloRichMenuImageUrl("save-complete"), previewImageUrl: miloRichMenuImageUrl("save-complete-preview") }] }) });
 }
 async function replyVoiceCategoryChoices(replyToken, credentials = lineCredentials()) {
   const popular = ["\u0E2D\u0E32\u0E2B\u0E32\u0E23", "\u0E40\u0E14\u0E34\u0E19\u0E17\u0E32\u0E07", "\u0E04\u0E48\u0E32\u0E2A\u0E32\u0E18\u0E32\u0E23\u0E13\u0E39\u0E1B\u0E42\u0E20\u0E04", "\u0E0A\u0E49\u0E2D\u0E1B\u0E1B\u0E34\u0E49\u0E07", "\u0E2A\u0E38\u0E02\u0E20\u0E32\u0E1E"];
@@ -2845,6 +2867,11 @@ function parseMiloCommand(text2, now = /* @__PURE__ */ new Date()) {
   const reminder = reminderFrom(text2, now);
   if (reminder) return { type: "reminder", data: reminder };
   const value = text2.trim().replace(/^@?ไมโล\s*/i, "");
+  if (value === "\u0E2B\u0E19\u0E49\u0E32\u0E2B\u0E25\u0E31\u0E01") return { type: "dashboardGuide" };
+  if (value === "\u0E27\u0E34\u0E40\u0E04\u0E23\u0E32\u0E30\u0E2B\u0E4C") return { type: "aiSummary", period: "month" };
+  if (value === "\u0E08\u0E14\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01") return { type: "recordGuide" };
+  if (value === "\u0E01\u0E23\u0E30\u0E40\u0E1B\u0E4B\u0E32\u0E40\u0E07\u0E34\u0E19") return { type: "budgetOverview" };
+  if (value === "\u0E15\u0E31\u0E49\u0E07\u0E04\u0E48\u0E32") return { type: "settingGuide" };
   const money = value.match(/^(จ่าย|รายจ่าย|รับ|รายรับ)\s*(.+?)\s+(\d[\d,]*(?:\.\d{1,2})?)\s*(?:บาท)?$/i);
   if (money) {
     const income = /รับ|รายรับ/i.test(money[1]);
@@ -3154,7 +3181,7 @@ async function sendVoiceProposal(replyToken, proposal) {
 }
 async function sendPostSaveSummary(replyToken, lineUserId, lineChatId, financeAccountId, transaction) {
   const report = await financeReport(lineUserId, "day", /* @__PURE__ */ new Date(), financeAccountId);
-  const summary = { transactionType: transaction.transactionType, amount: transaction.amount, category: transaction.category, dailyIncome: report.income, dailyExpense: report.expense, dailyBalance: report.balance };
+  const summary = { transactionType: transaction.transactionType, amount: transaction.amount, category: transaction.category, note: transaction.note, dailyIncome: report.income, dailyExpense: report.expense, dailyBalance: report.balance };
   try {
     await replyPostSaveSummary(replyToken, summary);
   } catch (error) {
@@ -3202,6 +3229,18 @@ ${lineUserId}
     return;
   }
   const command = parseMiloCommand(text2);
+  const richMenuImageByCommand = {
+    dashboardGuide: "home",
+    aiSummary: "analysis",
+    recordGuide: "record",
+    budgetOverview: "wallet",
+    settingGuide: "settings"
+  };
+  const richMenuImageKey = richMenuImageByCommand[command.type];
+  if (richMenuImageKey && event.replyToken) {
+    await replyImage(event.replyToken, richMenuImageKey);
+    return;
+  }
   let message = "";
   const financeCommands = /* @__PURE__ */ new Set(["expense", "income", "transactionSearch", "transactionDelete", "transactionUpdate", "openingBalance", "financeReport", "aiSummary", "budgetOverview", "transactionList", "voiceConfirm", "voiceEditPrompt", "voiceCategoryChange", "voiceEdit", "budget", "categoryAdd", "categoryRemove", "categoryList", "imageConfirm"]);
   const financeScope = financeCommands.has(command.type) ? await resolveFinanceScope(lineUserId, lineChatId, scope) : void 0;
@@ -3231,7 +3270,7 @@ ${command.data.title}
     }
     await createTransaction({ lineChatId, lineUserId, financeAccountId: financeScope.financeAccountId, transactionType: command.type, amount: command.amount, category, note: command.note, source: "line_text", sourceMessageId: event.message?.id });
     if (event.replyToken) {
-      await sendPostSaveSummary(event.replyToken, lineUserId, lineChatId, financeScope.financeAccountId, { transactionType: command.type, amount: command.amount, category });
+      await sendPostSaveSummary(event.replyToken, lineUserId, lineChatId, financeScope.financeAccountId, { transactionType: command.type, amount: command.amount, category, note: command.note });
       return;
     }
     message = `\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01${command.type === "expense" ? "\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22" : "\u0E23\u0E32\u0E22\u0E23\u0E31\u0E1A"} ${command.amount.toLocaleString("th-TH")} \u0E1A\u0E32\u0E17 \u0E43\u0E19\u0E2B\u0E21\u0E27\u0E14${category}\u0E41\u0E25\u0E49\u0E27`;
@@ -3424,7 +3463,7 @@ ${incomeSection}
           await linkTransactionAttachment({ transactionId, vaultItemId: latest.vault.id, lineUserId, label: proposal.documentType === "bank_slip" ? "\u0E2A\u0E25\u0E34\u0E1B\u0E15\u0E49\u0E19\u0E09\u0E1A\u0E31\u0E1A" : "\u0E43\u0E1A\u0E40\u0E2A\u0E23\u0E47\u0E08\u0E15\u0E49\u0E19\u0E09\u0E1A\u0E31\u0E1A" });
           await setImageExtractionStatus(latest.extraction.id, "accepted");
           if (event.replyToken) {
-            await sendPostSaveSummary(event.replyToken, lineUserId, lineChatId, financeScope.financeAccountId, { transactionType: "expense", amount, category });
+            await sendPostSaveSummary(event.replyToken, lineUserId, lineChatId, financeScope.financeAccountId, { transactionType: "expense", amount, category, note: buildExpenseNote(proposal) });
             return;
           }
           message = `\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22\u0E08\u0E32\u0E01${proposal.documentType === "bank_slip" ? "\u0E2A\u0E25\u0E34\u0E1B" : "\u0E43\u0E1A\u0E40\u0E2A\u0E23\u0E47\u0E08"} ${amount.toLocaleString("th-TH")} \u0E1A\u0E32\u0E17 \u0E43\u0E19\u0E2B\u0E21\u0E27\u0E14${category}\u0E41\u0E25\u0E49\u0E27`;
