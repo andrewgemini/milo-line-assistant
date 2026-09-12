@@ -19,7 +19,13 @@
   ],
   "functions": {
     "api/index.js": {
-      "maxDuration": 60
+      "maxDuration": 60,
+      "includeFiles": [
+        "node_modules/@tesseract.js-data/tha/**",
+        "node_modules/@tesseract.js-data/eng/**",
+        "node_modules/tesseract.js/**",
+        "node_modules/tesseract.js-core/**"
+      ]
     }
   }
 }
