@@ -2,10 +2,24 @@ import express from "express";
 import sharp from "sharp";
 import type { AddressInfo } from "node:net";
 import { describe, expect, it } from "vitest";
+import { findMissingGlyphs } from "./vectorText";
 import { registerSaveResultImageRoute } from "./saveResultImage";
 
 describe("save-result vector image route UAT", () => {
-  it("renders the production PNG route with real Thai transaction text using vector glyphs", async () => {
+  it("renders the exact กินกาแฟ 80 production case without missing Thai/number/symbol glyphs", async () => {
+    const expectedText = [
+      "รายจ่าย",
+      "• ค่าอาหาร",
+      "กินกาแฟ",
+      "฿80",
+      "13 ก.ย. 2569 • 01:27",
+      "กินกาแฟ • ค่าอาหาร • 80 บาท",
+    ];
+    for (const text of expectedText) {
+      expect(findMissingGlyphs(text), text).toEqual([]);
+      expect(findMissingGlyphs(text, true), `bold ${text}`).toEqual([]);
+    }
+
     const app = express();
     registerSaveResultImageRoute(app);
     const server = app.listen(0);
@@ -13,12 +27,12 @@ describe("save-result vector image route UAT", () => {
       const port = (server.address() as AddressInfo).port;
       const params = new URLSearchParams({
         transactionType: "expense",
-        item: "กาแฟ",
+        item: "กินกาแฟ",
         category: "อาหาร",
         amount: "80",
-        occurredAt: "2026-09-12T09:18:00.000Z",
-        budgetSpent: "1040",
-        budgetLimit: "1000",
+        occurredAt: "2026-09-12T18:27:00.000Z",
+        budgetSpent: "80",
+        budgetLimit: "0",
       });
       const response = await fetch(`http://127.0.0.1:${port}/api/milo/save-result.png?${params}`);
       expect(response.status).toBe(200);

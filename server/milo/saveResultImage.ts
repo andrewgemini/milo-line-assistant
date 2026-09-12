@@ -1,10 +1,10 @@
 import type { Express, Request, Response } from "express";
 import sharp from "sharp";
 import { budgetStatusCopy, getBudgetMetrics } from "./budgetStatus";
-import { vectorTextSvg } from "./vectorText";
+import { normalizeRenderText, vectorTextSvg } from "./vectorText";
 
-const money = (value: number) => value.toLocaleString("th-TH-u-nu-latn", { maximumFractionDigits: 2 });
-const thaiDateTime = (value: Date) => new Intl.DateTimeFormat("th-TH-u-nu-latn", {
+const money = (value: number) => normalizeRenderText(value.toLocaleString("th-TH-u-nu-latn", { maximumFractionDigits: 2 }));
+const thaiDateTime = (value: Date) => normalizeRenderText(new Intl.DateTimeFormat("th-TH-u-nu-latn", {
   day: "2-digit",
   month: "short",
   year: "numeric",
@@ -12,7 +12,7 @@ const thaiDateTime = (value: Date) => new Intl.DateTimeFormat("th-TH-u-nu-latn",
   minute: "2-digit",
   hour12: false,
   timeZone: "Asia/Bangkok",
-}).format(value);
+}).format(value));
 
 function escapeXml(value: string) {
   return value.replace(/[<>&'\"]/g, char => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", "'": "&apos;", '\"': "&quot;" }[char]!));
@@ -23,14 +23,17 @@ function parseDate(value: string | null) {
   return Number.isNaN(date.getTime()) ? new Date() : date;
 }
 
+const renderSegmenter = new Intl.Segmenter("th", { granularity: "grapheme" });
 function compact(value: string, maxLength: number) {
-  const normalized = value.replace(/\s+/g, " ").trim();
-  return normalized.length > maxLength ? `${normalized.slice(0, Math.max(1, maxLength - 1))}…` : normalized;
+  const normalized = normalizeRenderText(value).replace(/\s+/g, " ").trim();
+  const graphemes = Array.from(renderSegmenter.segment(normalized)).map(part => part.segment);
+  return graphemes.length > maxLength ? `${graphemes.slice(0, Math.max(1, maxLength - 3)).join("")}...` : normalized;
 }
 
 function displayCategory(category: string, transactionType: "expense" | "income") {
-  if (transactionType === "expense" && category === "อาหาร") return "ค่าอาหาร";
-  return category;
+  const normalized = normalizeRenderText(category).trim();
+  if (transactionType === "expense" && normalized === "อาหาร") return "ค่าอาหาร";
+  return normalized;
 }
 
 export function buildSaveResultSvg(input: {
@@ -189,7 +192,7 @@ export function registerSaveResultImageRoute(app: Express) {
       const template = Buffer.from(await templateResponse.arrayBuffer());
 
       const svg = buildSaveResultSvg({ transactionType, item, category, amount, occurredAt, budgetSpent, budgetLimit });
-      const shapesOnlySvg = svg.replace(/<text\b/g, '<text opacity="0"');
+      const shapesOnlySvg = svg.replace(/<text\b[^>]*>[\s\S]*?<\/text>/g, "");
       const textLayers = buildThaiTextLayers({ transactionType, item, category, amount, occurredAt, budgetSpent, budgetLimit });
       const output = await sharp(template)
         .composite([{ input: Buffer.from(shapesOnlySvg), top: 0, left: 0 }, ...textLayers])
