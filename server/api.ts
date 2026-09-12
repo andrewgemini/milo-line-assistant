@@ -7,6 +7,7 @@ import { registerStorageProxy } from "./_core/storageProxy";
 import { registerLineWebhook, registerMiloCron } from "./milo/routes";
 import { registerSaveResultImageRoute } from "./milo/saveResultImage";
 import { registerFinanceExportRoute } from "./milo/financeExport";
+import { imageAnalysisMode } from "./milo/imageAnalysis";
 import { sdk } from "./_core/sdk";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { COOKIE_NAME } from "@shared/const";
@@ -30,7 +31,16 @@ registerStorageProxy(app);
 registerOAuthRoutes(app);
 
 const healthHandler = (_req: express.Request, res: express.Response) => {
-  res.status(200).json({ status: "ok", service: "milo", release: "richmenu-2026-09-12", visionConfigured: Boolean(process.env.BUILT_IN_FORGE_API_KEY || process.env.FORGE_API_KEY || process.env.OPENAI_API_KEY), visionModel: process.env.MILO_VISION_MODEL ?? ((process.env.BUILT_IN_FORGE_API_KEY || process.env.FORGE_API_KEY) ? "gemini-3-flash-preview" : process.env.OPENAI_API_KEY ? "gpt-5-mini" : "unconfigured"), imageAnalysisMode: (process.env.BUILT_IN_FORGE_API_KEY || process.env.FORGE_API_KEY || process.env.OPENAI_API_KEY) ? "vision+ocr-fallback" : "ocr-fallback", ocrFallback: true, timestamp: new Date().toISOString() });
+  const mode = imageAnalysisMode();
+  res.status(200).json({
+    status: "ok",
+    service: "milo",
+    release: "slip-vision-oidc-2026-09-12",
+    visionConfigured: mode !== "unconfigured",
+    imageAnalysisMode: mode,
+    visionModel: process.env.MILO_VISION_MODEL || (mode.startsWith("vercel-ai-gateway") ? "google/gemini-2.5-flash" : mode === "forge-vision" ? "gemini-3-flash-preview" : "unconfigured"),
+    timestamp: new Date().toISOString(),
+  });
 };
 
 app.get("/api/health", healthHandler);
