@@ -1,3 +1,4 @@
+import { getVercelOidcToken } from "@vercel/oidc";
 import { invokeLLM } from "../_core/llm";
 import { ENV } from "../_core/env";
 
@@ -88,13 +89,17 @@ async function analyzeImageWithForge(dataUrl: string): Promise<ImageAnalysis> {
   return parseAnalysisContent(response.choices[0]?.message.content);
 }
 
-function gatewayToken() {
-  return (process.env.AI_GATEWAY_API_KEY || process.env.VERCEL_OIDC_TOKEN || "").trim();
+async function gatewayToken(): Promise<string> {
+  const apiKey = (process.env.AI_GATEWAY_API_KEY || "").trim();
+  if (apiKey) return apiKey;
+  try {
+    return (await getVercelOidcToken()).trim();
+  } catch {
+    return "";
+  }
 }
 
-async function gatewayRequest(dataUrl: string, structured: boolean) {
-  const token = gatewayToken();
-  if (!token) throw new Error("Vercel AI Gateway authentication is unavailable");
+async function gatewayRequest(dataUrl: string, token: string, structured: boolean) {
   const body: Record<string, unknown> = {
     model: process.env.MILO_VISION_MODEL || "google/gemini-2.5-flash",
     messages: [
@@ -136,19 +141,29 @@ async function gatewayRequest(dataUrl: string, structured: boolean) {
 }
 
 async function analyzeImageWithGateway(dataUrl: string): Promise<ImageAnalysis> {
+  const token = await gatewayToken();
+  if (!token) throw new Error("Vercel AI Gateway authentication is unavailable");
   try {
-    return await gatewayRequest(dataUrl, true);
+    return await gatewayRequest(dataUrl, token, true);
   } catch (error) {
     const message = error instanceof Error ? error.message : "unknown";
-    if (/response.?format|json.?schema|structured/i.test(message)) return gatewayRequest(dataUrl, false);
+    if (/response.?format|json.?schema|structured/i.test(message)) return gatewayRequest(dataUrl, token, false);
     throw error;
   }
 }
 
-export function imageAnalysisMode() {
+export function imageAnalysisMode(oidcHeaderAvailable = false) {
   if (ENV.forgeApiKey) return "forge-vision";
-  if (gatewayToken()) return process.env.AI_GATEWAY_API_KEY ? "vercel-ai-gateway-key" : "vercel-ai-gateway-oidc";
+  if ((process.env.AI_GATEWAY_API_KEY || "").trim()) return "vercel-ai-gateway-key";
+  if (oidcHeaderAvailable || (process.env.VERCEL_OIDC_TOKEN || "").trim()) return "vercel-ai-gateway-oidc";
   return "unconfigured";
+}
+
+export async function imageAnalysisRuntimeStatus() {
+  if (ENV.forgeApiKey) return { mode: "forge-vision", authenticated: true };
+  if ((process.env.AI_GATEWAY_API_KEY || "").trim()) return { mode: "vercel-ai-gateway-key", authenticated: true };
+  const token = await gatewayToken();
+  return { mode: token ? "vercel-ai-gateway-oidc" : "unconfigured", authenticated: Boolean(token) };
 }
 
 export async function analyzeImage(dataUrl: string): Promise<ImageAnalysis> {
@@ -161,6 +176,5 @@ export async function analyzeImage(dataUrl: string): Promise<ImageAnalysis> {
       });
     }
   }
-  if (gatewayToken()) return analyzeImageWithGateway(dataUrl);
-  throw new Error("ระบบอ่านภาพยังไม่ได้รับสิทธิ์ Vision (ไม่พบ Forge/OpenAI/Vercel AI Gateway OIDC)");
+  return analyzeImageWithGateway(dataUrl);
 }

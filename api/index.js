@@ -2900,6 +2900,7 @@ async function storageGetSignedUrl(relKey) {
 }
 
 // server/milo/imageAnalysis.ts
+import { getVercelOidcToken } from "@vercel/oidc";
 var schema2 = {
   type: "object",
   properties: {
@@ -2961,12 +2962,16 @@ async function analyzeImageWithForge(dataUrl) {
   });
   return parseAnalysisContent(response.choices[0]?.message.content);
 }
-function gatewayToken() {
-  return (process.env.AI_GATEWAY_API_KEY || process.env.VERCEL_OIDC_TOKEN || "").trim();
+async function gatewayToken() {
+  const apiKey = (process.env.AI_GATEWAY_API_KEY || "").trim();
+  if (apiKey) return apiKey;
+  try {
+    return (await getVercelOidcToken()).trim();
+  } catch {
+    return "";
+  }
 }
-async function gatewayRequest(dataUrl, structured) {
-  const token = gatewayToken();
-  if (!token) throw new Error("Vercel AI Gateway authentication is unavailable");
+async function gatewayRequest(dataUrl, token, structured) {
   const body = {
     model: process.env.MILO_VISION_MODEL || "google/gemini-2.5-flash",
     messages: [
@@ -3003,18 +3008,21 @@ async function gatewayRequest(dataUrl, structured) {
   }
 }
 async function analyzeImageWithGateway(dataUrl) {
+  const token = await gatewayToken();
+  if (!token) throw new Error("Vercel AI Gateway authentication is unavailable");
   try {
-    return await gatewayRequest(dataUrl, true);
+    return await gatewayRequest(dataUrl, token, true);
   } catch (error) {
     const message = error instanceof Error ? error.message : "unknown";
-    if (/response.?format|json.?schema|structured/i.test(message)) return gatewayRequest(dataUrl, false);
+    if (/response.?format|json.?schema|structured/i.test(message)) return gatewayRequest(dataUrl, token, false);
     throw error;
   }
 }
-function imageAnalysisMode() {
-  if (ENV.forgeApiKey) return "forge-vision";
-  if (gatewayToken()) return process.env.AI_GATEWAY_API_KEY ? "vercel-ai-gateway-key" : "vercel-ai-gateway-oidc";
-  return "unconfigured";
+async function imageAnalysisRuntimeStatus() {
+  if (ENV.forgeApiKey) return { mode: "forge-vision", authenticated: true };
+  if ((process.env.AI_GATEWAY_API_KEY || "").trim()) return { mode: "vercel-ai-gateway-key", authenticated: true };
+  const token = await gatewayToken();
+  return { mode: token ? "vercel-ai-gateway-oidc" : "unconfigured", authenticated: Boolean(token) };
 }
 async function analyzeImage(dataUrl) {
   if (ENV.forgeApiKey) {
@@ -3026,8 +3034,7 @@ async function analyzeImage(dataUrl) {
       });
     }
   }
-  if (gatewayToken()) return analyzeImageWithGateway(dataUrl);
-  throw new Error("\u0E23\u0E30\u0E1A\u0E1A\u0E2D\u0E48\u0E32\u0E19\u0E20\u0E32\u0E1E\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E44\u0E14\u0E49\u0E23\u0E31\u0E1A\u0E2A\u0E34\u0E17\u0E18\u0E34\u0E4C Vision (\u0E44\u0E21\u0E48\u0E1E\u0E1A Forge/OpenAI/Vercel AI Gateway OIDC)");
+  return analyzeImageWithGateway(dataUrl);
 }
 
 // server/milo/pdfAnalysis.ts
@@ -4478,13 +4485,14 @@ app.use(express2.json({ limit: "50mb" }));
 app.use(express2.urlencoded({ limit: "50mb", extended: true }));
 registerStorageProxy(app);
 registerOAuthRoutes(app);
-var healthHandler = (_req, res) => {
-  const mode = imageAnalysisMode();
+var healthHandler = async (_req, res) => {
+  const runtime = await imageAnalysisRuntimeStatus();
+  const mode = runtime.mode;
   res.status(200).json({
     status: "ok",
     service: "milo",
-    release: "slip-vision-oidc-2026-09-12",
-    visionConfigured: mode !== "unconfigured",
+    release: "slip-vision-oidc-runtime-2026-09-12",
+    visionConfigured: runtime.authenticated,
     imageAnalysisMode: mode,
     visionModel: process.env.MILO_VISION_MODEL || (mode.startsWith("vercel-ai-gateway") ? "google/gemini-2.5-flash" : mode === "forge-vision" ? "gemini-3-flash-preview" : "unconfigured"),
     timestamp: (/* @__PURE__ */ new Date()).toISOString()

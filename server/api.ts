@@ -7,7 +7,7 @@ import { registerStorageProxy } from "./_core/storageProxy";
 import { registerLineWebhook, registerMiloCron } from "./milo/routes";
 import { registerSaveResultImageRoute } from "./milo/saveResultImage";
 import { registerFinanceExportRoute } from "./milo/financeExport";
-import { imageAnalysisMode } from "./milo/imageAnalysis";
+import { imageAnalysisRuntimeStatus } from "./milo/imageAnalysis";
 import { sdk } from "./_core/sdk";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { COOKIE_NAME } from "@shared/const";
@@ -30,13 +30,14 @@ app.use(express.urlencoded({ limit: "50mb", extended: true }));
 registerStorageProxy(app);
 registerOAuthRoutes(app);
 
-const healthHandler = (_req: express.Request, res: express.Response) => {
-  const mode = imageAnalysisMode();
+const healthHandler = async (_req: express.Request, res: express.Response) => {
+  const runtime = await imageAnalysisRuntimeStatus();
+  const mode = runtime.mode;
   res.status(200).json({
     status: "ok",
     service: "milo",
-    release: "slip-vision-oidc-2026-09-12",
-    visionConfigured: mode !== "unconfigured",
+    release: "slip-vision-oidc-runtime-2026-09-12",
+    visionConfigured: runtime.authenticated,
     imageAnalysisMode: mode,
     visionModel: process.env.MILO_VISION_MODEL || (mode.startsWith("vercel-ai-gateway") ? "google/gemini-2.5-flash" : mode === "forge-vision" ? "gemini-3-flash-preview" : "unconfigured"),
     timestamp: new Date().toISOString(),
