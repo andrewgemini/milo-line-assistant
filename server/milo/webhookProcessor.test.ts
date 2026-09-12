@@ -269,8 +269,10 @@ describe("LINE webhook processor", () => {
     vi.mocked(sourceIdentity).mockReturnValue({ lineChatId: "U1", lineUserId: "U1", scope: "user" });
     vi.mocked(db.financeReport).mockResolvedValue({ period: "day", income: 0, expense: 100, balance: -100, categories: { อาหาร: 100 } } as never);
     vi.mocked(replyPostSaveSummaryFallback).mockRejectedValue(new Error("invalid reply token"));
+    vi.mocked(replyPostSaveSummary).mockRejectedValue(new Error("invalid flex reply"));
     const line = await import("./line");
     vi.mocked(line.replyPostSaveSummaryFallback).mockRejectedValue(new Error("invalid reply token"));
+    vi.mocked(line.replyPostSaveSummary).mockRejectedValue(new Error("invalid flex reply"));
     vi.mocked(line.pushText).mockResolvedValue(new Response());
 
     await processEvent({ type: "message", webhookEventId: "evt-save-push-fallback", timestamp: Date.now(), replyToken: "token", source: { type: "user", userId: "U1" }, message: { id: "expense-100", type: "text", text: "จ่ายค่าอาหาร 100 บาท" } }, "{}");

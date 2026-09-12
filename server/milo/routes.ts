@@ -74,19 +74,20 @@ function monthKeyForBangkok(date: Date) {
 }
 async function sendPostSaveSummary(replyToken: string, lineUserId: string, lineChatId: string, financeAccountId: number, transaction: Pick<VoiceTransactionProposal, "transactionType" | "amount" | "category" | "note"> & { occurredAt?: Date }) {
   const occurredAt = transaction.occurredAt ?? new Date();
-  const report = await db.financeReport(lineUserId, "day", occurredAt, financeAccountId);
+  const dailyReport = await db.financeReport(lineUserId, "day", occurredAt, financeAccountId);
+  const monthlyReport = await db.financeReport(lineUserId, "month", occurredAt, financeAccountId);
   const budgets = await db.listBudgets(lineUserId, monthKeyForBangkok(occurredAt), financeAccountId);
   const budget = budgets.find(item => item.category === transaction.category);
   const budgetLimit = budget ? Number(budget.amount) : 0;
-  const budgetSpent = Number(report.categories[transaction.category!] ?? 0);
+  const budgetSpent = Number(monthlyReport.categories[transaction.category!] ?? 0);
   const budgetPercent = budgetLimit > 0 ? Math.round((budgetSpent / budgetLimit) * 100) : undefined;
-  const summary = { transactionType: transaction.transactionType!, amount: transaction.amount!, category: transaction.category!, note: transaction.note, occurredAt, dailyIncome: report.income, dailyExpense: report.expense, dailyBalance: report.balance, budgetSpent, budgetLimit, budgetPercent };
+  const summary = { transactionType: transaction.transactionType!, amount: transaction.amount!, category: transaction.category!, note: transaction.note, occurredAt, dailyIncome: dailyReport.income, dailyExpense: dailyReport.expense, dailyBalance: dailyReport.balance, budgetSpent, budgetLimit, budgetPercent };
   try {
     await replyPostSaveSummaryFallback(replyToken, summary);
   } catch (error) {
-    console.error("[Milo Save] post-save Flex failed; sending Quick Reply fallback", { error: error instanceof Error ? error.message : "unknown" });
+    console.error("[Milo Save] image summary failed; sending Flex fallback", { error: error instanceof Error ? error.message : "unknown" });
     try {
-      await replyPostSaveSummaryFallback(replyToken, summary);
+      await replyPostSaveSummary(replyToken, summary);
     } catch (fallbackError) {
       console.error("[Milo Save] reply fallback failed; pushing text summary", { error: fallbackError instanceof Error ? fallbackError.message : "unknown" });
       await pushText(lineChatId, postSaveSummaryText(summary));
@@ -153,7 +154,7 @@ async function handleText(event: LineEvent, lineChatId: string, lineUserId: stri
         category = suggestion.category;
       } catch { /* keep deterministic fallback category */ }
     }
-    const occurredAt = new Date();
+    const occurredAt = Number.isFinite(event.timestamp) ? new Date(event.timestamp) : new Date();
     await db.createTransaction({ lineChatId, lineUserId, financeAccountId: financeScope!.financeAccountId, transactionType: command.type, amount: command.amount, category, note: command.note, occurredAt, source: "line_text", sourceMessageId: event.message?.id });
     if (event.replyToken) { await sendPostSaveSummary(event.replyToken, lineUserId, lineChatId, financeScope!.financeAccountId, { transactionType: command.type, amount: command.amount, category, note: command.note, occurredAt }); return; }
     message = `บันทึก${command.type === "expense" ? "รายจ่าย" : "รายรับ"} ${command.amount.toLocaleString("th-TH")} บาท ในหมวด${category}แล้ว`;

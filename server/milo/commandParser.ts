@@ -65,10 +65,10 @@ export function parseMiloCommand(text: string, now = new Date()): MiloCommand {
   if (value === "จดบันทึก") return { type: "recordGuide" };
   if (value === "กระเป๋าเงิน") return { type: "budgetOverview" };
   if (value === "ตั้งค่า") return { type: "settingGuide" };
-  const money = value.match(/^(จ่าย|รายจ่าย|รับ|รายรับ)\s*(.+?)\s+(\d[\d,]*(?:\.\d{1,2})?)\s*(?:บาท)?$/i); if (money) { const income = /รับ|รายรับ/i.test(money[1]); const note = money[2].trim(); const transactionType = income ? "income" : "expense"; return { type: transactionType, amount: Number(money[3].replace(/,/g, "")), category: suggestStandardCategory(transactionType, note), note }; }
+  const money = value.match(/^(จ่าย|รายจ่าย|รับ|รายรับ)\s*(.+?)\s+(\d[\d,]*(?:\.\d{1,2})?)\s*(?:บาท)?$/i); if (money) { const income = /รับ|รายรับ/i.test(money[1]); const rawNote = money[2].trim(); const note = income ? rawNote : rawNote.replace(/^ค่า(?=กาแฟ)/i, ""); const transactionType = income ? "income" : "expense"; return { type: transactionType, amount: Number(money[3].replace(/,/g, "")), category: suggestStandardCategory(transactionType, note), note }; }
   const naturalMoney = value.match(/^(.+?)\s+(\d[\d,]*(?:\.\d{1,2})?)\s*(?:บาท)?$/i);
   if (naturalMoney) {
-    const note = naturalMoney[1].trim().replace(/^ค่า(?=กาแฟ|อาหาร|ข้าว|น้ำมัน|ไฟ|น้ำ|เน็ต|โทรศัพท์|เดินทาง)/i, "");
+    const note = naturalMoney[1].trim().replace(/^ค่า(?=กาแฟ)/i, "");
     const amount = Number(naturalMoney[2].replace(/,/g, ""));
     const incomeCue = /^(?:ได้เงิน|เงินเดือนเข้า|ขายของได้|ขายได้|รับเงิน|รายรับ|รายได้|โบนัส|ค่าจ้าง|เงินเดือน)/i.test(note);
     const expenseCue = /^(?:กิน|ซื้อ|จ่าย|ค่า|เติม|ช้อป|เดินทาง|แท็กซี่|กาแฟ|อาหาร|ข้าว|น้ำมัน|บิล|โอน|ของใช้|ชำระ)/i.test(note);

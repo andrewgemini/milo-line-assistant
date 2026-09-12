@@ -1,10 +1,15 @@
 import type { Express, Request, Response } from "express";
 import sharp from "sharp";
+import { budgetStatusCopy, getBudgetMetrics } from "./budgetStatus";
 
-const money = (value: number) => value.toLocaleString("th-TH", { maximumFractionDigits: 2 });
-const thaiDateTime = (value: Date) => new Intl.DateTimeFormat("th-TH", {
-  dateStyle: "medium",
-  timeStyle: "short",
+const money = (value: number) => value.toLocaleString("th-TH-u-nu-latn", { maximumFractionDigits: 2 });
+const thaiDateTime = (value: Date) => new Intl.DateTimeFormat("th-TH-u-nu-latn", {
+  day: "2-digit",
+  month: "short",
+  year: "numeric",
+  hour: "2-digit",
+  minute: "2-digit",
+  hour12: false,
   timeZone: "Asia/Bangkok",
 }).format(value);
 
@@ -17,19 +22,96 @@ function parseDate(value: string | null) {
   return Number.isNaN(date.getTime()) ? new Date() : date;
 }
 
+function compact(value: string, maxLength: number) {
+  const normalized = value.replace(/\s+/g, " ").trim();
+  return normalized.length > maxLength ? `${normalized.slice(0, Math.max(1, maxLength - 1))}…` : normalized;
+}
+
+function displayCategory(category: string, transactionType: "expense" | "income") {
+  if (transactionType === "expense" && category === "อาหาร") return "ค่าอาหาร";
+  return category;
+}
+
+export function buildSaveResultSvg(input: {
+  transactionType: "expense" | "income";
+  item: string;
+  category: string;
+  amount: number;
+  occurredAt: Date;
+  budgetSpent: number;
+  budgetLimit: number;
+}) {
+  const { transactionType, amount, occurredAt, budgetSpent, budgetLimit } = input;
+  const item = compact(input.item, 34) || "รายการ";
+  const category = compact(input.category, 24) || "ทั่วไป";
+  const categoryLabel = displayCategory(category, transactionType);
+  const isExpense = transactionType === "expense";
+  const metrics = getBudgetMetrics(budgetSpent, budgetLimit);
+  const usageWidth = budgetLimit > 0 ? Math.max(0, Math.min(660, Math.round(660 * Math.min(metrics.usagePercent, 100) / 100))) : 0;
+  const budgetNotice = budgetStatusCopy(category, budgetSpent, budgetLimit);
+  const remainingLabel = metrics.isOverBudget ? "เกินงบ" : "คงเหลือ";
+  const remainingAmount = Math.abs(metrics.remaining);
+  const typeLabel = isExpense ? "รายจ่าย" : "รายรับ";
+  const accent = isExpense ? "#F51D72" : "#139A68";
+  const softAccent = isExpense ? "#FFF0F6" : "#EEFBF5";
+
+  return `<svg width="933" height="1085" viewBox="0 0 933 1085" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <filter id="shadow"><feDropShadow dx="0" dy="4" stdDeviation="9" flood-color="#7BD9B5" flood-opacity=".18"/></filter>
+      <linearGradient id="progress" x1="0" x2="1"><stop offset="0" stop-color="#22D66D"/><stop offset="1" stop-color="#FF3B83"/></linearGradient>
+    </defs>
+
+    <!-- Opaque clean data panel: masks every transaction-specific word/number baked into the static artwork. -->
+    <rect x="38" y="302" width="857" height="602" rx="36" fill="#FBFFFD" stroke="#D8F7E9" stroke-width="2" filter="url(#shadow)"/>
+
+    <rect x="78" y="338" width="170" height="54" rx="27" fill="${accent}"/>
+    <text x="163" y="374" text-anchor="middle" font-family="sans-serif" font-size="27" font-weight="800" fill="#FFFFFF">${typeLabel}</text>
+    <text x="273" y="375" font-family="sans-serif" font-size="34" font-weight="800" fill="#183D3A">• ${escapeXml(categoryLabel)}</text>
+
+    <text x="80" y="434" font-family="sans-serif" font-size="24" font-weight="600" fill="#4B6173">${escapeXml(thaiDateTime(occurredAt))}</text>
+    <text x="80" y="500" font-family="sans-serif" font-size="47" font-weight="800" fill="#163D3C">${escapeXml(item)}</text>
+    <text x="844" y="500" text-anchor="end" font-family="sans-serif" font-size="55" font-weight="900" fill="${accent}">฿${money(amount)}</text>
+    <line x1="78" y1="535" x2="855" y2="535" stroke="#8ADDC0" stroke-width="3"/>
+
+    ${budgetLimit > 0 ? `
+      <rect x="70" y="566" width="792" height="292" rx="28" fill="${softAccent}" stroke="#CFF3E3" stroke-width="2"/>
+      <circle cx="111" cy="610" r="25" fill="#149A68"/>
+      <text x="111" y="619" text-anchor="middle" font-family="sans-serif" font-size="24" font-weight="800" fill="#FFFFFF">฿</text>
+      <text x="150" y="620" font-family="sans-serif" font-size="30" font-weight="800" fill="#173F3B">งบหมวด${escapeXml(category)}</text>
+
+      <text x="90" y="671" font-family="sans-serif" font-size="19" fill="#526979">ใช้ไป</text>
+      <text x="90" y="715" font-family="sans-serif" font-size="39" font-weight="900" fill="${accent}">฿${money(budgetSpent)}</text>
+      <text x="378" y="671" font-family="sans-serif" font-size="19" fill="#526979">งบทั้งหมด</text>
+      <text x="378" y="715" font-family="sans-serif" font-size="34" font-weight="800" fill="#149A68">฿${money(budgetLimit)}</text>
+      <text x="646" y="671" font-family="sans-serif" font-size="19" fill="#526979">${remainingLabel}</text>
+      <text x="646" y="715" font-family="sans-serif" font-size="34" font-weight="800" fill="${metrics.isOverBudget ? "#F51D72" : "#149A68"}">฿${money(remainingAmount)}</text>
+
+      <rect x="90" y="750" width="660" height="24" rx="12" fill="#DDEFE8"/>
+      <rect x="90" y="750" width="${usageWidth}" height="24" rx="12" fill="url(#progress)"/>
+      <text x="90" y="809" font-family="sans-serif" font-size="23" font-weight="800" fill="${metrics.isOverBudget ? "#D94A6E" : "#32685C"}">${escapeXml(budgetNotice)}</text>
+    ` : `
+      <rect x="70" y="580" width="792" height="184" rx="28" fill="#F1FBF7" stroke="#CFF3E3" stroke-width="2"/>
+      <text x="100" y="640" font-family="sans-serif" font-size="29" font-weight="800" fill="#173F3B">ยังไม่ได้ตั้งงบหมวด${escapeXml(category)}</text>
+      <text x="100" y="688" font-family="sans-serif" font-size="22" fill="#526979">รายการนี้ถูกบันทึกด้วยยอดและเวลาจริงเรียบร้อยแล้ว</text>
+    `}
+
+    <!-- Clean helper bubble: masks sample item text in the original artwork before inserting real values. -->
+    <rect x="250" y="928" width="620" height="118" rx="34" fill="#FFFFFF" stroke="#D4F3E5" stroke-width="2" filter="url(#shadow)"/>
+    <text x="290" y="975" font-family="sans-serif" font-size="26" font-weight="700" fill="#3D5870">บันทึกให้แล้วครับ</text>
+    <text x="290" y="1018" font-family="sans-serif" font-size="24" fill="#3D5870">${escapeXml(item)} อยู่ในหมวด${escapeXml(categoryLabel)}แล้วน่ะจ๊ะ 💚</text>
+  </svg>`;
+}
+
 export function registerSaveResultImageRoute(app: Express) {
   app.get("/api/milo/save-result.png", async (req: Request, res: Response) => {
     try {
+      const transactionType = req.query.transactionType === "income" ? "income" : "expense";
       const item = String(req.query.item ?? "รายการ").trim().slice(0, 80) || "รายการ";
-      const category = String(req.query.category ?? "อาหาร").trim().slice(0, 50) || "อาหาร";
+      const category = String(req.query.category ?? "ทั่วไป").trim().slice(0, 50) || "ทั่วไป";
       const amount = Number(req.query.amount ?? 0);
       const budgetSpent = Number(req.query.budgetSpent ?? 0);
       const budgetLimit = Number(req.query.budgetLimit ?? 0);
-      const budgetPercent = Number.isFinite(Number(req.query.budgetPercent))
-        ? Number(req.query.budgetPercent)
-        : budgetLimit > 0 ? Math.round((budgetSpent / budgetLimit) * 100) : 0;
       const occurredAt = parseDate(typeof req.query.occurredAt === "string" ? req.query.occurredAt : null);
-      const percent = Math.max(0, Math.min(100, Math.round(budgetPercent)));
 
       if (!Number.isFinite(amount) || amount <= 0) return res.status(400).type("text/plain").send("Invalid amount");
 
@@ -38,25 +120,7 @@ export function registerSaveResultImageRoute(app: Express) {
       if (!templateResponse.ok) return res.status(502).type("text/plain").send("Save result template unavailable");
       const template = Buffer.from(await templateResponse.arrayBuffer());
 
-      const svg = `<svg width="933" height="1085" viewBox="0 0 933 1085" xmlns="http://www.w3.org/2000/svg">
-        <defs><filter id="shadow"><feDropShadow dx="0" dy="2" stdDeviation="4" flood-opacity=".12"/></filter></defs>
-        <rect x="245" y="390" width="640" height="165" rx="24" fill="#F7FFFB" opacity=".97" filter="url(#shadow)"/>
-        <text x="280" y="435" font-family="sans-serif" font-size="25" font-weight="700" fill="#24977B">รายการ</text>
-        <text x="280" y="492" font-family="sans-serif" font-size="48" font-weight="800" fill="#25425A">${escapeXml(item)}</text>
-        <rect x="245" y="555" width="640" height="145" rx="24" fill="#FFF5FA" opacity=".98" filter="url(#shadow)"/>
-        <text x="280" y="600" font-family="sans-serif" font-size="24" font-weight="700" fill="#D74475">หมวดหมู่</text>
-        <text x="280" y="655" font-family="sans-serif" font-size="45" font-weight="800" fill="#D74475">${escapeXml(category)}</text>
-        <rect x="245" y="700" width="640" height="145" rx="24" fill="#F2FCF8" opacity=".98" filter="url(#shadow)"/>
-        <text x="280" y="745" font-family="sans-serif" font-size="24" font-weight="700" fill="#168C70">จำนวนเงิน</text>
-        <text x="280" y="802" font-family="sans-serif" font-size="46" font-weight="800" fill="#168C70">฿${money(amount)} บาท</text>
-        <rect x="245" y="845" width="640" height="145" rx="24" fill="#F5F4FF" opacity=".98" filter="url(#shadow)"/>
-        <text x="280" y="890" font-family="sans-serif" font-size="24" font-weight="700" fill="#7567A7">วันที่ - เวลา</text>
-        <text x="280" y="944" font-family="sans-serif" font-size="31" font-weight="700" fill="#2F4055">${escapeXml(thaiDateTime(occurredAt))}</text>
-        ${budgetLimit > 0 ? `<rect x="155" y="990" width="730" height="78" rx="20" fill="#F3FBF8" stroke="#B8E9D9"/>
-          <text x="190" y="1025" font-family="sans-serif" font-size="20" font-weight="700" fill="#267C68">${escapeXml(category)} · ใช้ไป ${percent}%</text>
-          <text x="190" y="1052" font-family="sans-serif" font-size="17" fill="#58706A">(${money(budgetSpent)} / ${money(budgetLimit)} บาท) · ${percent <= 80 ? "ยังอยู่ในเกณฑ์ที่ดีอยู่จ้า น่ะจ๊ะ" : percent <= 100 ? "ใกล้เต็มงบแล้วนะ น่ะจ๊ะ" : "เกินงบแล้วนะ น่ะจ๊ะ"}</text>` : ""}
-      </svg>`;
-
+      const svg = buildSaveResultSvg({ transactionType, item, category, amount, occurredAt, budgetSpent, budgetLimit });
       const output = await sharp(template).composite([{ input: Buffer.from(svg), top: 0, left: 0 }]).png().toBuffer();
       res.set({ "Content-Type": "image/png", "Cache-Control": "private, no-store, max-age=0" });
       return res.status(200).send(output);

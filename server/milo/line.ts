@@ -1,4 +1,5 @@
 import { artworkMessages, type RichMenuArtwork } from "./richMenuArtwork";
+import { budgetStatusCopy } from "./budgetStatus";
 import crypto from "node:crypto";
 
 export type LineCredentials = { channelSecret: string; channelAccessToken: string };
@@ -44,6 +45,7 @@ export function miloRichMenuImageUrl(key: MiloRichMenuImageKey) {
 export function miloSaveResultImageUrl(summary: PostSaveSummary) {
   const appBaseUrl = (process.env.MILO_SAVE_RESULT_IMAGE_BASE_URL ?? "https://milo-line-app.vercel.app").replace(/\/+$/, "");
   const params = new URLSearchParams({
+    transactionType: summary.transactionType,
     item: (summary.note?.trim() || summary.category).slice(0, 80),
     category: summary.category.slice(0, 50),
     amount: String(summary.amount),
@@ -129,9 +131,10 @@ export function mascotExpenseCopy(transactionType: PostSaveSummary["transactionT
 export function postSaveSummaryText(summary: PostSaveSummary) {
   const label = summary.transactionType === "expense" ? "รายจ่าย" : "รายรับ";
   const note = summary.note?.trim();
-  const budget = summary.budgetLimit > 0 && summary.budgetPercent !== undefined ? `\nงบหมวด${summary.category}: ใช้ไป ${summary.budgetPercent}% (${summary.budgetSpent.toLocaleString("th-TH")} / ${summary.budgetLimit.toLocaleString("th-TH")} บาท)` : "";
-  const timestamp = new Intl.DateTimeFormat("th-TH", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Bangkok" }).format(summary.occurredAt);
-  return `จดสำเร็จ\nรายการ: ${note || summary.category}\nหมวด: ${summary.category}\nจำนวนเงิน: ${summary.amount.toLocaleString("th-TH")} บาท\nวันที่ - เวลา: ${timestamp}${budget}\n${mascotExpenseCopy(summary.transactionType, summary.amount)}\nวันนี้: รายรับ ${summary.dailyIncome.toLocaleString("th-TH")} บาท · รายจ่าย ${summary.dailyExpense.toLocaleString("th-TH")} บาท · คงเหลือ ${summary.dailyBalance.toLocaleString("th-TH")} บาท`;
+  const categoryLabel = summary.transactionType === "expense" && summary.category === "อาหาร" ? "ค่าอาหาร" : summary.category;
+  const budget = summary.budgetLimit > 0 ? `\n${budgetStatusCopy(summary.category, summary.budgetSpent, summary.budgetLimit)}\nงบหมวด${summary.category}: ${summary.budgetSpent.toLocaleString("th-TH")} / ${summary.budgetLimit.toLocaleString("th-TH")} บาท` : "";
+  const timestamp = new Intl.DateTimeFormat("th-TH-u-nu-latn", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Bangkok" }).format(summary.occurredAt);
+  return `จดสำเร็จ\nรายการ: ${note || categoryLabel}\nหมวด: ${categoryLabel}\nจำนวนเงิน: ${summary.amount.toLocaleString("th-TH")} บาท\nวันที่ - เวลา: ${timestamp}${budget}\n${mascotExpenseCopy(summary.transactionType, summary.amount)}\nวันนี้: รายรับ ${summary.dailyIncome.toLocaleString("th-TH")} บาท · รายจ่าย ${summary.dailyExpense.toLocaleString("th-TH")} บาท · คงเหลือ ${summary.dailyBalance.toLocaleString("th-TH")} บาท`;
 }
 
 export function financeReportCardText(report: FinanceReportCard) {
@@ -247,6 +250,7 @@ export async function pushFinanceReportCard(to: string, report: FinanceReportCar
 export async function replyPostSaveSummary(replyToken: string, summary: PostSaveSummary, credentials = lineCredentials()) {
   const isExpense = summary.transactionType === "expense";
   const label = isExpense ? "รายจ่าย" : "รายรับ";
+  const categoryLabel = isExpense && summary.category === "อาหาร" ? "ค่าอาหาร" : summary.category;
   const accent = isExpense ? "#C9578A" : "#24977B";
   const softAccent = isExpense ? "#FDE9F1" : "#E2F8F0";
   return callLine("/v2/bot/message/reply", credentials, {
@@ -266,7 +270,7 @@ export async function replyPostSaveSummary(replyToken: string, summary: PostSave
           ] },
           { type: "box", layout: "vertical", spacing: "md", paddingAll: "16px", cornerRadius: "md", backgroundColor: "#FFFEFB", contents: [
             { type: "box", layout: "horizontal", alignItems: "center", contents: [
-              { type: "text", text: `${isExpense ? "รายจ่าย" : "รายรับ"}  •  ${summary.category}`, size: "sm", weight: "bold", color: accent, flex: 1 },
+              { type: "text", text: `${isExpense ? "รายจ่าย" : "รายรับ"}  •  ${categoryLabel}`, size: "sm", weight: "bold", color: accent, flex: 1 },
               { type: "text", text: "บันทึกแล้ว", size: "xxs", color: "#8B809B", align: "end" },
             ] },
             { type: "text", text: `${summary.amount.toLocaleString("th-TH")} บาท`, size: "xxl", weight: "bold", color: "#3F3552" },
@@ -275,8 +279,9 @@ export async function replyPostSaveSummary(replyToken: string, summary: PostSave
             { type: "text", text: new Intl.DateTimeFormat("th-TH", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Bangkok" }).format(summary.occurredAt), size: "sm", color: "#4D4263" },
             ...(summary.budgetLimit > 0 && summary.budgetPercent !== undefined ? [{ type: "box", layout: "vertical", spacing: "sm", margin: "md", paddingAll: "12px", cornerRadius: "md", backgroundColor: "#F3FBF8", contents: [
               { type: "text", text: "สถานะงบประมาณหมวดหมู่", size: "xs", weight: "bold", color: "#267C68" },
-              { type: "box", layout: "horizontal", alignItems: "center", spacing: "sm", contents: [{ type: "text", text: summary.category, size: "sm", color: "#4D4263", flex: 1 }, { type: "text", text: `ใช้ไป ${summary.budgetPercent}%`, size: "sm", weight: "bold", color: "#267C68", align: "end" }] },
+              { type: "box", layout: "horizontal", alignItems: "center", spacing: "sm", contents: [{ type: "text", text: categoryLabel, size: "sm", color: "#4D4263", flex: 1 }, { type: "text", text: `ใช้ไป ${summary.budgetPercent}%`, size: "sm", weight: "bold", color: "#267C68", align: "end" }] },
               { type: "text", text: `(${summary.budgetSpent.toLocaleString("th-TH")} / ${summary.budgetLimit.toLocaleString("th-TH")} บาท)`, size: "xxs", color: "#6B6080", align: "end" },
+              { type: "text", text: budgetStatusCopy(summary.category, summary.budgetSpent, summary.budgetLimit), size: "xxs", color: "#A85C74", wrap: true },
             ] }] : []),
             { type: "separator", color: "#E9E4F1" },
             { type: "text", text: "สรุปยอดวันนี้", size: "xs", weight: "bold", color: "#76688E" },
