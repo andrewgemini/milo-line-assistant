@@ -1,6 +1,6 @@
 // server/api.ts
 import express2 from "express";
-import sharp2 from "sharp";
+import sharp3 from "sharp";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 
 // server/routers.ts
@@ -1562,10 +1562,10 @@ function sourceIdentity(source) {
   if (source.type === "group") return { lineChatId: source.groupId, lineUserId: source.userId, scope: "group" };
   return { lineChatId: source.roomId, lineUserId: source.userId, scope: "room" };
 }
-async function callLine(path2, credentials, init) {
-  const response = await fetch(`https://api.line.me${path2}`, { ...init, headers: { Authorization: `Bearer ${credentials.channelAccessToken}`, ...init.headers } });
+async function callLine(path3, credentials, init) {
+  const response = await fetch(`https://api.line.me${path3}`, { ...init, headers: { Authorization: `Bearer ${credentials.channelAccessToken}`, ...init.headers } });
   if (!response.ok) throw new Error(`LINE API ${response.status}: ${await response.text()}`);
-  console.info("[Milo LINE] message delivered", { endpoint: path2, status: response.status });
+  console.info("[Milo LINE] message delivered", { endpoint: path3, status: response.status });
   return response;
 }
 var MILO_RICH_MENU_IMAGE_BASE_URL = (process.env.MILO_RICH_MENU_IMAGE_BASE_URL ?? "https://milo-line-app.vercel.app/milo-richmenu").replace(/\/+$/, "");
@@ -1912,8 +1912,8 @@ async function getProfile(source, credentials = lineCredentials()) {
     return await response2.json();
   }
   if (!source.userId) return void 0;
-  const path2 = source.type === "group" ? `/v2/bot/group/${source.groupId}/member/${source.userId}` : `/v2/bot/room/${source.roomId}/member/${source.userId}`;
-  const response = await callLine(path2, credentials, { method: "GET" });
+  const path3 = source.type === "group" ? `/v2/bot/group/${source.groupId}/member/${source.userId}` : `/v2/bot/room/${source.roomId}/member/${source.userId}`;
+  const response = await callLine(path3, credentials, { method: "GET" });
   return await response.json();
 }
 async function replyRichMenu(replyToken, text2, artwork, credentials = lineCredentials()) {
@@ -2900,8 +2900,199 @@ async function storageGetSignedUrl(relKey) {
   return url;
 }
 
+// server/milo/ocrImageAnalysis.ts
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import sharp from "sharp";
+import { createWorker } from "tesseract.js";
+var DATA_DIR = path.join(process.cwd(), "api", "tessdata");
+var CACHE_DIR = path.join(os.tmpdir(), "milo-tesscache");
+var thaiDigitMap = {
+  "\u0E50": "0",
+  "\u0E51": "1",
+  "\u0E52": "2",
+  "\u0E53": "3",
+  "\u0E54": "4",
+  "\u0E55": "5",
+  "\u0E56": "6",
+  "\u0E57": "7",
+  "\u0E58": "8",
+  "\u0E59": "9"
+};
+var thaiMonths = {
+  "\u0E21.\u0E04.": 1,
+  "\u0E01.\u0E1E.": 2,
+  "\u0E21\u0E35.\u0E04.": 3,
+  "\u0E40\u0E21.\u0E22.": 4,
+  "\u0E1E.\u0E04.": 5,
+  "\u0E21\u0E34.\u0E22.": 6,
+  "\u0E01.\u0E04.": 7,
+  "\u0E2A.\u0E04.": 8,
+  "\u0E01.\u0E22.": 9,
+  "\u0E15.\u0E04.": 10,
+  "\u0E1E.\u0E22.": 11,
+  "\u0E18.\u0E04.": 12
+};
+function ocrAssetsReady() {
+  return fs.existsSync(path.join(DATA_DIR, "tha.traineddata.gz")) && fs.existsSync(path.join(DATA_DIR, "eng.traineddata.gz"));
+}
+function decodeDataUrl(dataUrl) {
+  const match = dataUrl.match(/^data:([^;]+);base64,([\s\S]+)$/);
+  if (!match) throw new Error("OCR expects a base64 data URL");
+  return Buffer.from(match[2], "base64");
+}
+function normalizeDigits(text2) {
+  return text2.replace(/[๐-๙]/g, (digit) => thaiDigitMap[digit] || digit);
+}
+function normalizeOcrText(text2) {
+  return normalizeDigits(text2).replace(/\u00a0/g, " ").replace(/[|¦]/g, "I").replace(/[ \t]+/g, " ").replace(/\r/g, "").trim();
+}
+function parseMoney(raw) {
+  const value = Number(raw.replace(/,/g, ""));
+  return Number.isFinite(value) ? value : 0;
+}
+function extractAmount(text2) {
+  const lines = text2.split(/\n+/).map((line) => line.trim()).filter(Boolean);
+  const preferred = /(จำนวน(?:เงิน)?|ยอด(?:โอน|ชำระ|สุทธิ|รวม)|amount|total)/i;
+  const fee = /(ค่าธรรมเนียม|fee)/i;
+  const currency = /(บาท|thb|฿)/i;
+  const numberRe = /(?:฿|THB)?\s*([0-9]{1,3}(?:,[0-9]{3})*(?:\.\d{1,2})|[0-9]+(?:\.\d{1,2})?)\s*(?:บาท|THB|฿)?/ig;
+  const candidates = [];
+  for (const line of lines) {
+    if (fee.test(line)) continue;
+    const contextScore = preferred.test(line) ? 10 : currency.test(line) ? 4 : 0;
+    if (!contextScore) continue;
+    numberRe.lastIndex = 0;
+    let match;
+    while ((match = numberRe.exec(line)) !== null) {
+      const amount = parseMoney(match[1]);
+      if (amount <= 0 || amount > 1e8) continue;
+      candidates.push({ amount, score: contextScore + (currency.test(line) ? 2 : 0) });
+      if (match.index === numberRe.lastIndex) numberRe.lastIndex += 1;
+    }
+  }
+  candidates.sort((a, b) => b.score - a.score || b.amount - a.amount);
+  return candidates.length ? candidates[0].amount : 0;
+}
+function normalizeYear(raw) {
+  if (raw >= 2400) return raw - 543;
+  if (raw >= 1e3) return raw;
+  if (raw >= 50) return raw + 2500 - 543;
+  return raw + 2e3;
+}
+function validDateParts(year, month, day) {
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
+}
+function formatIsoDate(year, month, day) {
+  if (!validDateParts(year, month, day)) return "";
+  return `${String(year).padStart(4, "0")}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
+function extractDateTime(text2) {
+  const normalized = text2.replace(/\s+/g, " ");
+  let dateText = "";
+  let timeText = "";
+  const iso = normalized.match(/\b(20\d{2})[-\/]([01]?\d)[-\/]([0-3]?\d)\b/);
+  if (iso) dateText = formatIsoDate(Number(iso[1]), Number(iso[2]), Number(iso[3]));
+  if (!dateText) {
+    const numeric = normalized.match(/\b([0-3]?\d)[\/-]([01]?\d)[\/-](\d{2,4})\b/);
+    if (numeric) dateText = formatIsoDate(normalizeYear(Number(numeric[3])), Number(numeric[2]), Number(numeric[1]));
+  }
+  if (!dateText) {
+    const monthEntries = Object.entries(thaiMonths);
+    for (let i = 0; i < monthEntries.length; i += 1) {
+      const monthName = monthEntries[i][0];
+      const month = monthEntries[i][1];
+      const escaped = monthName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const match = normalized.match(new RegExp(`\\b([0-3]?\\d)\\s*${escaped}\\s*(\\d{2,4})\\b`));
+      if (match) {
+        dateText = formatIsoDate(normalizeYear(Number(match[2])), month, Number(match[1]));
+        break;
+      }
+    }
+  }
+  const time = normalized.match(/\b([01]?\d|2[0-3])[:.]([0-5]\d)\s*(?:น\.)?/);
+  if (time) timeText = `${String(Number(time[1])).padStart(2, "0")}:${time[2]}`;
+  return { dateText, timeText };
+}
+function extractMerchant(text2) {
+  const lines = text2.split(/\n+/).map((line) => line.trim()).filter(Boolean);
+  const direct = lines.find((line) => /^(?:ผู้รับ|ไปยัง|ชื่อผู้รับ|recipient|merchant|to)\s*[:：-]?\s*.+/i.test(line));
+  if (direct) return direct.replace(/^(?:ผู้รับ|ไปยัง|ชื่อผู้รับ|recipient|merchant|to)\s*[:：-]?\s*/i, "").trim().slice(0, 120);
+  const markerIndex = lines.findIndex((line) => /^(?:ผู้รับ|ไปยัง|ชื่อผู้รับ|recipient|merchant|to)\s*[:：-]?$/i.test(line));
+  if (markerIndex >= 0 && lines[markerIndex + 1]) return lines[markerIndex + 1].slice(0, 120);
+  return "";
+}
+function detectDocumentType(text2) {
+  if (/(โอนเงิน|โอนสำเร็จ|โอนเงินสำเร็จ|พร้อมเพย์|promptpay|ธ\.|ธนาคาร|bank transfer|transfer success(?:ful)?)/i.test(text2)) return "bank_slip";
+  if (/(ใบเสร็จ|ใบกำกับ|receipt|ยอดสุทธิ|ยอดรวม|total)/i.test(text2)) return "receipt";
+  if (/(นัด|appointment|วันนัด)/i.test(text2)) return "appointment";
+  return "unknown";
+}
+function guessCategory(text2) {
+  if (/(กาแฟ|coffee|cafe|อาหาร|restaurant|ข้าว|ชา|เครื่องดื่ม|food)/i.test(text2)) return "\u0E2D\u0E32\u0E2B\u0E32\u0E23";
+  if (/(น้ำมัน|fuel|gas station|แท็กซี่|taxi|grab|รถไฟ|bts|mrt|ทางด่วน)/i.test(text2)) return "\u0E40\u0E14\u0E34\u0E19\u0E17\u0E32\u0E07";
+  if (/(ไฟฟ้า|ประปา|อินเทอร์เน็ต|internet|โทรศัพท์|ค่าไฟ|ค่าน้ำ)/i.test(text2)) return "\u0E04\u0E48\u0E32\u0E2A\u0E32\u0E18\u0E32\u0E23\u0E13\u0E39\u0E1B\u0E42\u0E20\u0E04";
+  if (/(โรงพยาบาล|clinic|คลินิก|ยา|pharmacy|medical)/i.test(text2)) return "\u0E2A\u0E38\u0E02\u0E20\u0E32\u0E1E";
+  if (/(โรงเรียน|ค่าเรียน|tuition|course|หนังสือ|book)/i.test(text2)) return "\u0E01\u0E32\u0E23\u0E28\u0E36\u0E01\u0E29\u0E32";
+  if (/(movie|cinema|เกม|game|netflix|spotify|บันเทิง)/i.test(text2)) return "\u0E1A\u0E31\u0E19\u0E40\u0E17\u0E34\u0E07";
+  if (/(shop|store|ห้าง|shopping|ช้อป|สินค้า)/i.test(text2)) return "\u0E0A\u0E49\u0E2D\u0E1B\u0E1B\u0E34\u0E49\u0E07";
+  if (/(hotel|โรงแรม|flight|เที่ยวบิน|travel|ท่องเที่ยว)/i.test(text2)) return "\u0E17\u0E48\u0E2D\u0E07\u0E40\u0E17\u0E35\u0E48\u0E22\u0E27";
+  return "\u0E17\u0E31\u0E48\u0E27\u0E44\u0E1B";
+}
+function analyzeOcrText(rawText) {
+  const text2 = normalizeOcrText(rawText);
+  const documentType = detectDocumentType(text2);
+  const amount = extractAmount(text2);
+  const dateTime = extractDateTime(text2);
+  const merchant = extractMerchant(text2);
+  let kind = "unknown";
+  if (amount > 0) kind = "expense";
+  else if (documentType === "appointment" && dateTime.dateText) kind = "reminder";
+  const confidence = Math.min(
+    0.96,
+    0.28 + (amount > 0 ? 0.34 : 0) + (dateTime.dateText ? 0.14 : 0) + (dateTime.timeText ? 0.05 : 0) + (merchant ? 0.08 : 0) + (documentType !== "unknown" ? 0.07 : 0)
+  );
+  const title = documentType === "bank_slip" ? "\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E42\u0E2D\u0E19\u0E40\u0E07\u0E34\u0E19" : documentType === "receipt" ? "\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E08\u0E32\u0E01\u0E43\u0E1A\u0E40\u0E2A\u0E23\u0E47\u0E08" : documentType === "appointment" ? "\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E19\u0E31\u0E14\u0E2B\u0E21\u0E32\u0E22" : "\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E08\u0E32\u0E01\u0E23\u0E39\u0E1B";
+  const proposal = {
+    kind,
+    documentType,
+    title,
+    merchant,
+    dateText: dateTime.dateText,
+    timeText: dateTime.timeText,
+    amount,
+    currency: amount > 0 ? "\u0E1A\u0E32\u0E17" : "",
+    category: kind === "expense" ? guessCategory(text2) : "\u0E17\u0E31\u0E48\u0E27\u0E44\u0E1B",
+    paymentMethod: documentType === "bank_slip" ? "\u0E42\u0E2D\u0E19\u0E40\u0E07\u0E34\u0E19" : "",
+    receiptNumber: "",
+    lineItems: [],
+    note: `OCR fallback${merchant ? ` \u2022 ${merchant}` : ""}`
+  };
+  const summary = kind === "expense" ? `OCR \u0E2D\u0E48\u0E32\u0E19${documentType === "bank_slip" ? "\u0E2A\u0E25\u0E34\u0E1B" : "\u0E43\u0E1A\u0E40\u0E2A\u0E23\u0E47\u0E08"}\u0E44\u0E14\u0E49 \u0E22\u0E2D\u0E14 ${amount.toLocaleString("th-TH")} \u0E1A\u0E32\u0E17${dateTime.dateText ? ` \u0E27\u0E31\u0E19\u0E17\u0E35\u0E48 ${dateTime.dateText}` : " \u0E41\u0E15\u0E48\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E0A\u0E31\u0E14"}` : kind === "reminder" ? `OCR \u0E2D\u0E48\u0E32\u0E19\u0E27\u0E31\u0E19\u0E19\u0E31\u0E14\u0E44\u0E14\u0E49 ${dateTime.dateText}${dateTime.timeText ? ` ${dateTime.timeText}` : ""}` : "OCR \u0E2D\u0E48\u0E32\u0E19\u0E02\u0E49\u0E2D\u0E04\u0E27\u0E32\u0E21\u0E08\u0E32\u0E01\u0E23\u0E39\u0E1B\u0E44\u0E14\u0E49 \u0E41\u0E15\u0E48\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E1E\u0E1A\u0E22\u0E2D\u0E14\u0E2B\u0E23\u0E37\u0E2D\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E17\u0E35\u0E48\u0E21\u0E31\u0E48\u0E19\u0E43\u0E08\u0E1E\u0E2D\u0E2A\u0E33\u0E2B\u0E23\u0E31\u0E1A\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01";
+  return { summary, confidence, proposals: [proposal] };
+}
+async function analyzeImageWithOcr(dataUrl) {
+  if (!ocrAssetsReady()) throw new Error(`OCR language data is unavailable at ${DATA_DIR}`);
+  fs.mkdirSync(CACHE_DIR, { recursive: true });
+  const input = decodeDataUrl(dataUrl);
+  const prepared = await sharp(input).rotate().resize({ width: 1800, withoutEnlargement: true }).grayscale().normalize().sharpen().png().toBuffer();
+  const worker = await createWorker(["tha", "eng"], void 0, {
+    langPath: DATA_DIR,
+    cachePath: CACHE_DIR,
+    gzip: true,
+    logger: () => void 0
+  });
+  try {
+    const result = await worker.recognize(prepared);
+    return analyzeOcrText(result.data.text || "");
+  } finally {
+    await worker.terminate();
+  }
+}
+
 // server/milo/imageAnalysis.ts
-import { getVercelOidcToken } from "@vercel/oidc";
 var schema2 = {
   type: "object",
   properties: {
@@ -2963,15 +3154,6 @@ async function analyzeImageWithForge(dataUrl) {
   });
   return parseAnalysisContent(response.choices[0]?.message.content);
 }
-async function gatewayToken() {
-  const apiKey = (process.env.AI_GATEWAY_API_KEY || "").trim();
-  if (apiKey) return apiKey;
-  try {
-    return (await getVercelOidcToken()).trim();
-  } catch {
-    return "";
-  }
-}
 async function gatewayRequest(dataUrl, token, structured) {
   const body = {
     model: process.env.MILO_VISION_MODEL || "google/gemini-2.5-flash",
@@ -3008,9 +3190,7 @@ async function gatewayRequest(dataUrl, token, structured) {
     clearTimeout(timeout);
   }
 }
-async function analyzeImageWithGateway(dataUrl) {
-  const token = await gatewayToken();
-  if (!token) throw new Error("Vercel AI Gateway authentication is unavailable");
+async function analyzeImageWithGatewayKey(dataUrl, token) {
   try {
     return await gatewayRequest(dataUrl, token, true);
   } catch (error) {
@@ -3019,23 +3199,40 @@ async function analyzeImageWithGateway(dataUrl) {
     throw error;
   }
 }
+function imageAnalysisMode() {
+  if (ENV.forgeApiKey) return ocrAssetsReady() ? "forge-vision+ocr-fallback" : "forge-vision";
+  if ((process.env.AI_GATEWAY_API_KEY || "").trim()) return ocrAssetsReady() ? "vercel-ai-gateway-key+ocr-fallback" : "vercel-ai-gateway-key";
+  return ocrAssetsReady() ? "ocr-fallback" : "unconfigured";
+}
 async function imageAnalysisRuntimeStatus() {
-  if (ENV.forgeApiKey) return { mode: "forge-vision", authenticated: true };
-  if ((process.env.AI_GATEWAY_API_KEY || "").trim()) return { mode: "vercel-ai-gateway-key", authenticated: true };
-  const token = await gatewayToken();
-  return { mode: token ? "vercel-ai-gateway-oidc" : "unconfigured", authenticated: Boolean(token) };
+  const mode = imageAnalysisMode();
+  return {
+    mode,
+    authenticated: Boolean(ENV.forgeApiKey || (process.env.AI_GATEWAY_API_KEY || "").trim() || ocrAssetsReady()),
+    ocrAssetsReady: ocrAssetsReady()
+  };
 }
 async function analyzeImage(dataUrl) {
   if (ENV.forgeApiKey) {
     try {
       return await analyzeImageWithForge(dataUrl);
     } catch (error) {
-      console.warn("[Milo Image] primary vision provider failed; trying Vercel AI Gateway", {
+      console.warn("[Milo Image] primary vision provider failed; using local OCR fallback", {
         error: error instanceof Error ? error.message : "unknown"
       });
     }
   }
-  return analyzeImageWithGateway(dataUrl);
+  const gatewayKey = (process.env.AI_GATEWAY_API_KEY || "").trim();
+  if (gatewayKey) {
+    try {
+      return await analyzeImageWithGatewayKey(dataUrl, gatewayKey);
+    } catch (error) {
+      console.warn("[Milo Image] AI Gateway failed; using local OCR fallback", {
+        error: error instanceof Error ? error.message : "unknown"
+      });
+    }
+  }
+  return analyzeImageWithOcr(dataUrl);
 }
 
 // server/milo/pdfAnalysis.ts
@@ -4266,8 +4463,8 @@ function registerMiloCron(app2) {
       return res.status(500).json({ error: error instanceof Error ? error.message : "unknown", timestamp: (/* @__PURE__ */ new Date()).toISOString() });
     }
   });
-  const registerFinanceDigestRoute = (path2, settingKey, digestType) => {
-    app2.post(path2, async (req, res) => {
+  const registerFinanceDigestRoute = (path3, settingKey, digestType) => {
+    app2.post(path3, async (req, res) => {
       try {
         const user = await sdk.authenticateRequest(req);
         if (!user.isCron || !user.taskUid) return res.status(403).json({ error: "cron-only" });
@@ -4285,10 +4482,10 @@ function registerMiloCron(app2) {
 }
 
 // server/milo/saveResultImage.ts
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
-import sharp from "sharp";
+import fs2 from "node:fs";
+import os2 from "node:os";
+import path2 from "node:path";
+import sharp2 from "sharp";
 
 // server/milo/thaiFontData.ts
 var MILO_THAI_FONT_400_BASE64 = "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";
@@ -4379,14 +4576,14 @@ function buildSaveResultSvg(input) {
     <text x="108" y="1004" font-size="25" fill="#3D5870">${escapeXml(item)} \u2022 ${escapeXml(categoryLabel)} \u2022 ${money(amount)} \u0E1A\u0E32\u0E17</text>
   </svg>`;
 }
-var THAI_FONT_REGULAR_FILE = path.join(os.tmpdir(), "milo-noto-sans-thai-400.woff2");
-var THAI_FONT_BOLD_FILE = path.join(os.tmpdir(), "milo-noto-sans-thai-700.woff2");
+var THAI_FONT_REGULAR_FILE = path2.join(os2.tmpdir(), "milo-noto-sans-thai-400.woff2");
+var THAI_FONT_BOLD_FILE = path2.join(os2.tmpdir(), "milo-noto-sans-thai-700.woff2");
 function ensureThaiFonts() {
-  if (!fs.existsSync(THAI_FONT_REGULAR_FILE)) {
-    fs.writeFileSync(THAI_FONT_REGULAR_FILE, Buffer.from(MILO_THAI_FONT_400_BASE64, "base64"));
+  if (!fs2.existsSync(THAI_FONT_REGULAR_FILE)) {
+    fs2.writeFileSync(THAI_FONT_REGULAR_FILE, Buffer.from(MILO_THAI_FONT_400_BASE64, "base64"));
   }
-  if (!fs.existsSync(THAI_FONT_BOLD_FILE)) {
-    fs.writeFileSync(THAI_FONT_BOLD_FILE, Buffer.from(MILO_THAI_FONT_700_BASE64, "base64"));
+  if (!fs2.existsSync(THAI_FONT_BOLD_FILE)) {
+    fs2.writeFileSync(THAI_FONT_BOLD_FILE, Buffer.from(MILO_THAI_FONT_700_BASE64, "base64"));
   }
 }
 function pangoTextLayer(text2, options) {
@@ -4466,7 +4663,7 @@ function registerSaveResultImageRoute(app2) {
       const svg = buildSaveResultSvg({ transactionType, item, category, amount, occurredAt, budgetSpent, budgetLimit });
       const shapesOnlySvg = svg.replace(/<text\b/g, '<text opacity="0"');
       const textLayers = buildThaiTextLayers({ transactionType, item, category, amount, occurredAt, budgetSpent, budgetLimit });
-      const output = await sharp(template).composite([{ input: Buffer.from(shapesOnlySvg), top: 0, left: 0 }, ...textLayers]).png().toBuffer();
+      const output = await sharp2(template).composite([{ input: Buffer.from(shapesOnlySvg), top: 0, left: 0 }, ...textLayers]).png().toBuffer();
       res.set({ "Content-Type": "image/png", "Cache-Control": "private, no-store, max-age=0" });
       return res.status(200).send(output);
     } catch (error) {
@@ -4492,10 +4689,11 @@ var healthHandler = async (_req, res) => {
   res.status(200).json({
     status: "ok",
     service: "milo",
-    release: "slip-vision-oidc-runtime-2026-09-12",
+    release: "slip-ocr-fallback-2026-09-12",
     visionConfigured: runtime.authenticated,
     imageAnalysisMode: mode,
-    visionModel: process.env.MILO_VISION_MODEL || (mode.startsWith("vercel-ai-gateway") ? "google/gemini-2.5-flash" : mode === "forge-vision" ? "gemini-3-flash-preview" : "unconfigured"),
+    visionModel: mode === "ocr-fallback" ? "tesseract-tha+eng" : process.env.MILO_VISION_MODEL || (mode.startsWith("vercel-ai-gateway") ? "google/gemini-2.5-flash" : mode.startsWith("forge-vision") ? "gemini-3-flash-preview" : "unconfigured"),
+    ocrAssetsReady: runtime.ocrAssetsReady,
     timestamp: (/* @__PURE__ */ new Date()).toISOString()
   });
 };
@@ -4515,7 +4713,7 @@ app.get("/api/internal/vision-smoke-c4b1e22134121301d0a33e9e38df49ff", async (_r
       <text x="70" y="860" font-size="38" font-family="Arial, sans-serif" fill="black">Reference: SMOKE123456</text>
       <text x="70" y="970" font-size="38" font-family="Arial, sans-serif" fill="black">PromptPay</text>
     </svg>`;
-    const png = await sharp2(Buffer.from(svg)).png().toBuffer();
+    const png = await sharp3(Buffer.from(svg)).png().toBuffer();
     const analysis = await analyzeImage(`data:image/png;base64,${png.toString("base64")}`);
     const proposal = analysis.proposals.find((item) => item.kind === "expense") ?? analysis.proposals[0];
     const amountOk = Math.abs(Number(proposal?.amount ?? 0) - 123.45) < 1e-3;

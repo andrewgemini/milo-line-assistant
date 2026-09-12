@@ -1,6 +1,6 @@
-import { getVercelOidcToken } from "@vercel/oidc";
 import { invokeLLM } from "../_core/llm";
 import { ENV } from "../_core/env";
+import { analyzeImageWithOcr, ocrAssetsReady } from "./ocrImageAnalysis";
 
 export type ImageProposal = {
   kind: "reminder" | "expense" | "unknown";
@@ -89,16 +89,6 @@ async function analyzeImageWithForge(dataUrl: string): Promise<ImageAnalysis> {
   return parseAnalysisContent(response.choices[0]?.message.content);
 }
 
-async function gatewayToken(): Promise<string> {
-  const apiKey = (process.env.AI_GATEWAY_API_KEY || "").trim();
-  if (apiKey) return apiKey;
-  try {
-    return (await getVercelOidcToken()).trim();
-  } catch {
-    return "";
-  }
-}
-
 async function gatewayRequest(dataUrl: string, token: string, structured: boolean) {
   const body: Record<string, unknown> = {
     model: process.env.MILO_VISION_MODEL || "google/gemini-2.5-flash",
@@ -140,9 +130,7 @@ async function gatewayRequest(dataUrl: string, token: string, structured: boolea
   }
 }
 
-async function analyzeImageWithGateway(dataUrl: string): Promise<ImageAnalysis> {
-  const token = await gatewayToken();
-  if (!token) throw new Error("Vercel AI Gateway authentication is unavailable");
+async function analyzeImageWithGatewayKey(dataUrl: string, token: string): Promise<ImageAnalysis> {
   try {
     return await gatewayRequest(dataUrl, token, true);
   } catch (error) {
@@ -152,18 +140,19 @@ async function analyzeImageWithGateway(dataUrl: string): Promise<ImageAnalysis> 
   }
 }
 
-export function imageAnalysisMode(oidcHeaderAvailable = false) {
-  if (ENV.forgeApiKey) return "forge-vision";
-  if ((process.env.AI_GATEWAY_API_KEY || "").trim()) return "vercel-ai-gateway-key";
-  if (oidcHeaderAvailable || (process.env.VERCEL_OIDC_TOKEN || "").trim()) return "vercel-ai-gateway-oidc";
-  return "unconfigured";
+export function imageAnalysisMode() {
+  if (ENV.forgeApiKey) return ocrAssetsReady() ? "forge-vision+ocr-fallback" : "forge-vision";
+  if ((process.env.AI_GATEWAY_API_KEY || "").trim()) return ocrAssetsReady() ? "vercel-ai-gateway-key+ocr-fallback" : "vercel-ai-gateway-key";
+  return ocrAssetsReady() ? "ocr-fallback" : "unconfigured";
 }
 
 export async function imageAnalysisRuntimeStatus() {
-  if (ENV.forgeApiKey) return { mode: "forge-vision", authenticated: true };
-  if ((process.env.AI_GATEWAY_API_KEY || "").trim()) return { mode: "vercel-ai-gateway-key", authenticated: true };
-  const token = await gatewayToken();
-  return { mode: token ? "vercel-ai-gateway-oidc" : "unconfigured", authenticated: Boolean(token) };
+  const mode = imageAnalysisMode();
+  return {
+    mode,
+    authenticated: Boolean(ENV.forgeApiKey || (process.env.AI_GATEWAY_API_KEY || "").trim() || ocrAssetsReady()),
+    ocrAssetsReady: ocrAssetsReady(),
+  };
 }
 
 export async function analyzeImage(dataUrl: string): Promise<ImageAnalysis> {
@@ -171,10 +160,22 @@ export async function analyzeImage(dataUrl: string): Promise<ImageAnalysis> {
     try {
       return await analyzeImageWithForge(dataUrl);
     } catch (error) {
-      console.warn("[Milo Image] primary vision provider failed; trying Vercel AI Gateway", {
+      console.warn("[Milo Image] primary vision provider failed; using local OCR fallback", {
         error: error instanceof Error ? error.message : "unknown",
       });
     }
   }
-  return analyzeImageWithGateway(dataUrl);
+
+  const gatewayKey = (process.env.AI_GATEWAY_API_KEY || "").trim();
+  if (gatewayKey) {
+    try {
+      return await analyzeImageWithGatewayKey(dataUrl, gatewayKey);
+    } catch (error) {
+      console.warn("[Milo Image] AI Gateway failed; using local OCR fallback", {
+        error: error instanceof Error ? error.message : "unknown",
+      });
+    }
+  }
+
+  return analyzeImageWithOcr(dataUrl);
 }

@@ -37,10 +37,11 @@ const healthHandler = async (_req: express.Request, res: express.Response) => {
   res.status(200).json({
     status: "ok",
     service: "milo",
-    release: "slip-vision-oidc-runtime-2026-09-12",
+    release: "slip-ocr-fallback-2026-09-12",
     visionConfigured: runtime.authenticated,
     imageAnalysisMode: mode,
-    visionModel: process.env.MILO_VISION_MODEL || (mode.startsWith("vercel-ai-gateway") ? "google/gemini-2.5-flash" : mode === "forge-vision" ? "gemini-3-flash-preview" : "unconfigured"),
+    visionModel: mode === "ocr-fallback" ? "tesseract-tha+eng" : process.env.MILO_VISION_MODEL || (mode.startsWith("vercel-ai-gateway") ? "google/gemini-2.5-flash" : mode.startsWith("forge-vision") ? "gemini-3-flash-preview" : "unconfigured"),
+    ocrAssetsReady: runtime.ocrAssetsReady,
     timestamp: new Date().toISOString(),
   });
 };
