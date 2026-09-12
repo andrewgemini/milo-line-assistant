@@ -60,13 +60,23 @@ function reminderFrom(text: string, now: Date): ReminderDraft | undefined {
 export function parseMiloCommand(text: string, now = new Date()): MiloCommand {
   const reminder = reminderFrom(text, now); if (reminder) return { type: "reminder", data: reminder };
   const value = text.trim().replace(/^@?ไมโล\s*/i, "");
-  // Explicit LINE Rich Menu labels: keep these mappings stable even if other command aliases evolve.
   if (value === "หน้าหลัก") return { type: "dashboardGuide" };
   if (value === "วิเคราะห์") return { type: "aiSummary", period: "month" };
   if (value === "จดบันทึก") return { type: "recordGuide" };
   if (value === "กระเป๋าเงิน") return { type: "budgetOverview" };
   if (value === "ตั้งค่า") return { type: "settingGuide" };
   const money = value.match(/^(จ่าย|รายจ่าย|รับ|รายรับ)\s*(.+?)\s+(\d[\d,]*(?:\.\d{1,2})?)\s*(?:บาท)?$/i); if (money) { const income = /รับ|รายรับ/i.test(money[1]); const note = money[2].trim(); const transactionType = income ? "income" : "expense"; return { type: transactionType, amount: Number(money[3].replace(/,/g, "")), category: suggestStandardCategory(transactionType, note), note }; }
+  const naturalMoney = value.match(/^(.+?)\s+(\d[\d,]*(?:\.\d{1,2})?)\s*(?:บาท)?$/i);
+  if (naturalMoney) {
+    const note = naturalMoney[1].trim();
+    const amount = Number(naturalMoney[2].replace(/,/g, ""));
+    const incomeCue = /^(?:ได้เงิน|เงินเดือนเข้า|ขายของได้|ขายได้|รับเงิน|รายรับ|รายได้|โบนัส|ค่าจ้าง|เงินเดือน)/i.test(note);
+    const expenseCue = /^(?:กิน|ซื้อ|จ่าย|ค่า|เติม|ช้อป|เดินทาง|แท็กซี่|กาแฟ|อาหาร|ข้าว|น้ำมัน|บิล|โอน|ของใช้|ชำระ)/i.test(note);
+    if (Number.isFinite(amount) && amount > 0 && note && (incomeCue || expenseCue)) {
+      const transactionType = incomeCue ? "income" : "expense";
+      return { type: transactionType, amount, category: suggestStandardCategory(transactionType, note), note };
+    }
+  }
   const transactionSearch = value.match(/^(?:ค้นหา|หา)รายการ\s+(.+)$/i); if (transactionSearch) return { type: "transactionSearch", query: transactionSearch[1].trim() };
   const transactionDelete = value.match(/^ลบรายการ\s*#?(\d+)$/i); if (transactionDelete) return { type: "transactionDelete", id: Number(transactionDelete[1]) };
   const transactionUpdate = value.match(/^แก้รายการ\s*#?(\d+)\s*(?:เป็น|ยอด)\s*(\d[\d,]*(?:\.\d{1,2})?)\s*(?:บาท)?$/i); if (transactionUpdate) return { type: "transactionUpdate", id: Number(transactionUpdate[1]), amount: Number(transactionUpdate[2].replace(/,/g, "")) };
