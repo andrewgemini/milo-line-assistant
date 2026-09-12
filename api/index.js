@@ -774,6 +774,13 @@ async function listTransactions(lineUserId, start, end, includeDeleted = false, 
   if (end) conditions.push(lte(transactions.occurredAt, end));
   return db.select().from(transactions).where(and(...conditions)).orderBy(desc(transactions.occurredAt)).limit(250);
 }
+async function listTransactionsForExport(lineUserId, financeAccountId, start, end) {
+  const db = await requireDb();
+  const conditions = [financeAccountId === void 0 ? eq(transactions.lineUserId, lineUserId) : eq(transactions.financeAccountId, financeAccountId), eq(transactions.status, "active")];
+  if (start) conditions.push(gte(transactions.occurredAt, start));
+  if (end) conditions.push(lte(transactions.occurredAt, end));
+  return db.select().from(transactions).where(and(...conditions)).orderBy(desc(transactions.occurredAt)).limit(1e4);
+}
 async function searchTransactions(lineUserId, query, limit = 10, financeAccountId) {
   const db = await requireDb();
   const term = query.trim();
@@ -3007,12 +3014,70 @@ function signaturePayload(lineUserId, financeAccountId, format, expires) {
 function sign(lineUserId, financeAccountId, format, expires) {
   return crypto4.createHmac("sha256", exportSecret()).update(signaturePayload(lineUserId, financeAccountId, format, expires)).digest("hex");
 }
+function safeEqual(a, b) {
+  const aa = Buffer.from(a);
+  const bb = Buffer.from(b);
+  return aa.length === bb.length && crypto4.timingSafeEqual(aa, bb);
+}
 function buildFinanceExportUrl(input) {
   const expires = Math.floor(Date.now() / 1e3) + Math.min(Math.max(input.ttlSeconds ?? 600, 60), 3600);
   const sig = sign(input.lineUserId, input.financeAccountId, input.format, expires);
   const base = (process.env.MILO_APP_BASE_URL ?? process.env.MILO_SAVE_RESULT_IMAGE_BASE_URL ?? "https://milo-line-app.vercel.app").replace(/\/+$/, "");
   const params = new URLSearchParams({ user: input.lineUserId, account: String(input.financeAccountId), format: input.format, expires: String(expires), sig });
   return `${base}/api/milo/export?${params.toString()}`;
+}
+function thaiDateTime(value) {
+  return new Intl.DateTimeFormat("th-TH-u-nu-latn", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Bangkok" }).format(value);
+}
+function exportRows(rows) {
+  return rows.map((row) => ({
+    "\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48-\u0E40\u0E27\u0E25\u0E32": thaiDateTime(row.occurredAt),
+    "\u0E1B\u0E23\u0E30\u0E40\u0E20\u0E17": row.transactionType === "income" ? "\u0E23\u0E32\u0E22\u0E23\u0E31\u0E1A" : "\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22",
+    "\u0E2B\u0E21\u0E27\u0E14": row.category,
+    "\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23": row.note ?? "",
+    "\u0E08\u0E33\u0E19\u0E27\u0E19\u0E40\u0E07\u0E34\u0E19": Number(row.amount),
+    "\u0E41\u0E2B\u0E25\u0E48\u0E07\u0E17\u0E35\u0E48\u0E21\u0E32": row.source
+  }));
+}
+function csvCell(value) {
+  const text2 = String(value ?? "");
+  return /[",\n\r]/.test(text2) ? `"${text2.replace(/"/g, '""')}"` : text2;
+}
+function toCsv(rows) {
+  const headers = ["\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48-\u0E40\u0E27\u0E25\u0E32", "\u0E1B\u0E23\u0E30\u0E40\u0E20\u0E17", "\u0E2B\u0E21\u0E27\u0E14", "\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23", "\u0E08\u0E33\u0E19\u0E27\u0E19\u0E40\u0E07\u0E34\u0E19", "\u0E41\u0E2B\u0E25\u0E48\u0E07\u0E17\u0E35\u0E48\u0E21\u0E32"];
+  return `\uFEFF${headers.join(",")}
+${rows.map((row) => headers.map((key) => csvCell(row[key])).join(",")).join("\n")}`;
+}
+function registerFinanceExportRoute(app2) {
+  app2.get("/api/milo/export", async (req, res) => {
+    try {
+      const lineUserId = String(req.query.user ?? "");
+      const financeAccountId = Number(req.query.account ?? 0);
+      const format = req.query.format === "xlsx" ? "xlsx" : "csv";
+      const expires = Number(req.query.expires ?? 0);
+      const supplied = String(req.query.sig ?? "");
+      if (!lineUserId || !Number.isInteger(financeAccountId) || financeAccountId <= 0 || !Number.isInteger(expires) || expires < Math.floor(Date.now() / 1e3) || !supplied) return res.status(401).type("text/plain").send("Export link expired or invalid");
+      const expected = sign(lineUserId, financeAccountId, format, expires);
+      if (!safeEqual(supplied, expected)) return res.status(401).type("text/plain").send("Export link expired or invalid");
+      const access = await getFinanceAccountAccess(financeAccountId, lineUserId);
+      if (!access) return res.status(403).type("text/plain").send("No access to this finance account");
+      const rows = exportRows(await listTransactionsForExport(lineUserId, financeAccountId));
+      const stamp = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Bangkok", year: "numeric", month: "2-digit", day: "2-digit" }).format(/* @__PURE__ */ new Date());
+      if (format === "csv") {
+        res.set({ "Content-Type": "text/csv; charset=utf-8", "Content-Disposition": `attachment; filename="milo-transactions-${stamp}.csv"`, "Cache-Control": "private, no-store" });
+        return res.status(200).send(toCsv(rows));
+      }
+      const workbook = XLSX.utils.book_new();
+      const sheet = XLSX.utils.json_to_sheet(rows);
+      XLSX.utils.book_append_sheet(workbook, sheet, "Transactions");
+      const buffer = XLSX.write(workbook, { type: "buffer", bookType: "xlsx" });
+      res.set({ "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "Content-Disposition": `attachment; filename="milo-transactions-${stamp}.xlsx"`, "Cache-Control": "private, no-store" });
+      return res.status(200).send(buffer);
+    } catch (error) {
+      console.error("[Milo Export] failed", error);
+      return res.status(500).type("text/plain").send("Unable to export transactions");
+    }
+  });
 }
 
 // server/milo/financeCategories.ts
@@ -4119,7 +4184,7 @@ var MILO_THAI_FONT_700_BASE64 = "d09GMgABAAAAACOoABAAAAAAUCAAACNFAAEAAAAAAAAAAAA
 
 // server/milo/saveResultImage.ts
 var money = (value) => value.toLocaleString("th-TH-u-nu-latn", { maximumFractionDigits: 2 });
-var thaiDateTime = (value) => new Intl.DateTimeFormat("th-TH-u-nu-latn", {
+var thaiDateTime2 = (value) => new Intl.DateTimeFormat("th-TH-u-nu-latn", {
   day: "2-digit",
   month: "short",
   year: "numeric",
@@ -4176,7 +4241,7 @@ function buildSaveResultSvg(input) {
     <text x="163" y="384" text-anchor="middle" font-family="MiloThai, Arial, sans-serif" font-size="27" font-weight="800" fill="#FFFFFF">${typeLabel}</text>
     <text x="273" y="385" font-family="MiloThai, Arial, sans-serif" font-size="34" font-weight="800" fill="#183D3A">\u2022 ${escapeXml(categoryLabel)}</text>
 
-    <text x="80" y="444" font-family="MiloThai, Arial, sans-serif" font-size="24" font-weight="600" fill="#4B6173">${escapeXml(thaiDateTime(occurredAt))}</text>
+    <text x="80" y="444" font-family="MiloThai, Arial, sans-serif" font-size="24" font-weight="600" fill="#4B6173">${escapeXml(thaiDateTime2(occurredAt))}</text>
     <text x="80" y="510" font-family="MiloThai, Arial, sans-serif" font-size="47" font-weight="800" fill="#163D3C">${escapeXml(item)}</text>
     <text x="844" y="510" text-anchor="end" font-family="MiloThai, Arial, sans-serif" font-size="55" font-weight="900" fill="${accent}">\u0E3F${money(amount)}</text>
     <line x1="78" y1="535" x2="855" y2="535" stroke="#8ADDC0" stroke-width="3"/>
@@ -4239,6 +4304,7 @@ function registerSaveResultImageRoute(app2) {
 var app = express2();
 app.set("trust proxy", 1);
 registerSaveResultImageRoute(app);
+registerFinanceExportRoute(app);
 registerLineWebhook(app);
 app.use(express2.json({ limit: "50mb" }));
 app.use(express2.urlencoded({ limit: "50mb", extended: true }));

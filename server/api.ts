@@ -20,6 +20,7 @@ app.set("trust proxy", 1);
 // Webhook routes verify their own payload/signature and therefore must be
 // registered before the generic JSON parser.
 registerSaveResultImageRoute(app);
+registerFinanceExportRoute(app);
 registerLineWebhook(app);
 
 app.use(express.json({ limit: "50mb" }));

@@ -12,6 +12,7 @@ describe("production API entrypoint", () => {
     try {
       expect(await (await fetch(base+"/api/health")).json()).toMatchObject({service:"milo"});
       expect((await fetch(base+"/api/trpc/auth.me")).status).toBe(200);
+      expect((await fetch(base+"/api/milo/export")).status).toBe(401);
       const body=JSON.stringify({events:[]});
       for(const path of ["/api/line/webhook"]) {
         const invalid=await fetch(base+path,{method:"POST",headers:{"content-type":"application/json"},body});
