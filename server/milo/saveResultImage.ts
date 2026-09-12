@@ -1,10 +1,7 @@
 import type { Express, Request, Response } from "express";
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
 import sharp from "sharp";
 import { budgetStatusCopy, getBudgetMetrics } from "./budgetStatus";
-import { MILO_THAI_FONT_400_BASE64, MILO_THAI_FONT_700_BASE64 } from "./thaiFontData";
+import { vectorTextSvg } from "./vectorText";
 
 const money = (value: number) => value.toLocaleString("th-TH-u-nu-latn", { maximumFractionDigits: 2 });
 const thaiDateTime = (value: Date) => new Intl.DateTimeFormat("th-TH-u-nu-latn", {
@@ -105,18 +102,6 @@ export function buildSaveResultSvg(input: {
   </svg>`;
 }
 
-const THAI_FONT_REGULAR_FILE = path.join(os.tmpdir(), "milo-noto-sans-thai-400.woff2");
-const THAI_FONT_BOLD_FILE = path.join(os.tmpdir(), "milo-noto-sans-thai-700.woff2");
-
-function ensureThaiFonts() {
-  if (!fs.existsSync(THAI_FONT_REGULAR_FILE)) {
-    fs.writeFileSync(THAI_FONT_REGULAR_FILE, Buffer.from(MILO_THAI_FONT_400_BASE64, "base64"));
-  }
-  if (!fs.existsSync(THAI_FONT_BOLD_FILE)) {
-    fs.writeFileSync(THAI_FONT_BOLD_FILE, Buffer.from(MILO_THAI_FONT_700_BASE64, "base64"));
-  }
-}
-
 type TextLayerOptions = {
   left: number;
   top: number;
@@ -127,19 +112,9 @@ type TextLayerOptions = {
   align?: "left" | "center" | "right";
 };
 
-function pangoTextLayer(text: string, options: TextLayerOptions) {
+function vectorLayer(text: string, options: TextLayerOptions) {
   return {
-    input: {
-      text: {
-        text: `<span foreground="${options.color}">${escapeXml(text)}</span>`,
-        font: `Noto Sans Thai ${options.fontSize}`,
-        fontfile: options.bold ? THAI_FONT_BOLD_FILE : THAI_FONT_REGULAR_FILE,
-        width: options.width,
-        align: options.align ?? "left",
-        rgba: true,
-        dpi: 72,
-      },
-    },
+    input: vectorTextSvg(text, { width: options.width, fontSize: options.fontSize, color: options.color, bold: options.bold, align: options.align }),
     left: options.left,
     top: options.top,
     blend: "over" as const,
@@ -163,38 +138,35 @@ function buildThaiTextLayers(input: {
   const typeLabel = input.transactionType === "expense" ? "รายจ่าย" : "รายรับ";
   const remainingLabel = metrics.isOverBudget ? "เกินงบ" : "คงเหลือ";
   const remainingAmount = Math.abs(metrics.remaining);
-  const layers: ReturnType<typeof pangoTextLayer>[] = [
-    pangoTextLayer(typeLabel, { left: 78, top: 351, width: 170, fontSize: 27, color: "#FFFFFF", bold: true, align: "center" }),
-    pangoTextLayer(`• ${categoryLabel}`, { left: 273, top: 344, width: 560, fontSize: 34, color: "#183D3A", bold: true }),
-    pangoTextLayer(thaiDateTime(input.occurredAt), { left: 80, top: 411, width: 760, fontSize: 24, color: "#4B6173", bold: true }),
-    pangoTextLayer(item, { left: 80, top: 457, width: 470, fontSize: 47, color: "#163D3C", bold: true }),
-    pangoTextLayer(`฿${money(input.amount)}`, { left: 555, top: 453, width: 289, fontSize: 55, color: accent, bold: true, align: "right" }),
+  const layers: ReturnType<typeof vectorLayer>[] = [
+    vectorLayer(typeLabel, { left: 78, top: 351, width: 170, fontSize: 27, color: "#FFFFFF", bold: true, align: "center" }),
+    vectorLayer(`• ${categoryLabel}`, { left: 273, top: 344, width: 560, fontSize: 34, color: "#183D3A", bold: true }),
+    vectorLayer(thaiDateTime(input.occurredAt), { left: 80, top: 411, width: 760, fontSize: 24, color: "#4B6173", bold: true }),
+    vectorLayer(item, { left: 80, top: 457, width: 470, fontSize: 47, color: "#163D3C", bold: true }),
+    vectorLayer(`฿${money(input.amount)}`, { left: 555, top: 453, width: 289, fontSize: 55, color: accent, bold: true, align: "right" }),
   ];
-
   if (input.budgetLimit > 0) {
     layers.push(
-      pangoTextLayer("฿", { left: 91, top: 599, width: 40, fontSize: 24, color: "#FFFFFF", bold: true, align: "center" }),
-      pangoTextLayer(`งบหมวด${category}`, { left: 150, top: 593, width: 650, fontSize: 30, color: "#173F3B", bold: true }),
-      pangoTextLayer("ใช้ไป", { left: 90, top: 651, width: 200, fontSize: 19, color: "#526979" }),
-      pangoTextLayer(`฿${money(input.budgetSpent)}`, { left: 90, top: 683, width: 240, fontSize: 39, color: accent, bold: true }),
-      pangoTextLayer("งบทั้งหมด", { left: 378, top: 651, width: 220, fontSize: 19, color: "#526979" }),
-      pangoTextLayer(`฿${money(input.budgetLimit)}`, { left: 378, top: 683, width: 230, fontSize: 34, color: "#149A68", bold: true }),
-      pangoTextLayer(remainingLabel, { left: 646, top: 651, width: 190, fontSize: 19, color: "#526979" }),
-      pangoTextLayer(`฿${money(remainingAmount)}`, { left: 646, top: 683, width: 190, fontSize: 34, color: metrics.isOverBudget ? "#F51D72" : "#149A68", bold: true }),
-      pangoTextLayer(budgetStatusCopy(category, input.budgetSpent, input.budgetLimit), { left: 90, top: 792, width: 735, fontSize: 23, color: metrics.isOverBudget ? "#D94A6E" : "#32685C", bold: true }),
+      vectorLayer("฿", { left: 91, top: 599, width: 40, fontSize: 24, color: "#FFFFFF", bold: true, align: "center" }),
+      vectorLayer(`งบหมวด${category}`, { left: 150, top: 593, width: 650, fontSize: 30, color: "#173F3B", bold: true }),
+      vectorLayer("ใช้ไป", { left: 90, top: 651, width: 200, fontSize: 19, color: "#526979" }),
+      vectorLayer(`฿${money(input.budgetSpent)}`, { left: 90, top: 683, width: 240, fontSize: 39, color: accent, bold: true }),
+      vectorLayer("งบทั้งหมด", { left: 378, top: 651, width: 220, fontSize: 19, color: "#526979" }),
+      vectorLayer(`฿${money(input.budgetLimit)}`, { left: 378, top: 683, width: 230, fontSize: 34, color: "#149A68", bold: true }),
+      vectorLayer(remainingLabel, { left: 646, top: 651, width: 190, fontSize: 19, color: "#526979" }),
+      vectorLayer(`฿${money(remainingAmount)}`, { left: 646, top: 683, width: 190, fontSize: 34, color: metrics.isOverBudget ? "#F51D72" : "#149A68", bold: true }),
+      vectorLayer(budgetStatusCopy(category, input.budgetSpent, input.budgetLimit), { left: 90, top: 792, width: 735, fontSize: 23, color: metrics.isOverBudget ? "#D94A6E" : "#32685C", bold: true }),
     );
   } else {
     layers.push(
-      pangoTextLayer(`ยังไม่ได้ตั้งงบหมวด${category}`, { left: 100, top: 611, width: 730, fontSize: 29, color: "#173F3B", bold: true }),
-      pangoTextLayer("รายการนี้ถูกบันทึกด้วยยอดและเวลาจริงเรียบร้อยแล้ว", { left: 100, top: 661, width: 730, fontSize: 22, color: "#526979" }),
+      vectorLayer(`ยังไม่ได้ตั้งงบหมวด${category}`, { left: 100, top: 611, width: 730, fontSize: 29, color: "#173F3B", bold: true }),
+      vectorLayer("รายการนี้ถูกบันทึกด้วยยอดและเวลาจริงเรียบร้อยแล้ว", { left: 100, top: 661, width: 730, fontSize: 22, color: "#526979" }),
     );
   }
-
   layers.push(
-    pangoTextLayer("บันทึกให้แล้วน่ะจ๊ะ", { left: 108, top: 931, width: 650, fontSize: 27, color: "#3D5870", bold: true }),
-    pangoTextLayer(`${item} • ${categoryLabel} • ${money(input.amount)} บาท`, { left: 108, top: 976, width: 690, fontSize: 25, color: "#3D5870" }),
+    vectorLayer("บันทึกให้แล้วน่ะจ๊ะ", { left: 108, top: 931, width: 650, fontSize: 27, color: "#3D5870", bold: true }),
+    vectorLayer(`${item} • ${categoryLabel} • ${money(input.amount)} บาท`, { left: 108, top: 976, width: 690, fontSize: 25, color: "#3D5870" }),
   );
-
   return layers;
 }
 
@@ -216,7 +188,6 @@ export function registerSaveResultImageRoute(app: Express) {
       if (!templateResponse.ok) return res.status(502).type("text/plain").send("Save result template unavailable");
       const template = Buffer.from(await templateResponse.arrayBuffer());
 
-      ensureThaiFonts();
       const svg = buildSaveResultSvg({ transactionType, item, category, amount, occurredAt, budgetSpent, budgetLimit });
       const shapesOnlySvg = svg.replace(/<text\b/g, '<text opacity="0"');
       const textLayers = buildThaiTextLayers({ transactionType, item, category, amount, occurredAt, budgetSpent, budgetLimit });

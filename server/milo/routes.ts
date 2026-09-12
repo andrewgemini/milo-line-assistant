@@ -13,13 +13,15 @@ import { generateFinancialInsight, suggestExpenseCategory } from "./financialAss
 import { parseMiloCommand } from "./commandParser";
 import { deliverDueReminders } from "./reminderDelivery";
 import { deliverDueRecurringTransactions } from "./recurringTransactionDelivery";
+import { assertRecurringCapacity } from "./recurringLimit";
 import { deliverFinanceDigest, type FinanceDigestType } from "./financeDigest";
 import { buildExpenseNote, formatImageProposal, normalizeExpenseCategory, parseExtractedDate, selectImageProposal } from "./receiptUtils";
+import { applyImageExpenseEdit } from "./imageProposalEdit";
 import { STANDARD_EXPENSE_CATEGORIES, STANDARD_INCOME_CATEGORIES } from "./financeCategories";
 import { financeReportCardText, getMessageContent, getProfile, lineCredentials, postSaveSummaryText, pushText, replyFinanceReportCard, replyFinanceReportCardFallback, replyMention, replyPostSaveSummary, replyPostSaveSummaryFallback, replyPostSaveSummaryImage, replyText, replyVoiceCategoryChoices, replyVoiceProposal, replyVoiceProposalFallback, sourceIdentity, type LineEvent, type VoiceTransactionProposal, verifyLineSignature } from "./line";
 
 function helpText() {
-  return "สวัสดีครับ ผมไมโล ช่วยได้ในแชทเดียว\n• เตือน ประชุมพรุ่งนี้ 10:00\n• เตือนดื่มน้ำทุก 30 นาที\n• จ่ายกาแฟ 65 / จ่ายค่าไฟ 1200\n• รับเงินเดือน 45000 / รับค่าจ้าง 5000\n• ส่งสลิปหรือใบเสร็จ แล้วพิมพ์ “ยืนยันค่าใช้จ่าย”\n• ส่ง PDF ใบแจ้งยอด แล้วพิมพ์ “ยืนยัน PDF”\n• ส่งข้อความเสียง แล้วพิมพ์ “ยืนยันเสียง”\n• ตั้งจดอัตโนมัติ ค่าเช่า 5000 ทุกเดือนวันที่ 1 09:00\n• รายการประจำ / พักรายการประจำ 12 / เปิดรายการประจำ 12\n• ส่งออก CSV / ส่งออก Excel\n• ตั้งวันเริ่มงบ 14\n• ค้นหารายการ กาแฟ / แก้รายการ 12 เป็น 180 / ลบรายการ 12\n• สรุปวันนี้ / สรุปสัปดาห์นี้ / สรุปเดือนนี้ / สรุปปีนี้\n• เพิ่มหมวด เดินทาง / ดูหมวด\n• โน้ต รหัส Wi‑Fi ห้องประชุม\n• งาน ส่งสรุปรายสัปดาห์\n• เก็บ ลิงก์หรือข้อความสำคัญ\n• ค้นหา ใบเสร็จ\n\nเชื่อม dashboard: พิมพ์ “ไอดี” ในแชทส่วนตัวกับไมโล";
+  return "สวัสดีครับ ผมไมโล ช่วยได้ในแชทเดียว\n• เตือน ประชุมพรุ่งนี้ 10:00\n• เตือนดื่มน้ำทุก 30 นาที\n• จ่ายกาแฟ 65 / จ่ายค่าไฟ 1200\n• รับเงินเดือน 45000 / รับค่าจ้าง 5000\n• ส่งสลิปหรือใบเสร็จ → แก้ได้ เช่น “แก้ใบเสร็จ ยอด 150” → “ยืนยันค่าใช้จ่าย”\n• ส่ง PDF ใบแจ้งยอด แล้วพิมพ์ “ยืนยัน PDF”\n• ส่งข้อความเสียง แล้วพิมพ์ “ยืนยันเสียง”\n• ตั้งจดอัตโนมัติ ค่าเช่า 5000 ทุกเดือนวันที่ 1 09:00\n• รายการประจำ / พักรายการประจำ 12 / เปิดรายการประจำ 12\n• ส่งออก CSV / ส่งออก Excel\n• ตั้งวันเริ่มงบ 14\n• ค้นหารายการ กาแฟ / แก้รายการ 12 เป็น 180 / ลบรายการ 12\n• สรุปวันนี้ / สรุปสัปดาห์นี้ / สรุปเดือนนี้ / สรุปปีนี้\n• เพิ่มหมวด เดินทาง / ดูหมวด\n• โน้ต รหัส Wi‑Fi ห้องประชุม\n• งาน ส่งสรุปรายสัปดาห์\n• เก็บ ลิงก์หรือข้อความสำคัญ\n• ค้นหา ใบเสร็จ\n\nเชื่อม dashboard: พิมพ์ “ไอดี” ในแชทส่วนตัวกับไมโล";
 }
 
 function formatDate(date: Date) {
@@ -138,7 +140,7 @@ async function handleText(event: LineEvent, lineChatId: string, lineUserId: stri
   }
   const command = parseMiloCommand(text);
   let message = "";
-  const financeCommands = new Set(["expense", "income", "transactionSearch", "transactionDelete", "transactionUpdate", "openingBalance", "financeReport", "aiSummary", "budgetOverview", "transactionList", "voiceConfirm", "voiceEditPrompt", "voiceCategoryChange", "voiceEdit", "budget", "budgetCycleStart", "categoryAdd", "categoryRemove", "categoryList", "imageConfirm", "pdfConfirm", "recurringCreate", "recurringList", "recurringStatus", "exportFinance"]);
+  const financeCommands = new Set(["expense", "income", "transactionSearch", "transactionDelete", "transactionUpdate", "openingBalance", "financeReport", "aiSummary", "budgetOverview", "transactionList", "voiceConfirm", "voiceEditPrompt", "voiceCategoryChange", "voiceEdit", "budget", "budgetCycleStart", "categoryAdd", "categoryRemove", "categoryList", "imageConfirm", "imageEdit", "pdfConfirm", "recurringCreate", "recurringList", "recurringStatus", "exportFinance"]);
   const financeScope = financeCommands.has(command.type) ? await resolveFinanceScope(lineUserId, lineChatId, scope) : undefined;
   if (financeCommands.has(command.type) && !financeScope) {
     if (event.replyToken) await replyText(event.replyToken, financeAccessMessage(scope));
@@ -271,6 +273,13 @@ async function handleText(event: LineEvent, lineChatId: string, lineUserId: stri
         category = (await suggestExpenseCategory(command.note, Array.from(new Set([...STANDARD_EXPENSE_CATEGORIES, ...customCategories])))).category;
       } catch { /* deterministic category remains */ }
     }
+    try {
+      assertRecurringCapacity(await db.listRecurringTransactions(lineUserId, financeScope!.financeAccountId));
+    } catch (error) {
+      message = error instanceof Error ? error.message : "ตั้งรายการอัตโนมัติไม่ได้";
+      if (event.replyToken) await replyText(event.replyToken, message);
+      return;
+    }
     const id = await db.createRecurringTransaction({ lineUserId, lineChatId, financeAccountId: financeScope!.financeAccountId, transactionType: command.transactionType, amount: command.amount, category, note: command.note, recurrenceType: command.recurrenceType, recurrenceInterval: command.recurrenceInterval, recurrenceWeekday: command.recurrenceWeekday, recurrenceDayOfMonth: command.recurrenceDayOfMonth, nextRunAt: command.nextRunAt });
     await db.writeAuditLog({ action: "recurring_transaction.create", entityType: "recurring_transaction", entityId: id, actorLineUserId: lineUserId, lineChatId, details: { financeAccountId: financeScope!.financeAccountId, transactionType: command.transactionType, category, amount: command.amount, recurrenceType: command.recurrenceType } });
     message = `ตั้งรายการประจำ #${id} แล้ว\n${command.transactionType === "income" ? "รายรับ" : "รายจ่าย"} ${command.note} ${command.amount.toLocaleString("th-TH")} บาท • หมวด${category}\nครั้งถัดไป: ${formatDate(command.nextRunAt)}`;
@@ -301,6 +310,25 @@ async function handleText(event: LineEvent, lineChatId: string, lineUserId: stri
     message = command.transactionType === "income" ? incomeSection : command.transactionType === "expense" ? expenseSection : `${expenseSection}\n\n${incomeSection}\n\nเพิ่มหมวดได้ด้วย “เพิ่มหมวดรายจ่าย ชื่อหมวด” หรือ “เพิ่มหมวดรายรับ ชื่อหมวด”`;
   } else if (command.type === "invalid") {
     message = command.message;
+  } else if (command.type === "imageEdit") {
+    if (!db.canCreateFinanceTransaction(financeScope!.role)) { message = "สิทธิ์ของคุณในสมุดบัญชีนี้เป็นผู้ดู จึงยังแก้ข้อเสนอรายการไม่ได้"; if (event.replyToken) await replyText(event.replyToken, message); return; }
+    const latest = await db.latestImageExtraction(lineUserId, lineChatId);
+    if (!latest || latest.extraction.status !== "proposed" || latest.vault.mimeType === "application/pdf") {
+      message = "ยังไม่มีใบเสร็จหรือสลิปที่วิเคราะห์แล้วและรอแก้ไข กรุณาส่งรูปก่อนครับ";
+    } else {
+      try {
+        const analysis = JSON.parse(latest.extraction.extractedJson);
+        const edited = applyImageExpenseEdit(analysis, command);
+        const persisted = { ...edited }; delete (persisted as any).editedProposal;
+        const updated = await db.updateProposedImageExtractionJson(latest.extraction.id, JSON.stringify(persisted));
+        if (!updated) message = "รายการนี้ไม่อยู่ในสถานะที่แก้ไขได้แล้ว กรุณาส่งรูปใหม่ครับ";
+        else {
+          const proposal = edited.editedProposal;
+          const dateLine = proposal.dateText ? "\nวันที่: " + proposal.dateText : "";
+          message = "แก้ข้อเสนอจากรูปแล้ว ✅\n" + formatImageProposal(proposal) + dateLine + "\nยังไม่บันทึก กรุณาตรวจอีกครั้งแล้วพิมพ์ “ยืนยันค่าใช้จ่าย”";
+        }
+      } catch (error) { message = error instanceof Error ? error.message : "แก้ข้อมูลจากรูปไม่สำเร็จ"; }
+    }
   } else if (command.type === "pdfConfirm") {
     if (!db.canCreateFinanceTransaction(financeScope!.role)) { message = "สิทธิ์ของคุณในสมุดบัญชีนี้เป็นผู้ดู จึงยังยืนยันรายการไม่ได้"; if (event.replyToken) await replyText(event.replyToken, message); return; }
     const latest = await db.latestImageExtraction(lineUserId, lineChatId);

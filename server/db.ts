@@ -680,6 +680,12 @@ export async function latestImageExtraction(lineUserId: string, lineChatId?: str
     .limit(1))[0];
 }
 
+export async function updateProposedImageExtractionJson(id: number, extractedJson: string) {
+  const db = await requireDb();
+  const result = await db.update(imageExtractions).set({ extractedJson }).where(and(eq(imageExtractions.id, id), eq(imageExtractions.status, "proposed")));
+  return result[0].affectedRows > 0;
+}
+
 export async function setImageExtractionStatus(id: number, status: "accepted" | "rejected" | "failed") {
   const db = await requireDb();
   await db.update(imageExtractions).set({ status }).where(eq(imageExtractions.id, id));

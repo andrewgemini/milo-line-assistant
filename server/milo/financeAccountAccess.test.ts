@@ -13,6 +13,9 @@ vi.mock("../db", async () => {
     isEligibleGroupFinanceAccountMember: vi.fn(),
     upsertFinanceAccountMember: vi.fn(),
     writeAuditLog: vi.fn(),
+    listFinanceAccounts: vi.fn(),
+    createGroupFinanceAccount: vi.fn(),
+    listFinanceAccountMembers: vi.fn(),
   };
 });
 
@@ -44,6 +47,25 @@ describe("finance account access", () => {
     vi.mocked(db.listTransactions).mockResolvedValue([] as never);
     vi.mocked(db.listTransactionAttachmentsForFinanceAccount).mockResolvedValue([] as never);
     vi.mocked(db.writeAuditLog).mockResolvedValue(undefined);
+  });
+
+  it("lists personal and group ledgers separately for the linked LINE user", async () => {
+    vi.mocked(db.listFinanceAccounts).mockResolvedValue([personalAccount, groupAccount] as never);
+    await expect(caller().milo.financeAccounts.list()).resolves.toEqual([personalAccount, groupAccount]);
+    expect(db.listFinanceAccounts).toHaveBeenCalledWith(ownerLineUserId);
+  });
+
+  it("creates a named group ledger bound to the selected LINE group", async () => {
+    vi.mocked(db.createGroupFinanceAccount).mockResolvedValue(22);
+    await expect(caller().milo.financeAccounts.createGroup({ lineChatId: "G-team", name: "ค่าใช้จ่ายทีม" })).resolves.toEqual({ id: 22 });
+    expect(db.createGroupFinanceAccount).toHaveBeenCalledWith({ ownerLineUserId, lineChatId: "G-team", name: "ค่าใช้จ่ายทีม" });
+  });
+
+  it("reads group members only after confirming access to that specific ledger", async () => {
+    vi.mocked(db.getFinanceAccountAccess).mockResolvedValue(access(groupAccount, "viewer") as never);
+    vi.mocked(db.listFinanceAccountMembers).mockResolvedValue([{ financeAccountId: 22, lineUserId: memberLineUserId, role: "viewer" }] as never);
+    await expect(caller().milo.financeAccounts.members({ financeAccountId: 22 })).resolves.toEqual([{ financeAccountId: 22, lineUserId: memberLineUserId, role: "viewer" }]);
+    expect(db.listFinanceAccountMembers).toHaveBeenCalledWith(22);
   });
 
   it("keeps the existing no-account request in the caller's personal ledger", async () => {

@@ -80,27 +80,29 @@ describe("LINE credentials", () => {
     expect(mascotExpenseCopy("expense", 501)).toContain("บันทึกไว้แล้ว");
   });
 
-  it("sends finance report cards with Milo branding, real values, and period actions", async () => {
+  it("sends a dynamic finance image built from real values with period actions", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(null, { status: 200 }));
     await replyFinanceReportCard("reply-token", { period: "week", income: 0, expense: 615, balance: -615, categories: { อาหาร: 565, ทั่วไป: 50 } }, { channelSecret: "secret", channelAccessToken: "token" });
     const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
-    const payload = JSON.parse(String(init.body)) as { messages: Array<{ type: string; contents: { body: { backgroundColor: string; contents: Array<{ contents?: Array<{ text?: string; url?: string }> }> }; footer: { contents: Array<{ action?: { text: string }; contents?: Array<{ action: { text: string } }> }> } } }> };
-    expect(payload.messages[2]?.type).toBe("flex");
-    expect(payload.messages[2]?.contents.body.backgroundColor).toBe("#F2F0FF");
-    expect(String(init.body)).toContain("สรุปการเงินสัปดาห์นี้");
-    expect(String(init.body)).toContain("รายจ่าย 615 บาท");
-    expect(String(init.body)).toContain("อาหาร");
-    expect(String(init.body)).toContain("565 บาท");
-    expect(String(init.body)).toContain("MILO  •  FINANCE");
-    expect(String(init.body)).toContain("milo-richmenu/summary.png");
-    expect(String(init.body)).not.toContain("milo-voice-proposal-cat");
-    expect(String(init.body)).toContain("สรุปสัปดาห์นี้");
-    expect(String(init.body)).toContain("สรุปเดือนนี้");
+    const payload = JSON.parse(String(init.body)) as { messages: Array<{ type: string; originalContentUrl?: string; text?: string; quickReply?: { items: Array<{ action: { text: string } }> } }> };
+    expect(payload.messages).toHaveLength(2);
+    expect(payload.messages[0]?.type).toBe("image");
+    expect(payload.messages[0]?.originalContentUrl).toContain("/api/milo/finance-report.png?");
+    expect(payload.messages[0]?.originalContentUrl).toContain("data=");
+    expect(payload.messages[0]?.originalContentUrl).toContain("sig=");
+    expect(payload.messages[0]?.originalContentUrl).not.toContain("report-week.png");
+    expect(payload.messages[1]?.type).toBe("text");
+    expect(payload.messages[1]?.text).toContain("สรุปการเงินสัปดาห์นี้");
+    expect(payload.messages[1]?.text).toContain("รายจ่าย 615 บาท");
+    expect(payload.messages[1]?.text).toContain("อาหาร 565 บาท");
+    expect(payload.messages[1]?.quickReply?.items.map(item => item.action.text)).toEqual(["สรุปวันนี้", "สรุปสัปดาห์นี้", "สรุปเดือนนี้", "สรุปปีนี้"]);
 
     await replyFinanceReportCard("reply-token", { period: "month", income: 1000, expense: 250, balance: 750, categories: { เดินทาง: 250 } }, { channelSecret: "secret", channelAccessToken: "token" });
     const monthlyInit = fetchMock.mock.calls[1]?.[1] as RequestInit;
-    expect(String(monthlyInit.body)).toContain("สรุปการเงินเดือนนี้");
-    expect(String(monthlyInit.body)).toContain("1,000 บาท");
+    const monthlyPayload = JSON.parse(String(monthlyInit.body));
+    expect(monthlyPayload.messages[0].originalContentUrl).toContain("/api/milo/finance-report.png?");
+    expect(monthlyPayload.messages[1].text).toContain("สรุปการเงินเดือนนี้");
+    expect(monthlyPayload.messages[1].text).toContain("1,000 บาท");
   });
 
   it("pushes an automatic Milo finance card with its completed-period label and real values", async () => {

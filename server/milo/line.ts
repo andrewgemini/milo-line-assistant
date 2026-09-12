@@ -1,5 +1,6 @@
 import { artworkMessages, type RichMenuArtwork } from "./richMenuArtwork";
 import { budgetStatusCopy } from "./budgetStatus";
+import { buildFinanceReportImageUrl } from "./financeReportImage";
 import crypto from "node:crypto";
 
 export type LineCredentials = { channelSecret: string; channelAccessToken: string };
@@ -156,55 +157,26 @@ function miloFinanceBrandStrip() {
 }
 
 export async function replyFinanceReportCard(replyToken: string, report: FinanceReportCard, credentials = lineCredentials()) {
-  const periodLabel: Record<FinanceReportCard["period"], string> = { day: "วันนี้", week: "สัปดาห์นี้", month: "เดือนนี้", year: "ปีนี้" };
-  const title = report.title ?? `สรุปการเงิน${periodLabel[report.period]}`;
-  const subtitle = report.subtitle ?? "ยอดรวมจากรายการที่บันทึกไว้";
-  const money = (amount: number) => amount.toLocaleString("th-TH", { maximumFractionDigits: 2 });
-  const categories = Object.entries(report.categories).sort((a, b) => b[1] - a[1]).slice(0, 5);
-  const categoryRows = categories.length ? categories.map(([name, amount]) => ({ type: "box", layout: "horizontal", margin: "sm", contents: [
-    { type: "text", text: name, size: "xs", color: "#675B7C", flex: 1, wrap: true },
-    { type: "text", text: `${money(amount)} บาท`, size: "xs", weight: "bold", color: "#B9517B", align: "end" },
-  ] })) : [{ type: "text", text: "ยังไม่มีรายจ่ายในช่วงนี้", size: "xs", color: "#8A8097" }];
+  const imageUrl = buildFinanceReportImageUrl(report);
   return callLine("/v2/bot/message/reply", credentials, {
-    method: "POST", headers: { "content-type": "application/json" },
-    body: JSON.stringify({ replyToken, messages: [...artworkMessages(("report-" + report.period) as RichMenuArtwork), {
-      type: "flex", altText: financeReportCardText(report),
-      contents: {
-        type: "bubble", size: "mega",
-        hero: { type: "image", url: miloRichMenuImageUrl("summary"), size: "full", aspectRatio: "20:9", aspectMode: "cover" },
-        body: { type: "box", layout: "vertical", spacing: "md", paddingAll: "16px", backgroundColor: "#F2F0FF", contents: [
-          { type: "box", layout: "horizontal", alignItems: "center", spacing: "md", paddingAll: "12px", cornerRadius: "md", backgroundColor: "#E4F8F2", contents: [
-            { type: "box", layout: "vertical", justifyContent: "center", alignItems: "center", width: "38px", height: "38px", cornerRadius: "md", backgroundColor: "#5AC6AD", contents: [{ type: "text", text: "฿", align: "center", weight: "bold", size: "xl", color: "#FFFFFF" }] },
-            { type: "box", layout: "vertical", flex: 1, contents: [
-              { type: "text", text: title, weight: "bold", size: "lg", color: "#4B3D69", wrap: true },
-              { type: "text", text: subtitle, size: "xs", color: "#7B6E97", wrap: true },
-            ] },
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      replyToken,
+      messages: [
+        { type: "image", originalContentUrl: imageUrl, previewImageUrl: imageUrl },
+        {
+          type: "text",
+          text: financeReportCardText(report).slice(0, 4500),
+          quickReply: { items: [
+            { type: "action", action: { type: "message", label: "วันนี้", text: "สรุปวันนี้" } },
+            { type: "action", action: { type: "message", label: "สัปดาห์นี้", text: "สรุปสัปดาห์นี้" } },
+            { type: "action", action: { type: "message", label: "เดือนนี้", text: "สรุปเดือนนี้" } },
+            { type: "action", action: { type: "message", label: "ปีนี้", text: "สรุปปีนี้" } },
           ] },
-          miloFinanceBrandStrip(),
-          { type: "box", layout: "vertical", spacing: "md", paddingAll: "16px", cornerRadius: "md", backgroundColor: "#FFFEFB", contents: [
-            { type: "text", text: "ภาพรวมการเงิน", size: "xs", weight: "bold", color: "#76688E" },
-            { type: "box", layout: "horizontal", spacing: "sm", contents: [
-              { type: "box", layout: "vertical", flex: 1, paddingAll: "10px", cornerRadius: "md", backgroundColor: "#EAF8F4", contents: [{ type: "text", text: "รายรับ", size: "xxs", color: "#5B8E81" }, { type: "text", text: `${money(report.income)} บาท`, size: "sm", weight: "bold", color: "#267C68", wrap: true }] },
-              { type: "box", layout: "vertical", flex: 1, paddingAll: "10px", cornerRadius: "md", backgroundColor: "#FDECF2", contents: [{ type: "text", text: "รายจ่าย", size: "xxs", color: "#A57086" }, { type: "text", text: `${money(report.expense)} บาท`, size: "sm", weight: "bold", color: "#BB527C", wrap: true }] },
-            ] },
-            { type: "box", layout: "horizontal", alignItems: "center", paddingAll: "11px", cornerRadius: "md", backgroundColor: "#EEEAF8", contents: [
-              { type: "text", text: "กำไร / คงเหลือ", size: "xs", color: "#6B6080", flex: 1 },
-              { type: "text", text: `${money(report.balance)} บาท`, size: "sm", weight: "bold", color: "#4D4263", align: "end" },
-            ] },
-            { type: "separator", color: "#E9E4F1" },
-            { type: "text", text: "รายจ่ายตามหมวด", size: "xs", weight: "bold", color: "#76688E" },
-            { type: "box", layout: "vertical", paddingAll: "10px", cornerRadius: "md", backgroundColor: "#FFF7FA", contents: categoryRows },
-          ] },
-        ] },
-        footer: { type: "box", layout: "vertical", spacing: "sm", paddingAll: "16px", backgroundColor: "#F2F0FF", contents: [
-          { type: "button", style: "primary", color: "#7657AA", height: "sm", action: { type: "message", label: "สรุปวันนี้", text: "สรุปวันนี้" } },
-          { type: "box", layout: "horizontal", spacing: "sm", contents: [
-            { type: "button", style: "secondary", color: "#9A7DB7", flex: 1, height: "sm", action: { type: "message", label: "สัปดาห์นี้", text: "สรุปสัปดาห์นี้" } },
-            { type: "button", style: "secondary", color: "#9A7DB7", flex: 1, height: "sm", action: { type: "message", label: "เดือนนี้", text: "สรุปเดือนนี้" } },
-          ] },
-        ] },
-      },
-    }] }),
+        },
+      ],
+    }),
   });
 }
 

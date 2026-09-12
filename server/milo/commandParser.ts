@@ -21,6 +21,8 @@ export type MiloCommand =
   | { type: "recurringList" }
   | { type: "recurringStatus"; id: number; status: "active" | "paused" | "cancelled" }
   | { type: "imageConfirm"; dateText?: string }
+  | { type: "imageEdit"; field: "amount"; value: number }
+  | { type: "imageEdit"; field: "category" | "date" | "merchant" | "note"; value: string }
   | { type: "pdfConfirm" }
   | { type: "invalid"; message: string }
   | { type: "categoryAdd"; name: string; transactionType: "income" | "expense" }
@@ -158,6 +160,15 @@ export function parseMiloCommand(text: string, now = new Date()): MiloCommand {
   const categoryList = value.match(/^(?:ดู)?หมวด(?:หมู่)?(?:\s*(รายรับ|รายจ่าย))?$/i); if (categoryList) return { type: "categoryList", transactionType: categoryList[1] === "รายรับ" ? "income" : categoryList[1] === "รายจ่าย" ? "expense" : undefined };
   const budget = value.match(/^(?:ตั้ง)?งบ\s+(.+?)\s+(\d[\d,]*(?:\.\d{1,2})?)\s*(?:บาท)?$/i); if (budget) { const category = budget[1].trim(); const amount = Number(budget[2].replace(/,/g, "")); if (!category || !Number.isFinite(amount) || amount <= 0) return { type: "invalid", message: "งบประมาณต้องระบุหมวดและจำนวนเงินที่มากกว่า 0 บาท" }; return { type: "budget", category, amount }; }
   if (/^(?:ตั้ง)?งบ(?:\s|$)/i.test(value)) return { type: "invalid", message: "รูปแบบงบประมาณ: ตั้งงบ อาหาร 5000 บาท" };
+  const imageEdit = value.match(/^(?:แก้|แก้ไข)(?:ข้อมูล)?(?:ใบเสร็จ|สลิป|รูป|ภาพ)\s+(ยอด|จำนวนเงิน|หมวด|หมวดหมู่|วันที่|ร้านค้า|ผู้รับ|หมายเหตุ)\s+(.+)$/i);
+  if (imageEdit) {
+    const label = imageEdit[1]; const raw = imageEdit[2].trim();
+    if (/ยอด|จำนวนเงิน/i.test(label)) { const amount = Number(raw.replace(/,/g, "").replace(/\s*บาท$/i, "")); return Number.isFinite(amount) && amount > 0 ? { type: "imageEdit", field: "amount", value: amount } : { type: "invalid", message: "ยอดที่แก้ไขต้องเป็นจำนวนเงินมากกว่า 0 บาท" }; }
+    if (/หมวด/i.test(label)) return raw ? { type: "imageEdit", field: "category", value: raw } : { type: "invalid", message: "กรุณาระบุหมวดที่ต้องการแก้ไข" };
+    if (/วันที่/i.test(label)) return raw ? { type: "imageEdit", field: "date", value: raw } : { type: "invalid", message: "กรุณาระบุวันที่ที่ถูกต้อง" };
+    if (/ร้านค้า|ผู้รับ/i.test(label)) return raw ? { type: "imageEdit", field: "merchant", value: raw } : { type: "invalid", message: "กรุณาระบุร้านค้าหรือผู้รับ" };
+    return { type: "imageEdit", field: "note", value: raw };
+  }
   const imageConfirm = value.match(/^(?:ยืนยันรูป|ยืนยันภาพ|บันทึกจากรูป|ยืนยันค่าใช้จ่าย|ยืนยันสลิป|ยืนยันใบเสร็จ|บันทึกสลิป|บันทึกใบเสร็จ)(?:\s+(?:วันที่\s*)?(\d{1,2}[\/-]\d{1,2}[\/-]\d{2,4}|\d{4}-\d{1,2}-\d{1,2}))?$/i); if (imageConfirm) return imageConfirm[1] ? { type: "imageConfirm", dateText: imageConfirm[1] } : { type: "imageConfirm" };
   if (/^(ช่วย|เมนู|help)$/i.test(value)) return { type: "help" }; return { type: "unknown" };
 }
