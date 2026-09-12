@@ -5,6 +5,7 @@ export const ENV = {
   oAuthServerUrl: process.env.OAUTH_SERVER_URL ?? "",
   ownerOpenId: process.env.OWNER_OPEN_ID ?? "",
   isProduction: process.env.NODE_ENV === "production",
-  forgeApiUrl: process.env.BUILT_IN_FORGE_API_URL ?? "",
-  forgeApiKey: process.env.BUILT_IN_FORGE_API_KEY ?? "",
+  forgeApiUrl: process.env.BUILT_IN_FORGE_API_URL ?? process.env.FORGE_API_URL ?? process.env.OPENAI_BASE_URL ?? "",
+  forgeApiKey: process.env.BUILT_IN_FORGE_API_KEY ?? process.env.FORGE_API_KEY ?? process.env.OPENAI_API_KEY ?? "",
+  visionModel: process.env.MILO_VISION_MODEL ?? ((process.env.BUILT_IN_FORGE_API_KEY || process.env.FORGE_API_KEY) ? "gemini-3-flash-preview" : process.env.OPENAI_API_KEY ? "gpt-5-mini" : "gemini-3-flash-preview"),
 };

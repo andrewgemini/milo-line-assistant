@@ -433,13 +433,19 @@ async function handleMedia(event: LineEvent, lineChatId: string, lineUserId: str
     if (event.replyToken) await replyText(event.replyToken, "เก็บไฟล์นี้ไว้ในคลังถาวรแล้ว");
     return;
   }
+  // Acknowledge immediately so the user is not blocked by a slow vision call and the LINE reply token is consumed safely.
+  if (event.replyToken) {
+    try { await replyText(event.replyToken, "รับรูปแล้วครับ กำลังอ่านสลิป/ใบเสร็จให้ ขอเวลาสักครู่น่ะจ๊ะ"); }
+    catch (error) { console.error("[Milo Image] acknowledgement reply failed", { messageId: message.id, error: error instanceof Error ? error.message : "unknown" }); }
+  }
   try {
     const analysis = await analyzeImage(`data:${mimeType};base64,${bytes.toString("base64")}`);
     await db.saveImageExtraction(vaultId, analysis.proposals.some(item => item.kind === "expense") ? "expense" : "reminder", JSON.stringify(analysis), analysis.confidence);
     const proposals = analysis.proposals.slice(0, 2).map(item => `• ${formatImageProposal(item)}`).join("\n");
-    if (event.replyToken) await replyText(event.replyToken, `เก็บรูปไว้แล้ว\n${analysis.summary}\n${proposals || "ยังไม่พบรายการที่ควรบันทึกอัตโนมัติ"}\nตรวจยอดและหมวดให้ถูกต้องก่อน แล้วพิมพ์ “ยืนยันค่าใช้จ่าย” เพื่อบันทึก หรือ “ยืนยันรูป” สำหรับรายการเตือน`);
-  } catch {
-    if (event.replyToken) await replyText(event.replyToken, "เก็บรูปไว้แล้ว แต่ยังอ่านรายละเอียดจากรูปไม่ได้ ลองส่งภาพที่คมชัดขึ้นได้ครับ");
+    await pushText(lineChatId, `อ่านรูปเรียบร้อยแล้ว\n${analysis.summary}\n${proposals || "ยังไม่พบรายการที่ควรบันทึกอัตโนมัติ"}\nตรวจยอด หมวด และวันที่ให้ถูกต้องก่อน แล้วพิมพ์ “ยืนยันค่าใช้จ่าย” เพื่อบันทึก หรือ “ยืนยันรูป” สำหรับรายการเตือน`);
+  } catch (error) {
+    console.error("[Milo Image] analysis failed", { messageId: message.id, error: error instanceof Error ? error.message : "unknown" });
+    await pushText(lineChatId, "เก็บรูปไว้แล้ว แต่ระบบอ่านสลิป/ใบเสร็จครั้งนี้ไม่สำเร็จ กรุณาลองส่งภาพที่คมชัดและเห็นยอด วันที่ เวลา และผู้รับครบถ้วนอีกครั้งน่ะจ๊ะ");
   }
 }
 
