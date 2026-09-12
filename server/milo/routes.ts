@@ -69,9 +69,18 @@ async function sendVoiceProposal(replyToken: string, proposal: VoiceTransactionP
   }
 }
 
-async function sendPostSaveSummary(replyToken: string, lineUserId: string, lineChatId: string, financeAccountId: number, transaction: Pick<VoiceTransactionProposal, "transactionType" | "amount" | "category" | "note">) {
-  const report = await db.financeReport(lineUserId, "day", new Date(), financeAccountId);
-  const summary = { transactionType: transaction.transactionType!, amount: transaction.amount!, category: transaction.category!, note: transaction.note, dailyIncome: report.income, dailyExpense: report.expense, dailyBalance: report.balance };
+function monthKeyForBangkok(date: Date) {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Bangkok", year: "numeric", month: "2-digit" }).format(date).slice(0, 7);
+}
+async function sendPostSaveSummary(replyToken: string, lineUserId: string, lineChatId: string, financeAccountId: number, transaction: Pick<VoiceTransactionProposal, "transactionType" | "amount" | "category" | "note"> & { occurredAt?: Date }) {
+  const occurredAt = transaction.occurredAt ?? new Date();
+  const report = await db.financeReport(lineUserId, "day", occurredAt, financeAccountId);
+  const budgets = await db.listBudgets(lineUserId, monthKeyForBangkok(occurredAt), financeAccountId);
+  const budget = budgets.find(item => item.category === transaction.category);
+  const budgetLimit = budget ? Number(budget.amount) : 0;
+  const budgetSpent = Number(report.categories[transaction.category!] ?? 0);
+  const budgetPercent = budgetLimit > 0 ? Math.round((budgetSpent / budgetLimit) * 100) : undefined;
+  const summary = { transactionType: transaction.transactionType!, amount: transaction.amount!, category: transaction.category!, note: transaction.note, occurredAt, dailyIncome: report.income, dailyExpense: report.expense, dailyBalance: report.balance, budgetSpent, budgetLimit, budgetPercent };
   try {
     await replyPostSaveSummary(replyToken, summary);
   } catch (error) {
@@ -144,8 +153,9 @@ async function handleText(event: LineEvent, lineChatId: string, lineUserId: stri
         category = suggestion.category;
       } catch { /* keep deterministic fallback category */ }
     }
-    await db.createTransaction({ lineChatId, lineUserId, financeAccountId: financeScope!.financeAccountId, transactionType: command.type, amount: command.amount, category, note: command.note, source: "line_text", sourceMessageId: event.message?.id });
-    if (event.replyToken) { await sendPostSaveSummary(event.replyToken, lineUserId, lineChatId, financeScope!.financeAccountId, { transactionType: command.type, amount: command.amount, category, note: command.note }); return; }
+    const occurredAt = new Date();
+    await db.createTransaction({ lineChatId, lineUserId, financeAccountId: financeScope!.financeAccountId, transactionType: command.type, amount: command.amount, category, note: command.note, occurredAt, source: "line_text", sourceMessageId: event.message?.id });
+    if (event.replyToken) { await sendPostSaveSummary(event.replyToken, lineUserId, lineChatId, financeScope!.financeAccountId, { transactionType: command.type, amount: command.amount, category, note: command.note, occurredAt }); return; }
     message = `บันทึก${command.type === "expense" ? "รายจ่าย" : "รายรับ"} ${command.amount.toLocaleString("th-TH")} บาท ในหมวด${category}แล้ว`;
   } else if (command.type === "transactionSearch") {
     const results = await db.searchTransactions(lineUserId, command.query, 10, financeScope!.financeAccountId);
@@ -178,10 +188,11 @@ async function handleText(event: LineEvent, lineChatId: string, lineUserId: stri
     } else {
       const proposed = proposalFromStoredTranscript(voice.transcript, voice.proposalJson);
       if (proposed.transactionType && proposed.amount && proposed.category) {
-        const transactionId = await db.createTransaction({ lineChatId, lineUserId, financeAccountId: financeScope!.financeAccountId, transactionType: proposed.transactionType, amount: proposed.amount, category: proposed.category, note: proposed.note, source: "line_audio" });
+        const occurredAt = new Date();
+        const transactionId = await db.createTransaction({ lineChatId, lineUserId, financeAccountId: financeScope!.financeAccountId, transactionType: proposed.transactionType, amount: proposed.amount, category: proposed.category, note: proposed.note, occurredAt, source: "line_audio" });
         await db.linkTransactionAttachment({ transactionId, vaultItemId: voice.vaultItemId, lineUserId, label: "ไฟล์เสียงต้นฉบับ" });
         await db.updateVoiceTranscriptionStatus(voice.id, "accepted");
-        if (event.replyToken) { await sendPostSaveSummary(event.replyToken, lineUserId, lineChatId, financeScope!.financeAccountId, proposed); return; }
+        if (event.replyToken) { await sendPostSaveSummary(event.replyToken, lineUserId, lineChatId, financeScope!.financeAccountId, { ...proposed, occurredAt }); return; }
         message = `บันทึก${proposed.transactionType === "expense" ? "รายจ่าย" : "รายรับ"}จากเสียง ${proposed.amount.toLocaleString("th-TH")} บาท ในหมวด${proposed.category}แล้ว`;
       } else {
         message = `ถอดเสียงได้ว่า “${voice.transcript}” แต่ยังไม่พบรูปแบบรายรับ/รายจ่าย เช่น “จ่ายกาแฟ 65 บาท” จึงยังไม่บันทึกครับ`;
@@ -277,7 +288,7 @@ async function handleText(event: LineEvent, lineChatId: string, lineUserId: stri
           const transactionId = await db.createTransaction({ lineChatId, lineUserId, financeAccountId: financeScope!.financeAccountId, transactionType: "expense", amount, category, note: buildExpenseNote(proposal), occurredAt, source: "line_image" });
           await db.linkTransactionAttachment({ transactionId, vaultItemId: latest.vault.id, lineUserId, label: proposal.documentType === "bank_slip" ? "สลิปต้นฉบับ" : "ใบเสร็จต้นฉบับ" });
           await db.setImageExtractionStatus(latest.extraction.id, "accepted");
-          if (event.replyToken) { await sendPostSaveSummary(event.replyToken, lineUserId, lineChatId, financeScope!.financeAccountId, { transactionType: "expense", amount, category, note: buildExpenseNote(proposal) }); return; }
+          if (event.replyToken) { await sendPostSaveSummary(event.replyToken, lineUserId, lineChatId, financeScope!.financeAccountId, { transactionType: "expense", amount, category, note: buildExpenseNote(proposal), occurredAt }); return; }
           message = `บันทึกรายจ่ายจาก${proposal.documentType === "bank_slip" ? "สลิป" : "ใบเสร็จ"} ${amount.toLocaleString("th-TH")} บาท ในหมวด${category}แล้ว`;
         }
       } else {

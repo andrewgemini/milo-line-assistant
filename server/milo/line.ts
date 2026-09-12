@@ -71,9 +71,13 @@ export type PostSaveSummary = {
   amount: number;
   category: string;
   note?: string;
+  occurredAt: Date;
   dailyIncome: number;
   dailyExpense: number;
   dailyBalance: number;
+  budgetSpent: number;
+  budgetLimit: number;
+  budgetPercent?: number;
 };
 
 export type FinanceReportCard = {
@@ -105,14 +109,16 @@ function voiceProposalText(proposal: VoiceTransactionProposal) {
 export function mascotExpenseCopy(transactionType: PostSaveSummary["transactionType"], amount: number) {
   if (transactionType === "income") return "น้องแมวเก็บรายรับไว้ให้แล้ว เมี้ยว";
   if (amount <= 100) return "น้องแมวเก็บรายการเล็ก ๆ ไว้ให้แล้ว เมี้ยว";
-  if (amount <= 500) return "เช็กยอดวันนี้ได้ทันทีนะเมี้ยว";
-  return "ยอดนี้ไมโลบันทึกไว้แล้ว ลองดูสรุปวันนี้ได้เลย";
+  if (amount <= 500) return "เช็กยอดวันนี้ได้ทันทีน่ะจ๊ะ";
+  return "ยอดนี้ไมโลบันทึกไว้แล้ว ลองดูสรุปวันนี้ได้เลยน่ะจ๊ะ";
 }
 
 export function postSaveSummaryText(summary: PostSaveSummary) {
   const label = summary.transactionType === "expense" ? "รายจ่าย" : "รายรับ";
   const note = summary.note?.trim();
-  return `บันทึก${label} ${summary.amount.toLocaleString("th-TH")} บาท หมวด${summary.category}แล้ว${note ? `\nรายการที่จด: ${note}` : ""}\n${mascotExpenseCopy(summary.transactionType, summary.amount)}\nวันนี้: รายรับ ${summary.dailyIncome.toLocaleString("th-TH")} บาท · รายจ่าย ${summary.dailyExpense.toLocaleString("th-TH")} บาท · คงเหลือ ${summary.dailyBalance.toLocaleString("th-TH")} บาท`;
+  const budget = summary.budgetLimit > 0 && summary.budgetPercent !== undefined ? `\nงบหมวด${summary.category}: ใช้ไป ${summary.budgetPercent}% (${summary.budgetSpent.toLocaleString("th-TH")} / ${summary.budgetLimit.toLocaleString("th-TH")} บาท)` : "";
+  const timestamp = new Intl.DateTimeFormat("th-TH", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Bangkok" }).format(summary.occurredAt);
+  return `จดสำเร็จ\nรายการ: ${note || summary.category}\nหมวด: ${summary.category}\nจำนวนเงิน: ${summary.amount.toLocaleString("th-TH")} บาท\nวันที่ - เวลา: ${timestamp}${budget}\n${mascotExpenseCopy(summary.transactionType, summary.amount)}\nวันนี้: รายรับ ${summary.dailyIncome.toLocaleString("th-TH")} บาท · รายจ่าย ${summary.dailyExpense.toLocaleString("th-TH")} บาท · คงเหลือ ${summary.dailyBalance.toLocaleString("th-TH")} บาท`;
 }
 
 export function financeReportCardText(report: FinanceReportCard) {
@@ -237,7 +243,6 @@ export async function replyPostSaveSummary(replyToken: string, summary: PostSave
       type: "flex", altText: postSaveSummaryText(summary),
       contents: {
         type: "bubble", size: "mega",
-        hero: { type: "image", url: miloRichMenuImageUrl("save-complete"), size: "full", aspectRatio: "20:9", aspectMode: "cover" },
         body: { type: "box", layout: "vertical", spacing: "md", paddingAll: "16px", backgroundColor: "#F2F0FF", contents: [
           { type: "box", layout: "horizontal", alignItems: "center", spacing: "md", paddingAll: "12px", cornerRadius: "md", backgroundColor: "#E4F8F2", contents: [
             { type: "box", layout: "vertical", justifyContent: "center", alignItems: "center", width: "38px", height: "38px", cornerRadius: "md", backgroundColor: "#5AC6AD", contents: [{ type: "text", text: "✓", align: "center", weight: "bold", size: "xl", color: "#FFFFFF" }] },
@@ -253,6 +258,13 @@ export async function replyPostSaveSummary(replyToken: string, summary: PostSave
             ] },
             { type: "text", text: `${summary.amount.toLocaleString("th-TH")} บาท`, size: "xxl", weight: "bold", color: "#3F3552" },
             ...(summary.note?.trim() ? [{ type: "text", text: `รายการที่จด: ${summary.note.trim()}`, size: "sm", color: "#675B7C", wrap: true }] : []),
+            { type: "text", text: "วันที่ - เวลา", size: "xs", weight: "bold", color: "#76688E", margin: "md" },
+            { type: "text", text: new Intl.DateTimeFormat("th-TH", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Bangkok" }).format(summary.occurredAt), size: "sm", color: "#4D4263" },
+            ...(summary.budgetLimit > 0 && summary.budgetPercent !== undefined ? [{ type: "box", layout: "vertical", spacing: "sm", margin: "md", paddingAll: "12px", cornerRadius: "md", backgroundColor: "#F3FBF8", contents: [
+              { type: "text", text: "สถานะงบประมาณหมวดหมู่", size: "xs", weight: "bold", color: "#267C68" },
+              { type: "box", layout: "horizontal", alignItems: "center", spacing: "sm", contents: [{ type: "text", text: summary.category, size: "sm", color: "#4D4263", flex: 1 }, { type: "text", text: `ใช้ไป ${summary.budgetPercent}%`, size: "sm", weight: "bold", color: "#267C68", align: "end" }] },
+              { type: "text", text: `(${summary.budgetSpent.toLocaleString("th-TH")} / ${summary.budgetLimit.toLocaleString("th-TH")} บาท)`, size: "xxs", color: "#6B6080", align: "end" },
+            ] }] : []),
             { type: "separator", color: "#E9E4F1" },
             { type: "text", text: "สรุปยอดวันนี้", size: "xs", weight: "bold", color: "#76688E" },
             { type: "box", layout: "horizontal", spacing: "sm", contents: [
@@ -270,13 +282,12 @@ export async function replyPostSaveSummary(replyToken: string, summary: PostSave
         ] },
       },
       },
-      { type: "image", originalContentUrl: miloRichMenuImageUrl("save-complete"), previewImageUrl: miloRichMenuImageUrl("save-complete-preview") }
     ] }),
   });
 }
 
 export async function replyPostSaveSummaryFallback(replyToken: string, summary: PostSaveSummary, credentials = lineCredentials()) {
-  return callLine("/v2/bot/message/reply", credentials, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ replyToken, messages: [{ type: "text", text: postSaveSummaryText(summary).slice(0, 5000), quickReply: { items: [{ type: "action", action: { type: "message", label: "ดูสรุปยอดวันนี้", text: "สรุปวันนี้" } }] } }, { type: "image", originalContentUrl: miloRichMenuImageUrl("save-complete"), previewImageUrl: miloRichMenuImageUrl("save-complete-preview") }] }) });
+  return callLine("/v2/bot/message/reply", credentials, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ replyToken, messages: [{ type: "text", text: postSaveSummaryText(summary).slice(0, 5000), quickReply: { items: [{ type: "action", action: { type: "message", label: "ดูสรุปยอดวันนี้", text: "สรุปวันนี้" } }] } }] }) });
 }
 
 export async function replyVoiceCategoryChoices(replyToken: string, credentials = lineCredentials()) {

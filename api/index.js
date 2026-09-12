@@ -1512,14 +1512,20 @@ function voiceProposalText(proposal) {
 function mascotExpenseCopy(transactionType, amount) {
   if (transactionType === "income") return "\u0E19\u0E49\u0E2D\u0E07\u0E41\u0E21\u0E27\u0E40\u0E01\u0E47\u0E1A\u0E23\u0E32\u0E22\u0E23\u0E31\u0E1A\u0E44\u0E27\u0E49\u0E43\u0E2B\u0E49\u0E41\u0E25\u0E49\u0E27 \u0E40\u0E21\u0E35\u0E49\u0E22\u0E27";
   if (amount <= 100) return "\u0E19\u0E49\u0E2D\u0E07\u0E41\u0E21\u0E27\u0E40\u0E01\u0E47\u0E1A\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E40\u0E25\u0E47\u0E01 \u0E46 \u0E44\u0E27\u0E49\u0E43\u0E2B\u0E49\u0E41\u0E25\u0E49\u0E27 \u0E40\u0E21\u0E35\u0E49\u0E22\u0E27";
-  if (amount <= 500) return "\u0E40\u0E0A\u0E47\u0E01\u0E22\u0E2D\u0E14\u0E27\u0E31\u0E19\u0E19\u0E35\u0E49\u0E44\u0E14\u0E49\u0E17\u0E31\u0E19\u0E17\u0E35\u0E19\u0E30\u0E40\u0E21\u0E35\u0E49\u0E22\u0E27";
-  return "\u0E22\u0E2D\u0E14\u0E19\u0E35\u0E49\u0E44\u0E21\u0E42\u0E25\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E44\u0E27\u0E49\u0E41\u0E25\u0E49\u0E27 \u0E25\u0E2D\u0E07\u0E14\u0E39\u0E2A\u0E23\u0E38\u0E1B\u0E27\u0E31\u0E19\u0E19\u0E35\u0E49\u0E44\u0E14\u0E49\u0E40\u0E25\u0E22";
+  if (amount <= 500) return "\u0E40\u0E0A\u0E47\u0E01\u0E22\u0E2D\u0E14\u0E27\u0E31\u0E19\u0E19\u0E35\u0E49\u0E44\u0E14\u0E49\u0E17\u0E31\u0E19\u0E17\u0E35\u0E19\u0E48\u0E30\u0E08\u0E4A\u0E30";
+  return "\u0E22\u0E2D\u0E14\u0E19\u0E35\u0E49\u0E44\u0E21\u0E42\u0E25\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E44\u0E27\u0E49\u0E41\u0E25\u0E49\u0E27 \u0E25\u0E2D\u0E07\u0E14\u0E39\u0E2A\u0E23\u0E38\u0E1B\u0E27\u0E31\u0E19\u0E19\u0E35\u0E49\u0E44\u0E14\u0E49\u0E40\u0E25\u0E22\u0E19\u0E48\u0E30\u0E08\u0E4A\u0E30";
 }
 function postSaveSummaryText(summary) {
   const label = summary.transactionType === "expense" ? "\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22" : "\u0E23\u0E32\u0E22\u0E23\u0E31\u0E1A";
   const note = summary.note?.trim();
-  return `\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01${label} ${summary.amount.toLocaleString("th-TH")} \u0E1A\u0E32\u0E17 \u0E2B\u0E21\u0E27\u0E14${summary.category}\u0E41\u0E25\u0E49\u0E27${note ? `
-\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E17\u0E35\u0E48\u0E08\u0E14: ${note}` : ""}
+  const budget = summary.budgetLimit > 0 && summary.budgetPercent !== void 0 ? `
+\u0E07\u0E1A\u0E2B\u0E21\u0E27\u0E14${summary.category}: \u0E43\u0E0A\u0E49\u0E44\u0E1B ${summary.budgetPercent}% (${summary.budgetSpent.toLocaleString("th-TH")} / ${summary.budgetLimit.toLocaleString("th-TH")} \u0E1A\u0E32\u0E17)` : "";
+  const timestamp2 = new Intl.DateTimeFormat("th-TH", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Bangkok" }).format(summary.occurredAt);
+  return `\u0E08\u0E14\u0E2A\u0E33\u0E40\u0E23\u0E47\u0E08
+\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23: ${note || summary.category}
+\u0E2B\u0E21\u0E27\u0E14: ${summary.category}
+\u0E08\u0E33\u0E19\u0E27\u0E19\u0E40\u0E07\u0E34\u0E19: ${summary.amount.toLocaleString("th-TH")} \u0E1A\u0E32\u0E17
+\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48 - \u0E40\u0E27\u0E25\u0E32: ${timestamp2}${budget}
 ${mascotExpenseCopy(summary.transactionType, summary.amount)}
 \u0E27\u0E31\u0E19\u0E19\u0E35\u0E49: \u0E23\u0E32\u0E22\u0E23\u0E31\u0E1A ${summary.dailyIncome.toLocaleString("th-TH")} \u0E1A\u0E32\u0E17 \xB7 \u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22 ${summary.dailyExpense.toLocaleString("th-TH")} \u0E1A\u0E32\u0E17 \xB7 \u0E04\u0E07\u0E40\u0E2B\u0E25\u0E37\u0E2D ${summary.dailyBalance.toLocaleString("th-TH")} \u0E1A\u0E32\u0E17`;
 }
@@ -1658,7 +1664,6 @@ async function replyPostSaveSummary(replyToken, summary, credentials = lineCrede
         contents: {
           type: "bubble",
           size: "mega",
-          hero: { type: "image", url: miloRichMenuImageUrl("save-complete"), size: "full", aspectRatio: "20:9", aspectMode: "cover" },
           body: { type: "box", layout: "vertical", spacing: "md", paddingAll: "16px", backgroundColor: "#F2F0FF", contents: [
             { type: "box", layout: "horizontal", alignItems: "center", spacing: "md", paddingAll: "12px", cornerRadius: "md", backgroundColor: "#E4F8F2", contents: [
               { type: "box", layout: "vertical", justifyContent: "center", alignItems: "center", width: "38px", height: "38px", cornerRadius: "md", backgroundColor: "#5AC6AD", contents: [{ type: "text", text: "\u2713", align: "center", weight: "bold", size: "xl", color: "#FFFFFF" }] },
@@ -1674,6 +1679,13 @@ async function replyPostSaveSummary(replyToken, summary, credentials = lineCrede
               ] },
               { type: "text", text: `${summary.amount.toLocaleString("th-TH")} \u0E1A\u0E32\u0E17`, size: "xxl", weight: "bold", color: "#3F3552" },
               ...summary.note?.trim() ? [{ type: "text", text: `\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E17\u0E35\u0E48\u0E08\u0E14: ${summary.note.trim()}`, size: "sm", color: "#675B7C", wrap: true }] : [],
+              { type: "text", text: "\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48 - \u0E40\u0E27\u0E25\u0E32", size: "xs", weight: "bold", color: "#76688E", margin: "md" },
+              { type: "text", text: new Intl.DateTimeFormat("th-TH", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Bangkok" }).format(summary.occurredAt), size: "sm", color: "#4D4263" },
+              ...summary.budgetLimit > 0 && summary.budgetPercent !== void 0 ? [{ type: "box", layout: "vertical", spacing: "sm", margin: "md", paddingAll: "12px", cornerRadius: "md", backgroundColor: "#F3FBF8", contents: [
+                { type: "text", text: "\u0E2A\u0E16\u0E32\u0E19\u0E30\u0E07\u0E1A\u0E1B\u0E23\u0E30\u0E21\u0E32\u0E13\u0E2B\u0E21\u0E27\u0E14\u0E2B\u0E21\u0E39\u0E48", size: "xs", weight: "bold", color: "#267C68" },
+                { type: "box", layout: "horizontal", alignItems: "center", spacing: "sm", contents: [{ type: "text", text: summary.category, size: "sm", color: "#4D4263", flex: 1 }, { type: "text", text: `\u0E43\u0E0A\u0E49\u0E44\u0E1B ${summary.budgetPercent}%`, size: "sm", weight: "bold", color: "#267C68", align: "end" }] },
+                { type: "text", text: `(${summary.budgetSpent.toLocaleString("th-TH")} / ${summary.budgetLimit.toLocaleString("th-TH")} \u0E1A\u0E32\u0E17)`, size: "xxs", color: "#6B6080", align: "end" }
+              ] }] : [],
               { type: "separator", color: "#E9E4F1" },
               { type: "text", text: "\u0E2A\u0E23\u0E38\u0E1B\u0E22\u0E2D\u0E14\u0E27\u0E31\u0E19\u0E19\u0E35\u0E49", size: "xs", weight: "bold", color: "#76688E" },
               { type: "box", layout: "horizontal", spacing: "sm", contents: [
@@ -1690,13 +1702,12 @@ async function replyPostSaveSummary(replyToken, summary, credentials = lineCrede
             { type: "button", style: "primary", color: "#7657AA", height: "sm", action: { type: "message", label: "\u0E14\u0E39\u0E2A\u0E23\u0E38\u0E1B\u0E22\u0E2D\u0E14\u0E27\u0E31\u0E19\u0E19\u0E35\u0E49", text: "\u0E2A\u0E23\u0E38\u0E1B\u0E27\u0E31\u0E19\u0E19\u0E35\u0E49" } }
           ] }
         }
-      },
-      { type: "image", originalContentUrl: miloRichMenuImageUrl("save-complete"), previewImageUrl: miloRichMenuImageUrl("save-complete-preview") }
+      }
     ] })
   });
 }
 async function replyPostSaveSummaryFallback(replyToken, summary, credentials = lineCredentials()) {
-  return callLine("/v2/bot/message/reply", credentials, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ replyToken, messages: [{ type: "text", text: postSaveSummaryText(summary).slice(0, 5e3), quickReply: { items: [{ type: "action", action: { type: "message", label: "\u0E14\u0E39\u0E2A\u0E23\u0E38\u0E1B\u0E22\u0E2D\u0E14\u0E27\u0E31\u0E19\u0E19\u0E35\u0E49", text: "\u0E2A\u0E23\u0E38\u0E1B\u0E27\u0E31\u0E19\u0E19\u0E35\u0E49" } }] } }, { type: "image", originalContentUrl: miloRichMenuImageUrl("save-complete"), previewImageUrl: miloRichMenuImageUrl("save-complete-preview") }] }) });
+  return callLine("/v2/bot/message/reply", credentials, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ replyToken, messages: [{ type: "text", text: postSaveSummaryText(summary).slice(0, 5e3), quickReply: { items: [{ type: "action", action: { type: "message", label: "\u0E14\u0E39\u0E2A\u0E23\u0E38\u0E1B\u0E22\u0E2D\u0E14\u0E27\u0E31\u0E19\u0E19\u0E35\u0E49", text: "\u0E2A\u0E23\u0E38\u0E1B\u0E27\u0E31\u0E19\u0E19\u0E35\u0E49" } }] } }] }) });
 }
 async function replyVoiceCategoryChoices(replyToken, credentials = lineCredentials()) {
   const popular = ["\u0E2D\u0E32\u0E2B\u0E32\u0E23", "\u0E40\u0E14\u0E34\u0E19\u0E17\u0E32\u0E07", "\u0E04\u0E48\u0E32\u0E2A\u0E32\u0E18\u0E32\u0E23\u0E13\u0E39\u0E1B\u0E42\u0E20\u0E04", "\u0E0A\u0E49\u0E2D\u0E1B\u0E1B\u0E34\u0E49\u0E07", "\u0E2A\u0E38\u0E02\u0E20\u0E32\u0E1E"];
@@ -2954,7 +2965,7 @@ function parseMiloCommand(text2, now = /* @__PURE__ */ new Date()) {
   }
   const naturalMoney = value.match(/^(.+?)\s+(\d[\d,]*(?:\.\d{1,2})?)\s*(?:บาท)?$/i);
   if (naturalMoney) {
-    const note2 = naturalMoney[1].trim();
+    const note2 = naturalMoney[1].trim().replace(/^ค่า(?=กาแฟ|อาหาร|ข้าว|น้ำมัน|ไฟ|น้ำ|เน็ต|โทรศัพท์|เดินทาง)/i, "");
     const amount = Number(naturalMoney[2].replace(/,/g, ""));
     const incomeCue = /^(?:ได้เงิน|เงินเดือนเข้า|ขายของได้|ขายได้|รับเงิน|รายรับ|รายได้|โบนัส|ค่าจ้าง|เงินเดือน)/i.test(note2);
     const expenseCue = /^(?:กิน|ซื้อ|จ่าย|ค่า|เติม|ช้อป|เดินทาง|แท็กซี่|กาแฟ|อาหาร|ข้าว|น้ำมัน|บิล|โอน|ของใช้|ชำระ)/i.test(note2);
@@ -3264,9 +3275,18 @@ async function sendVoiceProposal(replyToken, proposal) {
     await replyVoiceProposalFallback(replyToken, proposal);
   }
 }
+function monthKeyForBangkok(date) {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Bangkok", year: "numeric", month: "2-digit" }).format(date).slice(0, 7);
+}
 async function sendPostSaveSummary(replyToken, lineUserId, lineChatId, financeAccountId, transaction) {
-  const report = await financeReport(lineUserId, "day", /* @__PURE__ */ new Date(), financeAccountId);
-  const summary = { transactionType: transaction.transactionType, amount: transaction.amount, category: transaction.category, note: transaction.note, dailyIncome: report.income, dailyExpense: report.expense, dailyBalance: report.balance };
+  const occurredAt = transaction.occurredAt ?? /* @__PURE__ */ new Date();
+  const report = await financeReport(lineUserId, "day", occurredAt, financeAccountId);
+  const budgets2 = await listBudgets(lineUserId, monthKeyForBangkok(occurredAt), financeAccountId);
+  const budget = budgets2.find((item) => item.category === transaction.category);
+  const budgetLimit = budget ? Number(budget.amount) : 0;
+  const budgetSpent = Number(report.categories[transaction.category] ?? 0);
+  const budgetPercent = budgetLimit > 0 ? Math.round(budgetSpent / budgetLimit * 100) : void 0;
+  const summary = { transactionType: transaction.transactionType, amount: transaction.amount, category: transaction.category, note: transaction.note, occurredAt, dailyIncome: report.income, dailyExpense: report.expense, dailyBalance: report.balance, budgetSpent, budgetLimit, budgetPercent };
   try {
     await replyPostSaveSummary(replyToken, summary);
   } catch (error) {
@@ -3341,9 +3361,10 @@ ${command.data.title}
       } catch {
       }
     }
-    await createTransaction({ lineChatId, lineUserId, financeAccountId: financeScope.financeAccountId, transactionType: command.type, amount: command.amount, category, note: command.note, source: "line_text", sourceMessageId: event.message?.id });
+    const occurredAt = /* @__PURE__ */ new Date();
+    await createTransaction({ lineChatId, lineUserId, financeAccountId: financeScope.financeAccountId, transactionType: command.type, amount: command.amount, category, note: command.note, occurredAt, source: "line_text", sourceMessageId: event.message?.id });
     if (event.replyToken) {
-      await sendPostSaveSummary(event.replyToken, lineUserId, lineChatId, financeScope.financeAccountId, { transactionType: command.type, amount: command.amount, category, note: command.note });
+      await sendPostSaveSummary(event.replyToken, lineUserId, lineChatId, financeScope.financeAccountId, { transactionType: command.type, amount: command.amount, category, note: command.note, occurredAt });
       return;
     }
     message = `\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01${command.type === "expense" ? "\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22" : "\u0E23\u0E32\u0E22\u0E23\u0E31\u0E1A"} ${command.amount.toLocaleString("th-TH")} \u0E1A\u0E32\u0E17 \u0E43\u0E19\u0E2B\u0E21\u0E27\u0E14${category}\u0E41\u0E25\u0E49\u0E27`;
@@ -3398,11 +3419,12 @@ ${results.map((item) => `#${item.id} \xB7 ${item.transactionType === "expense" ?
     } else {
       const proposed = proposalFromStoredTranscript(voice.transcript, voice.proposalJson);
       if (proposed.transactionType && proposed.amount && proposed.category) {
-        const transactionId = await createTransaction({ lineChatId, lineUserId, financeAccountId: financeScope.financeAccountId, transactionType: proposed.transactionType, amount: proposed.amount, category: proposed.category, note: proposed.note, source: "line_audio" });
+        const occurredAt = /* @__PURE__ */ new Date();
+        const transactionId = await createTransaction({ lineChatId, lineUserId, financeAccountId: financeScope.financeAccountId, transactionType: proposed.transactionType, amount: proposed.amount, category: proposed.category, note: proposed.note, occurredAt, source: "line_audio" });
         await linkTransactionAttachment({ transactionId, vaultItemId: voice.vaultItemId, lineUserId, label: "\u0E44\u0E1F\u0E25\u0E4C\u0E40\u0E2A\u0E35\u0E22\u0E07\u0E15\u0E49\u0E19\u0E09\u0E1A\u0E31\u0E1A" });
         await updateVoiceTranscriptionStatus(voice.id, "accepted");
         if (event.replyToken) {
-          await sendPostSaveSummary(event.replyToken, lineUserId, lineChatId, financeScope.financeAccountId, proposed);
+          await sendPostSaveSummary(event.replyToken, lineUserId, lineChatId, financeScope.financeAccountId, { ...proposed, occurredAt });
           return;
         }
         message = `\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01${proposed.transactionType === "expense" ? "\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22" : "\u0E23\u0E32\u0E22\u0E23\u0E31\u0E1A"}\u0E08\u0E32\u0E01\u0E40\u0E2A\u0E35\u0E22\u0E07 ${proposed.amount.toLocaleString("th-TH")} \u0E1A\u0E32\u0E17 \u0E43\u0E19\u0E2B\u0E21\u0E27\u0E14${proposed.category}\u0E41\u0E25\u0E49\u0E27`;
@@ -3536,7 +3558,7 @@ ${incomeSection}
           await linkTransactionAttachment({ transactionId, vaultItemId: latest.vault.id, lineUserId, label: proposal.documentType === "bank_slip" ? "\u0E2A\u0E25\u0E34\u0E1B\u0E15\u0E49\u0E19\u0E09\u0E1A\u0E31\u0E1A" : "\u0E43\u0E1A\u0E40\u0E2A\u0E23\u0E47\u0E08\u0E15\u0E49\u0E19\u0E09\u0E1A\u0E31\u0E1A" });
           await setImageExtractionStatus(latest.extraction.id, "accepted");
           if (event.replyToken) {
-            await sendPostSaveSummary(event.replyToken, lineUserId, lineChatId, financeScope.financeAccountId, { transactionType: "expense", amount, category, note: buildExpenseNote(proposal) });
+            await sendPostSaveSummary(event.replyToken, lineUserId, lineChatId, financeScope.financeAccountId, { transactionType: "expense", amount, category, note: buildExpenseNote(proposal), occurredAt });
             return;
           }
           message = `\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22\u0E08\u0E32\u0E01${proposal.documentType === "bank_slip" ? "\u0E2A\u0E25\u0E34\u0E1B" : "\u0E43\u0E1A\u0E40\u0E2A\u0E23\u0E47\u0E08"} ${amount.toLocaleString("th-TH")} \u0E1A\u0E32\u0E17 \u0E43\u0E19\u0E2B\u0E21\u0E27\u0E14${category}\u0E41\u0E25\u0E49\u0E27`;

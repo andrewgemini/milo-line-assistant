@@ -49,10 +49,11 @@ describe("LINE credentials", () => {
 
   it("sends real daily totals and a daily-summary action after saving a transaction", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(null, { status: 200 }));
-    await replyPostSaveSummary("reply-token", { transactionType: "expense", amount: 80, category: "อาหาร", dailyIncome: 1000, dailyExpense: 280, dailyBalance: 720 }, { channelSecret: "secret", channelAccessToken: "token" });
+    await replyPostSaveSummary("reply-token", { transactionType: "expense", amount: 80, category: "อาหาร", dailyIncome: 1000, dailyExpense: 280, dailyBalance: 720, occurredAt: new Date(2026, 8, 12, 17, 8), budgetSpent: 40, budgetLimit: 1000, budgetPercent: 4 }, { channelSecret: "secret", channelAccessToken: "token" });
     const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
     const payload = JSON.parse(String(init.body)) as { messages: Array<{ contents: { body: { backgroundColor: string; contents: Array<{ backgroundColor?: string; contents?: Array<{ text?: string }> }> }; footer: { contents: Array<{ action: { text: string } }> } } }> };
-    expect(String(init.body)).toContain("รายจ่าย 80 บาท");
+    expect(String(init.body)).toContain("รายจ่าย  •  อาหาร");
+    expect(String(init.body)).toContain("80 บาท");
     expect(String(init.body)).toContain("รายจ่าย 280 บาท");
     expect(payload.messages[0]?.contents.body.backgroundColor).toBe("#F2F0FF");
     expect(String(init.body)).toContain('"text":"✓"');
