@@ -1,0 +1,128 @@
+{
+  "size": {
+    "width": 2500,
+    "height": 1686
+  },
+  "selected": true,
+  "name": "Milo LINE Assistant - Master Rich Menu",
+  "chatBarText": "เมนูไมโล",
+  "areas": [
+    {
+      "bounds": {
+        "x": 0,
+        "y": 0,
+        "width": 1270,
+        "height": 1030
+      },
+      "action": {
+        "type": "message",
+        "label": "จดบันทึก",
+        "text": "จดบันทึก"
+      }
+    },
+    {
+      "bounds": {
+        "x": 1270,
+        "y": 0,
+        "width": 615,
+        "height": 530
+      },
+      "action": {
+        "type": "message",
+        "label": "สรุป",
+        "text": "สรุป"
+      }
+    },
+    {
+      "bounds": {
+        "x": 1885,
+        "y": 0,
+        "width": 615,
+        "height": 530
+      },
+      "action": {
+        "type": "message",
+        "label": "วิเคราะห์",
+        "text": "วิเคราะห์"
+      }
+    },
+    {
+      "bounds": {
+        "x": 1270,
+        "y": 530,
+        "width": 615,
+        "height": 500
+      },
+      "action": {
+        "type": "message",
+        "label": "งบประมาณ",
+        "text": "งบประมาณ"
+      }
+    },
+    {
+      "bounds": {
+        "x": 1885,
+        "y": 530,
+        "width": 615,
+        "height": 500
+      },
+      "action": {
+        "type": "message",
+        "label": "รายการ",
+        "text": "รายการ"
+      }
+    },
+    {
+      "bounds": {
+        "x": 0,
+        "y": 1030,
+        "width": 590,
+        "height": 656
+      },
+      "action": {
+        "type": "message",
+        "label": "หมวดหมู่",
+        "text": "หมวดหมู่"
+      }
+    },
+    {
+      "bounds": {
+        "x": 590,
+        "y": 1030,
+        "width": 560,
+        "height": 656
+      },
+      "action": {
+        "type": "message",
+        "label": "ตั้งค่า",
+        "text": "ตั้งค่า"
+      }
+    },
+    {
+      "bounds": {
+        "x": 1150,
+        "y": 1030,
+        "width": 570,
+        "height": 656
+      },
+      "action": {
+        "type": "message",
+        "label": "วิธีใช้งาน",
+        "text": "วิธีใช้งาน"
+      }
+    },
+    {
+      "bounds": {
+        "x": 1720,
+        "y": 1030,
+        "width": 780,
+        "height": 656
+      },
+      "action": {
+        "type": "message",
+        "label": "สวัสดีไมโล",
+        "text": "สวัสดีไมโล"
+      }
+    }
+  ]
+}

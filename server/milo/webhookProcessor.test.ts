@@ -29,24 +29,24 @@ vi.mock("../db", () => ({
   canCreateFinanceTransaction: vi.fn(() => true),
   canManageFinanceTransactions: vi.fn(() => true),
   canManageFinanceSettings: vi.fn(() => true),
-  financeReport: vi.fn(),
+  financeReport: vi.fn(), listBudgets: vi.fn(), listTransactions: vi.fn(), searchTransactions: vi.fn(),
 }));
 vi.mock("../storage", () => ({ storageGetSignedUrl: vi.fn(), storagePut: vi.fn() }));
 vi.mock("./imageAnalysis", () => ({ analyzeImage: vi.fn() }));
 vi.mock("../_core/voiceTranscription", () => ({ transcribeAudio: vi.fn() }));
 vi.mock("./financialAssistant", () => ({ generateFinancialInsight: vi.fn(), suggestExpenseCategory: vi.fn() }));
 vi.mock("./line", () => ({
-  getMessageContent: vi.fn(), getProfile: vi.fn(), lineCredentials: vi.fn(() => ({ channelSecret: "test-secret", channelAccessToken: "test-token" })), pushText: vi.fn(), replyMention: vi.fn(), replyText: vi.fn(),
+  replyRichMenu: vi.fn(), getMessageContent: vi.fn(), getProfile: vi.fn(), lineCredentials: vi.fn(() => ({ channelSecret: "test-secret", channelAccessToken: "test-token" })), pushText: vi.fn(), replyMention: vi.fn(), replyText: vi.fn(),
   replyVoiceProposal: vi.fn(), replyPostSaveSummary: vi.fn(), replyPostSaveSummaryFallback: vi.fn(), replyVoiceCategoryChoices: vi.fn(), postSaveSummaryText: vi.fn((summary: { amount: number }) => `รายจ่าย ${summary.amount} บาท`), replyFinanceReportCard: vi.fn(), replyFinanceReportCardFallback: vi.fn(), financeReportCardText: vi.fn(() => "สรุปการเงินวันนี้"),
   sourceIdentity: vi.fn(() => ({ lineChatId: "G1", lineUserId: "U1", scope: "group" })), verifyLineSignature: vi.fn(),
 }));
 
 import * as db from "../db";
-import { getMessageContent, getProfile, replyFinanceReportCard, replyMention, replyPostSaveSummary, replyText, replyVoiceCategoryChoices, replyVoiceProposal, sourceIdentity, verifyLineSignature } from "./line";
+import { replyRichMenu, getMessageContent, getProfile, replyFinanceReportCard, replyMention, replyPostSaveSummary, replyText, replyVoiceCategoryChoices, replyVoiceProposal, sourceIdentity, verifyLineSignature } from "./line";
 import { storageGetSignedUrl, storagePut } from "../storage";
 import { analyzeImage } from "./imageAnalysis";
 import { transcribeAudio } from "../_core/voiceTranscription";
-import { suggestExpenseCategory } from "./financialAssistant";
+import { generateFinancialInsight, suggestExpenseCategory } from "./financialAssistant";
 import { processEvent, registerLineWebhook } from "./routes";
 
 describe("LINE webhook processor", () => {
@@ -143,7 +143,7 @@ describe("LINE webhook processor", () => {
     expect(db.addExpenseCategory).toHaveBeenCalledWith("U1", "โบนัส", "income", 7);
     expect(db.listTransactionCategories).toHaveBeenCalledWith("U1", 7);
     expect(replyPostSaveSummary).toHaveBeenCalledWith("token", expect.objectContaining({ transactionType: "expense", amount: 65, category: "อาหาร", dailyExpense: 65 }));
-    expect(replyText).toHaveBeenCalledWith("token", expect.stringContaining("สวัสดีครับ ผมไมโล"));
+    expect(replyRichMenu).toHaveBeenCalledWith("token", expect.stringContaining("สวัสดีครับ ผมไมโล"), "help");
   });
 
   it("stores a receipt analysis then records its confirmed expense with amount, category, date and merchant note", async () => {
@@ -286,5 +286,57 @@ describe("LINE webhook processor", () => {
     const response = await fetch(`http://127.0.0.1:${port}/api/line/webhook`, { method: "POST", headers: { "content-type": "application/json", "x-line-signature": "bad" }, body: "{}" });
     await new Promise<void>(resolve => server.close(() => resolve()));
     expect(response.status).toBe(401);
+  });
+});
+
+describe("rich menu webhook regression", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(db.registerWebhookEvent).mockResolvedValue(true);
+    vi.mocked(getProfile).mockResolvedValue({ displayName: "test" });
+    vi.mocked(sourceIdentity).mockReturnValue({ lineChatId: "U1", lineUserId: "U1", scope: "user" });
+    vi.mocked(db.resolveFinanceAccountForLineEvent).mockResolvedValue({ account: { id: 7 }, membership: { role: "owner" } } as never);
+    vi.mocked(db.listBudgets).mockResolvedValue([]);
+    vi.mocked(db.listTransactions).mockResolvedValue([]);
+    vi.mocked(db.searchTransactions).mockResolvedValue([]);
+    vi.mocked(db.financeReport).mockResolvedValue({period:"month",income:0,expense:0,balance:0,categories:{}} as never);
+    vi.mocked(db.listTransactionCategories).mockResolvedValue([]);
+  });
+  const event = (text: string) => ({ type: "message", webhookEventId: "richmenu-test", timestamp: Date.now(), replyToken: "token", source: { type: "user" as const, userId: "U1" }, message: { id: "menu", type: "text" as const, text } });
+  it.each([["จดบันทึก","record"],["งบประมาณ","budget"],["รายการ","transactions"],["หมวดหมู่","categories"],["ตั้งค่า","settings"],["วิธีใช้งาน","help"],["สวัสดีไมโล","overview"]])("%s replies with %s artwork", async (text,key) => {
+    await processEvent(event(text), "{}");
+    expect(replyRichMenu).toHaveBeenCalledWith("token", expect.any(String), key);
+    expect(db.finishWebhookEvent).toHaveBeenCalledWith("richmenu-test", "processed");
+  });
+  it.each(["งบประมาณ", "รายการ"])("%s denies unavailable account before reading data", async text => {
+    vi.mocked(db.resolveFinanceAccountForLineEvent).mockResolvedValue(undefined);
+    await processEvent(event(text), "{}");
+    expect(db.listBudgets).not.toHaveBeenCalled();
+    expect(db.listTransactions).not.toHaveBeenCalled();
+    expect(replyRichMenu).not.toHaveBeenCalled();
+    expect(replyText).toHaveBeenCalledWith("token", expect.stringContaining("ยังไม่พบบัญชี"));
+  });
+  it("analysis computes actual account data before replying with artwork", async () => {
+    vi.mocked(generateFinancialInsight).mockResolvedValue({ dataSufficiency: "limited", summary: "ข้อมูลจริง", highlights: [], suggestedActions: [] } as never);
+    await processEvent(event("วิเคราะห์"), "{}");
+    expect(db.financeReport).toHaveBeenCalledWith("U1", "month", expect.any(Date), 7);
+    expect(generateFinancialInsight).toHaveBeenCalled();
+    expect(replyRichMenu).toHaveBeenCalledWith("token", expect.stringContaining("ข้อมูลจริง"), "analysis");
+  });
+  it.each([["สรุปวันนี้","day"],["สรุปสัปดาห์นี้","week"],["สรุปเดือนนี้","month"],["สรุปปีนี้","year"]])("%s loads the requested period", async (text,period) => {
+    await processEvent(event(text), "{}");
+    expect(db.financeReport).toHaveBeenCalledWith("U1", period, expect.any(Date), 7);
+    expect(replyFinanceReportCard).toHaveBeenCalled();
+  });
+  it("budget overview includes real category spending", async () => {
+    vi.mocked(db.listBudgets).mockResolvedValue([{category:"อาหาร",amount:"5000"}] as never);
+    vi.mocked(db.financeReport).mockResolvedValue({period:"month",categories:{อาหาร:125}} as never);
+    await processEvent(event("งบประมาณ"), "{}");
+    expect(replyRichMenu).toHaveBeenCalledWith("token",expect.stringContaining("ใช้ไป 125 / งบ 5,000"),"budget");
+  });
+  it("falls back to useful text when artwork is rejected", async () => {
+    vi.mocked(replyRichMenu).mockRejectedValueOnce(new Error("image rejected"));
+    await processEvent(event("จดบันทึก"), "{}");
+    expect(replyText).toHaveBeenCalledWith("token", expect.stringContaining("จดบันทึก"));
   });
 });

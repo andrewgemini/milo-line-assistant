@@ -1388,6 +1388,81 @@ var systemRouter = router({
   })
 });
 
+// server/milo/richMenuArtwork.ts
+var RICH_MENU_ARTWORK = {
+  "report-year": {
+    "file": "report-year.png",
+    "source": "ChatGPT Image Sep 12, 2026, 03_32_41 PM.png"
+  },
+  "report-day": {
+    "file": "report-day.png",
+    "source": "ChatGPT Image Sep 12, 2026, 03_32_55 PM (1).png"
+  },
+  "report-month": {
+    "file": "report-month.png",
+    "source": "ChatGPT Image Sep 12, 2026, 03_32_55 PM (2).png"
+  },
+  "report-week": {
+    "file": "report-week.png",
+    "source": "ChatGPT Image Sep 12, 2026, 03_32_56 PM (3).png"
+  },
+  "analysis": {
+    "file": "analysis.png",
+    "source": "ChatGPT Image Sep 12, 2026, 03_33_19 PM (1).png"
+  },
+  "overview": {
+    "file": "overview.png",
+    "source": "ChatGPT Image Sep 12, 2026, 03_33_19 PM (2).png"
+  },
+  "budget": {
+    "file": "budget.png",
+    "source": "ChatGPT Image Sep 12, 2026, 03_33_20 PM (3).png"
+  },
+  "transactions": {
+    "file": "transactions.png",
+    "source": "ChatGPT Image Sep 12, 2026, 03_33_20 PM (4).png"
+  },
+  "record": {
+    "file": "record.png",
+    "source": "ChatGPT Image Sep 12, 2026, 03_33_21 PM (5).png"
+  },
+  "categories": {
+    "file": "categories.png",
+    "source": "ChatGPT Image Sep 12, 2026, 03_33_21 PM (6).png"
+  },
+  "settings": {
+    "file": "settings.png",
+    "source": "ChatGPT Image Sep 12, 2026, 03_33_22 PM (7).png"
+  },
+  "help": {
+    "file": "help.png",
+    "source": "ChatGPT Image Sep 12, 2026, 03_33_22 PM (8).png"
+  }
+};
+function artworkForCommand(command) {
+  if (command.type === "financeReport") return "report-" + command.period;
+  const keys = {
+    recordGuide: "record",
+    aiSummary: "analysis",
+    budgetOverview: "budget",
+    transactionList: "transactions",
+    categoryList: "categories",
+    settingGuide: "settings",
+    help: "help",
+    greeting: "overview",
+    dashboardGuide: "overview"
+  };
+  return keys[command.type];
+}
+function artworkMessages(key) {
+  const base = process.env.MILO_PUBLIC_URL || "https://milo-line-app.vercel.app";
+  const url = new URL("/richmenu/" + RICH_MENU_ARTWORK[key].file, base).href;
+  return [
+    { type: "text", text: "\u0E20\u0E32\u0E1E\u0E1B\u0E23\u0E30\u0E01\u0E2D\u0E1A\u0E15\u0E31\u0E27\u0E2D\u0E22\u0E48\u0E32\u0E07: \u0E15\u0E31\u0E27\u0E40\u0E25\u0E02 \u0E27\u0E31\u0E19\u0E17\u0E35\u0E48 \u0E41\u0E25\u0E30\u0E1B\u0E38\u0E48\u0E21\u0E20\u0E32\u0E22\u0E43\u0E19\u0E20\u0E32\u0E1E\u0E40\u0E1B\u0E47\u0E19\u0E15\u0E31\u0E27\u0E2D\u0E22\u0E48\u0E32\u0E07 \u0E44\u0E21\u0E48\u0E43\u0E0A\u0E48\u0E22\u0E2D\u0E14\u0E1A\u0E31\u0E0D\u0E0A\u0E35\u0E08\u0E23\u0E34\u0E07 \u0E14\u0E39\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E08\u0E23\u0E34\u0E07\u0E41\u0E25\u0E30\u0E04\u0E33\u0E2A\u0E31\u0E48\u0E07\u0E17\u0E35\u0E48\u0E43\u0E0A\u0E49\u0E07\u0E32\u0E19\u0E44\u0E14\u0E49\u0E43\u0E19\u0E02\u0E49\u0E2D\u0E04\u0E27\u0E32\u0E21\u0E16\u0E31\u0E14\u0E44\u0E1B\u0E04\u0E23\u0E31\u0E1A" },
+    { type: "image", originalContentUrl: url, previewImageUrl: url.replace(/\.png$/, "-preview.jpg") }
+  ];
+}
+
 // server/milo/line.ts
 import crypto2 from "node:crypto";
 function lineCredentials() {
@@ -1414,17 +1489,6 @@ var MILO_RICH_MENU_IMAGE_BASE_URL = (process.env.MILO_RICH_MENU_IMAGE_BASE_URL ?
 function miloRichMenuImageUrl(key) {
   const extension = key === "save-complete-preview" ? "jpg" : "png";
   return `${MILO_RICH_MENU_IMAGE_BASE_URL}/${key}.${extension}`;
-}
-async function replyImage(replyToken, key, credentials = lineCredentials()) {
-  const url = miloRichMenuImageUrl(key);
-  return callLine("/v2/bot/message/reply", credentials, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      replyToken,
-      messages: [{ type: "image", originalContentUrl: url, previewImageUrl: url }]
-    })
-  });
 }
 async function replyText(replyToken, text2, credentials = lineCredentials()) {
   return callLine("/v2/bot/message/reply", credentials, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ replyToken, messages: [{ type: "text", text: text2.slice(0, 5e3) }] }) });
@@ -1495,7 +1559,7 @@ async function replyFinanceReportCard(replyToken, report, credentials = lineCred
   return callLine("/v2/bot/message/reply", credentials, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ replyToken, messages: [{
+    body: JSON.stringify({ replyToken, messages: [...artworkMessages("report-" + report.period), {
       type: "flex",
       altText: financeReportCardText(report),
       contents: {
@@ -1734,6 +1798,15 @@ async function getProfile(source, credentials = lineCredentials()) {
   const path = source.type === "group" ? `/v2/bot/group/${source.groupId}/member/${source.userId}` : `/v2/bot/room/${source.roomId}/member/${source.userId}`;
   const response = await callLine(path, credentials, { method: "GET" });
   return await response.json();
+}
+async function replyRichMenu(replyToken, text2, artwork, credentials = lineCredentials()) {
+  return callLine("/v2/bot/message/reply", credentials, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ replyToken, messages: [...artworkMessages(artwork), { type: "text", text: text2.slice(0, 5e3), quickReply: { items: [
+    { type: "action", action: { type: "message", label: "\u0E27\u0E31\u0E19\u0E19\u0E35\u0E49", text: "\u0E2A\u0E23\u0E38\u0E1B\u0E27\u0E31\u0E19\u0E19\u0E35\u0E49" } },
+    { type: "action", action: { type: "message", label: "\u0E2A\u0E31\u0E1B\u0E14\u0E32\u0E2B\u0E4C\u0E19\u0E35\u0E49", text: "\u0E2A\u0E23\u0E38\u0E1B\u0E2A\u0E31\u0E1B\u0E14\u0E32\u0E2B\u0E4C\u0E19\u0E35\u0E49" } },
+    { type: "action", action: { type: "message", label: "\u0E40\u0E14\u0E37\u0E2D\u0E19\u0E19\u0E35\u0E49", text: "\u0E2A\u0E23\u0E38\u0E1B\u0E40\u0E14\u0E37\u0E2D\u0E19\u0E19\u0E35\u0E49" } },
+    { type: "action", action: { type: "message", label: "\u0E1B\u0E35\u0E19\u0E35\u0E49", text: "\u0E2A\u0E23\u0E38\u0E1B\u0E1B\u0E35\u0E19\u0E35\u0E49" } },
+    { type: "action", action: { type: "uri", label: "\u0E40\u0E1B\u0E34\u0E14\u0E41\u0E14\u0E0A\u0E1A\u0E2D\u0E23\u0E4C\u0E14", uri: new URL("/dashboard", process.env.MILO_PUBLIC_URL || "https://milo-line-app.vercel.app").href } }
+  ] } }] }) });
 }
 
 // server/milo/reminderDelivery.ts
@@ -2787,7 +2860,7 @@ function titleWithoutSchedule(text2) {
   return text2.replace(/(?:ทุก\s*\d+\s*นาที|ทุกวัน|ทุกสัปดาห์(?:วัน)?(?:อาทิตย์|จันทร์|อังคาร|พุธ|พฤหัส|ศุกร์|เสาร์)?|ทุกเดือน(?:วันที่)?\s*\d+|พรุ่งนี้|วันนี้|วันที่\s*\d+\/\d+(?:\/\d+)?|\d{4}-\d{1,2}-\d{1,2}|(?:เวลา\s*)?\d{1,2}(?::|\.)?\d{0,2}\s*น?\.?)/gi, "").replace(/\s+/g, " ").trim() || "\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E40\u0E15\u0E37\u0E2D\u0E19";
 }
 function clock(text2) {
-  const match = text2.match(/(?:เวลา\s*)?(\d{1,2})(?:(?::|\.)(\d{2}))?\s*(?:น\.?|โมง)?/i);
+  const match = text2.match(/เวลา\s*(\d{1,2})(?:(?::|\.)(\d{2}))?/) ?? text2.match(/(?:^|\s)(\d{1,2})(?::|\.)(\d{2})(?:\s|น|$)/);
   return { hour: Math.min(Math.max(Number(match?.[1] ?? 9), 0), 23), minute: Math.min(Math.max(Number(match?.[2] ?? 0), 0), 59) };
 }
 function bangkokParts(date) {
@@ -2902,16 +2975,17 @@ function parseMiloCommand(text2, now = /* @__PURE__ */ new Date()) {
   if (/^(?:เมนูไมโล|วิธีใช้งาน|คู่มือ(?:การใช้งาน)?|คำสั่ง|ช่วย|เมนู|help|\?)$/i.test(value)) return { type: "help" };
   if (/^(?:จดบันทึก|เริ่มจดบันทึก|บันทึกรายรับรายจ่าย|บันทึกรายรับ-รายจ่าย|จด)$/i.test(value)) return { type: "recordGuide" };
   if (/^(?:หมวด\s*\/?\s*งบ|งบประมาณ|คุมงบประมาณ|ดูงบ|งบ)$/i.test(value)) return { type: "budgetOverview" };
-  if (/^(?:รายการ|ประวัติ|ประวัติธุรกรรม|รายการธุรกรรม|ดูย้อนหลัง)$/i.test(value)) return { type: "transactionList" };
+  if (/^(?:รายการ|ประวัติ|ประวัติธุรกรรม|ประวัติรายการ|รายการธุรกรรม|รายการทั้งหมด|ดูย้อนหลัง)$/i.test(value)) return { type: "transactionList" };
   if (/^ตั้งค่า$/i.test(value)) return { type: "settingGuide" };
   if (/^(?:dashboard|แดชบอร์ด|เว็บแดชบอร์ด|จัดการระบบหลังบ้าน|หลังบ้าน|แดชบอร์ดหลังบ้าน)$/i.test(value)) return { type: "dashboardGuide" };
-  if (/^(?:ประเภท|หมวดหมู่|หมวดหมู่รายรับ-?จ่าย|ดูหมวดหมู่)$/i.test(value)) return { type: "categoryList" };
-  if (/^(?:วิเคราะห์|สุขภาพการเงิน|วิเคราะห์การเงิน|วิเคราะห์รายจ่าย|สรุปธุรกิจ)(?:ของ)?(วันนี้|สัปดาห์นี้|เดือนนี้|ปีนี้)?$/i.test(value)) {
+  if (/^(?:ประเภท|ประเภทและหมวดหมู่|หมวดหมู่|หมวดหมู่รายรับ-?จ่าย|ดูหมวดหมู่)$/i.test(value)) return { type: "categoryList" };
+  if (/^(?:วิเคราะห์|สุขภาพการเงิน|วิเคราะห์การเงิน|วิเคราะห์รายจ่าย|สรุปธุรกิจ)\s*(?:ของ)?\s*(วันนี้|สัปดาห์นี้|เดือนนี้|ปีนี้)?$/i.test(value)) {
     const m = value.match(/(วันนี้|สัปดาห์นี้|เดือนนี้|ปีนี้)/i);
     const periods = { "\u0E27\u0E31\u0E19\u0E19\u0E35\u0E49": "day", "\u0E2A\u0E31\u0E1B\u0E14\u0E32\u0E2B\u0E4C\u0E19\u0E35\u0E49": "week", "\u0E40\u0E14\u0E37\u0E2D\u0E19\u0E19\u0E35\u0E49": "month", "\u0E1B\u0E35\u0E19\u0E35\u0E49": "year" };
     return { type: "aiSummary", period: m ? periods[m[1]] ?? "month" : "month" };
   }
-  const financeReport2 = value.match(/^สรุป(?:การเงิน|รายรับรายจ่าย|ยอด(?:ประจำเดือน)?)?(?:ของ)?(วันนี้|สัปดาห์นี้|เดือนนี้|ปีนี้)?$/i);
+  if (/^(?:ดูยอดคงเหลือ|ยอดคงเหลือ)$/.test(value)) return { type: "financeReport", period: "month" };
+  const financeReport2 = value.match(/^สรุป(?:การเงิน|รายรับรายจ่าย|ยอด(?:ประจำเดือน)?)?\s*(?:ของ)?\s*(วันนี้|สัปดาห์นี้|เดือนนี้|ปีนี้)?$/i);
   if (financeReport2) {
     const periodKey = financeReport2[1] ?? "\u0E40\u0E14\u0E37\u0E2D\u0E19\u0E19\u0E35\u0E49";
     const periods = { "\u0E27\u0E31\u0E19\u0E19\u0E35\u0E49": "day", "\u0E2A\u0E31\u0E1B\u0E14\u0E32\u0E2B\u0E4C\u0E19\u0E35\u0E49": "week", "\u0E40\u0E14\u0E37\u0E2D\u0E19\u0E19\u0E35\u0E49": "month", "\u0E1B\u0E35\u0E19\u0E35\u0E49": "year" };
@@ -3240,18 +3314,6 @@ ${lineUserId}
     return;
   }
   const command = parseMiloCommand(text2);
-  const richMenuImageByCommand = {
-    dashboardGuide: "home",
-    aiSummary: "analysis",
-    recordGuide: "record",
-    budgetOverview: "wallet",
-    settingGuide: "settings"
-  };
-  const richMenuImageKey = richMenuImageByCommand[command.type];
-  if (richMenuImageKey && event.replyToken) {
-    await replyImage(event.replyToken, richMenuImageKey);
-    return;
-  }
   let message = "";
   const financeCommands = /* @__PURE__ */ new Set(["expense", "income", "transactionSearch", "transactionDelete", "transactionUpdate", "openingBalance", "financeReport", "aiSummary", "budgetOverview", "transactionList", "voiceConfirm", "voiceEditPrompt", "voiceCategoryChange", "voiceEdit", "budget", "categoryAdd", "categoryRemove", "categoryList", "imageConfirm"]);
   const financeScope = financeCommands.has(command.type) ? await resolveFinanceScope(lineUserId, lineChatId, scope) : void 0;
@@ -3409,7 +3471,7 @@ ${results.slice(0, 5).map((item, index2) => `${index2 + 1}. ${item.title}`).join
       return;
     }
     const now = /* @__PURE__ */ new Date();
-    const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+    const monthKey = new Date(now.getTime() + 7 * 60 * 60 * 1e3).toISOString().slice(0, 7);
     await upsertBudget(lineUserId, command.category, command.amount, monthKey, financeScope.financeAccountId);
     message = `\u0E15\u0E31\u0E49\u0E07\u0E07\u0E1A\u0E2B\u0E21\u0E27\u0E14${command.category} ${command.amount.toLocaleString("th-TH")} \u0E1A\u0E32\u0E17 \u0E2A\u0E33\u0E2B\u0E23\u0E31\u0E1A\u0E40\u0E14\u0E37\u0E2D\u0E19\u0E19\u0E35\u0E49\u0E41\u0E25\u0E49\u0E27`;
   } else if (command.type === "categoryAdd") {
@@ -3495,10 +3557,12 @@ ${incomeSection}
   } else if (command.type === "dashboardGuide") {
     message = "\u{1F510} \u0E41\u0E14\u0E0A\u0E1A\u0E2D\u0E23\u0E4C\u0E14\u0E2B\u0E25\u0E31\u0E07\u0E1A\u0E49\u0E32\u0E19 Milo\nhttps://milo-line-app.vercel.app/dashboard";
   } else if (command.type === "recordGuide") {
-    message = "\u{1F4DD} \u0E08\u0E14\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E44\u0E14\u0E49\u0E40\u0E25\u0E22\n\u0E15\u0E31\u0E27\u0E2D\u0E22\u0E48\u0E32\u0E07: \u0E08\u0E48\u0E32\u0E22 125 \u0E04\u0E48\u0E32\u0E2D\u0E32\u0E2B\u0E32\u0E23\n\u0E2B\u0E23\u0E37\u0E2D: \u0E23\u0E31\u0E1A\u0E40\u0E07\u0E34\u0E19\u0E40\u0E14\u0E37\u0E2D\u0E19 30000\n\u0E41\u0E25\u0E49\u0E27\u0E1C\u0E21\u0E08\u0E30\u0E0A\u0E48\u0E27\u0E22\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E43\u0E2B\u0E49\u0E04\u0E23\u0E31\u0E1A";
+    message = "\u{1F4DD} \u0E08\u0E14\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E44\u0E14\u0E49\u0E40\u0E25\u0E22\n\u0E15\u0E31\u0E27\u0E2D\u0E22\u0E48\u0E32\u0E07: \u0E01\u0E34\u0E19\u0E01\u0E32\u0E41\u0E1F 80 \u0E2B\u0E23\u0E37\u0E2D \u0E08\u0E48\u0E32\u0E22 \u0E04\u0E48\u0E32\u0E2D\u0E32\u0E2B\u0E32\u0E23 125\n\u0E2B\u0E23\u0E37\u0E2D: \u0E23\u0E31\u0E1A\u0E40\u0E07\u0E34\u0E19\u0E40\u0E14\u0E37\u0E2D\u0E19 30000\n\u0E2A\u0E48\u0E07\u0E23\u0E39\u0E1B\u0E43\u0E1A\u0E40\u0E2A\u0E23\u0E47\u0E08\u0E41\u0E25\u0E49\u0E27\u0E1E\u0E34\u0E21\u0E1E\u0E4C \u201C\u0E22\u0E37\u0E19\u0E22\u0E31\u0E19\u0E04\u0E48\u0E32\u0E43\u0E0A\u0E49\u0E08\u0E48\u0E32\u0E22\u201D \u0E2B\u0E23\u0E37\u0E2D\u0E2A\u0E48\u0E07\u0E40\u0E2A\u0E35\u0E22\u0E07\u0E41\u0E25\u0E49\u0E27\u0E1E\u0E34\u0E21\u0E1E\u0E4C \u201C\u0E22\u0E37\u0E19\u0E22\u0E31\u0E19\u0E40\u0E2A\u0E35\u0E22\u0E07\u201D \u0E2B\u0E25\u0E31\u0E07\u0E15\u0E23\u0E27\u0E08\u0E23\u0E32\u0E22\u0E25\u0E30\u0E40\u0E2D\u0E35\u0E22\u0E14\u0E04\u0E23\u0E31\u0E1A";
   } else if (command.type === "budgetOverview") {
-    const budgets2 = await listBudgets(lineUserId, void 0, financeScope.financeAccountId);
-    message = budgets2.length ? "\u{1F4CA} \u0E07\u0E1A\u0E1B\u0E23\u0E30\u0E21\u0E32\u0E13\u0E40\u0E14\u0E37\u0E2D\u0E19\u0E19\u0E35\u0E49\n" + budgets2.slice(0, 10).map((item) => `\u2022 ${item.category} ${Number(item.amount).toLocaleString("th-TH")} \u0E1A\u0E32\u0E17`).join("\n") : "\u{1F4CA} \u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E21\u0E35\u0E07\u0E1A\u0E1B\u0E23\u0E30\u0E21\u0E32\u0E13\u0E17\u0E35\u0E48\u0E15\u0E31\u0E49\u0E07\u0E44\u0E27\u0E49\u0E04\u0E23\u0E31\u0E1A\n\u0E15\u0E31\u0E27\u0E2D\u0E22\u0E48\u0E32\u0E07: \u0E07\u0E1A\u0E1B\u0E23\u0E30\u0E21\u0E32\u0E13 \u0E04\u0E48\u0E32\u0E2D\u0E32\u0E2B\u0E32\u0E23 5000";
+    const monthKey = new Date(Date.now() + 7 * 60 * 60 * 1e3).toISOString().slice(0, 7);
+    const budgets2 = await listBudgets(lineUserId, monthKey, financeScope.financeAccountId);
+    const report = await financeReport(lineUserId, "month", /* @__PURE__ */ new Date(), financeScope.financeAccountId);
+    message = budgets2.length ? "\u{1F4CA} \u0E07\u0E1A\u0E1B\u0E23\u0E30\u0E21\u0E32\u0E13\u0E40\u0E14\u0E37\u0E2D\u0E19\u0E19\u0E35\u0E49\n" + budgets2.slice(0, 10).map((item) => `\u2022 ${item.category}: \u0E43\u0E0A\u0E49\u0E44\u0E1B ${(report.categories[item.category] ?? 0).toLocaleString("th-TH")} / \u0E07\u0E1A ${Number(item.amount).toLocaleString("th-TH")} \u0E1A\u0E32\u0E17`).join("\n") : "\u{1F4CA} \u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E21\u0E35\u0E07\u0E1A\u0E1B\u0E23\u0E30\u0E21\u0E32\u0E13\u0E17\u0E35\u0E48\u0E15\u0E31\u0E49\u0E07\u0E44\u0E27\u0E49\u0E04\u0E23\u0E31\u0E1A\n\u0E15\u0E31\u0E27\u0E2D\u0E22\u0E48\u0E32\u0E07: \u0E15\u0E31\u0E49\u0E07\u0E07\u0E1A \u0E2D\u0E32\u0E2B\u0E32\u0E23 5000";
   } else if (command.type === "transactionList") {
     const results = await searchTransactions(lineUserId, "", 10, financeScope.financeAccountId);
     message = results.length ? "\u{1F4CB} \u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E25\u0E48\u0E32\u0E2A\u0E38\u0E14\n" + results.map((item) => `#${item.id} \u2022 ${item.transactionType === "expense" ? "\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22" : "\u0E23\u0E32\u0E22\u0E23\u0E31\u0E1A"} ${Number(item.amount).toLocaleString("th-TH")} \u0E1A\u0E32\u0E17 \u2022 ${item.category}`).join("\n") : "\u{1F4CB} \u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E21\u0E35\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E18\u0E38\u0E23\u0E01\u0E23\u0E23\u0E21\u0E04\u0E23\u0E31\u0E1A";
@@ -3509,7 +3573,16 @@ ${incomeSection}
   } else {
     message = "\u0E1C\u0E21\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E40\u0E02\u0E49\u0E32\u0E43\u0E08 \u0E25\u0E2D\u0E07\u0E1E\u0E34\u0E21\u0E1E\u0E4C \u201C\u0E0A\u0E48\u0E27\u0E22\u201D \u0E40\u0E1E\u0E37\u0E48\u0E2D\u0E14\u0E39\u0E15\u0E31\u0E27\u0E2D\u0E22\u0E48\u0E32\u0E07\u0E04\u0E33\u0E2A\u0E31\u0E48\u0E07\u0E44\u0E14\u0E49\u0E04\u0E23\u0E31\u0E1A";
   }
-  if (event.replyToken) await replyText(event.replyToken, message);
+  if (event.replyToken) {
+    const artwork = artworkForCommand(command);
+    if (artwork) {
+      try {
+        await replyRichMenu(event.replyToken, message, artwork);
+      } catch {
+        await replyText(event.replyToken, message);
+      }
+    } else await replyText(event.replyToken, message);
+  }
 }
 async function handleMedia(event, lineChatId, lineUserId, scope) {
   const message = event.message;
@@ -3667,7 +3740,7 @@ app.use(express2.urlencoded({ limit: "50mb", extended: true }));
 registerStorageProxy(app);
 registerOAuthRoutes(app);
 var healthHandler = (_req, res) => {
-  res.status(200).json({ status: "ok", timestamp: (/* @__PURE__ */ new Date()).toISOString() });
+  res.status(200).json({ status: "ok", service: "milo", release: "richmenu-2026-09-12", timestamp: (/* @__PURE__ */ new Date()).toISOString() });
 };
 app.get("/api/health", healthHandler);
 app.get("/health", healthHandler);

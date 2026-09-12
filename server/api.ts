@@ -26,7 +26,7 @@ registerStorageProxy(app);
 registerOAuthRoutes(app);
 
 const healthHandler = (_req: express.Request, res: express.Response) => {
-  res.status(200).json({ status: "ok", timestamp: new Date().toISOString() });
+  res.status(200).json({ status: "ok", service: "milo", release: "richmenu-2026-09-12", timestamp: new Date().toISOString() });
 };
 
 app.get("/api/health", healthHandler);

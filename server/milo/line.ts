@@ -1,3 +1,4 @@
+import { artworkMessages, type RichMenuArtwork } from "./richMenuArtwork";
 import crypto from "node:crypto";
 
 export type LineCredentials = { channelSecret: string; channelAccessToken: string };
@@ -144,7 +145,7 @@ export async function replyFinanceReportCard(replyToken: string, report: Finance
   ] })) : [{ type: "text", text: "ยังไม่มีรายจ่ายในช่วงนี้", size: "xs", color: "#8A8097" }];
   return callLine("/v2/bot/message/reply", credentials, {
     method: "POST", headers: { "content-type": "application/json" },
-    body: JSON.stringify({ replyToken, messages: [{
+    body: JSON.stringify({ replyToken, messages: [...artworkMessages(("report-" + report.period) as RichMenuArtwork), {
       type: "flex", altText: financeReportCardText(report),
       contents: {
         type: "bubble", size: "mega",
@@ -386,4 +387,14 @@ export async function getProfile(source: LineSource, credentials = lineCredentia
   const path = source.type === "group" ? `/v2/bot/group/${source.groupId}/member/${source.userId}` : `/v2/bot/room/${source.roomId}/member/${source.userId}`;
   const response = await callLine(path, credentials, { method: "GET" });
   return (await response.json()) as { displayName: string };
+}
+
+export async function replyRichMenu(replyToken: string, text: string, artwork: RichMenuArtwork, credentials = lineCredentials()) {
+  return callLine("/v2/bot/message/reply", credentials, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ replyToken, messages: [...artworkMessages(artwork), { type: "text", text: text.slice(0, 5000), quickReply: { items: [
+    { type: "action", action: { type: "message", label: "วันนี้", text: "สรุปวันนี้" } },
+    { type: "action", action: { type: "message", label: "สัปดาห์นี้", text: "สรุปสัปดาห์นี้" } },
+    { type: "action", action: { type: "message", label: "เดือนนี้", text: "สรุปเดือนนี้" } },
+    { type: "action", action: { type: "message", label: "ปีนี้", text: "สรุปปีนี้" } },
+    { type: "action", action: { type: "uri", label: "เปิดแดชบอร์ด", uri: new URL("/dashboard", process.env.MILO_PUBLIC_URL || "https://milo-line-app.vercel.app").href } },
+  ] } }] }) });
 }

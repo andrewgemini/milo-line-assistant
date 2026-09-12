@@ -71,8 +71,8 @@ describe("LINE credentials", () => {
     await replyFinanceReportCard("reply-token", { period: "week", income: 0, expense: 615, balance: -615, categories: { อาหาร: 565, ทั่วไป: 50 } }, { channelSecret: "secret", channelAccessToken: "token" });
     const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
     const payload = JSON.parse(String(init.body)) as { messages: Array<{ type: string; contents: { body: { backgroundColor: string; contents: Array<{ contents?: Array<{ text?: string; url?: string }> }> }; footer: { contents: Array<{ action?: { text: string }; contents?: Array<{ action: { text: string } }> }> } } }> };
-    expect(payload.messages[0]?.type).toBe("flex");
-    expect(payload.messages[0]?.contents.body.backgroundColor).toBe("#F2F0FF");
+    expect(payload.messages[2]?.type).toBe("flex");
+    expect(payload.messages[2]?.contents.body.backgroundColor).toBe("#F2F0FF");
     expect(String(init.body)).toContain("สรุปการเงินสัปดาห์นี้");
     expect(String(init.body)).toContain("รายจ่าย 615 บาท");
     expect(String(init.body)).toContain("อาหาร");

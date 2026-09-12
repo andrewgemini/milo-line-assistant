@@ -1,3 +1,5 @@
+import { artworkForCommand } from "./richMenuArtwork";
+import { replyRichMenu } from "./line";
 import express, { type Express, type Request, type Response } from "express";
 import { sdk } from "../_core/sdk";
 import { transcribeAudio } from "../_core/voiceTranscription";
@@ -11,7 +13,7 @@ import { deliverDueRecurringTransactions } from "./recurringTransactionDelivery"
 import { deliverFinanceDigest, type FinanceDigestType } from "./financeDigest";
 import { buildExpenseNote, formatImageProposal, normalizeExpenseCategory, parseExtractedDate, selectImageProposal } from "./receiptUtils";
 import { STANDARD_EXPENSE_CATEGORIES, STANDARD_INCOME_CATEGORIES } from "./financeCategories";
-import { financeReportCardText, getMessageContent, getProfile, lineCredentials, postSaveSummaryText, pushText, replyFinanceReportCard, replyFinanceReportCardFallback, replyMention, replyPostSaveSummary, replyPostSaveSummaryFallback, replyText, replyVoiceCategoryChoices, replyVoiceProposal, replyVoiceProposalFallback, replyImage, sourceIdentity, type LineEvent, type VoiceTransactionProposal, verifyLineSignature } from "./line";
+import { financeReportCardText, getMessageContent, getProfile, lineCredentials, postSaveSummaryText, pushText, replyFinanceReportCard, replyFinanceReportCardFallback, replyMention, replyPostSaveSummary, replyPostSaveSummaryFallback, replyText, replyVoiceCategoryChoices, replyVoiceProposal, replyVoiceProposalFallback, sourceIdentity, type LineEvent, type VoiceTransactionProposal, verifyLineSignature } from "./line";
 
 function helpText() {
   return "สวัสดีครับ ผมไมโล ช่วยได้ในแชทเดียว\n• เตือน ประชุมพรุ่งนี้ 10:00\n• เตือนดื่มน้ำทุก 30 นาที\n• จ่ายกาแฟ 65 / จ่ายค่าไฟ 1200\n• รับเงินเดือน 45000 / รับค่าจ้าง 5000\n• ส่งสลิปหรือใบเสร็จ แล้วพิมพ์ “ยืนยันค่าใช้จ่าย”\n• ส่งข้อความเสียง แล้วพิมพ์ “ยืนยันเสียง”\n• ค้นหารายการ กาแฟ / แก้รายการ 12 เป็น 180 / ลบรายการ 12\n• สรุปวันนี้ / สรุปสัปดาห์นี้ / สรุปเดือนนี้ / สรุปปีนี้\n• เพิ่มหมวด เดินทาง / ดูหมวด\n• โน้ต รหัส Wi‑Fi ห้องประชุม\n• งาน ส่งสรุปรายสัปดาห์\n• เก็บ ลิงก์หรือข้อความสำคัญ\n• ค้นหา ใบเสร็จ\n\nเชื่อม dashboard: พิมพ์ “ไอดี” ในแชทส่วนตัวกับไมโล";
@@ -122,18 +124,6 @@ async function handleText(event: LineEvent, lineChatId: string, lineUserId: stri
     return;
   }
   const command = parseMiloCommand(text);
-  const richMenuImageByCommand: Partial<Record<ReturnType<typeof parseMiloCommand>["type"], "home" | "analysis" | "record" | "wallet" | "settings">> = {
-    dashboardGuide: "home",
-    aiSummary: "analysis",
-    recordGuide: "record",
-    budgetOverview: "wallet",
-    settingGuide: "settings",
-  };
-  const richMenuImageKey = richMenuImageByCommand[command.type];
-  if (richMenuImageKey && event.replyToken) {
-    await replyImage(event.replyToken, richMenuImageKey);
-    return;
-  }
   let message = "";
   const financeCommands = new Set(["expense", "income", "transactionSearch", "transactionDelete", "transactionUpdate", "openingBalance", "financeReport", "aiSummary", "budgetOverview", "transactionList", "voiceConfirm", "voiceEditPrompt", "voiceCategoryChange", "voiceEdit", "budget", "categoryAdd", "categoryRemove", "categoryList", "imageConfirm"]);
   const financeScope = financeCommands.has(command.type) ? await resolveFinanceScope(lineUserId, lineChatId, scope) : undefined;
@@ -246,7 +236,7 @@ async function handleText(event: LineEvent, lineChatId: string, lineUserId: stri
   } else if (command.type === "budget") {
     if (!db.canManageFinanceSettings(financeScope!.role)) { message = "สิทธิ์ของคุณยังตั้งงบประมาณในสมุดบัญชีนี้ไม่ได้"; if (event.replyToken) await replyText(event.replyToken, message); return; }
     const now = new Date();
-    const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+    const monthKey = new Date(now.getTime() + 7 * 60 * 60 * 1000).toISOString().slice(0, 7);
     await db.upsertBudget(lineUserId, command.category, command.amount, monthKey, financeScope!.financeAccountId);
     message = `ตั้งงบหมวด${command.category} ${command.amount.toLocaleString("th-TH")} บาท สำหรับเดือนนี้แล้ว`;
   } else if (command.type === "categoryAdd") {
@@ -306,10 +296,12 @@ async function handleText(event: LineEvent, lineChatId: string, lineUserId: stri
   } else if (command.type === "dashboardGuide") {
     message = "🔐 แดชบอร์ดหลังบ้าน Milo\nhttps://milo-line-app.vercel.app/dashboard";
   } else if (command.type === "recordGuide") {
-    message = "📝 จดบันทึกได้เลย\nตัวอย่าง: จ่าย 125 ค่าอาหาร\nหรือ: รับเงินเดือน 30000\nแล้วผมจะช่วยบันทึกให้ครับ";
+    message = "📝 จดบันทึกได้เลย\nตัวอย่าง: กินกาแฟ 80 หรือ จ่าย ค่าอาหาร 125\nหรือ: รับเงินเดือน 30000\nส่งรูปใบเสร็จแล้วพิมพ์ “ยืนยันค่าใช้จ่าย” หรือส่งเสียงแล้วพิมพ์ “ยืนยันเสียง” หลังตรวจรายละเอียดครับ";
   } else if (command.type === "budgetOverview") {
-    const budgets = await db.listBudgets(lineUserId, undefined, financeScope!.financeAccountId);
-    message = budgets.length ? "📊 งบประมาณเดือนนี้\n" + budgets.slice(0, 10).map(item => `• ${item.category} ${Number(item.amount).toLocaleString("th-TH")} บาท`).join("\n") : "📊 ยังไม่มีงบประมาณที่ตั้งไว้ครับ\nตัวอย่าง: งบประมาณ ค่าอาหาร 5000";
+    const monthKey = new Date(Date.now() + 7 * 60 * 60 * 1000).toISOString().slice(0, 7);
+    const budgets = await db.listBudgets(lineUserId, monthKey, financeScope!.financeAccountId);
+    const report = await db.financeReport(lineUserId, "month", new Date(), financeScope!.financeAccountId);
+    message = budgets.length ? "📊 งบประมาณเดือนนี้\n" + budgets.slice(0, 10).map(item => `• ${item.category}: ใช้ไป ${(report.categories[item.category] ?? 0).toLocaleString("th-TH")} / งบ ${Number(item.amount).toLocaleString("th-TH")} บาท`).join("\n") : "📊 ยังไม่มีงบประมาณที่ตั้งไว้ครับ\nตัวอย่าง: ตั้งงบ อาหาร 5000";
   } else if (command.type === "transactionList") {
     const results = await db.searchTransactions(lineUserId, "", 10, financeScope!.financeAccountId);
     message = results.length ? "📋 รายการล่าสุด\n" + results.map(item => `#${item.id} • ${item.transactionType === "expense" ? "รายจ่าย" : "รายรับ"} ${Number(item.amount).toLocaleString("th-TH")} บาท • ${item.category}`).join("\n") : "📋 ยังไม่มีรายการธุรกรรมครับ";
@@ -320,7 +312,13 @@ async function handleText(event: LineEvent, lineChatId: string, lineUserId: stri
   } else {
     message = "ผมยังไม่เข้าใจ ลองพิมพ์ “ช่วย” เพื่อดูตัวอย่างคำสั่งได้ครับ";
   }
-  if (event.replyToken) await replyText(event.replyToken, message);
+  if (event.replyToken) {
+    const artwork = artworkForCommand(command);
+    if (artwork) {
+      try { await replyRichMenu(event.replyToken, message, artwork); }
+      catch { await replyText(event.replyToken, message); }
+    } else await replyText(event.replyToken, message);
+  }
 }
 
 async function handleMedia(event: LineEvent, lineChatId: string, lineUserId: string, scope: LineFinanceScope) {
