@@ -304,10 +304,17 @@ export async function replyPostSaveSummary(replyToken: string, summary: PostSave
   });
 }
 
-export async function replyPostSaveSummaryFallback(replyToken: string, summary: PostSaveSummary, credentials = lineCredentials()) {
+export async function replyPostSaveSummaryImage(replyToken: string, summary: PostSaveSummary, credentials = lineCredentials()) {
   const imageUrl = miloSaveResultImageUrl(summary);
-  return callLine("/v2/bot/message/reply", credentials, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ replyToken, messages: [{ type: "image", originalContentUrl: imageUrl, previewImageUrl: imageUrl }, { type: "text", text: postSaveSummaryText(summary).slice(0, 5000), quickReply: { items: [{ type: "action", action: { type: "message", label: "ดูสรุปยอดวันนี้", text: "สรุปวันนี้" } }] } }] }) });
+  return callLine("/v2/bot/message/reply", credentials, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ replyToken, messages: [{ type: "image", originalContentUrl: imageUrl, previewImageUrl: imageUrl }] }),
+  });
 }
+
+/** Compatibility alias retained for callers/tests; now image-only by design. */
+export const replyPostSaveSummaryFallback = replyPostSaveSummaryImage;
 
 export async function replyVoiceCategoryChoices(replyToken: string, credentials = lineCredentials()) {
   const popular = ["อาหาร", "เดินทาง", "ค่าสาธารณูปโภค", "ช้อปปิ้ง", "สุขภาพ"];

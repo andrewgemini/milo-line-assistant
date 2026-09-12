@@ -1,6 +1,7 @@
 import type { Express, Request, Response } from "express";
 import sharp from "sharp";
 import { budgetStatusCopy, getBudgetMetrics } from "./budgetStatus";
+import { MILO_THAI_FONT_400_BASE64, MILO_THAI_FONT_700_BASE64 } from "./thaiFontData";
 
 const money = (value: number) => value.toLocaleString("th-TH-u-nu-latn", { maximumFractionDigits: 2 });
 const thaiDateTime = (value: Date) => new Intl.DateTimeFormat("th-TH-u-nu-latn", {
@@ -57,48 +58,54 @@ export function buildSaveResultSvg(input: {
 
   return `<svg width="933" height="1085" viewBox="0 0 933 1085" xmlns="http://www.w3.org/2000/svg">
     <defs>
+      <style><![CDATA[
+        @font-face { font-family: MiloThai; font-style: normal; font-weight: 400; src: url(data:font/woff2;base64,${MILO_THAI_FONT_400_BASE64}) format('woff2'); }
+        @font-face { font-family: MiloThai; font-style: normal; font-weight: 700; src: url(data:font/woff2;base64,${MILO_THAI_FONT_700_BASE64}) format('woff2'); }
+        text { font-family: MiloThai, Arial, sans-serif; }
+      ]]></style>
       <filter id="shadow"><feDropShadow dx="0" dy="4" stdDeviation="9" flood-color="#7BD9B5" flood-opacity=".18"/></filter>
       <linearGradient id="progress" x1="0" x2="1"><stop offset="0" stop-color="#22D66D"/><stop offset="1" stop-color="#FF3B83"/></linearGradient>
     </defs>
 
-    <!-- Opaque clean data panel: masks every transaction-specific word/number baked into the static artwork. -->
-    <rect x="38" y="302" width="857" height="602" rx="36" fill="#FBFFFD" stroke="#D8F7E9" stroke-width="2" filter="url(#shadow)"/>
+    <!-- Clean slate: hides all transaction-specific sample text baked into the reusable PNG. -->
+    <rect x="0" y="292" width="933" height="793" fill="#ECFFF7"/>
+    <rect x="38" y="312" width="857" height="572" rx="36" fill="#FBFFFD" stroke="#D8F7E9" stroke-width="2" filter="url(#shadow)"/>
 
-    <rect x="78" y="338" width="170" height="54" rx="27" fill="${accent}"/>
-    <text x="163" y="374" text-anchor="middle" font-family="sans-serif" font-size="27" font-weight="800" fill="#FFFFFF">${typeLabel}</text>
-    <text x="273" y="375" font-family="sans-serif" font-size="34" font-weight="800" fill="#183D3A">• ${escapeXml(categoryLabel)}</text>
+    <rect x="78" y="348" width="170" height="54" rx="27" fill="${accent}"/>
+    <text x="163" y="384" text-anchor="middle" font-family="MiloThai, Arial, sans-serif" font-size="27" font-weight="800" fill="#FFFFFF">${typeLabel}</text>
+    <text x="273" y="385" font-family="MiloThai, Arial, sans-serif" font-size="34" font-weight="800" fill="#183D3A">• ${escapeXml(categoryLabel)}</text>
 
-    <text x="80" y="434" font-family="sans-serif" font-size="24" font-weight="600" fill="#4B6173">${escapeXml(thaiDateTime(occurredAt))}</text>
-    <text x="80" y="500" font-family="sans-serif" font-size="47" font-weight="800" fill="#163D3C">${escapeXml(item)}</text>
-    <text x="844" y="500" text-anchor="end" font-family="sans-serif" font-size="55" font-weight="900" fill="${accent}">฿${money(amount)}</text>
+    <text x="80" y="444" font-family="MiloThai, Arial, sans-serif" font-size="24" font-weight="600" fill="#4B6173">${escapeXml(thaiDateTime(occurredAt))}</text>
+    <text x="80" y="510" font-family="MiloThai, Arial, sans-serif" font-size="47" font-weight="800" fill="#163D3C">${escapeXml(item)}</text>
+    <text x="844" y="510" text-anchor="end" font-family="MiloThai, Arial, sans-serif" font-size="55" font-weight="900" fill="${accent}">฿${money(amount)}</text>
     <line x1="78" y1="535" x2="855" y2="535" stroke="#8ADDC0" stroke-width="3"/>
 
     ${budgetLimit > 0 ? `
-      <rect x="70" y="566" width="792" height="292" rx="28" fill="${softAccent}" stroke="#CFF3E3" stroke-width="2"/>
-      <circle cx="111" cy="610" r="25" fill="#149A68"/>
-      <text x="111" y="619" text-anchor="middle" font-family="sans-serif" font-size="24" font-weight="800" fill="#FFFFFF">฿</text>
-      <text x="150" y="620" font-family="sans-serif" font-size="30" font-weight="800" fill="#173F3B">งบหมวด${escapeXml(category)}</text>
+      <rect x="70" y="576" width="792" height="292" rx="28" fill="${softAccent}" stroke="#CFF3E3" stroke-width="2"/>
+      <circle cx="111" cy="630" r="25" fill="#149A68"/>
+      <text x="111" y="629" text-anchor="middle" font-family="MiloThai, Arial, sans-serif" font-size="24" font-weight="800" fill="#FFFFFF">฿</text>
+      <text x="150" y="630" font-family="MiloThai, Arial, sans-serif" font-size="30" font-weight="800" fill="#173F3B">งบหมวด${escapeXml(category)}</text>
 
-      <text x="90" y="671" font-family="sans-serif" font-size="19" fill="#526979">ใช้ไป</text>
-      <text x="90" y="715" font-family="sans-serif" font-size="39" font-weight="900" fill="${accent}">฿${money(budgetSpent)}</text>
-      <text x="378" y="671" font-family="sans-serif" font-size="19" fill="#526979">งบทั้งหมด</text>
-      <text x="378" y="715" font-family="sans-serif" font-size="34" font-weight="800" fill="#149A68">฿${money(budgetLimit)}</text>
-      <text x="646" y="671" font-family="sans-serif" font-size="19" fill="#526979">${remainingLabel}</text>
-      <text x="646" y="715" font-family="sans-serif" font-size="34" font-weight="800" fill="${metrics.isOverBudget ? "#F51D72" : "#149A68"}">฿${money(remainingAmount)}</text>
+      <text x="90" y="681" font-family="MiloThai, Arial, sans-serif" font-size="19" fill="#526979">ใช้ไป</text>
+      <text x="90" y="725" font-family="MiloThai, Arial, sans-serif" font-size="39" font-weight="900" fill="${accent}">฿${money(budgetSpent)}</text>
+      <text x="378" y="681" font-family="MiloThai, Arial, sans-serif" font-size="19" fill="#526979">งบทั้งหมด</text>
+      <text x="378" y="725" font-family="MiloThai, Arial, sans-serif" font-size="34" font-weight="800" fill="#149A68">฿${money(budgetLimit)}</text>
+      <text x="646" y="681" font-family="MiloThai, Arial, sans-serif" font-size="19" fill="#526979">${remainingLabel}</text>
+      <text x="646" y="725" font-family="MiloThai, Arial, sans-serif" font-size="34" font-weight="800" fill="${metrics.isOverBudget ? "#F51D72" : "#149A68"}">฿${money(remainingAmount)}</text>
 
-      <rect x="90" y="750" width="660" height="24" rx="12" fill="#DDEFE8"/>
-      <rect x="90" y="750" width="${usageWidth}" height="24" rx="12" fill="url(#progress)"/>
-      <text x="90" y="809" font-family="sans-serif" font-size="23" font-weight="800" fill="${metrics.isOverBudget ? "#D94A6E" : "#32685C"}">${escapeXml(budgetNotice)}</text>
+      <rect x="90" y="760" width="660" height="24" rx="12" fill="#DDEFE8"/>
+      <rect x="90" y="760" width="${usageWidth}" height="24" rx="12" fill="url(#progress)"/>
+      <text x="90" y="819" font-family="MiloThai, Arial, sans-serif" font-size="23" font-weight="800" fill="${metrics.isOverBudget ? "#D94A6E" : "#32685C"}">${escapeXml(budgetNotice)}</text>
     ` : `
-      <rect x="70" y="580" width="792" height="184" rx="28" fill="#F1FBF7" stroke="#CFF3E3" stroke-width="2"/>
-      <text x="100" y="640" font-family="sans-serif" font-size="29" font-weight="800" fill="#173F3B">ยังไม่ได้ตั้งงบหมวด${escapeXml(category)}</text>
-      <text x="100" y="688" font-family="sans-serif" font-size="22" fill="#526979">รายการนี้ถูกบันทึกด้วยยอดและเวลาจริงเรียบร้อยแล้ว</text>
+      <rect x="70" y="590" width="792" height="184" rx="28" fill="#F1FBF7" stroke="#CFF3E3" stroke-width="2"/>
+      <text x="100" y="650" font-family="MiloThai, Arial, sans-serif" font-size="29" font-weight="800" fill="#173F3B">ยังไม่ได้ตั้งงบหมวด${escapeXml(category)}</text>
+      <text x="100" y="698" font-family="MiloThai, Arial, sans-serif" font-size="22" fill="#526979">รายการนี้ถูกบันทึกด้วยยอดและเวลาจริงเรียบร้อยแล้ว</text>
     `}
 
     <!-- Clean helper bubble: masks sample item text in the original artwork before inserting real values. -->
-    <rect x="250" y="928" width="620" height="118" rx="34" fill="#FFFFFF" stroke="#D4F3E5" stroke-width="2" filter="url(#shadow)"/>
-    <text x="290" y="975" font-family="sans-serif" font-size="26" font-weight="700" fill="#3D5870">บันทึกให้แล้วครับ</text>
-    <text x="290" y="1018" font-family="sans-serif" font-size="24" fill="#3D5870">${escapeXml(item)} อยู่ในหมวด${escapeXml(categoryLabel)}แล้วน่ะจ๊ะ 💚</text>
+    <rect x="70" y="910" width="792" height="132" rx="34" fill="#FFFFFF" stroke="#D4F3E5" stroke-width="2" filter="url(#shadow)"/>
+    <text x="108" y="958" font-family="MiloThai, Arial, sans-serif" font-size="27" font-weight="700" fill="#3D5870">บันทึกให้แล้วน่ะจ๊ะ 💚</text>
+    <text x="108" y="1004" font-family="MiloThai, Arial, sans-serif" font-size="25" fill="#3D5870">${escapeXml(item)} • ${escapeXml(categoryLabel)} • ${money(amount)} บาท</text>
   </svg>`;
 }
 

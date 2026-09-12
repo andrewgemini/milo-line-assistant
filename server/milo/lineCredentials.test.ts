@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { getMessageContent, mascotExpenseCopy, pushFinanceReportCard, replyFinanceReportCard, replyPostSaveSummary, replyVoiceCategoryChoices, replyVoiceProposal, replyVoiceProposalFallback } from "./line";
+import { getMessageContent, mascotExpenseCopy, pushFinanceReportCard, replyFinanceReportCard, replyPostSaveSummary, replyPostSaveSummaryImage, replyVoiceCategoryChoices, replyVoiceProposal, replyVoiceProposalFallback } from "./line";
 
 describe("LINE credentials", () => {
   afterEach(() => vi.restoreAllMocks());
@@ -59,6 +59,19 @@ describe("LINE credentials", () => {
     expect(String(init.body)).toContain('"text":"✓"');
     expect(payload.messages[0]?.contents.body.contents[1]?.backgroundColor).toBe("#FFFEFB");
     expect(payload.messages[0]?.contents.footer.contents[0]?.action.text).toBe("สรุปวันนี้");
+  });
+
+  it("sends the post-save success as one image message only", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(null, { status: 200 }));
+    await replyPostSaveSummaryImage("reply-token", { transactionType: "expense", amount: 80, category: "อาหาร", note: "กาแฟ", dailyIncome: 0, dailyExpense: 80, dailyBalance: -80, occurredAt: new Date("2026-09-12T13:54:00.000Z"), budgetSpent: 1040, budgetLimit: 1000, budgetPercent: 104 }, { channelSecret: "secret", channelAccessToken: "token" });
+    const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    const payload = JSON.parse(String(init.body)) as { messages: Array<{ type: string; originalContentUrl?: string; previewImageUrl?: string }> };
+    expect(payload.messages).toHaveLength(1);
+    expect(payload.messages[0]?.type).toBe("image");
+    expect(payload.messages[0]?.originalContentUrl).toContain("/api/milo/save-result.png?");
+    expect(payload.messages[0]?.originalContentUrl).toContain("item=%E0%B8%81%E0%B8%B2%E0%B9%81%E0%B8%9F");
+    expect(payload.messages[0]?.originalContentUrl).toContain("amount=80");
+    expect(payload.messages[0]?.previewImageUrl).toBe(payload.messages[0]?.originalContentUrl);
   });
 
   it("uses deterministic mascot microcopy for small, medium, and high expenses", () => {
