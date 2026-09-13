@@ -19,7 +19,7 @@ import { deliverFinanceDigest, type FinanceDigestType } from "./financeDigest";
 import { buildExpenseNote, formatImageProposal, normalizeExpenseCategory, parseExtractedDate, selectImageProposal } from "./receiptUtils";
 import { applyImageExpenseEdit } from "./imageProposalEdit";
 import { STANDARD_EXPENSE_CATEGORIES, STANDARD_INCOME_CATEGORIES } from "./financeCategories";
-import { financeReportCardText, getMessageContent, getProfile, lineCredentials, postSaveSummaryText, pushText, replyFinanceReportCard, replyFinanceReportCardFallback, replyGreetingHome, replyMention, replyPostSaveSummary, replyPostSaveSummaryFallback, replyPostSaveSummaryImage, replyText, replyTextWithQuickReplies, replyVoiceCategoryChoices, replyVoiceProposal, replyVoiceProposalFallback, sourceIdentity, type LineEvent, type VoiceTransactionProposal, verifyLineSignature } from "./line";
+import { financeReportCardText, getMessageContent, getProfile, lineCredentials, postSaveSummaryText, pushText, pushTextWithQuickReplies, replyFinanceReportCard, replyFinanceReportCardFallback, replyGreetingHome, replyMention, replyPostSaveSummary, replyPostSaveSummaryFallback, replyPostSaveSummaryImage, replyText, replyTextWithQuickReplies, replyVoiceCategoryChoices, replyVoiceProposal, replyVoiceProposalFallback, sourceIdentity, type LineEvent, type VoiceTransactionProposal, verifyLineSignature } from "./line";
 
 function helpText() {
   return "ไมโลช่วยเรื่องเงินได้ในแชทนี้ครับ\n• จด: กินกาแฟ 80 / เงินเดือนเข้า 35000\n• สรุป: สรุปวันนี้ / สรุปเดือนนี้\n• วิเคราะห์: วิเคราะห์ / วิเคราะห์เดือนนี้\n• งบ: ตั้งงบ อาหาร 5000\n• หลักฐาน: ส่งสลิป/ใบเสร็จ แล้วตรวจและยืนยัน\n• อัตโนมัติ: ตั้งจดอัตโนมัติ ค่าเช่า 5000 ทุกเดือนวันที่ 1 09:00\n\nต้องการคำสั่งเฉพาะเรื่อง พิมพ์ชื่อเรื่องได้เลย เช่น “งบ”, “รายการ”, “หมวดหมู่”";
@@ -551,7 +551,7 @@ async function handleMedia(event: LineEvent, lineChatId: string, lineUserId: str
       const proposalLine = proposal.transactionType && proposal.amount
         ? `เสนอ${proposal.transactionType === "expense" ? "รายจ่าย" : "รายรับ"} ${proposal.amount.toLocaleString("th-TH")} บาท • หมวด${proposal.category ?? "ทั่วไป"}`
         : "ยังไม่พบรูปแบบรายรับ/รายจ่ายที่แน่ชัด";
-      await pushText(lineChatId, `ถอดเสียงเรียบร้อยแล้ว\n“${proposal.transcript.slice(0, 900)}”\n${proposalLine}\nยังไม่บันทึก พิมพ์ “ยืนยันเสียง” เพื่อบันทึก หรือ “แก้ไขข้อความเสียง” เพื่อแก้ไขครับ`);
+      await pushTextWithQuickReplies(lineChatId, `ถอดเสียงเรียบร้อยแล้ว\n“${proposal.transcript.slice(0, 900)}”\n${proposalLine}\nตรวจรายละเอียดแล้วกด “ยืนยันบันทึก” ได้เลยครับ`, [{ label: "ยืนยันบันทึก", text: "ยืนยันเสียง" }, { label: "แก้ไขข้อความ", text: "แก้ไขข้อความเสียง" }]);
     } catch (error) {
       console.error("[Milo Voice] transcription failed", { messageId: message.id, error: error instanceof Error ? error.message : "unknown" });
       const runtimeMissing = error instanceof Error && /not configured/i.test(error.message);
@@ -599,7 +599,8 @@ async function handleMedia(event: LineEvent, lineChatId: string, lineUserId: str
     const analysis = await analyzeImage(`data:${mimeType};base64,${bytes.toString("base64")}`, { gatewayToken: runtime.gatewayToken });
     await db.saveImageExtraction(vaultId, analysis.proposals.some(item => item.kind === "expense") ? "expense" : "reminder", JSON.stringify(analysis), analysis.confidence);
     const proposals = analysis.proposals.slice(0, 2).map(item => `• ${formatImageProposal(item)}`).join("\n");
-    await pushText(lineChatId, `อ่านรูปเรียบร้อยแล้ว\n${analysis.summary}\n${proposals || "ยังไม่พบรายการที่ควรบันทึกอัตโนมัติ"}\nตรวจยอด หมวด และวันที่ให้ถูกต้องก่อน แล้วพิมพ์ “ยืนยันค่าใช้จ่าย” เพื่อบันทึก หรือ “ยืนยันรูป” สำหรับรายการเตือน`);
+    const hasExpense = analysis.proposals.some(item => item.kind === "expense" && item.amount > 0);
+    await pushTextWithQuickReplies(lineChatId, `อ่านรูปเรียบร้อยแล้ว\n${analysis.summary}\n${proposals || "ยังไม่พบรายการที่ควรบันทึกอัตโนมัติ"}\nตรวจยอด หมวด และวันที่ให้ถูกต้อง แล้วกดปุ่มยืนยันได้เลยครับ`, hasExpense ? [{ label: "ยืนยันบันทึก", text: "ยืนยันค่าใช้จ่าย" }, { label: "สรุปวันนี้", text: "สรุปวันนี้" }] : [{ label: "ยืนยันรูป", text: "ยืนยันรูป" }]);
   } catch (error) {
     console.error("[Milo Image] analysis failed", { messageId: message.id, error: error instanceof Error ? error.message : "unknown" });
     let userNotified = false;

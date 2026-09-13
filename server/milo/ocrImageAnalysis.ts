@@ -25,7 +25,9 @@ export function ocrAssetsReady() {
 function decodeDataUrl(dataUrl: string) {
   const match = dataUrl.match(/^data:([^;]+);base64,([\s\S]+)$/);
   if (!match) throw new Error("OCR expects a base64 data URL");
-  return Buffer.from(match[2], "base64");
+  const bytes = Buffer.from(match[2], "base64");
+  if (!bytes.length) throw new Error("OCR received an empty image");
+  return bytes;
 }
 
 function normalizeDigits(text: string) {
@@ -42,33 +44,61 @@ export function normalizeOcrText(text: string) {
 }
 
 function parseMoney(raw: string) {
-  const value = Number(raw.replace(/,/g, ""));
+  const cleaned = raw.replace(/,/g, "").replace(/[^0-9.]/g, "");
+  const value = Number(cleaned);
   return Number.isFinite(value) ? value : 0;
 }
 
 function extractAmount(text: string) {
+  const flat = text.replace(/\s+/g, " ");
   const lines = text.split(/\n+/).map(line => line.trim()).filter(Boolean);
   const preferred = /(จำนวน(?:เงิน)?|ยอด(?:โอน|ชำระ|สุทธิ|รวม)|amount|total)/i;
   const fee = /(ค่าธรรมเนียม|fee)/i;
   const currency = /(บาท|thb|฿)/i;
-  const numberRe = /(?:฿|THB)?\s*([0-9]{1,3}(?:,[0-9]{3})*(?:\.\d{1,2})|[0-9]+(?:\.\d{1,2})?)\s*(?:บาท|THB|฿)?/ig;
+  const token = "([0-9]{1,3}(?:,[0-9]{3})*(?:\\.\\d{1,2})|[0-9]+(?:\\.\\d{1,2})?)";
   const candidates: Array<{ amount: number; score: number }> = [];
 
-  for (const line of lines) {
-    if (fee.test(line)) continue;
-    const contextScore = preferred.test(line) ? 10 : currency.test(line) ? 4 : 0;
-    if (!contextScore) continue;
-    numberRe.lastIndex = 0;
-    let match: RegExpExecArray | null;
-    while ((match = numberRe.exec(line)) !== null) {
-      const amount = parseMoney(match[1]);
-      if (amount <= 0 || amount > 100_000_000) continue;
-      candidates.push({ amount, score: contextScore + (currency.test(line) ? 2 : 0) });
-      if (match.index === numberRe.lastIndex) numberRe.lastIndex += 1;
-    }
+  const add = (raw: string, score: number, context: string) => {
+    const amount = parseMoney(raw);
+    if (amount <= 0 || amount > 100_000_000) return;
+    if (fee.test(context) && !preferred.test(context.replace(fee, ""))) return;
+    candidates.push({ amount, score });
+  };
+
+  const keyed = new RegExp(`(?:จำนวน(?:เงิน)?|ยอด(?:โอน|ชำระ|สุทธิ|รวม)|amount|total)\\s*[:：=\-]?\\s*(?:฿|THB)?\\s*${token}`, "ig");
+  let keyedMatch: RegExpExecArray | null;
+  while ((keyedMatch = keyed.exec(flat)) !== null) {
+    const context = flat.slice(Math.max(0, keyedMatch.index - 18), Math.min(flat.length, keyed.lastIndex + 25));
+    add(keyedMatch[1], 30, context);
   }
+
+  for (let i = 0; i < lines.length; i += 1) {
+    if (!preferred.test(lines[i])) continue;
+    const window = [lines[i], lines[i + 1], lines[i + 2]].filter(Boolean).join(" ");
+    const m = window.match(new RegExp(token));
+    if (m) add(m[1], 24, window);
+  }
+
+  const baht = new RegExp(`${token}\\s*(?:บาท|THB|฿)`, "ig");
+  let bahtMatch: RegExpExecArray | null;
+  while ((bahtMatch = baht.exec(flat)) !== null) {
+    const context = flat.slice(Math.max(0, bahtMatch.index - 45), Math.min(flat.length, baht.lastIndex + 30));
+    if (/ยอดคงเหลือ|balance/i.test(context)) continue;
+    add(bahtMatch[1], preferred.test(context) ? 18 : 8, context);
+  }
+
+  const numberRe = /(?:฿|THB)?\s*([0-9]{1,3}(?:,[0-9]{3})*(?:\.\d{1,2})|[0-9]+(?:\.\d{1,2})?)\s*(?:บาท|THB|฿)?/ig;
+  for (const line of lines) {
+    if (fee.test(line) || /ยอดคงเหลือ|balance/i.test(line)) continue;
+    const score = preferred.test(line) ? 14 : currency.test(line) ? 6 : 0;
+    if (!score) continue;
+    numberRe.lastIndex = 0;
+    let m: RegExpExecArray | null;
+    while ((m = numberRe.exec(line)) !== null) add(m[1], score, line);
+  }
+
   candidates.sort((a, b) => b.score - a.score || b.amount - a.amount);
-  return candidates.length ? candidates[0].amount : 0;
+  return candidates[0]?.amount ?? 0;
 }
 
 function normalizeYear(raw: number) {
@@ -95,17 +125,12 @@ function extractDateTime(text: string) {
 
   const iso = normalized.match(/\b(20\d{2})[-\/]([01]?\d)[-\/]([0-3]?\d)\b/);
   if (iso) dateText = formatIsoDate(Number(iso[1]), Number(iso[2]), Number(iso[3]));
-
   if (!dateText) {
     const numeric = normalized.match(/\b([0-3]?\d)[\/-]([01]?\d)[\/-](\d{2,4})\b/);
     if (numeric) dateText = formatIsoDate(normalizeYear(Number(numeric[3])), Number(numeric[2]), Number(numeric[1]));
   }
-
   if (!dateText) {
-    const monthEntries = Object.entries(thaiMonths);
-    for (let i = 0; i < monthEntries.length; i += 1) {
-      const monthName = monthEntries[i][0];
-      const month = monthEntries[i][1];
+    for (const [monthName, month] of Object.entries(thaiMonths)) {
       const escaped = monthName.split("").map(char => char === "." ? "\\.?" : char.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("\\s*");
       const match = normalized.match(new RegExp(`(?:^|\\s)([0-3]?\\d)\\s*${escaped}\\s*(\\d{2,4})(?=\\s|$)`));
       if (match) {
@@ -114,7 +139,6 @@ function extractDateTime(text: string) {
       }
     }
   }
-
   const time = normalized.match(/\b([01]?\d|2[0-3])[:.]([0-5]\d)\s*(?:น\.)?/);
   if (time) timeText = `${String(Number(time[1])).padStart(2, "0")}:${time[2]}`;
   return { dateText, timeText };
@@ -161,39 +185,36 @@ export function analyzeOcrText(rawText: string): ImageAnalysis {
   const dateTime = extractDateTime(text);
   const merchant = extractMerchant(text);
   const receiptNumber = extractReference(text);
-
   let kind: ImageProposal["kind"] = "unknown";
   if (amount > 0) kind = "expense";
   else if (documentType === "appointment" && dateTime.dateText) kind = "reminder";
-
-  const confidence = Math.min(0.96,
-    0.28 + (amount > 0 ? 0.34 : 0) + (dateTime.dateText ? 0.14 : 0) + (dateTime.timeText ? 0.05 : 0) + (merchant ? 0.08 : 0) + (documentType !== "unknown" ? 0.07 : 0)
-  );
-
+  const confidence = Math.min(0.97, 0.28 + (amount > 0 ? 0.34 : 0) + (dateTime.dateText ? 0.14 : 0) + (dateTime.timeText ? 0.05 : 0) + (merchant ? 0.08 : 0) + (documentType !== "unknown" ? 0.07 : 0));
   const title = documentType === "bank_slip" ? "รายการโอนเงิน" : documentType === "receipt" ? "รายการจากใบเสร็จ" : documentType === "appointment" ? "รายการนัดหมาย" : "ข้อมูลจากรูป";
   const proposal: ImageProposal = {
-    kind,
-    documentType,
-    title,
-    merchant,
-    dateText: dateTime.dateText,
-    timeText: dateTime.timeText,
-    amount,
+    kind, documentType, title, merchant,
+    dateText: dateTime.dateText, timeText: dateTime.timeText, amount,
     currency: amount > 0 ? "บาท" : "",
     category: kind === "expense" ? guessCategory(text) : "ทั่วไป",
     paymentMethod: documentType === "bank_slip" ? "โอนเงิน" : "",
-    receiptNumber,
-    lineItems: [],
-    note: `OCR fallback${merchant ? ` • ${merchant}` : ""}`,
+    receiptNumber, lineItems: [], note: `OCR fallback${merchant ? ` • ${merchant}` : ""}`,
   };
-
   const summary = kind === "expense"
     ? `OCR อ่าน${documentType === "bank_slip" ? "สลิป" : "ใบเสร็จ"}ได้ ยอด ${amount.toLocaleString("th-TH")} บาท${dateTime.dateText ? ` วันที่ ${dateTime.dateText}` : " แต่วันที่ยังไม่ชัด"}`
     : kind === "reminder"
       ? `OCR อ่านวันนัดได้ ${dateTime.dateText}${dateTime.timeText ? ` ${dateTime.timeText}` : ""}`
       : "OCR อ่านข้อความจากรูปได้ แต่ยังไม่พบยอดหรือข้อมูลที่มั่นใจพอสำหรับบันทึก";
-
   return { summary, confidence, proposals: [proposal] };
+}
+
+function actionable(analysis: ImageAnalysis) {
+  const proposal = analysis.proposals[0];
+  return Boolean(proposal && ((proposal.kind === "expense" && proposal.amount > 0 && proposal.documentType !== "unknown") || (proposal.kind === "reminder" && proposal.dateText)));
+}
+
+function scoreAnalysis(analysis: ImageAnalysis) {
+  const p = analysis.proposals[0];
+  if (!p) return analysis.confidence;
+  return analysis.confidence + (p.amount > 0 ? 8 : 0) + (p.documentType !== "unknown" ? 3 : 0) + (p.dateText ? 2 : 0) + (p.timeText ? 0.5 : 0) + (p.merchant ? 1 : 0) + (p.receiptNumber ? 0.5 : 0);
 }
 
 export async function analyzeImageWithOcr(dataUrl: string): Promise<ImageAnalysis> {
@@ -202,12 +223,15 @@ export async function analyzeImageWithOcr(dataUrl: string): Promise<ImageAnalysi
   const input = decodeDataUrl(dataUrl);
   const base = sharp(input)
     .rotate()
-    .resize({ width: 2200, withoutEnlargement: true })
+    .resize({ width: 2000, fit: "inside", withoutEnlargement: false, kernel: sharp.kernel.lanczos3 })
     .grayscale()
     .normalize()
-    .sharpen();
-  const prepared = await base.clone().png().toBuffer();
-  const highContrast = await base.clone().threshold(185).png().toBuffer();
+    .sharpen({ sigma: 1.05 });
+  const variants: Array<{ label: string; bytes: Buffer }> = [
+    { label: "normalized-upscaled", bytes: await base.clone().png().toBuffer() },
+    { label: "medium-contrast", bytes: await base.clone().linear(1.25, -20).png().toBuffer() },
+    { label: "threshold-175", bytes: await base.clone().threshold(175).png().toBuffer() },
+  ];
 
   const worker = await createWorker(["tha", "eng"], undefined, {
     langPath: DATA_DIR,
@@ -216,21 +240,23 @@ export async function analyzeImageWithOcr(dataUrl: string): Promise<ImageAnalysi
     logger: () => undefined,
   });
   try {
-    const result = await worker.recognize(prepared);
-    const primaryText = result.data.text || "";
-    const primary = analyzeOcrText(primaryText);
-    const primaryProposal = primary.proposals[0];
-    if (primaryProposal && ((primaryProposal.kind === "expense" && primaryProposal.amount > 0 && primaryProposal.documentType !== "unknown") || (primaryProposal.kind === "reminder" && primaryProposal.dateText))) return primary;
-
-    const contrastResult = await worker.recognize(highContrast);
-    const combined = analyzeOcrText(`${primaryText}\n${contrastResult.data.text || ""}`);
-    console.info("[Milo OCR] used high-contrast second pass", {
-      primaryConfidence: primary.confidence,
-      combinedConfidence: combined.confidence,
-      documentType: combined.proposals[0]?.documentType,
-      amount: combined.proposals[0]?.amount,
-    });
-    return combined.confidence >= primary.confidence ? combined : primary;
+    await worker.setParameters({ preserve_interword_spaces: "1", tessedit_pageseg_mode: "6" } as never);
+    const texts: string[] = [];
+    let best: ImageAnalysis | undefined;
+    let bestScore = -Infinity;
+    for (const variant of variants) {
+      const result = await worker.recognize(variant.bytes);
+      const raw = result.data.text || "";
+      texts.push(raw);
+      const analysis = analyzeOcrText(texts.join("\n"));
+      const score = scoreAnalysis(analysis);
+      console.info("[Milo OCR] pass", { label: variant.label, chars: raw.length, confidence: analysis.confidence, documentType: analysis.proposals[0]?.documentType, amount: analysis.proposals[0]?.amount, dateText: analysis.proposals[0]?.dateText });
+      if (score > bestScore) { best = analysis; bestScore = score; }
+      const p = analysis.proposals[0];
+      if (actionable(analysis) && p?.dateText) return analysis;
+    }
+    if (!best) throw new Error("OCR returned no text");
+    return best;
   } finally {
     await worker.terminate();
   }

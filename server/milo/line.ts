@@ -83,24 +83,12 @@ export async function replyTextWithQuickReplies(replyToken: string, text: string
 }
 
 export async function replyGreetingHome(replyToken: string, credentials = lineCredentials()) {
-  const [overviewImage] = artworkMessages("overview");
-  if (!overviewImage) throw new Error("Milo overview artwork is unavailable");
+  const base = process.env.MILO_PUBLIC_URL || "https://milo-line-app.vercel.app";
+  const imageUrl = new URL("/richmenu/greeting-home.png", base).href;
   return callLine("/v2/bot/message/reply", credentials, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      replyToken,
-      messages: [{
-        ...overviewImage,
-        quickReply: { items: [
-          { type: "action", action: { type: "message", label: "จดบันทึก", text: "จดบันทึก" } },
-          { type: "action", action: { type: "message", label: "สรุปวันนี้", text: "สรุปวันนี้" } },
-          { type: "action", action: { type: "message", label: "งบประมาณ", text: "งบประมาณ" } },
-          { type: "action", action: { type: "message", label: "วิเคราะห์", text: "วิเคราะห์" } },
-          { type: "action", action: { type: "message", label: "วิธีใช้งาน", text: "วิธีใช้งาน" } },
-        ] },
-      }],
-    }),
+    body: JSON.stringify({ replyToken, messages: [{ type: "image", originalContentUrl: imageUrl, previewImageUrl: imageUrl }] }),
   });
 }
 
@@ -395,6 +383,21 @@ export async function replyVoiceProposalFallback(replyToken: string, proposal: V
 
 export async function pushText(to: string, text: string, credentials = lineCredentials()) {
   return callLine("/v2/bot/message/push", credentials, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ to, messages: [{ type: "text", text: text.slice(0, 5000) }] }) });
+}
+
+export async function pushTextWithQuickReplies(to: string, text: string, actions: Array<{ label: string; text: string }>, credentials = lineCredentials()) {
+  return callLine("/v2/bot/message/push", credentials, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      to,
+      messages: [{
+        type: "text",
+        text: text.slice(0, 5000),
+        quickReply: { items: actions.slice(0, 6).map(action => ({ type: "action", action: { type: "message", label: action.label.slice(0, 20), text: action.text.slice(0, 300) } })) },
+      }],
+    }),
+  });
 }
 
 export async function replyMention(replyToken: string, message: string, lineUserId: string, credentials = lineCredentials()) {

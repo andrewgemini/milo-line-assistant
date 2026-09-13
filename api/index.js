@@ -2158,24 +2158,12 @@ async function replyTextWithQuickReplies(replyToken, text2, actions, credentials
   });
 }
 async function replyGreetingHome(replyToken, credentials = lineCredentials()) {
-  const [overviewImage] = artworkMessages("overview");
-  if (!overviewImage) throw new Error("Milo overview artwork is unavailable");
+  const base = process.env.MILO_PUBLIC_URL || "https://milo-line-app.vercel.app";
+  const imageUrl = new URL("/richmenu/greeting-home.png", base).href;
   return callLine("/v2/bot/message/reply", credentials, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      replyToken,
-      messages: [{
-        ...overviewImage,
-        quickReply: { items: [
-          { type: "action", action: { type: "message", label: "\u0E08\u0E14\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01", text: "\u0E08\u0E14\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01" } },
-          { type: "action", action: { type: "message", label: "\u0E2A\u0E23\u0E38\u0E1B\u0E27\u0E31\u0E19\u0E19\u0E35\u0E49", text: "\u0E2A\u0E23\u0E38\u0E1B\u0E27\u0E31\u0E19\u0E19\u0E35\u0E49" } },
-          { type: "action", action: { type: "message", label: "\u0E07\u0E1A\u0E1B\u0E23\u0E30\u0E21\u0E32\u0E13", text: "\u0E07\u0E1A\u0E1B\u0E23\u0E30\u0E21\u0E32\u0E13" } },
-          { type: "action", action: { type: "message", label: "\u0E27\u0E34\u0E40\u0E04\u0E23\u0E32\u0E30\u0E2B\u0E4C", text: "\u0E27\u0E34\u0E40\u0E04\u0E23\u0E32\u0E30\u0E2B\u0E4C" } },
-          { type: "action", action: { type: "message", label: "\u0E27\u0E34\u0E18\u0E35\u0E43\u0E0A\u0E49\u0E07\u0E32\u0E19", text: "\u0E27\u0E34\u0E18\u0E35\u0E43\u0E0A\u0E49\u0E07\u0E32\u0E19" } }
-        ] }
-      }]
-    })
+    body: JSON.stringify({ replyToken, messages: [{ type: "image", originalContentUrl: imageUrl, previewImageUrl: imageUrl }] })
   });
 }
 var MILO_VOICE_CAT_IMAGE_URL = (process.env.MILO_VOICE_CAT_IMAGE_URL ?? "https://milo-line-app.vercel.app/milo-voice-proposal-cat.webp").trim();
@@ -2437,6 +2425,20 @@ async function replyVoiceProposalFallback(replyToken, proposal, credentials = li
 }
 async function pushText(to, text2, credentials = lineCredentials()) {
   return callLine("/v2/bot/message/push", credentials, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ to, messages: [{ type: "text", text: text2.slice(0, 5e3) }] }) });
+}
+async function pushTextWithQuickReplies(to, text2, actions, credentials = lineCredentials()) {
+  return callLine("/v2/bot/message/push", credentials, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      to,
+      messages: [{
+        type: "text",
+        text: text2.slice(0, 5e3),
+        quickReply: { items: actions.slice(0, 6).map((action) => ({ type: "action", action: { type: "message", label: action.label.slice(0, 20), text: action.text.slice(0, 300) } })) }
+      }]
+    })
+  });
 }
 async function replyMention(replyToken, message, lineUserId, credentials = lineCredentials()) {
   return callLine("/v2/bot/message/reply", credentials, {
@@ -3561,7 +3563,11 @@ async function transcribeAudioLocal(input) {
     task: "transcribe",
     return_timestamps: true,
     chunk_length_s: 30,
-    stride_length_s: 5
+    stride_length_s: 5,
+    condition_on_prev_tokens: false,
+    temperature: 0,
+    repetition_penalty: 1.15,
+    no_repeat_ngram_size: 3
   });
   const text2 = String(result?.text || "").trim();
   if (!text2) throw new Error("Local Whisper returned empty text");
@@ -3613,7 +3619,7 @@ function voiceTranscriptionRuntimeStatus(requestToken) {
   const local = localVoiceRuntimeStatus();
   return {
     configured: local.enabled || forge || openai || gatewayAvailable,
-    mode: local.enabled ? "local-whisper-onnx" : forge ? "forge-whisper" : openai ? "openai-whisper" : gatewayAvailable ? "vercel-ai-gateway-stt" : "unconfigured",
+    mode: gatewayAvailable ? local.enabled ? "vercel-ai-gateway-stt+local-fallback" : "vercel-ai-gateway-stt" : forge ? local.enabled ? "forge-whisper+local-fallback" : "forge-whisper" : openai ? local.enabled ? "openai-whisper+local-fallback" : "openai-whisper" : local.enabled ? "local-whisper-onnx" : "unconfigured",
     local
   };
 }
@@ -3686,6 +3692,19 @@ async function callTranscriptionProvider(url, apiKey, audioBuffer, mimeType, opt
     body: makeFormData(audioBuffer, mimeType, options)
   }, 6e4);
 }
+function validateTranscript(response, provider) {
+  const text2 = String(response.text || "").trim();
+  if (!text2) return { error: "Invalid transcription response", code: "SERVICE_ERROR", details: `${provider} returned empty text` };
+  const issue = transcriptQualityIssue(text2, response.duration || 0);
+  if (issue) {
+    return {
+      error: "Low-quality transcription response",
+      code: "TRANSCRIPTION_FAILED",
+      details: `${provider} rejected transcript: ${issue}`
+    };
+  }
+  return { ...response, text: text2 };
+}
 async function parseProviderResponse(response, provider) {
   if (!response.ok) {
     const errorText = await response.text().catch(() => "");
@@ -3703,7 +3722,7 @@ async function parseProviderResponse(response, provider) {
       details: `${provider} returned an invalid response format`
     };
   }
-  return whisperResponse;
+  return validateTranscript(whisperResponse, provider);
 }
 async function transcribeWithGateway(audioBuffer, options) {
   const modelId = gatewayTranscriptionModel();
@@ -3713,7 +3732,7 @@ async function transcribeWithGateway(audioBuffer, options) {
     audio: audioBuffer,
     maxRetries: 1
   });
-  return {
+  const response = {
     task: "transcribe",
     language: result.language || options.language || "th",
     duration: result.durationInSeconds || 0,
@@ -3731,6 +3750,9 @@ async function transcribeWithGateway(audioBuffer, options) {
       no_speech_prob: 0
     }))
   };
+  const validated = validateTranscript(response, "AI Gateway");
+  if ("error" in validated) throw new Error(validated.details || validated.error);
+  return validated;
 }
 async function transcribeAudio(options) {
   try {
@@ -3754,50 +3776,30 @@ async function transcribeAudio(options) {
       try {
         const response = await fetchWithTimeout(options.audioUrl, {}, 45e3);
         if (!response.ok) {
-          return {
-            error: "Failed to download audio file",
-            code: "INVALID_FORMAT",
-            details: `HTTP ${response.status}: ${response.statusText}`
-          };
+          return { error: "Failed to download audio file", code: "INVALID_FORMAT", details: `HTTP ${response.status}: ${response.statusText}` };
         }
         audioBuffer = Buffer.from(await response.arrayBuffer());
         mimeType = response.headers.get("content-type") || options.mimeType || "audio/mpeg";
       } catch (error) {
-        return {
-          error: "Failed to fetch audio file",
-          code: "SERVICE_ERROR",
-          details: error instanceof Error ? error.message : "Unknown error"
-        };
+        return { error: "Failed to fetch audio file", code: "SERVICE_ERROR", details: error instanceof Error ? error.message : "Unknown error" };
       }
     } else {
-      return {
-        error: "Audio input is missing",
-        code: "INVALID_FORMAT",
-        details: "Provide audioBuffer or audioUrl"
-      };
+      return { error: "Audio input is missing", code: "INVALID_FORMAT", details: "Provide audioBuffer or audioUrl" };
     }
     const sizeMB = audioBuffer.length / (1024 * 1024);
     if (sizeMB > 16) {
-      return {
-        error: "Audio file exceeds maximum size limit",
-        code: "FILE_TOO_LARGE",
-        details: `File size is ${sizeMB.toFixed(2)}MB, maximum allowed is 16MB`
-      };
+      return { error: "Audio file exceeds maximum size limit", code: "FILE_TOO_LARGE", details: `File size is ${sizeMB.toFixed(2)}MB, maximum allowed is 16MB` };
     }
-    if (localConfigured) {
+    const failures = [];
+    if (gatewayConfigured) {
       try {
-        return await transcribeAudioLocal({ audioBuffer, language: options.language || "th" });
+        const result = await transcribeWithGateway(audioBuffer, options);
+        console.info("[Milo Voice] transcription provider", { provider: "vercel-ai-gateway", chars: result.text.length });
+        return result;
       } catch (error) {
-        console.warn("[Milo Voice] Local transcription failed; trying remote fallback", {
-          error: error instanceof Error ? error.message : "unknown"
-        });
-        if (!forgeConfigured && !gatewayConfigured && !openAIKey) {
-          return {
-            error: "Local transcription failed",
-            code: "TRANSCRIPTION_FAILED",
-            details: error instanceof Error ? error.message : "Local Whisper failed"
-          };
-        }
+        const message = error instanceof Error ? error.message : "AI Gateway transcription failed";
+        failures.push(`gateway: ${message}`);
+        console.warn("[Milo Voice] AI Gateway transcription failed; trying fallback", { error: message });
       }
     }
     if (forgeConfigured) {
@@ -3806,59 +3808,45 @@ async function transcribeAudio(options) {
       try {
         const response = await callTranscriptionProvider(fullUrl, ENV.forgeApiKey, audioBuffer, mimeType, options);
         const parsed = await parseProviderResponse(response, "forge");
-        if (!("error" in parsed) || !gatewayConfigured && !openAIKey) return parsed;
-        console.warn("[Milo Voice] Forge transcription failed; trying fallback provider", { status: response.status });
-      } catch (error) {
-        if (!gatewayConfigured && !openAIKey) {
-          return {
-            error: "Transcription service request failed",
-            code: "TRANSCRIPTION_FAILED",
-            details: error instanceof Error ? error.message : "Forge transcription failed"
-          };
+        if (!("error" in parsed)) {
+          console.info("[Milo Voice] transcription provider", { provider: "forge", chars: parsed.text.length });
+          return parsed;
         }
-        console.warn("[Milo Voice] Forge transcription unavailable; trying fallback provider", {
-          error: error instanceof Error ? error.message : "unknown"
-        });
-      }
-    }
-    if (gatewayConfigured) {
-      try {
-        return await transcribeWithGateway(audioBuffer, options);
+        failures.push(`forge: ${parsed.details || parsed.error}`);
       } catch (error) {
-        console.warn("[Milo Voice] AI Gateway transcription failed", {
-          error: error instanceof Error ? error.message : "unknown"
-        });
-        if (!openAIKey) {
-          return {
-            error: "Transcription service request failed",
-            code: "TRANSCRIPTION_FAILED",
-            details: error instanceof Error ? error.message : "AI Gateway transcription failed"
-          };
-        }
+        failures.push(`forge: ${error instanceof Error ? error.message : "failed"}`);
       }
     }
     if (openAIKey) {
       try {
-        const response = await callTranscriptionProvider(
-          "https://api.openai.com/v1/audio/transcriptions",
-          openAIKey,
-          audioBuffer,
-          mimeType,
-          options
-        );
-        return parseProviderResponse(response, "openai");
+        const response = await callTranscriptionProvider("https://api.openai.com/v1/audio/transcriptions", openAIKey, audioBuffer, mimeType, options);
+        const parsed = await parseProviderResponse(response, "openai");
+        if (!("error" in parsed)) {
+          console.info("[Milo Voice] transcription provider", { provider: "openai", chars: parsed.text.length });
+          return parsed;
+        }
+        failures.push(`openai: ${parsed.details || parsed.error}`);
       } catch (error) {
-        return {
-          error: "Transcription service request failed",
-          code: "TRANSCRIPTION_FAILED",
-          details: error instanceof Error ? error.message : "OpenAI transcription failed"
-        };
+        failures.push(`openai: ${error instanceof Error ? error.message : "failed"}`);
+      }
+    }
+    if (localConfigured) {
+      try {
+        const result = await transcribeAudioLocal({ audioBuffer, language: options.language || "th" });
+        const validated = validateTranscript(result, "local-whisper-onnx");
+        if ("error" in validated) throw new Error(validated.details || validated.error);
+        console.info("[Milo Voice] transcription provider", { provider: "local-whisper-onnx", chars: validated.text.length });
+        return validated;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Local Whisper failed";
+        failures.push(`local: ${message}`);
+        console.warn("[Milo Voice] Local transcription failed", { error: message });
       }
     }
     return {
-      error: "Voice transcription service is not configured",
-      code: "SERVICE_ERROR",
-      details: "No transcription provider is available"
+      error: "Transcription service request failed",
+      code: "TRANSCRIPTION_FAILED",
+      details: failures.join(" | ").slice(0, 1800) || "No transcription provider returned a usable transcript"
     };
   } catch (error) {
     return {
@@ -3955,7 +3943,9 @@ function ocrAssetsReady() {
 function decodeDataUrl(dataUrl) {
   const match = dataUrl.match(/^data:([^;]+);base64,([\s\S]+)$/);
   if (!match) throw new Error("OCR expects a base64 data URL");
-  return Buffer.from(match[2], "base64");
+  const bytes = Buffer.from(match[2], "base64");
+  if (!bytes.length) throw new Error("OCR received an empty image");
+  return bytes;
 }
 function normalizeDigits(text2) {
   return text2.replace(/[๐-๙]/g, (digit) => thaiDigitMap[digit] || digit);
@@ -3964,31 +3954,54 @@ function normalizeOcrText(text2) {
   return normalizeDigits(text2).replace(/\u00a0/g, " ").replace(/[|¦]/g, "I").replace(/[ \t]+/g, " ").replace(/\r/g, "").trim();
 }
 function parseMoney(raw) {
-  const value = Number(raw.replace(/,/g, ""));
+  const cleaned = raw.replace(/,/g, "").replace(/[^0-9.]/g, "");
+  const value = Number(cleaned);
   return Number.isFinite(value) ? value : 0;
 }
 function extractAmount(text2) {
+  const flat = text2.replace(/\s+/g, " ");
   const lines = text2.split(/\n+/).map((line) => line.trim()).filter(Boolean);
   const preferred = /(จำนวน(?:เงิน)?|ยอด(?:โอน|ชำระ|สุทธิ|รวม)|amount|total)/i;
   const fee = /(ค่าธรรมเนียม|fee)/i;
   const currency = /(บาท|thb|฿)/i;
-  const numberRe = /(?:฿|THB)?\s*([0-9]{1,3}(?:,[0-9]{3})*(?:\.\d{1,2})|[0-9]+(?:\.\d{1,2})?)\s*(?:บาท|THB|฿)?/ig;
+  const token = "([0-9]{1,3}(?:,[0-9]{3})*(?:\\.\\d{1,2})|[0-9]+(?:\\.\\d{1,2})?)";
   const candidates = [];
+  const add = (raw, score, context) => {
+    const amount = parseMoney(raw);
+    if (amount <= 0 || amount > 1e8) return;
+    if (fee.test(context) && !preferred.test(context.replace(fee, ""))) return;
+    candidates.push({ amount, score });
+  };
+  const keyed = new RegExp(`(?:\u0E08\u0E33\u0E19\u0E27\u0E19(?:\u0E40\u0E07\u0E34\u0E19)?|\u0E22\u0E2D\u0E14(?:\u0E42\u0E2D\u0E19|\u0E0A\u0E33\u0E23\u0E30|\u0E2A\u0E38\u0E17\u0E18\u0E34|\u0E23\u0E27\u0E21)|amount|total)\\s*[:\uFF1A=-]?\\s*(?:\u0E3F|THB)?\\s*${token}`, "ig");
+  let keyedMatch;
+  while ((keyedMatch = keyed.exec(flat)) !== null) {
+    const context = flat.slice(Math.max(0, keyedMatch.index - 18), Math.min(flat.length, keyed.lastIndex + 25));
+    add(keyedMatch[1], 30, context);
+  }
+  for (let i = 0; i < lines.length; i += 1) {
+    if (!preferred.test(lines[i])) continue;
+    const window = [lines[i], lines[i + 1], lines[i + 2]].filter(Boolean).join(" ");
+    const m = window.match(new RegExp(token));
+    if (m) add(m[1], 24, window);
+  }
+  const baht = new RegExp(`${token}\\s*(?:\u0E1A\u0E32\u0E17|THB|\u0E3F)`, "ig");
+  let bahtMatch;
+  while ((bahtMatch = baht.exec(flat)) !== null) {
+    const context = flat.slice(Math.max(0, bahtMatch.index - 45), Math.min(flat.length, baht.lastIndex + 30));
+    if (/ยอดคงเหลือ|balance/i.test(context)) continue;
+    add(bahtMatch[1], preferred.test(context) ? 18 : 8, context);
+  }
+  const numberRe = /(?:฿|THB)?\s*([0-9]{1,3}(?:,[0-9]{3})*(?:\.\d{1,2})|[0-9]+(?:\.\d{1,2})?)\s*(?:บาท|THB|฿)?/ig;
   for (const line of lines) {
-    if (fee.test(line)) continue;
-    const contextScore = preferred.test(line) ? 10 : currency.test(line) ? 4 : 0;
-    if (!contextScore) continue;
+    if (fee.test(line) || /ยอดคงเหลือ|balance/i.test(line)) continue;
+    const score = preferred.test(line) ? 14 : currency.test(line) ? 6 : 0;
+    if (!score) continue;
     numberRe.lastIndex = 0;
-    let match;
-    while ((match = numberRe.exec(line)) !== null) {
-      const amount = parseMoney(match[1]);
-      if (amount <= 0 || amount > 1e8) continue;
-      candidates.push({ amount, score: contextScore + (currency.test(line) ? 2 : 0) });
-      if (match.index === numberRe.lastIndex) numberRe.lastIndex += 1;
-    }
+    let m;
+    while ((m = numberRe.exec(line)) !== null) add(m[1], score, line);
   }
   candidates.sort((a, b) => b.score - a.score || b.amount - a.amount);
-  return candidates.length ? candidates[0].amount : 0;
+  return candidates[0]?.amount ?? 0;
 }
 function normalizeYear(raw) {
   if (raw >= 2400) return raw - 543;
@@ -4015,10 +4028,7 @@ function extractDateTime(text2) {
     if (numeric) dateText = formatIsoDate(normalizeYear(Number(numeric[3])), Number(numeric[2]), Number(numeric[1]));
   }
   if (!dateText) {
-    const monthEntries = Object.entries(thaiMonths);
-    for (let i = 0; i < monthEntries.length; i += 1) {
-      const monthName = monthEntries[i][0];
-      const month = monthEntries[i][1];
+    for (const [monthName, month] of Object.entries(thaiMonths)) {
       const escaped = monthName.split("").map((char) => char === "." ? "\\.?" : char.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("\\s*");
       const match = normalized.match(new RegExp(`(?:^|\\s)([0-3]?\\d)\\s*${escaped}\\s*(\\d{2,4})(?=\\s|$)`));
       if (match) {
@@ -4071,10 +4081,7 @@ function analyzeOcrText(rawText) {
   let kind = "unknown";
   if (amount > 0) kind = "expense";
   else if (documentType === "appointment" && dateTime.dateText) kind = "reminder";
-  const confidence = Math.min(
-    0.96,
-    0.28 + (amount > 0 ? 0.34 : 0) + (dateTime.dateText ? 0.14 : 0) + (dateTime.timeText ? 0.05 : 0) + (merchant ? 0.08 : 0) + (documentType !== "unknown" ? 0.07 : 0)
-  );
+  const confidence = Math.min(0.97, 0.28 + (amount > 0 ? 0.34 : 0) + (dateTime.dateText ? 0.14 : 0) + (dateTime.timeText ? 0.05 : 0) + (merchant ? 0.08 : 0) + (documentType !== "unknown" ? 0.07 : 0));
   const title = documentType === "bank_slip" ? "\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E42\u0E2D\u0E19\u0E40\u0E07\u0E34\u0E19" : documentType === "receipt" ? "\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E08\u0E32\u0E01\u0E43\u0E1A\u0E40\u0E2A\u0E23\u0E47\u0E08" : documentType === "appointment" ? "\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E19\u0E31\u0E14\u0E2B\u0E21\u0E32\u0E22" : "\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E08\u0E32\u0E01\u0E23\u0E39\u0E1B";
   const proposal = {
     kind,
@@ -4094,13 +4101,25 @@ function analyzeOcrText(rawText) {
   const summary = kind === "expense" ? `OCR \u0E2D\u0E48\u0E32\u0E19${documentType === "bank_slip" ? "\u0E2A\u0E25\u0E34\u0E1B" : "\u0E43\u0E1A\u0E40\u0E2A\u0E23\u0E47\u0E08"}\u0E44\u0E14\u0E49 \u0E22\u0E2D\u0E14 ${amount.toLocaleString("th-TH")} \u0E1A\u0E32\u0E17${dateTime.dateText ? ` \u0E27\u0E31\u0E19\u0E17\u0E35\u0E48 ${dateTime.dateText}` : " \u0E41\u0E15\u0E48\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E0A\u0E31\u0E14"}` : kind === "reminder" ? `OCR \u0E2D\u0E48\u0E32\u0E19\u0E27\u0E31\u0E19\u0E19\u0E31\u0E14\u0E44\u0E14\u0E49 ${dateTime.dateText}${dateTime.timeText ? ` ${dateTime.timeText}` : ""}` : "OCR \u0E2D\u0E48\u0E32\u0E19\u0E02\u0E49\u0E2D\u0E04\u0E27\u0E32\u0E21\u0E08\u0E32\u0E01\u0E23\u0E39\u0E1B\u0E44\u0E14\u0E49 \u0E41\u0E15\u0E48\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E1E\u0E1A\u0E22\u0E2D\u0E14\u0E2B\u0E23\u0E37\u0E2D\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E17\u0E35\u0E48\u0E21\u0E31\u0E48\u0E19\u0E43\u0E08\u0E1E\u0E2D\u0E2A\u0E33\u0E2B\u0E23\u0E31\u0E1A\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01";
   return { summary, confidence, proposals: [proposal] };
 }
+function actionable(analysis) {
+  const proposal = analysis.proposals[0];
+  return Boolean(proposal && (proposal.kind === "expense" && proposal.amount > 0 && proposal.documentType !== "unknown" || proposal.kind === "reminder" && proposal.dateText));
+}
+function scoreAnalysis(analysis) {
+  const p = analysis.proposals[0];
+  if (!p) return analysis.confidence;
+  return analysis.confidence + (p.amount > 0 ? 8 : 0) + (p.documentType !== "unknown" ? 3 : 0) + (p.dateText ? 2 : 0) + (p.timeText ? 0.5 : 0) + (p.merchant ? 1 : 0) + (p.receiptNumber ? 0.5 : 0);
+}
 async function analyzeImageWithOcr(dataUrl) {
   if (!ocrAssetsReady()) throw new Error(`OCR language data is unavailable at ${DATA_DIR}`);
   fs2.mkdirSync(CACHE_DIR, { recursive: true });
   const input = decodeDataUrl(dataUrl);
-  const base = sharp3(input).rotate().resize({ width: 2200, withoutEnlargement: true }).grayscale().normalize().sharpen();
-  const prepared = await base.clone().png().toBuffer();
-  const highContrast = await base.clone().threshold(185).png().toBuffer();
+  const base = sharp3(input).rotate().resize({ width: 2e3, fit: "inside", withoutEnlargement: false, kernel: sharp3.kernel.lanczos3 }).grayscale().normalize().sharpen({ sigma: 1.05 });
+  const variants = [
+    { label: "normalized-upscaled", bytes: await base.clone().png().toBuffer() },
+    { label: "medium-contrast", bytes: await base.clone().linear(1.25, -20).png().toBuffer() },
+    { label: "threshold-175", bytes: await base.clone().threshold(175).png().toBuffer() }
+  ];
   const worker = await createWorker(["tha", "eng"], void 0, {
     langPath: DATA_DIR,
     cachePath: CACHE_DIR,
@@ -4108,21 +4127,26 @@ async function analyzeImageWithOcr(dataUrl) {
     logger: () => void 0
   });
   try {
-    const result = await worker.recognize(prepared);
-    const primaryText = result.data.text || "";
-    const primary = analyzeOcrText(primaryText);
-    const primaryProposal = primary.proposals[0];
-    if (primaryProposal && (primaryProposal.kind === "expense" && primaryProposal.amount > 0 && primaryProposal.documentType !== "unknown" || primaryProposal.kind === "reminder" && primaryProposal.dateText)) return primary;
-    const contrastResult = await worker.recognize(highContrast);
-    const combined = analyzeOcrText(`${primaryText}
-${contrastResult.data.text || ""}`);
-    console.info("[Milo OCR] used high-contrast second pass", {
-      primaryConfidence: primary.confidence,
-      combinedConfidence: combined.confidence,
-      documentType: combined.proposals[0]?.documentType,
-      amount: combined.proposals[0]?.amount
-    });
-    return combined.confidence >= primary.confidence ? combined : primary;
+    await worker.setParameters({ preserve_interword_spaces: "1", tessedit_pageseg_mode: "6" });
+    const texts = [];
+    let best;
+    let bestScore = -Infinity;
+    for (const variant of variants) {
+      const result = await worker.recognize(variant.bytes);
+      const raw = result.data.text || "";
+      texts.push(raw);
+      const analysis = analyzeOcrText(texts.join("\n"));
+      const score = scoreAnalysis(analysis);
+      console.info("[Milo OCR] pass", { label: variant.label, chars: raw.length, confidence: analysis.confidence, documentType: analysis.proposals[0]?.documentType, amount: analysis.proposals[0]?.amount, dateText: analysis.proposals[0]?.dateText });
+      if (score > bestScore) {
+        best = analysis;
+        bestScore = score;
+      }
+      const p = analysis.proposals[0];
+      if (actionable(analysis) && p?.dateText) return analysis;
+    }
+    if (!best) throw new Error("OCR returned no text");
+    return best;
   } finally {
     await worker.terminate();
   }
@@ -5606,10 +5630,10 @@ async function handleMedia(event, lineChatId, lineUserId, scope, runtime = {}) {
       const proposal = await buildVoiceProposal(transcript.text, lineUserId, financeScope?.financeAccountId);
       await saveVoiceTranscription({ vaultItemId: vaultId, lineChatId, lineUserId, transcript: transcript.text, language: transcript.language, durationSeconds: transcript.duration, proposalJson: JSON.stringify(proposal) });
       const proposalLine = proposal.transactionType && proposal.amount ? `\u0E40\u0E2A\u0E19\u0E2D${proposal.transactionType === "expense" ? "\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22" : "\u0E23\u0E32\u0E22\u0E23\u0E31\u0E1A"} ${proposal.amount.toLocaleString("th-TH")} \u0E1A\u0E32\u0E17 \u2022 \u0E2B\u0E21\u0E27\u0E14${proposal.category ?? "\u0E17\u0E31\u0E48\u0E27\u0E44\u0E1B"}` : "\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E1E\u0E1A\u0E23\u0E39\u0E1B\u0E41\u0E1A\u0E1A\u0E23\u0E32\u0E22\u0E23\u0E31\u0E1A/\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22\u0E17\u0E35\u0E48\u0E41\u0E19\u0E48\u0E0A\u0E31\u0E14";
-      await pushText(lineChatId, `\u0E16\u0E2D\u0E14\u0E40\u0E2A\u0E35\u0E22\u0E07\u0E40\u0E23\u0E35\u0E22\u0E1A\u0E23\u0E49\u0E2D\u0E22\u0E41\u0E25\u0E49\u0E27
+      await pushTextWithQuickReplies(lineChatId, `\u0E16\u0E2D\u0E14\u0E40\u0E2A\u0E35\u0E22\u0E07\u0E40\u0E23\u0E35\u0E22\u0E1A\u0E23\u0E49\u0E2D\u0E22\u0E41\u0E25\u0E49\u0E27
 \u201C${proposal.transcript.slice(0, 900)}\u201D
 ${proposalLine}
-\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01 \u0E1E\u0E34\u0E21\u0E1E\u0E4C \u201C\u0E22\u0E37\u0E19\u0E22\u0E31\u0E19\u0E40\u0E2A\u0E35\u0E22\u0E07\u201D \u0E40\u0E1E\u0E37\u0E48\u0E2D\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01 \u0E2B\u0E23\u0E37\u0E2D \u201C\u0E41\u0E01\u0E49\u0E44\u0E02\u0E02\u0E49\u0E2D\u0E04\u0E27\u0E32\u0E21\u0E40\u0E2A\u0E35\u0E22\u0E07\u201D \u0E40\u0E1E\u0E37\u0E48\u0E2D\u0E41\u0E01\u0E49\u0E44\u0E02\u0E04\u0E23\u0E31\u0E1A`);
+\u0E15\u0E23\u0E27\u0E08\u0E23\u0E32\u0E22\u0E25\u0E30\u0E40\u0E2D\u0E35\u0E22\u0E14\u0E41\u0E25\u0E49\u0E27\u0E01\u0E14 \u201C\u0E22\u0E37\u0E19\u0E22\u0E31\u0E19\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u201D \u0E44\u0E14\u0E49\u0E40\u0E25\u0E22\u0E04\u0E23\u0E31\u0E1A`, [{ label: "\u0E22\u0E37\u0E19\u0E22\u0E31\u0E19\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01", text: "\u0E22\u0E37\u0E19\u0E22\u0E31\u0E19\u0E40\u0E2A\u0E35\u0E22\u0E07" }, { label: "\u0E41\u0E01\u0E49\u0E44\u0E02\u0E02\u0E49\u0E2D\u0E04\u0E27\u0E32\u0E21", text: "\u0E41\u0E01\u0E49\u0E44\u0E02\u0E02\u0E49\u0E2D\u0E04\u0E27\u0E32\u0E21\u0E40\u0E2A\u0E35\u0E22\u0E07" }]);
     } catch (error) {
       console.error("[Milo Voice] transcription failed", { messageId: message.id, error: error instanceof Error ? error.message : "unknown" });
       const runtimeMissing = error instanceof Error && /not configured/i.test(error.message);
@@ -5676,10 +5700,11 @@ ${preview || "\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E1E\u0E1A\u0E23\u0E32\u0E22
     const analysis = await analyzeImage(`data:${mimeType};base64,${bytes.toString("base64")}`, { gatewayToken: runtime.gatewayToken });
     await saveImageExtraction(vaultId, analysis.proposals.some((item) => item.kind === "expense") ? "expense" : "reminder", JSON.stringify(analysis), analysis.confidence);
     const proposals = analysis.proposals.slice(0, 2).map((item) => `\u2022 ${formatImageProposal(item)}`).join("\n");
-    await pushText(lineChatId, `\u0E2D\u0E48\u0E32\u0E19\u0E23\u0E39\u0E1B\u0E40\u0E23\u0E35\u0E22\u0E1A\u0E23\u0E49\u0E2D\u0E22\u0E41\u0E25\u0E49\u0E27
+    const hasExpense = analysis.proposals.some((item) => item.kind === "expense" && item.amount > 0);
+    await pushTextWithQuickReplies(lineChatId, `\u0E2D\u0E48\u0E32\u0E19\u0E23\u0E39\u0E1B\u0E40\u0E23\u0E35\u0E22\u0E1A\u0E23\u0E49\u0E2D\u0E22\u0E41\u0E25\u0E49\u0E27
 ${analysis.summary}
 ${proposals || "\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E1E\u0E1A\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E17\u0E35\u0E48\u0E04\u0E27\u0E23\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E2D\u0E31\u0E15\u0E42\u0E19\u0E21\u0E31\u0E15\u0E34"}
-\u0E15\u0E23\u0E27\u0E08\u0E22\u0E2D\u0E14 \u0E2B\u0E21\u0E27\u0E14 \u0E41\u0E25\u0E30\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48\u0E43\u0E2B\u0E49\u0E16\u0E39\u0E01\u0E15\u0E49\u0E2D\u0E07\u0E01\u0E48\u0E2D\u0E19 \u0E41\u0E25\u0E49\u0E27\u0E1E\u0E34\u0E21\u0E1E\u0E4C \u201C\u0E22\u0E37\u0E19\u0E22\u0E31\u0E19\u0E04\u0E48\u0E32\u0E43\u0E0A\u0E49\u0E08\u0E48\u0E32\u0E22\u201D \u0E40\u0E1E\u0E37\u0E48\u0E2D\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01 \u0E2B\u0E23\u0E37\u0E2D \u201C\u0E22\u0E37\u0E19\u0E22\u0E31\u0E19\u0E23\u0E39\u0E1B\u201D \u0E2A\u0E33\u0E2B\u0E23\u0E31\u0E1A\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E40\u0E15\u0E37\u0E2D\u0E19`);
+\u0E15\u0E23\u0E27\u0E08\u0E22\u0E2D\u0E14 \u0E2B\u0E21\u0E27\u0E14 \u0E41\u0E25\u0E30\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48\u0E43\u0E2B\u0E49\u0E16\u0E39\u0E01\u0E15\u0E49\u0E2D\u0E07 \u0E41\u0E25\u0E49\u0E27\u0E01\u0E14\u0E1B\u0E38\u0E48\u0E21\u0E22\u0E37\u0E19\u0E22\u0E31\u0E19\u0E44\u0E14\u0E49\u0E40\u0E25\u0E22\u0E04\u0E23\u0E31\u0E1A`, hasExpense ? [{ label: "\u0E22\u0E37\u0E19\u0E22\u0E31\u0E19\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01", text: "\u0E22\u0E37\u0E19\u0E22\u0E31\u0E19\u0E04\u0E48\u0E32\u0E43\u0E0A\u0E49\u0E08\u0E48\u0E32\u0E22" }, { label: "\u0E2A\u0E23\u0E38\u0E1B\u0E27\u0E31\u0E19\u0E19\u0E35\u0E49", text: "\u0E2A\u0E23\u0E38\u0E1B\u0E27\u0E31\u0E19\u0E19\u0E35\u0E49" }] : [{ label: "\u0E22\u0E37\u0E19\u0E22\u0E31\u0E19\u0E23\u0E39\u0E1B", text: "\u0E22\u0E37\u0E19\u0E22\u0E31\u0E19\u0E23\u0E39\u0E1B" }]);
   } catch (error) {
     console.error("[Milo Image] analysis failed", { messageId: message.id, error: error instanceof Error ? error.message : "unknown" });
     let userNotified = false;
@@ -6032,7 +6057,7 @@ var healthHandler = async (req, res) => {
   res.status(200).json({
     status: "ok",
     service: "milo",
-    release: "media-v4-quality-fallback-2026-09-14",
+    release: "media-v5-remote-stt-upscaled-ocr-2026-09-14",
     visionConfigured: runtime.authenticated,
     imageAnalysisMode: mode,
     visionModel: mode === "ocr-fallback" ? "tesseract-tha+eng" : process.env.MILO_VISION_MODEL || (mode.startsWith("vercel-ai-gateway") ? "google/gemini-2.5-flash" : mode.startsWith("forge-vision") ? "gemini-3-flash-preview" : "unconfigured"),

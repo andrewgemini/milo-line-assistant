@@ -11,16 +11,7 @@ describe("OCR slip parser", () => {
 ค่าธรรมเนียม 0.00 บาท
 พร้อมเพย์
 `);
-    expect(result.proposals[0]).toMatchObject({
-      kind: "expense",
-      documentType: "bank_slip",
-      amount: 1250,
-      dateText: "2026-09-12",
-      timeText: "22:45",
-      merchant: "ร้านกาแฟ มีสุข",
-      category: "อาหาร",
-      paymentMethod: "โอนเงิน",
-    });
+    expect(result.proposals[0]).toMatchObject({ kind: "expense", documentType: "bank_slip", amount: 1250, dateText: "2026-09-12", timeText: "22:45", merchant: "ร้านกาแฟ มีสุข", category: "อาหาร", paymentMethod: "โอนเงิน" });
   });
 
   it("parses an English transfer slip and ignores fee as the transaction amount", () => {
@@ -31,15 +22,7 @@ Recipient: TEST COFFEE SHOP
 Amount 123.45 THB
 Fee 15.00 THB
 `);
-    expect(result.proposals[0]).toMatchObject({
-      kind: "expense",
-      documentType: "bank_slip",
-      amount: 123.45,
-      dateText: "2026-09-12",
-      timeText: "14:30",
-      merchant: "TEST COFFEE SHOP",
-      category: "อาหาร",
-    });
+    expect(result.proposals[0]).toMatchObject({ kind: "expense", documentType: "bank_slip", amount: 123.45, dateText: "2026-09-12", timeText: "14:30", merchant: "TEST COFFEE SHOP", category: "อาหาร" });
   });
 
   it("converts Thai numerals before parsing", () => {
@@ -57,15 +40,24 @@ Fee 15.00 THB
 จำนวน: 140.00 บาท
 ค่าธรรมเนียม: 0.00 บาท
 `);
-    expect(result.proposals[0]).toMatchObject({
-      kind: "expense",
-      documentType: "bank_slip",
-      amount: 140,
-      dateText: "2026-09-13",
-      timeText: "15:07",
-      category: "อาหาร",
-      receiptNumber: "016256150715DQR03239",
-    });
+    expect(result.proposals[0]).toMatchObject({ kind: "expense", documentType: "bank_slip", amount: 140, dateText: "2026-09-13", timeText: "15:07", category: "อาหาร", receiptNumber: "016256150715DQR03239" });
     expect(result.proposals[0].merchant).toContain("คาเฟ่");
+  });
+
+  it("recovers a K+ amount when LINE OCR splits the จำนวน label and baht value across lines", () => {
+    const result = analyzeOcrText(`
+ชำระเงินสำเร็จ
+13 ก.ย. 69 15:07 น.
+K+
+ธ.กสิกรไทย
+คาเฟ่อเมซอน
+เลขที่รายการ
+016256150715DQR03239
+จำนวน
+140.00 บาท
+ค่าธรรมเนียม
+0.00 บาท
+`);
+    expect(result.proposals[0]).toMatchObject({ kind: "expense", documentType: "bank_slip", amount: 140, dateText: "2026-09-13", timeText: "15:07", category: "อาหาร" });
   });
 });

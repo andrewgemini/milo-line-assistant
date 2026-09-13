@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { getMessageContent, mascotExpenseCopy, pushFinanceReportCard, replyFinanceReportCard, replyPostSaveSummary, replyPostSaveSummaryImage, replyVoiceCategoryChoices, replyVoiceProposal, replyVoiceProposalFallback } from "./line";
+import { getMessageContent, mascotExpenseCopy, pushFinanceReportCard, replyFinanceReportCard, replyGreetingHome, replyPostSaveSummary, replyPostSaveSummaryImage, replyVoiceCategoryChoices, replyVoiceProposal, replyVoiceProposalFallback } from "./line";
 
 describe("LINE credentials", () => {
   afterEach(() => vi.restoreAllMocks());
@@ -19,6 +19,20 @@ describe("LINE credentials", () => {
     const data = (await response.json()) as { userId?: string };
     expect(data.userId).toBeTruthy();
   }, 20_000);
+
+  it("sends the new Milo greeting artwork as exactly one image message", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(null, { status: 200 }));
+    await replyGreetingHome("reply-token", { channelSecret: "secret", channelAccessToken: "token" });
+    const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    const payload = JSON.parse(String(init.body)) as { messages: Array<{ type: string; originalContentUrl?: string; previewImageUrl?: string; quickReply?: unknown }> };
+    expect(payload.messages).toHaveLength(1);
+    expect(payload.messages[0]).toMatchObject({
+      type: "image",
+      originalContentUrl: "https://milo-line-app.vercel.app/richmenu/greeting-home.png",
+      previewImageUrl: "https://milo-line-app.vercel.app/richmenu/greeting-home.png",
+    });
+    expect(payload.messages[0]?.quickReply).toBeUndefined();
+  });
 
   it("uses the LINE data API domain for message media rather than the Messaging API domain", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(Uint8Array.from([1, 2, 3])));

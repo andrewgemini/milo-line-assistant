@@ -36,13 +36,13 @@ describe("local voice transcription runtime", () => {
     expect(status.enabled).toBe(false);
   });
 
-  it("selects local Whisper ahead of remote providers when enabled", () => {
+  it("prefers AI Gateway for production accuracy and keeps local Whisper as fallback", () => {
     process.env.MILO_LOCAL_STT_ENABLED = "1";
     process.env.VERCEL = "1";
     process.env.AI_GATEWAY_API_KEY = "test-key";
     const status = voiceTranscriptionRuntimeStatus();
     expect(status.configured).toBe(true);
-    expect(status.mode).toBe("local-whisper-onnx");
+    expect(status.mode).toBe("vercel-ai-gateway-stt+local-fallback");
     expect(status.local.enabled).toBe(true);
   });
 

@@ -1,12 +1,12 @@
 /**
  * Voice transcription helper with provider fallback.
- * Forge Whisper remains primary when configured; OpenAI Whisper is used as a
- * secondary provider when OPENAI_API_KEY is available.
+ * In production Milo prefers the higher-accuracy remote provider for short Thai
+ * LINE clips, then falls back to local Whisper when remote providers are unavailable.
  */
 import { transcribe as gatewayTranscribe } from "ai";
 import { createGateway, gateway } from "@ai-sdk/gateway";
 import { ENV } from "./env";
-import { localVoiceRuntimeStatus, transcribeAudioLocal } from "./localVoiceTranscription";
+import { localVoiceRuntimeStatus, transcriptQualityIssue, transcribeAudioLocal } from "./localVoiceTranscription";
 
 export type TranscribeOptions = {
   audioUrl?: string;
@@ -65,14 +65,14 @@ export function voiceTranscriptionRuntimeStatus(requestToken?: string) {
   const local = localVoiceRuntimeStatus();
   return {
     configured: local.enabled || forge || openai || gatewayAvailable,
-    mode: local.enabled
-      ? "local-whisper-onnx"
+    mode: gatewayAvailable
+      ? (local.enabled ? "vercel-ai-gateway-stt+local-fallback" : "vercel-ai-gateway-stt")
       : forge
-        ? "forge-whisper"
+        ? (local.enabled ? "forge-whisper+local-fallback" : "forge-whisper")
         : openai
-          ? "openai-whisper"
-          : gatewayAvailable
-            ? "vercel-ai-gateway-stt"
+          ? (local.enabled ? "openai-whisper+local-fallback" : "openai-whisper")
+          : local.enabled
+            ? "local-whisper-onnx"
             : "unconfigured",
     local,
   } as const;
@@ -146,6 +146,20 @@ async function callTranscriptionProvider(
   }, 60_000);
 }
 
+function validateTranscript(response: TranscriptionResponse, provider: string): TranscriptionResponse | TranscriptionError {
+  const text = String(response.text || "").trim();
+  if (!text) return { error: "Invalid transcription response", code: "SERVICE_ERROR", details: `${provider} returned empty text` };
+  const issue = transcriptQualityIssue(text, response.duration || 0);
+  if (issue) {
+    return {
+      error: "Low-quality transcription response",
+      code: "TRANSCRIPTION_FAILED",
+      details: `${provider} rejected transcript: ${issue}`,
+    };
+  }
+  return { ...response, text };
+}
+
 async function parseProviderResponse(response: Response, provider: string): Promise<TranscriptionResponse | TranscriptionError> {
   if (!response.ok) {
     const errorText = await response.text().catch(() => "");
@@ -163,7 +177,7 @@ async function parseProviderResponse(response: Response, provider: string): Prom
       details: `${provider} returned an invalid response format`,
     };
   }
-  return whisperResponse;
+  return validateTranscript(whisperResponse, provider);
 }
 
 async function transcribeWithGateway(
@@ -180,7 +194,7 @@ async function transcribeWithGateway(
     maxRetries: 1,
   });
 
-  return {
+  const response: TranscriptionResponse = {
     task: "transcribe",
     language: result.language || options.language || "th",
     duration: result.durationInSeconds || 0,
@@ -198,6 +212,9 @@ async function transcribeWithGateway(
       no_speech_prob: 0,
     })),
   };
+  const validated = validateTranscript(response, "AI Gateway");
+  if ("error" in validated) throw new Error(validated.details || validated.error);
+  return validated;
 }
 
 export async function transcribeAudio(options: TranscribeOptions): Promise<TranscriptionResponse | TranscriptionError> {
@@ -224,52 +241,36 @@ export async function transcribeAudio(options: TranscribeOptions): Promise<Trans
       try {
         const response = await fetchWithTimeout(options.audioUrl, {}, 45_000);
         if (!response.ok) {
-          return {
-            error: "Failed to download audio file",
-            code: "INVALID_FORMAT",
-            details: `HTTP ${response.status}: ${response.statusText}`,
-          };
+          return { error: "Failed to download audio file", code: "INVALID_FORMAT", details: `HTTP ${response.status}: ${response.statusText}` };
         }
         audioBuffer = Buffer.from(await response.arrayBuffer());
         mimeType = response.headers.get("content-type") || options.mimeType || "audio/mpeg";
       } catch (error) {
-        return {
-          error: "Failed to fetch audio file",
-          code: "SERVICE_ERROR",
-          details: error instanceof Error ? error.message : "Unknown error",
-        };
+        return { error: "Failed to fetch audio file", code: "SERVICE_ERROR", details: error instanceof Error ? error.message : "Unknown error" };
       }
     } else {
-      return {
-        error: "Audio input is missing",
-        code: "INVALID_FORMAT",
-        details: "Provide audioBuffer or audioUrl",
-      };
+      return { error: "Audio input is missing", code: "INVALID_FORMAT", details: "Provide audioBuffer or audioUrl" };
     }
 
     const sizeMB = audioBuffer.length / (1024 * 1024);
     if (sizeMB > 16) {
-      return {
-        error: "Audio file exceeds maximum size limit",
-        code: "FILE_TOO_LARGE",
-        details: `File size is ${sizeMB.toFixed(2)}MB, maximum allowed is 16MB`,
-      };
+      return { error: "Audio file exceeds maximum size limit", code: "FILE_TOO_LARGE", details: `File size is ${sizeMB.toFixed(2)}MB, maximum allowed is 16MB` };
     }
 
-    if (localConfigured) {
+    const failures: string[] = [];
+
+    // Prefer Gateway for short Thai LINE voice clips; tiny local Whisper remains
+    // the offline fallback. This prevents known repetition hallucinations from
+    // becoming the primary production result.
+    if (gatewayConfigured) {
       try {
-        return await transcribeAudioLocal({ audioBuffer, language: options.language || "th" });
+        const result = await transcribeWithGateway(audioBuffer, options);
+        console.info("[Milo Voice] transcription provider", { provider: "vercel-ai-gateway", chars: result.text.length });
+        return result;
       } catch (error) {
-        console.warn("[Milo Voice] Local transcription failed; trying remote fallback", {
-          error: error instanceof Error ? error.message : "unknown",
-        });
-        if (!forgeConfigured && !gatewayConfigured && !openAIKey) {
-          return {
-            error: "Local transcription failed",
-            code: "TRANSCRIPTION_FAILED",
-            details: error instanceof Error ? error.message : "Local Whisper failed",
-          };
-        }
+        const message = error instanceof Error ? error.message : "AI Gateway transcription failed";
+        failures.push(`gateway: ${message}`);
+        console.warn("[Milo Voice] AI Gateway transcription failed; trying fallback", { error: message });
       }
     }
 
@@ -279,62 +280,48 @@ export async function transcribeAudio(options: TranscribeOptions): Promise<Trans
       try {
         const response = await callTranscriptionProvider(fullUrl, ENV.forgeApiKey, audioBuffer, mimeType, options);
         const parsed = await parseProviderResponse(response, "forge");
-        if (!("error" in parsed) || (!gatewayConfigured && !openAIKey)) return parsed;
-        console.warn("[Milo Voice] Forge transcription failed; trying fallback provider", { status: response.status });
-      } catch (error) {
-        if (!gatewayConfigured && !openAIKey) {
-          return {
-            error: "Transcription service request failed",
-            code: "TRANSCRIPTION_FAILED",
-            details: error instanceof Error ? error.message : "Forge transcription failed",
-          };
+        if (!("error" in parsed)) {
+          console.info("[Milo Voice] transcription provider", { provider: "forge", chars: parsed.text.length });
+          return parsed;
         }
-        console.warn("[Milo Voice] Forge transcription unavailable; trying fallback provider", {
-          error: error instanceof Error ? error.message : "unknown",
-        });
-      }
-    }
-
-    if (gatewayConfigured) {
-      try {
-        return await transcribeWithGateway(audioBuffer, options);
+        failures.push(`forge: ${parsed.details || parsed.error}`);
       } catch (error) {
-        console.warn("[Milo Voice] AI Gateway transcription failed", {
-          error: error instanceof Error ? error.message : "unknown",
-        });
-        if (!openAIKey) {
-          return {
-            error: "Transcription service request failed",
-            code: "TRANSCRIPTION_FAILED",
-            details: error instanceof Error ? error.message : "AI Gateway transcription failed",
-          };
-        }
+        failures.push(`forge: ${error instanceof Error ? error.message : "failed"}`);
       }
     }
 
     if (openAIKey) {
       try {
-        const response = await callTranscriptionProvider(
-          "https://api.openai.com/v1/audio/transcriptions",
-          openAIKey,
-          audioBuffer,
-          mimeType,
-          options,
-        );
-        return parseProviderResponse(response, "openai");
+        const response = await callTranscriptionProvider("https://api.openai.com/v1/audio/transcriptions", openAIKey, audioBuffer, mimeType, options);
+        const parsed = await parseProviderResponse(response, "openai");
+        if (!("error" in parsed)) {
+          console.info("[Milo Voice] transcription provider", { provider: "openai", chars: parsed.text.length });
+          return parsed;
+        }
+        failures.push(`openai: ${parsed.details || parsed.error}`);
       } catch (error) {
-        return {
-          error: "Transcription service request failed",
-          code: "TRANSCRIPTION_FAILED",
-          details: error instanceof Error ? error.message : "OpenAI transcription failed",
-        };
+        failures.push(`openai: ${error instanceof Error ? error.message : "failed"}`);
+      }
+    }
+
+    if (localConfigured) {
+      try {
+        const result = await transcribeAudioLocal({ audioBuffer, language: options.language || "th" });
+        const validated = validateTranscript(result, "local-whisper-onnx");
+        if ("error" in validated) throw new Error(validated.details || validated.error);
+        console.info("[Milo Voice] transcription provider", { provider: "local-whisper-onnx", chars: validated.text.length });
+        return validated;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Local Whisper failed";
+        failures.push(`local: ${message}`);
+        console.warn("[Milo Voice] Local transcription failed", { error: message });
       }
     }
 
     return {
-      error: "Voice transcription service is not configured",
-      code: "SERVICE_ERROR",
-      details: "No transcription provider is available",
+      error: "Transcription service request failed",
+      code: "TRANSCRIPTION_FAILED",
+      details: failures.join(" | ").slice(0, 1800) || "No transcription provider returned a usable transcript",
     };
   } catch (error) {
     return {

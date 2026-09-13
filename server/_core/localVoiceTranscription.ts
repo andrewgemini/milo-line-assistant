@@ -1,4 +1,4 @@
-﻿import { spawn } from "node:child_process";
+import { spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import ffmpegPath from "ffmpeg-static";
@@ -171,6 +171,10 @@ export async function transcribeAudioLocal(input: {
     return_timestamps: true,
     chunk_length_s: 30,
     stride_length_s: 5,
+    condition_on_prev_tokens: false,
+    temperature: 0,
+    repetition_penalty: 1.15,
+    no_repeat_ngram_size: 3,
   } as any);
 
   const text = String(result?.text || "").trim();
