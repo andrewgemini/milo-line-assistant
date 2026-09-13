@@ -82,6 +82,36 @@ export async function replyTextWithQuickReplies(replyToken: string, text: string
   });
 }
 
+export async function replyGreetingHome(replyToken: string, credentials = lineCredentials()) {
+  const [overviewImage] = artworkMessages("overview");
+  const text = [
+    "สวัสดีครับ 👋 ไมโลพร้อมช่วยดูแลเรื่องเงินให้",
+    "จดรายรับ–รายจ่ายได้ด้วยภาษาปกติ ส่งสลิป/ใบเสร็จให้ไมโลอ่าน หรือส่งเสียงให้ช่วยถอดและจัดหมวดได้",
+    "เลือกสิ่งที่อยากทำต่อได้เลยน่ะจ๊ะ 🐾",
+  ].join("\n");
+  return callLine("/v2/bot/message/reply", credentials, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      replyToken,
+      messages: [
+        overviewImage,
+        {
+          type: "text",
+          text,
+          quickReply: { items: [
+            { type: "action", action: { type: "message", label: "จดบันทึก", text: "จดบันทึก" } },
+            { type: "action", action: { type: "message", label: "สรุปวันนี้", text: "สรุปวันนี้" } },
+            { type: "action", action: { type: "message", label: "งบประมาณ", text: "งบประมาณ" } },
+            { type: "action", action: { type: "message", label: "วิเคราะห์", text: "วิเคราะห์" } },
+            { type: "action", action: { type: "message", label: "วิธีใช้งาน", text: "วิธีใช้งาน" } },
+          ] },
+        },
+      ],
+    }),
+  });
+}
+
 export type VoiceTransactionProposal = {
   transcript: string;
   transactionType?: "income" | "expense";

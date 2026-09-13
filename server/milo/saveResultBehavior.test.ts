@@ -24,7 +24,8 @@ describe("Milo save-result behavior", () => {
     expect(budgetStatusCopy("อาหาร", 40, 1000)).toBe("หมวดอาหารใช้ไป 4% ของงบแล้วน่ะจ๊ะ");
 
     expect(getBudgetMetrics(1040, 1000)).toMatchObject({ usagePercent: 104, overPercent: 4, isOverBudget: true });
-    expect(budgetStatusCopy("อาหาร", 1040, 1000)).toBe("หมวดอาหารเกินงบ 4% แล้วน่ะจ๊ะ");
+    expect(budgetStatusCopy("อาหาร", 1040, 1000)).toBe("หมวดอาหารทะลุไป 4% น่ะจ๊ะ เบาได้เบา เหมียว");
+    expect(budgetStatusCopy("อาหาร", 1050, 1000)).toBe("หมวดอาหารทะลุไป 5% น่ะจ๊ะ เบาได้เบา เหมียว");
   });
 
   it("builds the dynamic save image from real transaction data only", () => {
@@ -43,7 +44,7 @@ describe("Milo save-result behavior", () => {
     expect(svg).toContain("฿80");
     expect(svg).toContain("12 ก.ย. 2569");
     expect(svg).toContain("16:18");
-    expect(svg).toContain("หมวดอาหารเกินงบ 4% แล้วน่ะจ๊ะ");
+    expect(svg).toContain("หมวดอาหารทะลุไป 4% น่ะจ๊ะ เบาได้เบา เหมียว");
     expect(svg).not.toContain("น่ะลูก");
     expect(svg).not.toContain("กินกาแฟ");
     expect(svg).not.toContain("฿220");

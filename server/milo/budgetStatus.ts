@@ -22,6 +22,6 @@ export function budgetStatusCopy(category: string, spent: number, limit: number)
   if (!(Number.isFinite(limit) && limit > 0)) return "";
   const metrics = getBudgetMetrics(spent, limit);
   return metrics.isOverBudget
-    ? `หมวด${category}เกินงบ ${metrics.overPercent}% แล้วน่ะจ๊ะ`
+    ? `หมวด${category}ทะลุไป ${metrics.overPercent}% น่ะจ๊ะ เบาได้เบา เหมียว`
     : `หมวด${category}ใช้ไป ${metrics.usagePercent}% ของงบแล้วน่ะจ๊ะ`;
 }

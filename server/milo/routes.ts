@@ -3,7 +3,7 @@ import { replyRichMenu } from "./line";
 import express, { type Express, type Request, type Response } from "express";
 import { sdk } from "../_core/sdk";
 import { transcribeAudio } from "../_core/voiceTranscription";
-import { storageGetSignedUrl, storagePut } from "../storage";
+import { storagePut } from "../storage";
 import * as db from "../db";
 import { analyzeImage } from "./imageAnalysis";
 import { analyzePdfBuffer } from "./pdfAnalysis";
@@ -19,7 +19,7 @@ import { deliverFinanceDigest, type FinanceDigestType } from "./financeDigest";
 import { buildExpenseNote, formatImageProposal, normalizeExpenseCategory, parseExtractedDate, selectImageProposal } from "./receiptUtils";
 import { applyImageExpenseEdit } from "./imageProposalEdit";
 import { STANDARD_EXPENSE_CATEGORIES, STANDARD_INCOME_CATEGORIES } from "./financeCategories";
-import { financeReportCardText, getMessageContent, getProfile, lineCredentials, postSaveSummaryText, pushText, replyFinanceReportCard, replyFinanceReportCardFallback, replyMention, replyPostSaveSummary, replyPostSaveSummaryFallback, replyPostSaveSummaryImage, replyText, replyTextWithQuickReplies, replyVoiceCategoryChoices, replyVoiceProposal, replyVoiceProposalFallback, sourceIdentity, type LineEvent, type VoiceTransactionProposal, verifyLineSignature } from "./line";
+import { financeReportCardText, getMessageContent, getProfile, lineCredentials, postSaveSummaryText, pushText, replyFinanceReportCard, replyFinanceReportCardFallback, replyGreetingHome, replyMention, replyPostSaveSummary, replyPostSaveSummaryFallback, replyPostSaveSummaryImage, replyText, replyTextWithQuickReplies, replyVoiceCategoryChoices, replyVoiceProposal, replyVoiceProposalFallback, sourceIdentity, type LineEvent, type VoiceTransactionProposal, verifyLineSignature } from "./line";
 
 function helpText() {
   return "ไมโลช่วยเรื่องเงินได้ในแชทนี้ครับ\n• จด: กินกาแฟ 80 / เงินเดือนเข้า 35000\n• สรุป: สรุปวันนี้ / สรุปเดือนนี้\n• วิเคราะห์: วิเคราะห์ / วิเคราะห์เดือนนี้\n• งบ: ตั้งงบ อาหาร 5000\n• หลักฐาน: ส่งสลิป/ใบเสร็จ แล้วตรวจและยืนยัน\n• อัตโนมัติ: ตั้งจดอัตโนมัติ ค่าเช่า 5000 ทุกเดือนวันที่ 1 09:00\n\nต้องการคำสั่งเฉพาะเรื่อง พิมพ์ชื่อเรื่องได้เลย เช่น “งบ”, “รายการ”, “หมวดหมู่”";
@@ -419,7 +419,8 @@ async function handleText(event: LineEvent, lineChatId: string, lineUserId: stri
     const results = await db.searchTransactions(lineUserId, "", 10, financeScope!.financeAccountId);
     message = results.length ? "📋 รายการล่าสุด\n" + results.map(item => `#${item.id} • ${item.transactionType === "expense" ? "รายจ่าย" : "รายรับ"} ${Number(item.amount).toLocaleString("th-TH")} บาท • ${item.category}`).join("\n") : "📋 ยังไม่มีรายการธุรกรรมครับ";
   } else if (command.type === "greeting") {
-    message = "สวัสดีครับ 👋 ผมไมโล ผู้ช่วยการเงินของคุณ\nกดเมนูด้านล่างหรือพิมพ์ “ช่วย” เพื่อดูคำสั่งที่ใช้งานได้ครับ";
+    message = "สวัสดีครับ 👋 ผมไมโล ผู้ช่วยการเงินของคุณ\nพร้อมช่วยจดรายรับรายจ่าย อ่านสลิป/ใบเสร็จ ฟังข้อความเสียง ดูสรุป และคุมงบให้ครับ";
+    if (event.replyToken) { await replyGreetingHome(event.replyToken); return; }
   } else if (command.type === "help") {
     message = helpText();
   } else {
@@ -450,32 +451,61 @@ async function handleMedia(event: LineEvent, lineChatId: string, lineUserId: str
   if (scope !== "user" && (isImage || isAudio || isPdf) && !hasMiloEntitlement(plan, "groupAccounting")) { if (event.replyToken) await replyText(event.replyToken, entitlementMessage("groupAccounting")); return; }
   const mimeType = isImage ? "image/jpeg" : isAudio ? "audio/m4a" : isPdf ? "application/pdf" : "application/octet-stream";
   let bytes: Buffer;
-  let stored: Awaited<ReturnType<typeof storagePut>>;
-  let vaultId: number;
   try {
     bytes = await getMessageContent(message.id);
-    stored = await storagePut(`milo/${lineChatId}/${message.id}`, bytes, mimeType);
-    vaultId = await db.createVaultItem({
-      lineChatId, createdByLineUserId: lineUserId, itemType: isImage ? "image" : "file", title: message.fileName ?? (isImage ? "รูปจาก LINE" : isAudio ? "ข้อความเสียงจาก LINE" : "ไฟล์จาก LINE"),
-      searchableText: message.fileName, originalFilename: message.fileName, mimeType, storageKey: stored.key, storageUrl: stored.url, lineMessageId: message.id,
-    });
   } catch (error) {
-    console.error("[Milo Media] prepare failed", { messageId: message.id, type: message.type, error: error instanceof Error ? error.message : "unknown" });
+    console.error("[Milo Media] LINE download failed", { messageId: message.id, type: message.type, error: error instanceof Error ? error.message : "unknown" });
     const fallback = isAudio
-      ? "รับข้อความเสียงแล้ว แต่ยังดาวน์โหลดหรือจัดเก็บไฟล์ไม่ได้ในครั้งนี้ กรุณาลองส่งเสียงใหม่อีกครั้งครับ"
+      ? "รับข้อความเสียงแล้ว แต่ดาวน์โหลดไฟล์จาก LINE ไม่สำเร็จในครั้งนี้ กรุณาลองส่งเสียงใหม่อีกครั้งครับ"
       : isPdf
-        ? "รับ PDF แล้ว แต่ยังดาวน์โหลดหรือจัดเก็บไฟล์ไม่ได้ในครั้งนี้ กรุณาลองส่งไฟล์ใหม่อีกครั้งครับ"
+        ? "รับ PDF แล้ว แต่ดาวน์โหลดไฟล์จาก LINE ไม่สำเร็จในครั้งนี้ กรุณาลองส่งไฟล์ใหม่อีกครั้งครับ"
         : isImage
-          ? "รับรูปแล้ว แต่ยังดาวน์โหลดหรือจัดเก็บรูปไม่ได้ในครั้งนี้ กรุณาลองส่งภาพใหม่อีกครั้งครับ"
-          : "รับไฟล์แล้ว แต่ยังจัดเก็บไม่ได้ในครั้งนี้ กรุณาลองใหม่ครับ";
+          ? "รับรูปแล้ว แต่ดาวน์โหลดรูปจาก LINE ไม่สำเร็จในครั้งนี้ กรุณาลองส่งภาพใหม่อีกครั้งครับ"
+          : "รับไฟล์แล้ว แต่ดาวน์โหลดจาก LINE ไม่สำเร็จในครั้งนี้ กรุณาลองใหม่ครับ";
     if (event.replyToken) {
       try { await replyText(event.replyToken, fallback); return; }
-      catch (replyError) { console.error("[Milo Media] fallback reply failed", { messageId: message.id, error: replyError instanceof Error ? replyError.message : "unknown" }); }
+      catch (replyError) { console.error("[Milo Media] download fallback reply failed", { messageId: message.id, error: replyError instanceof Error ? replyError.message : "unknown" }); }
     }
     try { await pushText(lineChatId, fallback); }
-    catch (pushError) { console.error("[Milo Media] fallback push failed", { messageId: message.id, error: pushError instanceof Error ? pushError.message : "unknown" }); }
+    catch (pushError) { console.error("[Milo Media] download fallback push failed", { messageId: message.id, error: pushError instanceof Error ? pushError.message : "unknown" }); }
     return;
   }
+
+  let stored: Awaited<ReturnType<typeof storagePut>> | undefined;
+  try {
+    stored = await storagePut(`milo/${lineChatId}/${message.id}`, bytes, mimeType);
+  } catch (error) {
+    console.warn("[Milo Media] permanent storage unavailable; continuing from LINE bytes", {
+      messageId: message.id, type: message.type, error: error instanceof Error ? error.message : "unknown",
+    });
+  }
+
+  let vaultId: number;
+  try {
+    vaultId = await db.createVaultItem({
+      lineChatId,
+      createdByLineUserId: lineUserId,
+      itemType: isImage ? "image" : "file",
+      title: message.fileName ?? (isImage ? "รูปจาก LINE" : isAudio ? "ข้อความเสียงจาก LINE" : "ไฟล์จาก LINE"),
+      searchableText: message.fileName,
+      originalFilename: message.fileName,
+      mimeType,
+      storageKey: stored?.key,
+      storageUrl: stored?.url,
+      lineMessageId: message.id,
+    });
+  } catch (error) {
+    console.error("[Milo Media] vault metadata failed", { messageId: message.id, type: message.type, error: error instanceof Error ? error.message : "unknown" });
+    const fallback = isAudio
+      ? "รับข้อความเสียงแล้ว แต่ยังเตรียมรายการสำหรับตรวจสอบไม่ได้ในครั้งนี้ กรุณาลองส่งเสียงใหม่อีกครั้งครับ"
+      : isImage
+        ? "รับรูปแล้ว แต่ยังเตรียมรายการสำหรับตรวจสอบไม่ได้ในครั้งนี้ กรุณาลองส่งภาพใหม่อีกครั้งครับ"
+        : "รับไฟล์แล้ว แต่ยังเตรียมรายการสำหรับตรวจสอบไม่ได้ในครั้งนี้ กรุณาลองใหม่ครับ";
+    if (event.replyToken) { try { await replyText(event.replyToken, fallback); return; } catch {} }
+    try { await pushText(lineChatId, fallback); } catch {}
+    return;
+  }
+
   if (isAudio) {
     // Acknowledge immediately. Transcription can take several seconds and the LINE reply token
     // must not be held until the provider completes. The final proposal is pushed afterwards.
@@ -484,8 +514,7 @@ async function handleMedia(event: LineEvent, lineChatId: string, lineUserId: str
       catch (error) { console.error("[Milo Voice] acknowledgement reply failed", { messageId: message.id, error: error instanceof Error ? error.message : "unknown" }); }
     }
     try {
-      const audioUrl = await storageGetSignedUrl(stored.key);
-      const transcript = await transcribeAudio({ audioUrl, language: "th", prompt: "ถอดข้อความภาษาไทยเกี่ยวกับรายรับ รายจ่าย จำนวนเงิน และหมวดหมู่" });
+      const transcript = await transcribeAudio({ audioBuffer: bytes, mimeType, language: "th", prompt: "ถอดข้อความภาษาไทยเกี่ยวกับรายรับ รายจ่าย จำนวนเงิน และหมวดหมู่" });
       if ("error" in transcript) throw new Error(transcript.error);
       const financeScope = await resolveFinanceScope(lineUserId, lineChatId, scope);
       const proposal = await buildVoiceProposal(transcript.text, lineUserId, financeScope?.financeAccountId);
