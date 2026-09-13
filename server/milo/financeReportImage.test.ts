@@ -3,26 +3,34 @@ import { describe, expect, it } from "vitest";
 import { buildFinanceReportImageUrl, renderFinanceReportImage } from "./financeReportImage";
 
 describe("dynamic finance report image UAT", () => {
-  it("renders a real PNG from the supplied finance values using the Thai vector renderer", async () => {
+  it("renders the new Milo summary-v3 layout from real finance values and recent transactions", async () => {
     const png = await renderFinanceReportImage({
       period: "month",
       income: 48_750,
       expense: 32_680,
       balance: 16_070,
+      transactionCount: 11,
+      start: new Date("2026-08-31T17:00:00.000Z"),
+      end: new Date("2026-09-30T17:00:00.000Z"),
       categories: { อาหาร: 12_450, เดินทาง: 8_200, ช้อปปิ้ง: 6_200, ที่อยู่อาศัย: 5_830 },
+      rows: [
+        { transactionType: "income", amount: 35_000, category: "เงินเดือน", note: "เงินเดือน", occurredAt: new Date("2026-09-26T02:00:00.000Z") },
+        { transactionType: "expense", amount: 150, category: "อาหาร", note: "กินข้าว", occurredAt: new Date("2026-09-25T05:45:00.000Z") },
+      ],
     });
     const metadata = await sharp(png).metadata();
     expect(metadata.format).toBe("png");
-    expect(metadata.width).toBe(900);
-    expect(metadata.height).toBe(1200);
+    expect(metadata.width).toBe(1080);
+    expect(metadata.height).toBe(1350);
     expect(png.subarray(1, 4).toString()).toBe("PNG");
   });
 
-  it("builds a signed dynamic image URL instead of a static report artwork URL", () => {
-    const url = buildFinanceReportImageUrl({ period: "week", income: 1000, expense: 250, balance: 750, categories: { อาหาร: 250 } });
+  it("builds a signed summary-v3 dynamic URL instead of serving the static mockup with example numbers", () => {
+    const url = buildFinanceReportImageUrl({ period: "week", income: 1000, expense: 250, balance: 750, transactionCount: 2, categories: { อาหาร: 250 } });
     expect(url).toContain("/api/milo/finance-report.png?");
     expect(url).toContain("data=");
     expect(url).toContain("sig=");
+    expect(url).toContain("render=summary-v3");
     expect(url).not.toContain("report-week.png");
   });
 });

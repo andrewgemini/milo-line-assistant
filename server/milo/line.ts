@@ -111,6 +111,10 @@ export type FinanceReportCard = {
   expense: number;
   balance: number;
   categories: Record<string, number>;
+  transactionCount?: number;
+  start?: string | Date;
+  end?: string | Date;
+  rows?: Array<{ transactionType: "income" | "expense"; amount: string | number; category: string; note?: string | null; occurredAt?: string | Date | null }>;
   title?: string;
   subtitle?: string;
 };
@@ -172,19 +176,17 @@ export async function replyFinanceReportCard(replyToken: string, report: Finance
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
       replyToken,
-      messages: [
-        { type: "image", originalContentUrl: imageUrl, previewImageUrl: imageUrl },
-        {
-          type: "text",
-          text: financeReportCardText(report).slice(0, 4500),
-          quickReply: { items: [
-            { type: "action", action: { type: "message", label: "วันนี้", text: "สรุปวันนี้" } },
-            { type: "action", action: { type: "message", label: "สัปดาห์นี้", text: "สรุปสัปดาห์นี้" } },
-            { type: "action", action: { type: "message", label: "เดือนนี้", text: "สรุปเดือนนี้" } },
-            { type: "action", action: { type: "message", label: "ปีนี้", text: "สรุปปีนี้" } },
-          ] },
-        },
-      ],
+      messages: [{
+        type: "image",
+        originalContentUrl: imageUrl,
+        previewImageUrl: imageUrl,
+        quickReply: { items: [
+          { type: "action", action: { type: "message", label: "วันนี้", text: "สรุปวันนี้" } },
+          { type: "action", action: { type: "message", label: "สัปดาห์นี้", text: "สรุปสัปดาห์นี้" } },
+          { type: "action", action: { type: "message", label: "เดือนนี้", text: "สรุปเดือนนี้" } },
+          { type: "action", action: { type: "message", label: "ปีนี้", text: "สรุปปีนี้" } },
+        ] },
+      }],
     }),
   });
 }

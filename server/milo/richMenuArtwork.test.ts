@@ -5,7 +5,7 @@ import { parseMiloCommand } from "./commandParser";
 import { replyRichMenu } from "./line";
 afterEach(() => vi.restoreAllMocks());
 describe("rich menu artwork and advertised commands", () => {
-  it.each([["จดบันทึก","record"],["สรุป","report-month"],["สรุปวันนี้","report-day"],["สรุปสัปดาห์นี้","report-week"],["สรุปเดือนนี้","report-month"],["สรุปปีนี้","report-year"],["วิเคราะห์","analysis"],["งบประมาณ","budget"],["รายการ","transactions"],["หมวดหมู่","categories"],["ตั้งค่า","settings"],["วิธีใช้งาน","help"],["สวัสดีไมโล","overview"]])("maps %s to %s", (text,key) => expect(artworkForCommand(parseMiloCommand(text))).toBe(key));
+  it.each([["จดบันทึก","record"],["สรุป","report-year"],["สรุปวันนี้","report-day"],["สรุปสัปดาห์นี้","report-week"],["สรุปเดือนนี้","report-month"],["สรุปปีนี้","report-year"],["วิเคราะห์","analysis"],["งบประมาณ","budget"],["รายการ","transactions"],["หมวดหมู่","categories"],["ตั้งค่า","settings"],["วิธีใช้งาน","help"],["สวัสดีไมโล","overview"]])("maps %s to %s", (text,key) => expect(artworkForCommand(parseMiloCommand(text))).toBe(key));
   it("maps every deployed rich-menu action to supported artwork", () => {
     const config=JSON.parse(readFileSync("shared/richmenu.json","utf8"));
     expect(config.areas).toHaveLength(9);
