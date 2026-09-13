@@ -10,6 +10,7 @@ import { registerFinanceReportImageRoute } from "./milo/financeReportImage";
 import { registerRichMenuDataImageRoute } from "./milo/richMenuDataImage";
 import { registerFinanceExportRoute } from "./milo/financeExport";
 import { analyzeImage, imageAnalysisRuntimeStatus } from "./milo/imageAnalysis";
+import { voiceTranscriptionRuntimeStatus } from "./_core/voiceTranscription";
 import { sdk } from "./_core/sdk";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { COOKIE_NAME } from "@shared/const";
@@ -37,6 +38,7 @@ registerOAuthRoutes(app);
 const healthHandler = async (_req: express.Request, res: express.Response) => {
   const runtime = await imageAnalysisRuntimeStatus();
   const mode = runtime.mode;
+  const voice = voiceTranscriptionRuntimeStatus();
   res.status(200).json({
     status: "ok",
     service: "milo",
@@ -45,6 +47,8 @@ const healthHandler = async (_req: express.Request, res: express.Response) => {
     imageAnalysisMode: mode,
     visionModel: mode === "ocr-fallback" ? "tesseract-tha+eng" : process.env.MILO_VISION_MODEL || (mode.startsWith("vercel-ai-gateway") ? "google/gemini-2.5-flash" : mode.startsWith("forge-vision") ? "gemini-3-flash-preview" : "unconfigured"),
     ocrAssetsReady: runtime.ocrAssetsReady,
+    voiceConfigured: voice.configured,
+    voiceTranscriptionMode: voice.mode,
     timestamp: new Date().toISOString(),
   });
 };

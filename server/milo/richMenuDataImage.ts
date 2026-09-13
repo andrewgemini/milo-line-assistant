@@ -4,6 +4,7 @@ import type { Express, Request, Response } from "express";
 import sharp from "sharp";
 import { vectorTextSvg } from "./vectorText";
 import type { RichMenuArtwork } from "./richMenuArtwork";
+import { loadRichMenuReference } from "./referenceArtwork";
 
 const WIDTH = 1080;
 const HEIGHT = 1350;
@@ -92,20 +93,16 @@ function layer(text: string, left: number, top: number, width: number, fontSize:
 }
 
 function shapes(key: RichMenuArtwork) {
-  const accent = key === "analysis" ? "#7556A8" : key === "budget" ? "#21A77B" : key === "transactions" ? "#D45B88" : "#5B80C8";
+  const accent = key === "analysis" ? "#20A66E" : key === "budget" ? "#22A66F" : key === "transactions" ? "#D95B8A" : "#5B80C8";
   return Buffer.from(`<svg width="${WIDTH}" height="${HEIGHT}" viewBox="0 0 ${WIDTH} ${HEIGHT}" xmlns="http://www.w3.org/2000/svg">
-    <defs>
-      <linearGradient id="bg" x1="0" x2="1" y1="0" y2="1"><stop offset="0" stop-color="#F1FFF8"/><stop offset=".52" stop-color="#FFF9F0"/><stop offset="1" stop-color="#F5EFFF"/></linearGradient>
-      <filter id="shadow"><feDropShadow dx="0" dy="8" stdDeviation="16" flood-color="#45695E" flood-opacity=".12"/></filter>
-    </defs>
-    <rect width="1080" height="1350" fill="url(#bg)"/>
-    <rect x="42" y="38" width="996" height="1274" rx="42" fill="#FFFEFB" filter="url(#shadow)"/>
-    <rect x="70" y="68" width="940" height="170" rx="34" fill="#ECF9F4"/>
-    <circle cx="130" cy="126" r="32" fill="${accent}"/>
-    <circle cx="118" cy="116" r="7" fill="#FFFFFF"/><circle cx="142" cy="116" r="7" fill="#FFFFFF"/>
-    <path d="M115 136 Q130 148 145 136" fill="none" stroke="#FFFFFF" stroke-width="5" stroke-linecap="round"/>
-    <rect x="70" y="270" width="940" height="900" rx="32" fill="#FBFAFF" stroke="#E9E2F4" stroke-width="2"/>
-    <rect x="70" y="1202" width="940" height="72" rx="30" fill="#EAFBF5"/>
+    <defs><filter id="shadow"><feDropShadow dx="0" dy="8" stdDeviation="16" flood-color="#45695E" flood-opacity=".14"/></filter></defs>
+    <rect x="48" y="182" width="984" height="1088" rx="42" fill="#FFFEFB" fill-opacity=".965" filter="url(#shadow)"/>
+    <rect x="76" y="212" width="928" height="132" rx="30" fill="#EAFBF3" fill-opacity=".98"/>
+    <rect x="76" y="372" width="928" height="800" rx="30" fill="#FFFDF9" stroke="#DDEFE8" stroke-width="2"/>
+    <rect x="76" y="1196" width="928" height="52" rx="26" fill="#EAFBF5"/>
+    <circle cx="132" cy="260" r="30" fill="${accent}"/>
+    <circle cx="121" cy="250" r="6" fill="#fff"/><circle cx="143" cy="250" r="6" fill="#fff"/>
+    <path d="M118 271 Q132 283 146 271" fill="none" stroke="#fff" stroke-width="5" stroke-linecap="round"/>
   </svg>`);
 }
 
@@ -113,19 +110,20 @@ export async function renderRichMenuDataImage(key: RichMenuArtwork, text: string
   if (!isDynamicRichMenuArtwork(key)) throw new Error(`Artwork ${key} is not data-driven`);
   const title = titleByKey[key] ?? "Milo";
   const lines = wrappedLines(text);
+  const reference = await loadRichMenuReference(key);
   const layers = [
-    layer("Milo", 185, 90, 180, 42, "#2F9C7D", true),
-    layer(title, 185, 142, 720, 44, "#3F3552", true),
-    layer("ข้อมูลจริงล่าสุดจากบัญชีของคุณ", 185, 198, 720, 22, "#78928D"),
+    layer("Milo", 184, 224, 180, 38, "#2F9C7D", true),
+    layer(title, 184, 264, 720, 40, "#3F3552", true),
+    layer("ข้อมูลจริงล่าสุดจากบัญชีของคุณ", 184, 310, 720, 20, "#78928D"),
   ];
   lines.forEach((lineText, index) => {
-    const bold = index === 0 || /^สรุป|^หมวด|^รายการ|^รายรับ|^รายจ่าย/.test(lineText);
-    layers.push(layer(lineText || " ", 112, 308 + index * 35, 850, 23, bold ? "#4B4260" : "#625971", bold));
+    const bold = index === 0 || /^สรุป|^หมวด|^รายการ|^รายรับ|^รายจ่าย|^ข้อมูล|^ข้อสังเกต|^แนวทาง/.test(lineText);
+    layers.push(layer(lineText || " ", 118, 408 + index * 32, 840, 21, bold ? "#3E594F" : "#625971", bold));
   });
   layers.push(
-    layer("Milo • แสดงผลเป็นภาพเดียว ไม่มีข้อความซ้ำตามหลัง", 118, 1222, 830, 19, "#4E7F70", true),
+    layer("Milo • ใช้ดีไซน์ต้นฉบับ พร้อมข้อมูลจริงของคุณ", 118, 1209, 830, 18, "#4E7F70", true),
   );
-  return sharp(shapes(key)).composite(layers).png().toBuffer();
+  return sharp(reference).resize(WIDTH, HEIGHT, { fit: "fill" }).composite([{ input: shapes(key), blend: "over" }, ...layers]).png().toBuffer();
 }
 
 export function registerRichMenuDataImageRoute(app: Express) {

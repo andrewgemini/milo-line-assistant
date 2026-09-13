@@ -448,13 +448,34 @@ async function handleMedia(event: LineEvent, lineChatId: string, lineUserId: str
   const plan = resolveMiloPlan(lineUserId, process.env, await db.isAdminLinkedLineUser(lineUserId));
   if (isPdf && !hasMiloEntitlement(plan, "pdf")) { if (event.replyToken) await replyText(event.replyToken, entitlementMessage("pdf")); return; }
   if (scope !== "user" && (isImage || isAudio || isPdf) && !hasMiloEntitlement(plan, "groupAccounting")) { if (event.replyToken) await replyText(event.replyToken, entitlementMessage("groupAccounting")); return; }
-  const bytes = await getMessageContent(message.id);
   const mimeType = isImage ? "image/jpeg" : isAudio ? "audio/m4a" : isPdf ? "application/pdf" : "application/octet-stream";
-  const stored = await storagePut(`milo/${lineChatId}/${message.id}`, bytes, mimeType);
-  const vaultId = await db.createVaultItem({
-    lineChatId, createdByLineUserId: lineUserId, itemType: isImage ? "image" : "file", title: message.fileName ?? (isImage ? "รูปจาก LINE" : isAudio ? "ข้อความเสียงจาก LINE" : "ไฟล์จาก LINE"),
-    searchableText: message.fileName, originalFilename: message.fileName, mimeType, storageKey: stored.key, storageUrl: stored.url, lineMessageId: message.id,
-  });
+  let bytes: Buffer;
+  let stored: Awaited<ReturnType<typeof storagePut>>;
+  let vaultId: number;
+  try {
+    bytes = await getMessageContent(message.id);
+    stored = await storagePut(`milo/${lineChatId}/${message.id}`, bytes, mimeType);
+    vaultId = await db.createVaultItem({
+      lineChatId, createdByLineUserId: lineUserId, itemType: isImage ? "image" : "file", title: message.fileName ?? (isImage ? "รูปจาก LINE" : isAudio ? "ข้อความเสียงจาก LINE" : "ไฟล์จาก LINE"),
+      searchableText: message.fileName, originalFilename: message.fileName, mimeType, storageKey: stored.key, storageUrl: stored.url, lineMessageId: message.id,
+    });
+  } catch (error) {
+    console.error("[Milo Media] prepare failed", { messageId: message.id, type: message.type, error: error instanceof Error ? error.message : "unknown" });
+    const fallback = isAudio
+      ? "รับข้อความเสียงแล้ว แต่ยังดาวน์โหลดหรือจัดเก็บไฟล์ไม่ได้ในครั้งนี้ กรุณาลองส่งเสียงใหม่อีกครั้งครับ"
+      : isPdf
+        ? "รับ PDF แล้ว แต่ยังดาวน์โหลดหรือจัดเก็บไฟล์ไม่ได้ในครั้งนี้ กรุณาลองส่งไฟล์ใหม่อีกครั้งครับ"
+        : isImage
+          ? "รับรูปแล้ว แต่ยังดาวน์โหลดหรือจัดเก็บรูปไม่ได้ในครั้งนี้ กรุณาลองส่งภาพใหม่อีกครั้งครับ"
+          : "รับไฟล์แล้ว แต่ยังจัดเก็บไม่ได้ในครั้งนี้ กรุณาลองใหม่ครับ";
+    if (event.replyToken) {
+      try { await replyText(event.replyToken, fallback); return; }
+      catch (replyError) { console.error("[Milo Media] fallback reply failed", { messageId: message.id, error: replyError instanceof Error ? replyError.message : "unknown" }); }
+    }
+    try { await pushText(lineChatId, fallback); }
+    catch (pushError) { console.error("[Milo Media] fallback push failed", { messageId: message.id, error: pushError instanceof Error ? pushError.message : "unknown" }); }
+    return;
+  }
   if (isAudio) {
     try {
       const audioUrl = await storageGetSignedUrl(stored.key);
@@ -466,7 +487,9 @@ async function handleMedia(event: LineEvent, lineChatId: string, lineUserId: str
       if (event.replyToken) await sendVoiceProposal(event.replyToken, proposal);
     } catch (error) {
       console.error("[Milo Voice] transcription failed", { messageId: message.id, error: error instanceof Error ? error.message : "unknown" });
-      if (event.replyToken) await replyText(event.replyToken, "เก็บข้อความเสียงไว้แล้ว แต่ยังถอดเสียงไม่ได้ในครั้งนี้ กรุณาลองอัดใหม่ให้ชัดเจน ความยาวสั้น ๆ และขนาดไม่เกิน 16MB ครับ");
+      const fallback = "เก็บข้อความเสียงไว้แล้ว แต่ยังถอดเสียงไม่ได้ในครั้งนี้ กรุณาลองอัดใหม่ให้ชัดเจน ความยาวสั้น ๆ และขนาดไม่เกิน 16MB ครับ";
+      if (event.replyToken) { try { await replyText(event.replyToken, fallback); } catch { await pushText(lineChatId, fallback); } }
+      else await pushText(lineChatId, fallback);
     }
     return;
   }
@@ -479,7 +502,9 @@ async function handleMedia(event: LineEvent, lineChatId: string, lineUserId: str
       if (event.replyToken) await replyText(event.replyToken, `อ่าน PDF แล้ว พบรายการที่เสนอได้ ${analysis.proposals.length} รายการ\n${preview || "ยังไม่พบรายจ่ายที่อ่านได้ชัด"}${more}\nตรวจข้อมูลก่อน แล้วพิมพ์ “ยืนยัน PDF” เพื่อบันทึกเฉพาะรายการที่วันที่และยอดชัดเจน`);
     } catch (error) {
       console.error("[Milo PDF] analysis failed", { messageId: message.id, error: error instanceof Error ? error.message : "unknown" });
-      if (event.replyToken) await replyText(event.replyToken, "เก็บ PDF ไว้แล้ว แต่ยังอ่านธุรกรรมจากไฟล์นี้ไม่ได้ กรุณาลองไฟล์ที่ไม่ล็อกรหัสและมีข้อความอ่านได้ครับ");
+      const fallback = "เก็บ PDF ไว้แล้ว แต่ยังอ่านธุรกรรมจากไฟล์นี้ไม่ได้ กรุณาลองไฟล์ที่ไม่ล็อกรหัสและมีข้อความอ่านได้ครับ";
+      if (event.replyToken) { try { await replyText(event.replyToken, fallback); } catch { await pushText(lineChatId, fallback); } }
+      else await pushText(lineChatId, fallback);
     }
     return;
   }

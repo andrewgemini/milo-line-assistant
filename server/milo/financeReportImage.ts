@@ -2,6 +2,8 @@ import crypto from "node:crypto";
 import type { Express, Request, Response } from "express";
 import sharp from "sharp";
 import { vectorTextSvg } from "./vectorText";
+import { loadRichMenuReference } from "./referenceArtwork";
+import type { RichMenuArtwork } from "./richMenuArtwork";
 
 export type FinanceReportImageRow = {
   transactionType: "income" | "expense";
@@ -190,10 +192,7 @@ export function financeReportShapesSvg(input: FinanceReportImageInput) {
       <linearGradient id="hero" x1="0" x2="1"><stop offset="0" stop-color="#E1FFF1"/><stop offset="1" stop-color="#F5EEFF"/></linearGradient>
       <filter id="shadow"><feDropShadow dx="0" dy="8" stdDeviation="16" flood-color="#3D6B5E" flood-opacity=".12"/></filter>
     </defs>
-    <rect width="1080" height="1350" fill="url(#bg)"/>
-    <rect x="42" y="38" width="996" height="1274" rx="42" fill="#FFFEFB" filter="url(#shadow)"/>
-    <rect x="70" y="66" width="940" height="214" rx="34" fill="url(#hero)"/>
-    <circle cx="122" cy="118" r="28" fill="#4FC7A4"/><circle cx="144" cy="105" r="10" fill="#FFFFFF" opacity=".85"/><circle cx="100" cy="105" r="10" fill="#FFFFFF" opacity=".85"/>
+    <rect x="42" y="278" width="996" height="1034" rx="42" fill="#FFFEFB" fill-opacity=".965" filter="url(#shadow)"/>
     <rect x="70" y="312" width="294" height="166" rx="28" fill="#EAF9F3"/>
     <rect x="393" y="312" width="294" height="166" rx="28" fill="#FDECF2"/>
     <rect x="716" y="312" width="294" height="166" rx="28" fill="#F1ECFB"/>
@@ -208,6 +207,8 @@ export function financeReportShapesSvg(input: FinanceReportImageInput) {
 }
 
 export async function renderFinanceReportImage(input: FinanceReportImageInput) {
+  const referenceKey = (`report-${input.period}`) as RichMenuArtwork;
+  const reference = await loadRichMenuReference(referenceKey);
   const title = input.title?.trim() || `สรุปการเงิน${periodLabel[input.period]}`;
   const subtitle = input.subtitle?.trim() || periodRange(input);
   const categories = Object.entries(input.categories).sort((a, b) => b[1] - a[1]).slice(0, 5);
@@ -270,7 +271,7 @@ export async function renderFinanceReportImage(input: FinanceReportImageInput) {
     textLayer(insightCopy({ ...input, transactionCount }), { left: 260, top: 1243, width: 710, fontSize: 18, color: "#5A6B66" }),
   );
 
-  return sharp(financeReportShapesSvg({ ...input, transactionCount })).composite(layers).png().toBuffer();
+  return sharp(reference).resize(WIDTH, HEIGHT, { fit: "fill" }).composite([{ input: financeReportShapesSvg({ ...input, transactionCount }), blend: "over" }, ...layers]).png().toBuffer();
 }
 
 export function registerFinanceReportImageRoute(app: Express) {

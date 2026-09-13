@@ -442,6 +442,33 @@ describe("LINE webhook processor", () => {
     expect(line.pushText).toHaveBeenCalledWith("U1", expect.stringContaining("รายจ่าย 100 บาท"));
   });
 
+  it("never stays silent when a receipt image cannot be downloaded from LINE", async () => {
+    vi.mocked(db.registerWebhookEvent).mockResolvedValue(true);
+    vi.mocked(getProfile).mockResolvedValue({ displayName: "ผู้ส่ง" });
+    vi.mocked(sourceIdentity).mockReturnValue({ lineChatId: "U1", lineUserId: "U1", scope: "user" });
+    vi.mocked(getMessageContent).mockRejectedValue(new Error("LINE content unavailable"));
+    vi.mocked(replyText).mockResolvedValue(new Response());
+
+    await processEvent({ type: "message", webhookEventId: "evt-image-download-fail", timestamp: Date.now(), replyToken: "token", source: { type: "user", userId: "U1" }, message: { id: "img-fail", type: "image" } }, "{}");
+
+    expect(replyText).toHaveBeenCalledWith("token", expect.stringContaining("รับรูปแล้ว"));
+    expect(db.finishWebhookEvent).toHaveBeenCalledWith("evt-image-download-fail", "processed");
+  });
+
+  it("never stays silent when a voice message cannot be stored before transcription", async () => {
+    vi.mocked(db.registerWebhookEvent).mockResolvedValue(true);
+    vi.mocked(getProfile).mockResolvedValue({ displayName: "ผู้ส่ง" });
+    vi.mocked(sourceIdentity).mockReturnValue({ lineChatId: "U1", lineUserId: "U1", scope: "user" });
+    vi.mocked(getMessageContent).mockResolvedValue(Buffer.from("voice-bytes"));
+    vi.mocked(storagePut).mockRejectedValue(new Error("storage unavailable"));
+    vi.mocked(replyText).mockResolvedValue(new Response());
+
+    await processEvent({ type: "message", webhookEventId: "evt-audio-store-fail", timestamp: Date.now(), replyToken: "token", source: { type: "user", userId: "U1" }, message: { id: "audio-fail", type: "audio" } }, "{}");
+
+    expect(replyText).toHaveBeenCalledWith("token", expect.stringContaining("รับข้อความเสียงแล้ว"));
+    expect(db.finishWebhookEvent).toHaveBeenCalledWith("evt-audio-store-fail", "processed");
+  });
+
   it("rejects an HTTP webhook request with a missing or invalid signature", async () => {
     vi.mocked(verifyLineSignature).mockReturnValue(false);
     const app = express(); registerLineWebhook(app);

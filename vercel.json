@@ -20,7 +20,10 @@
   "functions": {
     "api/index.js": {
       "maxDuration": 300,
-      "includeFiles": "api/tessdata/**"
+      "includeFiles": [
+        "api/tessdata/**",
+        "client/public/richmenu/**"
+      ]
     }
   }
 }

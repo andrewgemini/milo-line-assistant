@@ -1703,6 +1703,27 @@ function vectorTextSvg(text2, options) {
   return Buffer.from(`<svg width="${options.width}" height="${height}" viewBox="0 0 ${options.width} ${height}" xmlns="http://www.w3.org/2000/svg"><g>${paths.join("")}</g></svg>`);
 }
 
+// server/milo/referenceArtwork.ts
+import { readFile } from "node:fs/promises";
+import path from "node:path";
+async function loadRichMenuReference(key) {
+  const file = RICH_MENU_ARTWORK[key].file;
+  const candidates = [
+    path.join(process.cwd(), "client", "public", "richmenu", file),
+    path.join(process.cwd(), "dist", "public", "richmenu", file),
+    path.join(process.cwd(), "richmenu", file)
+  ];
+  let lastError;
+  for (const candidate of candidates) {
+    try {
+      return await readFile(candidate);
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw new Error(`Milo reference artwork not found for ${key}: ${lastError instanceof Error ? lastError.message : "unknown"}`);
+}
+
 // server/milo/richMenuDataImage.ts
 var WIDTH = 1080;
 var HEIGHT = 1350;
@@ -1776,39 +1797,36 @@ function layer(text2, left, top, width, fontSize, color, bold = false) {
   return { input: vectorTextSvg(text2, { width, fontSize, color, bold }), left, top, blend: "over" };
 }
 function shapes(key) {
-  const accent = key === "analysis" ? "#7556A8" : key === "budget" ? "#21A77B" : key === "transactions" ? "#D45B88" : "#5B80C8";
+  const accent = key === "analysis" ? "#20A66E" : key === "budget" ? "#22A66F" : key === "transactions" ? "#D95B8A" : "#5B80C8";
   return Buffer.from(`<svg width="${WIDTH}" height="${HEIGHT}" viewBox="0 0 ${WIDTH} ${HEIGHT}" xmlns="http://www.w3.org/2000/svg">
-    <defs>
-      <linearGradient id="bg" x1="0" x2="1" y1="0" y2="1"><stop offset="0" stop-color="#F1FFF8"/><stop offset=".52" stop-color="#FFF9F0"/><stop offset="1" stop-color="#F5EFFF"/></linearGradient>
-      <filter id="shadow"><feDropShadow dx="0" dy="8" stdDeviation="16" flood-color="#45695E" flood-opacity=".12"/></filter>
-    </defs>
-    <rect width="1080" height="1350" fill="url(#bg)"/>
-    <rect x="42" y="38" width="996" height="1274" rx="42" fill="#FFFEFB" filter="url(#shadow)"/>
-    <rect x="70" y="68" width="940" height="170" rx="34" fill="#ECF9F4"/>
-    <circle cx="130" cy="126" r="32" fill="${accent}"/>
-    <circle cx="118" cy="116" r="7" fill="#FFFFFF"/><circle cx="142" cy="116" r="7" fill="#FFFFFF"/>
-    <path d="M115 136 Q130 148 145 136" fill="none" stroke="#FFFFFF" stroke-width="5" stroke-linecap="round"/>
-    <rect x="70" y="270" width="940" height="900" rx="32" fill="#FBFAFF" stroke="#E9E2F4" stroke-width="2"/>
-    <rect x="70" y="1202" width="940" height="72" rx="30" fill="#EAFBF5"/>
+    <defs><filter id="shadow"><feDropShadow dx="0" dy="8" stdDeviation="16" flood-color="#45695E" flood-opacity=".14"/></filter></defs>
+    <rect x="48" y="182" width="984" height="1088" rx="42" fill="#FFFEFB" fill-opacity=".965" filter="url(#shadow)"/>
+    <rect x="76" y="212" width="928" height="132" rx="30" fill="#EAFBF3" fill-opacity=".98"/>
+    <rect x="76" y="372" width="928" height="800" rx="30" fill="#FFFDF9" stroke="#DDEFE8" stroke-width="2"/>
+    <rect x="76" y="1196" width="928" height="52" rx="26" fill="#EAFBF5"/>
+    <circle cx="132" cy="260" r="30" fill="${accent}"/>
+    <circle cx="121" cy="250" r="6" fill="#fff"/><circle cx="143" cy="250" r="6" fill="#fff"/>
+    <path d="M118 271 Q132 283 146 271" fill="none" stroke="#fff" stroke-width="5" stroke-linecap="round"/>
   </svg>`);
 }
 async function renderRichMenuDataImage(key, text2) {
   if (!isDynamicRichMenuArtwork(key)) throw new Error(`Artwork ${key} is not data-driven`);
   const title = titleByKey[key] ?? "Milo";
   const lines = wrappedLines(text2);
+  const reference = await loadRichMenuReference(key);
   const layers = [
-    layer("Milo", 185, 90, 180, 42, "#2F9C7D", true),
-    layer(title, 185, 142, 720, 44, "#3F3552", true),
-    layer("\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E08\u0E23\u0E34\u0E07\u0E25\u0E48\u0E32\u0E2A\u0E38\u0E14\u0E08\u0E32\u0E01\u0E1A\u0E31\u0E0D\u0E0A\u0E35\u0E02\u0E2D\u0E07\u0E04\u0E38\u0E13", 185, 198, 720, 22, "#78928D")
+    layer("Milo", 184, 224, 180, 38, "#2F9C7D", true),
+    layer(title, 184, 264, 720, 40, "#3F3552", true),
+    layer("\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E08\u0E23\u0E34\u0E07\u0E25\u0E48\u0E32\u0E2A\u0E38\u0E14\u0E08\u0E32\u0E01\u0E1A\u0E31\u0E0D\u0E0A\u0E35\u0E02\u0E2D\u0E07\u0E04\u0E38\u0E13", 184, 310, 720, 20, "#78928D")
   ];
   lines.forEach((lineText, index2) => {
-    const bold = index2 === 0 || /^สรุป|^หมวด|^รายการ|^รายรับ|^รายจ่าย/.test(lineText);
-    layers.push(layer(lineText || " ", 112, 308 + index2 * 35, 850, 23, bold ? "#4B4260" : "#625971", bold));
+    const bold = index2 === 0 || /^สรุป|^หมวด|^รายการ|^รายรับ|^รายจ่าย|^ข้อมูล|^ข้อสังเกต|^แนวทาง/.test(lineText);
+    layers.push(layer(lineText || " ", 118, 408 + index2 * 32, 840, 21, bold ? "#3E594F" : "#625971", bold));
   });
   layers.push(
-    layer("Milo \u2022 \u0E41\u0E2A\u0E14\u0E07\u0E1C\u0E25\u0E40\u0E1B\u0E47\u0E19\u0E20\u0E32\u0E1E\u0E40\u0E14\u0E35\u0E22\u0E27 \u0E44\u0E21\u0E48\u0E21\u0E35\u0E02\u0E49\u0E2D\u0E04\u0E27\u0E32\u0E21\u0E0B\u0E49\u0E33\u0E15\u0E32\u0E21\u0E2B\u0E25\u0E31\u0E07", 118, 1222, 830, 19, "#4E7F70", true)
+    layer("Milo \u2022 \u0E43\u0E0A\u0E49\u0E14\u0E35\u0E44\u0E0B\u0E19\u0E4C\u0E15\u0E49\u0E19\u0E09\u0E1A\u0E31\u0E1A \u0E1E\u0E23\u0E49\u0E2D\u0E21\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E08\u0E23\u0E34\u0E07\u0E02\u0E2D\u0E07\u0E04\u0E38\u0E13", 118, 1209, 830, 18, "#4E7F70", true)
   );
-  return sharp(shapes(key)).composite(layers).png().toBuffer();
+  return sharp(reference).resize(WIDTH, HEIGHT, { fit: "fill" }).composite([{ input: shapes(key), blend: "over" }, ...layers]).png().toBuffer();
 }
 function registerRichMenuDataImageRoute(app2) {
   app2.get("/api/milo/rich-menu-card.png", async (req, res) => {
@@ -1984,10 +2002,7 @@ function financeReportShapesSvg(input) {
       <linearGradient id="hero" x1="0" x2="1"><stop offset="0" stop-color="#E1FFF1"/><stop offset="1" stop-color="#F5EEFF"/></linearGradient>
       <filter id="shadow"><feDropShadow dx="0" dy="8" stdDeviation="16" flood-color="#3D6B5E" flood-opacity=".12"/></filter>
     </defs>
-    <rect width="1080" height="1350" fill="url(#bg)"/>
-    <rect x="42" y="38" width="996" height="1274" rx="42" fill="#FFFEFB" filter="url(#shadow)"/>
-    <rect x="70" y="66" width="940" height="214" rx="34" fill="url(#hero)"/>
-    <circle cx="122" cy="118" r="28" fill="#4FC7A4"/><circle cx="144" cy="105" r="10" fill="#FFFFFF" opacity=".85"/><circle cx="100" cy="105" r="10" fill="#FFFFFF" opacity=".85"/>
+    <rect x="42" y="278" width="996" height="1034" rx="42" fill="#FFFEFB" fill-opacity=".965" filter="url(#shadow)"/>
     <rect x="70" y="312" width="294" height="166" rx="28" fill="#EAF9F3"/>
     <rect x="393" y="312" width="294" height="166" rx="28" fill="#FDECF2"/>
     <rect x="716" y="312" width="294" height="166" rx="28" fill="#F1ECFB"/>
@@ -2001,6 +2016,8 @@ function financeReportShapesSvg(input) {
   </svg>`);
 }
 async function renderFinanceReportImage(input) {
+  const referenceKey = `report-${input.period}`;
+  const reference = await loadRichMenuReference(referenceKey);
   const title = input.title?.trim() || `\u0E2A\u0E23\u0E38\u0E1B\u0E01\u0E32\u0E23\u0E40\u0E07\u0E34\u0E19${periodLabel[input.period]}`;
   const subtitle = input.subtitle?.trim() || periodRange(input);
   const categories = Object.entries(input.categories).sort((a, b) => b[1] - a[1]).slice(0, 5);
@@ -2059,7 +2076,7 @@ async function renderFinanceReportImage(input) {
     textLayer("Milo \u0E41\u0E19\u0E30\u0E19\u0E33", { left: 105, top: 1243, width: 145, fontSize: 19, color: "#2E9577", bold: true }),
     textLayer(insightCopy({ ...input, transactionCount }), { left: 260, top: 1243, width: 710, fontSize: 18, color: "#5A6B66" })
   );
-  return sharp2(financeReportShapesSvg({ ...input, transactionCount })).composite(layers).png().toBuffer();
+  return sharp2(reference).resize(WIDTH2, HEIGHT2, { fit: "fill" }).composite([{ input: financeReportShapesSvg({ ...input, transactionCount }), blend: "over" }, ...layers]).png().toBuffer();
 }
 function registerFinanceReportImageRoute(app2) {
   app2.get("/api/milo/finance-report.png", async (req, res) => {
@@ -2092,10 +2109,10 @@ function sourceIdentity(source) {
   if (source.type === "group") return { lineChatId: source.groupId, lineUserId: source.userId, scope: "group" };
   return { lineChatId: source.roomId, lineUserId: source.userId, scope: "room" };
 }
-async function callLine(path2, credentials, init) {
-  const response = await fetch(`https://api.line.me${path2}`, { ...init, headers: { Authorization: `Bearer ${credentials.channelAccessToken}`, ...init.headers } });
+async function callLine(path3, credentials, init) {
+  const response = await fetch(`https://api.line.me${path3}`, { ...init, headers: { Authorization: `Bearer ${credentials.channelAccessToken}`, ...init.headers } });
   if (!response.ok) throw new Error(`LINE API ${response.status}: ${await response.text()}`);
-  console.info("[Milo LINE] message delivered", { endpoint: path2, status: response.status });
+  console.info("[Milo LINE] message delivered", { endpoint: path3, status: response.status });
   return response;
 }
 var MILO_RICH_MENU_IMAGE_BASE_URL = (process.env.MILO_RICH_MENU_IMAGE_BASE_URL ?? "https://milo-line-app.vercel.app/milo-richmenu").replace(/\/+$/, "");
@@ -2416,8 +2433,8 @@ async function getProfile(source, credentials = lineCredentials()) {
     return await response2.json();
   }
   if (!source.userId) return void 0;
-  const path2 = source.type === "group" ? `/v2/bot/group/${source.groupId}/member/${source.userId}` : `/v2/bot/room/${source.roomId}/member/${source.userId}`;
-  const response = await callLine(path2, credentials, { method: "GET" });
+  const path3 = source.type === "group" ? `/v2/bot/group/${source.groupId}/member/${source.userId}` : `/v2/bot/room/${source.roomId}/member/${source.userId}`;
+  const response = await callLine(path3, credentials, { method: "GET" });
   return await response.json();
 }
 async function replyRichMenu(replyToken, text2, artwork, credentials = lineCredentials()) {
@@ -3337,95 +3354,13 @@ function registerStorageProxy(app2) {
 import express from "express";
 
 // server/_core/voiceTranscription.ts
-async function transcribeAudio(options) {
-  try {
-    if (!ENV.forgeApiUrl) {
-      return {
-        error: "Voice transcription service is not configured",
-        code: "SERVICE_ERROR",
-        details: "BUILT_IN_FORGE_API_URL is not set"
-      };
-    }
-    if (!ENV.forgeApiKey) {
-      return {
-        error: "Voice transcription service authentication is missing",
-        code: "SERVICE_ERROR",
-        details: "BUILT_IN_FORGE_API_KEY is not set"
-      };
-    }
-    let audioBuffer;
-    let mimeType;
-    try {
-      const response2 = await fetch(options.audioUrl);
-      if (!response2.ok) {
-        return {
-          error: "Failed to download audio file",
-          code: "INVALID_FORMAT",
-          details: `HTTP ${response2.status}: ${response2.statusText}`
-        };
-      }
-      audioBuffer = Buffer.from(await response2.arrayBuffer());
-      mimeType = response2.headers.get("content-type") || "audio/mpeg";
-      const sizeMB = audioBuffer.length / (1024 * 1024);
-      if (sizeMB > 16) {
-        return {
-          error: "Audio file exceeds maximum size limit",
-          code: "FILE_TOO_LARGE",
-          details: `File size is ${sizeMB.toFixed(2)}MB, maximum allowed is 16MB`
-        };
-      }
-    } catch (error) {
-      return {
-        error: "Failed to fetch audio file",
-        code: "SERVICE_ERROR",
-        details: error instanceof Error ? error.message : "Unknown error"
-      };
-    }
-    const formData = new FormData();
-    const filename = `audio.${getFileExtension(mimeType)}`;
-    const audioBlob = new Blob([new Uint8Array(audioBuffer)], { type: mimeType });
-    formData.append("file", audioBlob, filename);
-    formData.append("model", "whisper-1");
-    formData.append("response_format", "verbose_json");
-    const prompt = options.prompt || (options.language ? `Transcribe the user's voice to text, the user's working language is ${getLanguageName(options.language)}` : "Transcribe the user's voice to text");
-    formData.append("prompt", prompt);
-    const baseUrl = ENV.forgeApiUrl.endsWith("/") ? ENV.forgeApiUrl : `${ENV.forgeApiUrl}/`;
-    const fullUrl = new URL(
-      "v1/audio/transcriptions",
-      baseUrl
-    ).toString();
-    const response = await fetch(fullUrl, {
-      method: "POST",
-      headers: {
-        authorization: `Bearer ${ENV.forgeApiKey}`,
-        "Accept-Encoding": "identity"
-      },
-      body: formData
-    });
-    if (!response.ok) {
-      const errorText = await response.text().catch(() => "");
-      return {
-        error: "Transcription service request failed",
-        code: "TRANSCRIPTION_FAILED",
-        details: `${response.status} ${response.statusText}${errorText ? `: ${errorText}` : ""}`
-      };
-    }
-    const whisperResponse = await response.json();
-    if (!whisperResponse.text || typeof whisperResponse.text !== "string") {
-      return {
-        error: "Invalid transcription response",
-        code: "SERVICE_ERROR",
-        details: "Transcription service returned an invalid response format"
-      };
-    }
-    return whisperResponse;
-  } catch (error) {
-    return {
-      error: "Voice transcription failed",
-      code: "SERVICE_ERROR",
-      details: error instanceof Error ? error.message : "An unexpected error occurred"
-    };
-  }
+function voiceTranscriptionRuntimeStatus() {
+  const forge = Boolean(ENV.forgeApiUrl && ENV.forgeApiKey);
+  const openai = Boolean((process.env.OPENAI_API_KEY || "").trim());
+  return {
+    configured: forge || openai,
+    mode: forge ? "forge-whisper" : openai ? "openai-whisper" : "unconfigured"
+  };
 }
 function getFileExtension(mimeType) {
   const mimeToExt = {
@@ -3442,27 +3377,168 @@ function getFileExtension(mimeType) {
 }
 function getLanguageName(langCode) {
   const langMap = {
-    "en": "English",
-    "es": "Spanish",
-    "fr": "French",
-    "de": "German",
-    "it": "Italian",
-    "pt": "Portuguese",
-    "ru": "Russian",
-    "ja": "Japanese",
-    "ko": "Korean",
-    "zh": "Chinese",
-    "ar": "Arabic",
-    "hi": "Hindi",
-    "nl": "Dutch",
-    "pl": "Polish",
-    "tr": "Turkish",
-    "sv": "Swedish",
-    "da": "Danish",
-    "no": "Norwegian",
-    "fi": "Finnish"
+    en: "English",
+    es: "Spanish",
+    fr: "French",
+    de: "German",
+    it: "Italian",
+    pt: "Portuguese",
+    ru: "Russian",
+    ja: "Japanese",
+    ko: "Korean",
+    zh: "Chinese",
+    ar: "Arabic",
+    hi: "Hindi",
+    nl: "Dutch",
+    pl: "Polish",
+    tr: "Turkish",
+    sv: "Swedish",
+    da: "Danish",
+    no: "Norwegian",
+    fi: "Finnish",
+    th: "Thai"
   };
   return langMap[langCode] || langCode;
+}
+async function fetchWithTimeout(url, init, timeoutMs) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+function makeFormData(audioBuffer, mimeType, options) {
+  const formData = new FormData();
+  const filename = `audio.${getFileExtension(mimeType)}`;
+  const audioBlob = new Blob([new Uint8Array(audioBuffer)], { type: mimeType });
+  formData.append("file", audioBlob, filename);
+  formData.append("model", "whisper-1");
+  formData.append("response_format", "verbose_json");
+  if (options.language) formData.append("language", options.language);
+  const prompt = options.prompt || (options.language ? `Transcribe the user's voice to text, the user's working language is ${getLanguageName(options.language)}` : "Transcribe the user's voice to text");
+  formData.append("prompt", prompt);
+  return formData;
+}
+async function callTranscriptionProvider(url, apiKey, audioBuffer, mimeType, options) {
+  return fetchWithTimeout(url, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${apiKey}`,
+      "Accept-Encoding": "identity"
+    },
+    body: makeFormData(audioBuffer, mimeType, options)
+  }, 6e4);
+}
+async function parseProviderResponse(response, provider) {
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => "");
+    return {
+      error: "Transcription service request failed",
+      code: "TRANSCRIPTION_FAILED",
+      details: `${provider}: ${response.status} ${response.statusText}${errorText ? `: ${errorText}` : ""}`
+    };
+  }
+  const whisperResponse = await response.json();
+  if (!whisperResponse.text || typeof whisperResponse.text !== "string") {
+    return {
+      error: "Invalid transcription response",
+      code: "SERVICE_ERROR",
+      details: `${provider} returned an invalid response format`
+    };
+  }
+  return whisperResponse;
+}
+async function transcribeAudio(options) {
+  try {
+    const forgeConfigured = Boolean(ENV.forgeApiUrl && ENV.forgeApiKey);
+    const openAIKey = (process.env.OPENAI_API_KEY || "").trim();
+    if (!forgeConfigured && !openAIKey) {
+      return {
+        error: "Voice transcription service is not configured",
+        code: "SERVICE_ERROR",
+        details: "Set BUILT_IN_FORGE_API_URL + BUILT_IN_FORGE_API_KEY or OPENAI_API_KEY"
+      };
+    }
+    let audioBuffer;
+    let mimeType;
+    try {
+      const response = await fetchWithTimeout(options.audioUrl, {}, 45e3);
+      if (!response.ok) {
+        return {
+          error: "Failed to download audio file",
+          code: "INVALID_FORMAT",
+          details: `HTTP ${response.status}: ${response.statusText}`
+        };
+      }
+      audioBuffer = Buffer.from(await response.arrayBuffer());
+      mimeType = response.headers.get("content-type") || "audio/mpeg";
+      const sizeMB = audioBuffer.length / (1024 * 1024);
+      if (sizeMB > 16) {
+        return {
+          error: "Audio file exceeds maximum size limit",
+          code: "FILE_TOO_LARGE",
+          details: `File size is ${sizeMB.toFixed(2)}MB, maximum allowed is 16MB`
+        };
+      }
+    } catch (error) {
+      return {
+        error: "Failed to fetch audio file",
+        code: "SERVICE_ERROR",
+        details: error instanceof Error ? error.message : "Unknown error"
+      };
+    }
+    if (forgeConfigured) {
+      const baseUrl = ENV.forgeApiUrl.endsWith("/") ? ENV.forgeApiUrl : `${ENV.forgeApiUrl}/`;
+      const fullUrl = new URL("v1/audio/transcriptions", baseUrl).toString();
+      try {
+        const response = await callTranscriptionProvider(fullUrl, ENV.forgeApiKey, audioBuffer, mimeType, options);
+        if (response.ok || !openAIKey) return parseProviderResponse(response, "forge");
+        console.warn("[Milo Voice] Forge transcription failed; trying OpenAI fallback", { status: response.status });
+      } catch (error) {
+        if (!openAIKey) {
+          return {
+            error: "Transcription service request failed",
+            code: "TRANSCRIPTION_FAILED",
+            details: error instanceof Error ? error.message : "Forge transcription failed"
+          };
+        }
+        console.warn("[Milo Voice] Forge transcription unavailable; trying OpenAI fallback", {
+          error: error instanceof Error ? error.message : "unknown"
+        });
+      }
+    }
+    if (openAIKey) {
+      try {
+        const response = await callTranscriptionProvider(
+          "https://api.openai.com/v1/audio/transcriptions",
+          openAIKey,
+          audioBuffer,
+          mimeType,
+          options
+        );
+        return parseProviderResponse(response, "openai");
+      } catch (error) {
+        return {
+          error: "Transcription service request failed",
+          code: "TRANSCRIPTION_FAILED",
+          details: error instanceof Error ? error.message : "OpenAI transcription failed"
+        };
+      }
+    }
+    return {
+      error: "Voice transcription service is not configured",
+      code: "SERVICE_ERROR",
+      details: "No transcription provider is available"
+    };
+  } catch (error) {
+    return {
+      error: "Voice transcription failed",
+      code: "SERVICE_ERROR",
+      details: error instanceof Error ? error.message : "An unexpected error occurred"
+    };
+  }
 }
 
 // server/storage.ts
@@ -3529,11 +3605,11 @@ async function storageGetSignedUrl(relKey) {
 // server/milo/ocrImageAnalysis.ts
 import fs from "node:fs";
 import os from "node:os";
-import path from "node:path";
+import path2 from "node:path";
 import sharp3 from "sharp";
 import { createWorker } from "tesseract.js";
-var DATA_DIR = path.join(process.cwd(), "api", "tessdata");
-var CACHE_DIR = path.join(os.tmpdir(), "milo-tesscache");
+var DATA_DIR = path2.join(process.cwd(), "api", "tessdata");
+var CACHE_DIR = path2.join(os.tmpdir(), "milo-tesscache");
 var thaiDigitMap = {
   "\u0E50": "0",
   "\u0E51": "1",
@@ -3561,7 +3637,7 @@ var thaiMonths = {
   "\u0E18.\u0E04.": 12
 };
 function ocrAssetsReady() {
-  return fs.existsSync(path.join(DATA_DIR, "tha.traineddata.gz")) && fs.existsSync(path.join(DATA_DIR, "eng.traineddata.gz"));
+  return fs.existsSync(path2.join(DATA_DIR, "tha.traineddata.gz")) && fs.existsSync(path2.join(DATA_DIR, "eng.traineddata.gz"));
 }
 function decodeDataUrl(dataUrl) {
   const match = dataUrl.match(/^data:([^;]+);base64,([\s\S]+)$/);
@@ -5060,21 +5136,43 @@ async function handleMedia(event, lineChatId, lineUserId, scope) {
     if (event.replyToken) await replyText(event.replyToken, entitlementMessage("groupAccounting"));
     return;
   }
-  const bytes = await getMessageContent(message.id);
   const mimeType = isImage ? "image/jpeg" : isAudio ? "audio/m4a" : isPdf ? "application/pdf" : "application/octet-stream";
-  const stored = await storagePut(`milo/${lineChatId}/${message.id}`, bytes, mimeType);
-  const vaultId = await createVaultItem({
-    lineChatId,
-    createdByLineUserId: lineUserId,
-    itemType: isImage ? "image" : "file",
-    title: message.fileName ?? (isImage ? "\u0E23\u0E39\u0E1B\u0E08\u0E32\u0E01 LINE" : isAudio ? "\u0E02\u0E49\u0E2D\u0E04\u0E27\u0E32\u0E21\u0E40\u0E2A\u0E35\u0E22\u0E07\u0E08\u0E32\u0E01 LINE" : "\u0E44\u0E1F\u0E25\u0E4C\u0E08\u0E32\u0E01 LINE"),
-    searchableText: message.fileName,
-    originalFilename: message.fileName,
-    mimeType,
-    storageKey: stored.key,
-    storageUrl: stored.url,
-    lineMessageId: message.id
-  });
+  let bytes;
+  let stored;
+  let vaultId;
+  try {
+    bytes = await getMessageContent(message.id);
+    stored = await storagePut(`milo/${lineChatId}/${message.id}`, bytes, mimeType);
+    vaultId = await createVaultItem({
+      lineChatId,
+      createdByLineUserId: lineUserId,
+      itemType: isImage ? "image" : "file",
+      title: message.fileName ?? (isImage ? "\u0E23\u0E39\u0E1B\u0E08\u0E32\u0E01 LINE" : isAudio ? "\u0E02\u0E49\u0E2D\u0E04\u0E27\u0E32\u0E21\u0E40\u0E2A\u0E35\u0E22\u0E07\u0E08\u0E32\u0E01 LINE" : "\u0E44\u0E1F\u0E25\u0E4C\u0E08\u0E32\u0E01 LINE"),
+      searchableText: message.fileName,
+      originalFilename: message.fileName,
+      mimeType,
+      storageKey: stored.key,
+      storageUrl: stored.url,
+      lineMessageId: message.id
+    });
+  } catch (error) {
+    console.error("[Milo Media] prepare failed", { messageId: message.id, type: message.type, error: error instanceof Error ? error.message : "unknown" });
+    const fallback = isAudio ? "\u0E23\u0E31\u0E1A\u0E02\u0E49\u0E2D\u0E04\u0E27\u0E32\u0E21\u0E40\u0E2A\u0E35\u0E22\u0E07\u0E41\u0E25\u0E49\u0E27 \u0E41\u0E15\u0E48\u0E22\u0E31\u0E07\u0E14\u0E32\u0E27\u0E19\u0E4C\u0E42\u0E2B\u0E25\u0E14\u0E2B\u0E23\u0E37\u0E2D\u0E08\u0E31\u0E14\u0E40\u0E01\u0E47\u0E1A\u0E44\u0E1F\u0E25\u0E4C\u0E44\u0E21\u0E48\u0E44\u0E14\u0E49\u0E43\u0E19\u0E04\u0E23\u0E31\u0E49\u0E07\u0E19\u0E35\u0E49 \u0E01\u0E23\u0E38\u0E13\u0E32\u0E25\u0E2D\u0E07\u0E2A\u0E48\u0E07\u0E40\u0E2A\u0E35\u0E22\u0E07\u0E43\u0E2B\u0E21\u0E48\u0E2D\u0E35\u0E01\u0E04\u0E23\u0E31\u0E49\u0E07\u0E04\u0E23\u0E31\u0E1A" : isPdf ? "\u0E23\u0E31\u0E1A PDF \u0E41\u0E25\u0E49\u0E27 \u0E41\u0E15\u0E48\u0E22\u0E31\u0E07\u0E14\u0E32\u0E27\u0E19\u0E4C\u0E42\u0E2B\u0E25\u0E14\u0E2B\u0E23\u0E37\u0E2D\u0E08\u0E31\u0E14\u0E40\u0E01\u0E47\u0E1A\u0E44\u0E1F\u0E25\u0E4C\u0E44\u0E21\u0E48\u0E44\u0E14\u0E49\u0E43\u0E19\u0E04\u0E23\u0E31\u0E49\u0E07\u0E19\u0E35\u0E49 \u0E01\u0E23\u0E38\u0E13\u0E32\u0E25\u0E2D\u0E07\u0E2A\u0E48\u0E07\u0E44\u0E1F\u0E25\u0E4C\u0E43\u0E2B\u0E21\u0E48\u0E2D\u0E35\u0E01\u0E04\u0E23\u0E31\u0E49\u0E07\u0E04\u0E23\u0E31\u0E1A" : isImage ? "\u0E23\u0E31\u0E1A\u0E23\u0E39\u0E1B\u0E41\u0E25\u0E49\u0E27 \u0E41\u0E15\u0E48\u0E22\u0E31\u0E07\u0E14\u0E32\u0E27\u0E19\u0E4C\u0E42\u0E2B\u0E25\u0E14\u0E2B\u0E23\u0E37\u0E2D\u0E08\u0E31\u0E14\u0E40\u0E01\u0E47\u0E1A\u0E23\u0E39\u0E1B\u0E44\u0E21\u0E48\u0E44\u0E14\u0E49\u0E43\u0E19\u0E04\u0E23\u0E31\u0E49\u0E07\u0E19\u0E35\u0E49 \u0E01\u0E23\u0E38\u0E13\u0E32\u0E25\u0E2D\u0E07\u0E2A\u0E48\u0E07\u0E20\u0E32\u0E1E\u0E43\u0E2B\u0E21\u0E48\u0E2D\u0E35\u0E01\u0E04\u0E23\u0E31\u0E49\u0E07\u0E04\u0E23\u0E31\u0E1A" : "\u0E23\u0E31\u0E1A\u0E44\u0E1F\u0E25\u0E4C\u0E41\u0E25\u0E49\u0E27 \u0E41\u0E15\u0E48\u0E22\u0E31\u0E07\u0E08\u0E31\u0E14\u0E40\u0E01\u0E47\u0E1A\u0E44\u0E21\u0E48\u0E44\u0E14\u0E49\u0E43\u0E19\u0E04\u0E23\u0E31\u0E49\u0E07\u0E19\u0E35\u0E49 \u0E01\u0E23\u0E38\u0E13\u0E32\u0E25\u0E2D\u0E07\u0E43\u0E2B\u0E21\u0E48\u0E04\u0E23\u0E31\u0E1A";
+    if (event.replyToken) {
+      try {
+        await replyText(event.replyToken, fallback);
+        return;
+      } catch (replyError) {
+        console.error("[Milo Media] fallback reply failed", { messageId: message.id, error: replyError instanceof Error ? replyError.message : "unknown" });
+      }
+    }
+    try {
+      await pushText(lineChatId, fallback);
+    } catch (pushError) {
+      console.error("[Milo Media] fallback push failed", { messageId: message.id, error: pushError instanceof Error ? pushError.message : "unknown" });
+    }
+    return;
+  }
   if (isAudio) {
     try {
       const audioUrl = await storageGetSignedUrl(stored.key);
@@ -5086,7 +5184,14 @@ async function handleMedia(event, lineChatId, lineUserId, scope) {
       if (event.replyToken) await sendVoiceProposal(event.replyToken, proposal);
     } catch (error) {
       console.error("[Milo Voice] transcription failed", { messageId: message.id, error: error instanceof Error ? error.message : "unknown" });
-      if (event.replyToken) await replyText(event.replyToken, "\u0E40\u0E01\u0E47\u0E1A\u0E02\u0E49\u0E2D\u0E04\u0E27\u0E32\u0E21\u0E40\u0E2A\u0E35\u0E22\u0E07\u0E44\u0E27\u0E49\u0E41\u0E25\u0E49\u0E27 \u0E41\u0E15\u0E48\u0E22\u0E31\u0E07\u0E16\u0E2D\u0E14\u0E40\u0E2A\u0E35\u0E22\u0E07\u0E44\u0E21\u0E48\u0E44\u0E14\u0E49\u0E43\u0E19\u0E04\u0E23\u0E31\u0E49\u0E07\u0E19\u0E35\u0E49 \u0E01\u0E23\u0E38\u0E13\u0E32\u0E25\u0E2D\u0E07\u0E2D\u0E31\u0E14\u0E43\u0E2B\u0E21\u0E48\u0E43\u0E2B\u0E49\u0E0A\u0E31\u0E14\u0E40\u0E08\u0E19 \u0E04\u0E27\u0E32\u0E21\u0E22\u0E32\u0E27\u0E2A\u0E31\u0E49\u0E19 \u0E46 \u0E41\u0E25\u0E30\u0E02\u0E19\u0E32\u0E14\u0E44\u0E21\u0E48\u0E40\u0E01\u0E34\u0E19 16MB \u0E04\u0E23\u0E31\u0E1A");
+      const fallback = "\u0E40\u0E01\u0E47\u0E1A\u0E02\u0E49\u0E2D\u0E04\u0E27\u0E32\u0E21\u0E40\u0E2A\u0E35\u0E22\u0E07\u0E44\u0E27\u0E49\u0E41\u0E25\u0E49\u0E27 \u0E41\u0E15\u0E48\u0E22\u0E31\u0E07\u0E16\u0E2D\u0E14\u0E40\u0E2A\u0E35\u0E22\u0E07\u0E44\u0E21\u0E48\u0E44\u0E14\u0E49\u0E43\u0E19\u0E04\u0E23\u0E31\u0E49\u0E07\u0E19\u0E35\u0E49 \u0E01\u0E23\u0E38\u0E13\u0E32\u0E25\u0E2D\u0E07\u0E2D\u0E31\u0E14\u0E43\u0E2B\u0E21\u0E48\u0E43\u0E2B\u0E49\u0E0A\u0E31\u0E14\u0E40\u0E08\u0E19 \u0E04\u0E27\u0E32\u0E21\u0E22\u0E32\u0E27\u0E2A\u0E31\u0E49\u0E19 \u0E46 \u0E41\u0E25\u0E30\u0E02\u0E19\u0E32\u0E14\u0E44\u0E21\u0E48\u0E40\u0E01\u0E34\u0E19 16MB \u0E04\u0E23\u0E31\u0E1A";
+      if (event.replyToken) {
+        try {
+          await replyText(event.replyToken, fallback);
+        } catch {
+          await pushText(lineChatId, fallback);
+        }
+      } else await pushText(lineChatId, fallback);
     }
     return;
   }
@@ -5102,7 +5207,14 @@ ${preview || "\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E1E\u0E1A\u0E23\u0E32\u0E22
 \u0E15\u0E23\u0E27\u0E08\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E01\u0E48\u0E2D\u0E19 \u0E41\u0E25\u0E49\u0E27\u0E1E\u0E34\u0E21\u0E1E\u0E4C \u201C\u0E22\u0E37\u0E19\u0E22\u0E31\u0E19 PDF\u201D \u0E40\u0E1E\u0E37\u0E48\u0E2D\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E40\u0E09\u0E1E\u0E32\u0E30\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E17\u0E35\u0E48\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48\u0E41\u0E25\u0E30\u0E22\u0E2D\u0E14\u0E0A\u0E31\u0E14\u0E40\u0E08\u0E19`);
     } catch (error) {
       console.error("[Milo PDF] analysis failed", { messageId: message.id, error: error instanceof Error ? error.message : "unknown" });
-      if (event.replyToken) await replyText(event.replyToken, "\u0E40\u0E01\u0E47\u0E1A PDF \u0E44\u0E27\u0E49\u0E41\u0E25\u0E49\u0E27 \u0E41\u0E15\u0E48\u0E22\u0E31\u0E07\u0E2D\u0E48\u0E32\u0E19\u0E18\u0E38\u0E23\u0E01\u0E23\u0E23\u0E21\u0E08\u0E32\u0E01\u0E44\u0E1F\u0E25\u0E4C\u0E19\u0E35\u0E49\u0E44\u0E21\u0E48\u0E44\u0E14\u0E49 \u0E01\u0E23\u0E38\u0E13\u0E32\u0E25\u0E2D\u0E07\u0E44\u0E1F\u0E25\u0E4C\u0E17\u0E35\u0E48\u0E44\u0E21\u0E48\u0E25\u0E47\u0E2D\u0E01\u0E23\u0E2B\u0E31\u0E2A\u0E41\u0E25\u0E30\u0E21\u0E35\u0E02\u0E49\u0E2D\u0E04\u0E27\u0E32\u0E21\u0E2D\u0E48\u0E32\u0E19\u0E44\u0E14\u0E49\u0E04\u0E23\u0E31\u0E1A");
+      const fallback = "\u0E40\u0E01\u0E47\u0E1A PDF \u0E44\u0E27\u0E49\u0E41\u0E25\u0E49\u0E27 \u0E41\u0E15\u0E48\u0E22\u0E31\u0E07\u0E2D\u0E48\u0E32\u0E19\u0E18\u0E38\u0E23\u0E01\u0E23\u0E23\u0E21\u0E08\u0E32\u0E01\u0E44\u0E1F\u0E25\u0E4C\u0E19\u0E35\u0E49\u0E44\u0E21\u0E48\u0E44\u0E14\u0E49 \u0E01\u0E23\u0E38\u0E13\u0E32\u0E25\u0E2D\u0E07\u0E44\u0E1F\u0E25\u0E4C\u0E17\u0E35\u0E48\u0E44\u0E21\u0E48\u0E25\u0E47\u0E2D\u0E01\u0E23\u0E2B\u0E31\u0E2A\u0E41\u0E25\u0E30\u0E21\u0E35\u0E02\u0E49\u0E2D\u0E04\u0E27\u0E32\u0E21\u0E2D\u0E48\u0E32\u0E19\u0E44\u0E14\u0E49\u0E04\u0E23\u0E31\u0E1A";
+      if (event.replyToken) {
+        try {
+          await replyText(event.replyToken, fallback);
+        } catch {
+          await pushText(lineChatId, fallback);
+        }
+      } else await pushText(lineChatId, fallback);
     }
     return;
   }
@@ -5208,8 +5320,8 @@ function registerMiloCron(app2) {
       return res.status(500).json({ error: error instanceof Error ? error.message : "unknown", timestamp: (/* @__PURE__ */ new Date()).toISOString() });
     }
   });
-  const registerFinanceDigestRoute = (path2, settingKey, digestType) => {
-    app2.post(path2, async (req, res) => {
+  const registerFinanceDigestRoute = (path3, settingKey, digestType) => {
+    app2.post(path3, async (req, res) => {
       try {
         const user = await sdk.authenticateRequest(req);
         if (!user.isCron || !user.taskUid) return res.status(403).json({ error: "cron-only" });
@@ -5406,6 +5518,7 @@ registerOAuthRoutes(app);
 var healthHandler = async (_req, res) => {
   const runtime = await imageAnalysisRuntimeStatus();
   const mode = runtime.mode;
+  const voice = voiceTranscriptionRuntimeStatus();
   res.status(200).json({
     status: "ok",
     service: "milo",
@@ -5414,6 +5527,8 @@ var healthHandler = async (_req, res) => {
     imageAnalysisMode: mode,
     visionModel: mode === "ocr-fallback" ? "tesseract-tha+eng" : process.env.MILO_VISION_MODEL || (mode.startsWith("vercel-ai-gateway") ? "google/gemini-2.5-flash" : mode.startsWith("forge-vision") ? "gemini-3-flash-preview" : "unconfigured"),
     ocrAssetsReady: runtime.ocrAssetsReady,
+    voiceConfigured: voice.configured,
+    voiceTranscriptionMode: voice.mode,
     timestamp: (/* @__PURE__ */ new Date()).toISOString()
   });
 };
