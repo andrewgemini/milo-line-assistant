@@ -35,10 +35,11 @@ app.use(express.urlencoded({ limit: "50mb", extended: true }));
 registerStorageProxy(app);
 registerOAuthRoutes(app);
 
-const healthHandler = async (_req: express.Request, res: express.Response) => {
-  const runtime = await imageAnalysisRuntimeStatus();
+const healthHandler = async (req: express.Request, res: express.Response) => {
+  const gatewayToken = req.header("x-vercel-oidc-token")?.trim() || undefined;
+  const runtime = await imageAnalysisRuntimeStatus(gatewayToken);
   const mode = runtime.mode;
-  const voice = voiceTranscriptionRuntimeStatus();
+  const voice = voiceTranscriptionRuntimeStatus(gatewayToken);
   res.status(200).json({
     status: "ok",
     service: "milo",

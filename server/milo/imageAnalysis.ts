@@ -140,33 +140,33 @@ async function analyzeImageWithGatewayKey(dataUrl: string, token: string): Promi
   }
 }
 
-export function imageGatewayToken(env: NodeJS.ProcessEnv = process.env) {
-  return (env.AI_GATEWAY_API_KEY || env.VERCEL_OIDC_TOKEN || "").trim();
+export function imageGatewayToken(env: NodeJS.ProcessEnv = process.env, requestToken?: string) {
+  return (env.AI_GATEWAY_API_KEY || env.VERCEL_OIDC_TOKEN || requestToken || "").trim();
 }
 
-function imageGatewayMode(env: NodeJS.ProcessEnv = process.env) {
+function imageGatewayMode(env: NodeJS.ProcessEnv = process.env, requestToken?: string) {
   if ((env.AI_GATEWAY_API_KEY || "").trim()) return "vercel-ai-gateway-key";
-  if ((env.VERCEL_OIDC_TOKEN || "").trim()) return "vercel-ai-gateway-oidc";
+  if ((env.VERCEL_OIDC_TOKEN || "").trim() || requestToken?.trim()) return "vercel-ai-gateway-oidc";
   return undefined;
 }
 
-export function imageAnalysisMode() {
+export function imageAnalysisMode(requestToken?: string) {
   if (ENV.forgeApiKey) return ocrAssetsReady() ? "forge-vision+ocr-fallback" : "forge-vision";
-  const gatewayMode = imageGatewayMode();
+  const gatewayMode = imageGatewayMode(process.env, requestToken);
   if (gatewayMode) return ocrAssetsReady() ? `${gatewayMode}+ocr-fallback` : gatewayMode;
   return ocrAssetsReady() ? "ocr-fallback" : "unconfigured";
 }
 
-export async function imageAnalysisRuntimeStatus() {
-  const mode = imageAnalysisMode();
+export async function imageAnalysisRuntimeStatus(requestToken?: string) {
+  const mode = imageAnalysisMode(requestToken);
   return {
     mode,
-    authenticated: Boolean(ENV.forgeApiKey || imageGatewayToken() || ocrAssetsReady()),
+    authenticated: Boolean(ENV.forgeApiKey || imageGatewayToken(process.env, requestToken) || ocrAssetsReady()),
     ocrAssetsReady: ocrAssetsReady(),
   };
 }
 
-export async function analyzeImage(dataUrl: string): Promise<ImageAnalysis> {
+export async function analyzeImage(dataUrl: string, options: { gatewayToken?: string } = {}): Promise<ImageAnalysis> {
   if (ENV.forgeApiKey) {
     try {
       return await analyzeImageWithForge(dataUrl);
@@ -177,7 +177,7 @@ export async function analyzeImage(dataUrl: string): Promise<ImageAnalysis> {
     }
   }
 
-  const gatewayKey = imageGatewayToken();
+  const gatewayKey = imageGatewayToken(process.env, options.gatewayToken);
   if (gatewayKey) {
     try {
       return await analyzeImageWithGatewayKey(dataUrl, gatewayKey);

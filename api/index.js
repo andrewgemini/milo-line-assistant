@@ -3394,19 +3394,20 @@ function registerStorageProxy(app2) {
 import express from "express";
 
 // server/_core/voiceTranscription.ts
-import { gateway, transcribe as gatewayTranscribe } from "ai";
-function gatewayAuthAvailable(env = process.env) {
+import { transcribe as gatewayTranscribe } from "ai";
+import { createGateway, gateway } from "@ai-sdk/gateway";
+function gatewayAuthAvailable(env = process.env, requestToken) {
   return Boolean(
-    (env.AI_GATEWAY_API_KEY || "").trim() || (env.VERCEL_OIDC_TOKEN || "").trim()
+    (env.AI_GATEWAY_API_KEY || "").trim() || (env.VERCEL_OIDC_TOKEN || "").trim() || requestToken?.trim()
   );
 }
 function gatewayTranscriptionModel(env = process.env) {
   return (env.MILO_STT_MODEL || "fish-audio/transcribe-1").trim();
 }
-function voiceTranscriptionRuntimeStatus() {
+function voiceTranscriptionRuntimeStatus(requestToken) {
   const forge = Boolean(ENV.forgeApiUrl && ENV.forgeApiKey);
   const openai = Boolean((process.env.OPENAI_API_KEY || "").trim());
-  const gatewayAvailable = gatewayAuthAvailable();
+  const gatewayAvailable = gatewayAuthAvailable(process.env, requestToken);
   return {
     configured: forge || openai || gatewayAvailable,
     mode: forge ? "forge-whisper" : openai ? "openai-whisper" : gatewayAvailable ? "vercel-ai-gateway-stt" : "unconfigured"
@@ -3502,8 +3503,9 @@ async function parseProviderResponse(response, provider) {
 }
 async function transcribeWithGateway(audioBuffer, options) {
   const modelId = gatewayTranscriptionModel();
+  const gatewayProvider = options.gatewayToken?.trim() ? createGateway({ apiKey: options.gatewayToken.trim() }) : gateway;
   const result = await gatewayTranscribe({
-    model: gateway.transcriptionModel(modelId),
+    model: gatewayProvider.transcriptionModel(modelId),
     audio: audioBuffer,
     maxRetries: 1
   });
@@ -3530,7 +3532,7 @@ async function transcribeAudio(options) {
   try {
     const forgeConfigured = Boolean(ENV.forgeApiUrl && ENV.forgeApiKey);
     const openAIKey = (process.env.OPENAI_API_KEY || "").trim();
-    const gatewayConfigured = gatewayAuthAvailable();
+    const gatewayConfigured = gatewayAuthAvailable(process.env, options.gatewayToken);
     if (!forgeConfigured && !openAIKey && !gatewayConfigured) {
       return {
         error: "Voice transcription service is not configured",
@@ -3991,29 +3993,29 @@ async function analyzeImageWithGatewayKey(dataUrl, token) {
     throw error;
   }
 }
-function imageGatewayToken(env = process.env) {
-  return (env.AI_GATEWAY_API_KEY || env.VERCEL_OIDC_TOKEN || "").trim();
+function imageGatewayToken(env = process.env, requestToken) {
+  return (env.AI_GATEWAY_API_KEY || env.VERCEL_OIDC_TOKEN || requestToken || "").trim();
 }
-function imageGatewayMode(env = process.env) {
+function imageGatewayMode(env = process.env, requestToken) {
   if ((env.AI_GATEWAY_API_KEY || "").trim()) return "vercel-ai-gateway-key";
-  if ((env.VERCEL_OIDC_TOKEN || "").trim()) return "vercel-ai-gateway-oidc";
+  if ((env.VERCEL_OIDC_TOKEN || "").trim() || requestToken?.trim()) return "vercel-ai-gateway-oidc";
   return void 0;
 }
-function imageAnalysisMode() {
+function imageAnalysisMode(requestToken) {
   if (ENV.forgeApiKey) return ocrAssetsReady() ? "forge-vision+ocr-fallback" : "forge-vision";
-  const gatewayMode = imageGatewayMode();
+  const gatewayMode = imageGatewayMode(process.env, requestToken);
   if (gatewayMode) return ocrAssetsReady() ? `${gatewayMode}+ocr-fallback` : gatewayMode;
   return ocrAssetsReady() ? "ocr-fallback" : "unconfigured";
 }
-async function imageAnalysisRuntimeStatus() {
-  const mode = imageAnalysisMode();
+async function imageAnalysisRuntimeStatus(requestToken) {
+  const mode = imageAnalysisMode(requestToken);
   return {
     mode,
-    authenticated: Boolean(ENV.forgeApiKey || imageGatewayToken() || ocrAssetsReady()),
+    authenticated: Boolean(ENV.forgeApiKey || imageGatewayToken(process.env, requestToken) || ocrAssetsReady()),
     ocrAssetsReady: ocrAssetsReady()
   };
 }
-async function analyzeImage(dataUrl) {
+async function analyzeImage(dataUrl, options = {}) {
   if (ENV.forgeApiKey) {
     try {
       return await analyzeImageWithForge(dataUrl);
@@ -4023,7 +4025,7 @@ async function analyzeImage(dataUrl) {
       });
     }
   }
-  const gatewayKey = imageGatewayToken();
+  const gatewayKey = imageGatewayToken(process.env, options.gatewayToken);
   if (gatewayKey) {
     try {
       return await analyzeImageWithGatewayKey(dataUrl, gatewayKey);
@@ -5229,7 +5231,7 @@ ${incomeSection}
     } else await replyText(event.replyToken, message);
   }
 }
-async function handleMedia(event, lineChatId, lineUserId, scope) {
+async function handleMedia(event, lineChatId, lineUserId, scope, runtime = {}) {
   const message = event.message;
   if (!message) return;
   const isImage = message.type === "image";
@@ -5315,7 +5317,7 @@ async function handleMedia(event, lineChatId, lineUserId, scope) {
       }
     }
     try {
-      const transcript = await transcribeAudio({ audioBuffer: bytes, mimeType, language: "th", prompt: "\u0E16\u0E2D\u0E14\u0E02\u0E49\u0E2D\u0E04\u0E27\u0E32\u0E21\u0E20\u0E32\u0E29\u0E32\u0E44\u0E17\u0E22\u0E40\u0E01\u0E35\u0E48\u0E22\u0E27\u0E01\u0E31\u0E1A\u0E23\u0E32\u0E22\u0E23\u0E31\u0E1A \u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22 \u0E08\u0E33\u0E19\u0E27\u0E19\u0E40\u0E07\u0E34\u0E19 \u0E41\u0E25\u0E30\u0E2B\u0E21\u0E27\u0E14\u0E2B\u0E21\u0E39\u0E48" });
+      const transcript = await transcribeAudio({ audioBuffer: bytes, mimeType, language: "th", prompt: "\u0E16\u0E2D\u0E14\u0E02\u0E49\u0E2D\u0E04\u0E27\u0E32\u0E21\u0E20\u0E32\u0E29\u0E32\u0E44\u0E17\u0E22\u0E40\u0E01\u0E35\u0E48\u0E22\u0E27\u0E01\u0E31\u0E1A\u0E23\u0E32\u0E22\u0E23\u0E31\u0E1A \u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22 \u0E08\u0E33\u0E19\u0E27\u0E19\u0E40\u0E07\u0E34\u0E19 \u0E41\u0E25\u0E30\u0E2B\u0E21\u0E27\u0E14\u0E2B\u0E21\u0E39\u0E48", gatewayToken: runtime.gatewayToken });
       if ("error" in transcript) throw new Error(transcript.error);
       const financeScope = await resolveFinanceScope(lineUserId, lineChatId, scope);
       const proposal = await buildVoiceProposal(transcript.text, lineUserId, financeScope?.financeAccountId);
@@ -5368,7 +5370,7 @@ ${preview || "\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E1E\u0E1A\u0E23\u0E32\u0E22
     }
   }
   try {
-    const analysis = await analyzeImage(`data:${mimeType};base64,${bytes.toString("base64")}`);
+    const analysis = await analyzeImage(`data:${mimeType};base64,${bytes.toString("base64")}`, { gatewayToken: runtime.gatewayToken });
     await saveImageExtraction(vaultId, analysis.proposals.some((item) => item.kind === "expense") ? "expense" : "reminder", JSON.stringify(analysis), analysis.confidence);
     const proposals = analysis.proposals.slice(0, 2).map((item) => `\u2022 ${formatImageProposal(item)}`).join("\n");
     await pushText(lineChatId, `\u0E2D\u0E48\u0E32\u0E19\u0E23\u0E39\u0E1B\u0E40\u0E23\u0E35\u0E22\u0E1A\u0E23\u0E49\u0E2D\u0E22\u0E41\u0E25\u0E49\u0E27
@@ -5380,7 +5382,7 @@ ${proposals || "\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E1E\u0E1A\u0E23\u0E32\u0E
     await pushText(lineChatId, "\u0E40\u0E01\u0E47\u0E1A\u0E23\u0E39\u0E1B\u0E44\u0E27\u0E49\u0E41\u0E25\u0E49\u0E27 \u0E41\u0E15\u0E48\u0E23\u0E30\u0E1A\u0E1A\u0E2D\u0E48\u0E32\u0E19\u0E2A\u0E25\u0E34\u0E1B/\u0E43\u0E1A\u0E40\u0E2A\u0E23\u0E47\u0E08\u0E04\u0E23\u0E31\u0E49\u0E07\u0E19\u0E35\u0E49\u0E44\u0E21\u0E48\u0E2A\u0E33\u0E40\u0E23\u0E47\u0E08 \u0E01\u0E23\u0E38\u0E13\u0E32\u0E25\u0E2D\u0E07\u0E2A\u0E48\u0E07\u0E20\u0E32\u0E1E\u0E17\u0E35\u0E48\u0E04\u0E21\u0E0A\u0E31\u0E14\u0E41\u0E25\u0E30\u0E40\u0E2B\u0E47\u0E19\u0E22\u0E2D\u0E14 \u0E27\u0E31\u0E19\u0E17\u0E35\u0E48 \u0E40\u0E27\u0E25\u0E32 \u0E41\u0E25\u0E30\u0E1C\u0E39\u0E49\u0E23\u0E31\u0E1A\u0E04\u0E23\u0E1A\u0E16\u0E49\u0E27\u0E19\u0E2D\u0E35\u0E01\u0E04\u0E23\u0E31\u0E49\u0E07\u0E19\u0E48\u0E30\u0E08\u0E4A\u0E30");
   }
 }
-async function processEvent(event, rawPayload) {
+async function processEvent(event, rawPayload, runtime = {}) {
   const identity = sourceIdentity(event.source);
   if (!identity.lineUserId) return;
   const accepted = await registerWebhookEvent({ webhookEventId: event.webhookEventId, eventType: event.type, lineChatId: identity.lineChatId, occurredAt: new Date(event.timestamp), rawPayload });
@@ -5400,7 +5402,7 @@ async function processEvent(event, rawPayload) {
       return;
     }
     if (event.message.type === "text") await handleText(event, identity.lineChatId, identity.lineUserId, identity.scope);
-    else if (event.message.type === "image" || event.message.type === "file" || event.message.type === "audio") await handleMedia(event, identity.lineChatId, identity.lineUserId, identity.scope);
+    else if (event.message.type === "image" || event.message.type === "file" || event.message.type === "audio") await handleMedia(event, identity.lineChatId, identity.lineUserId, identity.scope, runtime);
     await finishWebhookEvent(event.webhookEventId, "processed");
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : "unknown error";
@@ -5448,7 +5450,8 @@ function registerLineWebhook(app2) {
       return res.status(400).json({ error: "invalid json" });
     }
     try {
-      await Promise.all((payload.events ?? []).map((event) => processEvent(event, raw.toString("utf8"))));
+      const runtime = { gatewayToken: req.header("x-vercel-oidc-token")?.trim() || void 0 };
+      await Promise.all((payload.events ?? []).map((event) => processEvent(event, raw.toString("utf8"), runtime)));
       return res.status(200).json({ ok: true });
     } catch (error) {
       return res.status(500).json({ error: error instanceof Error ? error.message : "event processing failed" });
@@ -5682,10 +5685,11 @@ app.use(express2.json({ limit: "50mb" }));
 app.use(express2.urlencoded({ limit: "50mb", extended: true }));
 registerStorageProxy(app);
 registerOAuthRoutes(app);
-var healthHandler = async (_req, res) => {
-  const runtime = await imageAnalysisRuntimeStatus();
+var healthHandler = async (req, res) => {
+  const gatewayToken = req.header("x-vercel-oidc-token")?.trim() || void 0;
+  const runtime = await imageAnalysisRuntimeStatus(gatewayToken);
   const mode = runtime.mode;
-  const voice = voiceTranscriptionRuntimeStatus();
+  const voice = voiceTranscriptionRuntimeStatus(gatewayToken);
   res.status(200).json({
     status: "ok",
     service: "milo",

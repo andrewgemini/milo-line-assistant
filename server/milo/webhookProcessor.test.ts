@@ -480,10 +480,10 @@ describe("LINE webhook processor", () => {
     const line = await import("./line");
     vi.mocked(line.pushText).mockResolvedValue(new Response());
 
-    await processEvent({ type: "message", webhookEventId: "evt-image-store-fail", timestamp: Date.now(), replyToken: "token", source: { type: "user", userId: "U1" }, message: { id: "img-store-fail", type: "image" } }, "{}");
+    await processEvent({ type: "message", webhookEventId: "evt-image-store-fail", timestamp: Date.now(), replyToken: "token", source: { type: "user", userId: "U1" }, message: { id: "img-store-fail", type: "image" } }, "{}", { gatewayToken: "request-oidc-token" });
 
     expect(db.createVaultItem).toHaveBeenCalledWith(expect.objectContaining({ storageKey: undefined, storageUrl: undefined }));
-    expect(analyzeImage).toHaveBeenCalledWith(expect.stringMatching(/^data:image\/jpeg;base64,/));
+    expect(analyzeImage).toHaveBeenCalledWith(expect.stringMatching(/^data:image\/jpeg;base64,/), { gatewayToken: "request-oidc-token" });
     expect(db.saveImageExtraction).toHaveBeenCalledWith(122, "expense", expect.stringContaining("คาเฟ่อเมซอน"), 0.92);
     expect(line.pushText).toHaveBeenCalledWith("U1", expect.stringContaining("ยืนยันค่าใช้จ่าย"));
     expect(db.finishWebhookEvent).toHaveBeenCalledWith("evt-image-store-fail", "processed");

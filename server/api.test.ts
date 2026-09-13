@@ -11,6 +11,11 @@ describe("production API entrypoint", () => {
     const base="http://127.0.0.1:"+(server.address() as AddressInfo).port;
     try {
       expect(await (await fetch(base+"/api/health")).json()).toMatchObject({service:"milo"});
+      expect(await (await fetch(base+"/api/health", { headers: { "x-vercel-oidc-token": "request-oidc-token" } })).json()).toMatchObject({
+        imageAnalysisMode: expect.stringContaining("vercel-ai-gateway-oidc"),
+        voiceConfigured: true,
+        voiceTranscriptionMode: "vercel-ai-gateway-stt",
+      });
       expect((await fetch(base+"/api/trpc/auth.me")).status).toBe(200);
       expect((await fetch(base+"/api/milo/export")).status).toBe(401);
       const body=JSON.stringify({events:[]});

@@ -3,7 +3,8 @@
  * Forge Whisper remains primary when configured; OpenAI Whisper is used as a
  * secondary provider when OPENAI_API_KEY is available.
  */
-import { gateway, transcribe as gatewayTranscribe } from "ai";
+import { transcribe as gatewayTranscribe } from "ai";
+import { createGateway, gateway } from "@ai-sdk/gateway";
 import { ENV } from "./env";
 
 export type TranscribeOptions = {
@@ -12,6 +13,7 @@ export type TranscribeOptions = {
   mimeType?: string;
   language?: string;
   prompt?: string;
+  gatewayToken?: string;
 };
 
 export type WhisperSegment = {
@@ -43,10 +45,11 @@ export type TranscriptionError = {
   details?: string;
 };
 
-export function gatewayAuthAvailable(env: NodeJS.ProcessEnv = process.env) {
+export function gatewayAuthAvailable(env: NodeJS.ProcessEnv = process.env, requestToken?: string) {
   return Boolean(
     (env.AI_GATEWAY_API_KEY || "").trim() ||
-    (env.VERCEL_OIDC_TOKEN || "").trim()
+    (env.VERCEL_OIDC_TOKEN || "").trim() ||
+    requestToken?.trim()
   );
 }
 
@@ -54,10 +57,10 @@ export function gatewayTranscriptionModel(env: NodeJS.ProcessEnv = process.env) 
   return (env.MILO_STT_MODEL || "fish-audio/transcribe-1").trim();
 }
 
-export function voiceTranscriptionRuntimeStatus() {
+export function voiceTranscriptionRuntimeStatus(requestToken?: string) {
   const forge = Boolean(ENV.forgeApiUrl && ENV.forgeApiKey);
   const openai = Boolean((process.env.OPENAI_API_KEY || "").trim());
-  const gatewayAvailable = gatewayAuthAvailable();
+  const gatewayAvailable = gatewayAuthAvailable(process.env, requestToken);
   return {
     configured: forge || openai || gatewayAvailable,
     mode: forge
@@ -163,8 +166,11 @@ async function transcribeWithGateway(
   options: TranscribeOptions,
 ): Promise<TranscriptionResponse> {
   const modelId = gatewayTranscriptionModel();
+  const gatewayProvider = options.gatewayToken?.trim()
+    ? createGateway({ apiKey: options.gatewayToken.trim() })
+    : gateway;
   const result = await gatewayTranscribe({
-    model: gateway.transcriptionModel(modelId),
+    model: gatewayProvider.transcriptionModel(modelId),
     audio: audioBuffer,
     maxRetries: 1,
   });
@@ -193,7 +199,7 @@ export async function transcribeAudio(options: TranscribeOptions): Promise<Trans
   try {
     const forgeConfigured = Boolean(ENV.forgeApiUrl && ENV.forgeApiKey);
     const openAIKey = (process.env.OPENAI_API_KEY || "").trim();
-    const gatewayConfigured = gatewayAuthAvailable();
+    const gatewayConfigured = gatewayAuthAvailable(process.env, options.gatewayToken);
 
     if (!forgeConfigured && !openAIKey && !gatewayConfigured) {
       return {

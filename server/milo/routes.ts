@@ -440,7 +440,9 @@ async function handleText(event: LineEvent, lineChatId: string, lineUserId: stri
   }
 }
 
-async function handleMedia(event: LineEvent, lineChatId: string, lineUserId: string, scope: LineFinanceScope) {
+type MediaRuntimeContext = { gatewayToken?: string };
+
+async function handleMedia(event: LineEvent, lineChatId: string, lineUserId: string, scope: LineFinanceScope, runtime: MediaRuntimeContext = {}) {
   const message = event.message;
   if (!message) return;
   const isImage = message.type === "image";
@@ -514,7 +516,7 @@ async function handleMedia(event: LineEvent, lineChatId: string, lineUserId: str
       catch (error) { console.error("[Milo Voice] acknowledgement reply failed", { messageId: message.id, error: error instanceof Error ? error.message : "unknown" }); }
     }
     try {
-      const transcript = await transcribeAudio({ audioBuffer: bytes, mimeType, language: "th", prompt: "ถอดข้อความภาษาไทยเกี่ยวกับรายรับ รายจ่าย จำนวนเงิน และหมวดหมู่" });
+      const transcript = await transcribeAudio({ audioBuffer: bytes, mimeType, language: "th", prompt: "ถอดข้อความภาษาไทยเกี่ยวกับรายรับ รายจ่าย จำนวนเงิน และหมวดหมู่", gatewayToken: runtime.gatewayToken });
       if ("error" in transcript) throw new Error(transcript.error);
       const financeScope = await resolveFinanceScope(lineUserId, lineChatId, scope);
       const proposal = await buildVoiceProposal(transcript.text, lineUserId, financeScope?.financeAccountId);
@@ -558,7 +560,7 @@ async function handleMedia(event: LineEvent, lineChatId: string, lineUserId: str
     catch (error) { console.error("[Milo Image] acknowledgement reply failed", { messageId: message.id, error: error instanceof Error ? error.message : "unknown" }); }
   }
   try {
-    const analysis = await analyzeImage(`data:${mimeType};base64,${bytes.toString("base64")}`);
+    const analysis = await analyzeImage(`data:${mimeType};base64,${bytes.toString("base64")}`, { gatewayToken: runtime.gatewayToken });
     await db.saveImageExtraction(vaultId, analysis.proposals.some(item => item.kind === "expense") ? "expense" : "reminder", JSON.stringify(analysis), analysis.confidence);
     const proposals = analysis.proposals.slice(0, 2).map(item => `• ${formatImageProposal(item)}`).join("\n");
     await pushText(lineChatId, `อ่านรูปเรียบร้อยแล้ว\n${analysis.summary}\n${proposals || "ยังไม่พบรายการที่ควรบันทึกอัตโนมัติ"}\nตรวจยอด หมวด และวันที่ให้ถูกต้องก่อน แล้วพิมพ์ “ยืนยันค่าใช้จ่าย” เพื่อบันทึก หรือ “ยืนยันรูป” สำหรับรายการเตือน`);
@@ -568,7 +570,7 @@ async function handleMedia(event: LineEvent, lineChatId: string, lineUserId: str
   }
 }
 
-export async function processEvent(event: LineEvent, rawPayload: string) {
+export async function processEvent(event: LineEvent, rawPayload: string, runtime: MediaRuntimeContext = {}) {
   const identity = sourceIdentity(event.source);
   if (!identity.lineUserId) return;
   const accepted = await db.registerWebhookEvent({ webhookEventId: event.webhookEventId, eventType: event.type, lineChatId: identity.lineChatId, occurredAt: new Date(event.timestamp), rawPayload });
@@ -582,7 +584,7 @@ export async function processEvent(event: LineEvent, rawPayload: string) {
     const isMention = event.message.mention?.mentionees?.some(item => item.isSelf) || event.message.text?.trim().startsWith("@ไมโล");
     if (isGroup && event.message.type === "text" && !isMention) { await db.finishWebhookEvent(event.webhookEventId, "ignored"); return; }
     if (event.message.type === "text") await handleText(event, identity.lineChatId, identity.lineUserId, identity.scope);
-    else if (event.message.type === "image" || event.message.type === "file" || event.message.type === "audio") await handleMedia(event, identity.lineChatId, identity.lineUserId, identity.scope);
+    else if (event.message.type === "image" || event.message.type === "file" || event.message.type === "audio") await handleMedia(event, identity.lineChatId, identity.lineUserId, identity.scope, runtime);
     await db.finishWebhookEvent(event.webhookEventId, "processed");
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : "unknown error";
@@ -620,7 +622,8 @@ export function registerLineWebhook(app: Express) {
     let payload: { events?: LineEvent[] };
     try { payload = JSON.parse(raw.toString("utf8")); } catch { return res.status(400).json({ error: "invalid json" }); }
     try {
-      await Promise.all((payload.events ?? []).map(event => processEvent(event, raw.toString("utf8"))));
+      const runtime = { gatewayToken: req.header("x-vercel-oidc-token")?.trim() || undefined };
+      await Promise.all((payload.events ?? []).map(event => processEvent(event, raw.toString("utf8"), runtime)));
       return res.status(200).json({ ok: true });
     } catch (error) {
       return res.status(500).json({ error: error instanceof Error ? error.message : "event processing failed" });
