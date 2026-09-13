@@ -477,6 +477,12 @@ async function handleMedia(event: LineEvent, lineChatId: string, lineUserId: str
     return;
   }
   if (isAudio) {
+    // Acknowledge immediately. Transcription can take several seconds and the LINE reply token
+    // must not be held until the provider completes. The final proposal is pushed afterwards.
+    if (event.replyToken) {
+      try { await replyText(event.replyToken, "รับข้อความเสียงแล้วครับ กำลังถอดเสียงและแยกรายการเงินให้ ขอเวลาสักครู่นะครับ"); }
+      catch (error) { console.error("[Milo Voice] acknowledgement reply failed", { messageId: message.id, error: error instanceof Error ? error.message : "unknown" }); }
+    }
     try {
       const audioUrl = await storageGetSignedUrl(stored.key);
       const transcript = await transcribeAudio({ audioUrl, language: "th", prompt: "ถอดข้อความภาษาไทยเกี่ยวกับรายรับ รายจ่าย จำนวนเงิน และหมวดหมู่" });
@@ -484,12 +490,17 @@ async function handleMedia(event: LineEvent, lineChatId: string, lineUserId: str
       const financeScope = await resolveFinanceScope(lineUserId, lineChatId, scope);
       const proposal = await buildVoiceProposal(transcript.text, lineUserId, financeScope?.financeAccountId);
       await db.saveVoiceTranscription({ vaultItemId: vaultId, lineChatId, lineUserId, transcript: transcript.text, language: transcript.language, durationSeconds: transcript.duration, proposalJson: JSON.stringify(proposal) });
-      if (event.replyToken) await sendVoiceProposal(event.replyToken, proposal);
+      const proposalLine = proposal.transactionType && proposal.amount
+        ? `เสนอ${proposal.transactionType === "expense" ? "รายจ่าย" : "รายรับ"} ${proposal.amount.toLocaleString("th-TH")} บาท • หมวด${proposal.category ?? "ทั่วไป"}`
+        : "ยังไม่พบรูปแบบรายรับ/รายจ่ายที่แน่ชัด";
+      await pushText(lineChatId, `ถอดเสียงเรียบร้อยแล้ว\n“${proposal.transcript.slice(0, 900)}”\n${proposalLine}\nยังไม่บันทึก พิมพ์ “ยืนยันเสียง” เพื่อบันทึก หรือ “แก้ไขข้อความเสียง” เพื่อแก้ไขครับ`);
     } catch (error) {
       console.error("[Milo Voice] transcription failed", { messageId: message.id, error: error instanceof Error ? error.message : "unknown" });
-      const fallback = "เก็บข้อความเสียงไว้แล้ว แต่ยังถอดเสียงไม่ได้ในครั้งนี้ กรุณาลองอัดใหม่ให้ชัดเจน ความยาวสั้น ๆ และขนาดไม่เกิน 16MB ครับ";
-      if (event.replyToken) { try { await replyText(event.replyToken, fallback); } catch { await pushText(lineChatId, fallback); } }
-      else await pushText(lineChatId, fallback);
+      const runtimeMissing = error instanceof Error && /not configured/i.test(error.message);
+      const fallback = runtimeMissing
+        ? "รับและเก็บข้อความเสียงไว้แล้ว แต่ระบบถอดเสียงยังไม่ได้เชื่อมต่อผู้ให้บริการ STT ใน Production ตอนนี้ กรุณาพิมพ์รายการแทนชั่วคราว เช่น “กินกาแฟ 80” ครับ"
+        : "เก็บข้อความเสียงไว้แล้ว แต่ยังถอดเสียงไม่ได้ในครั้งนี้ กรุณาลองอัดใหม่ให้ชัดเจน ความยาวสั้น ๆ และขนาดไม่เกิน 16MB ครับ";
+      await pushText(lineChatId, fallback);
     }
     return;
   }
