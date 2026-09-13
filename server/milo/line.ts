@@ -81,7 +81,7 @@ export type VoiceTransactionProposal = {
   note?: string;
 };
 
-const MILO_VOICE_CAT_IMAGE_URL = "https://miloassist-suwp6bg2.manus.space/manus-storage/milo-voice-proposal-cat_9d143831.png";
+const MILO_VOICE_CAT_IMAGE_URL = (process.env.MILO_VOICE_CAT_IMAGE_URL ?? "https://milo-line-app.vercel.app/milo-voice-proposal-cat.webp").trim();
 
 export type PostSaveSummary = {
   transactionType: "expense" | "income";

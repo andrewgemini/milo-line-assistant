@@ -1899,7 +1899,7 @@ function miloSaveResultImageUrl(summary) {
 async function replyText(replyToken, text2, credentials = lineCredentials()) {
   return callLine("/v2/bot/message/reply", credentials, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ replyToken, messages: [{ type: "text", text: text2.slice(0, 5e3) }] }) });
 }
-var MILO_VOICE_CAT_IMAGE_URL = "https://miloassist-suwp6bg2.manus.space/manus-storage/milo-voice-proposal-cat_9d143831.png";
+var MILO_VOICE_CAT_IMAGE_URL = (process.env.MILO_VOICE_CAT_IMAGE_URL ?? "https://milo-line-app.vercel.app/milo-voice-proposal-cat.webp").trim();
 function voiceQuickReply() {
   return {
     items: [
