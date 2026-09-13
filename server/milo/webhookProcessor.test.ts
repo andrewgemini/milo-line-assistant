@@ -386,6 +386,8 @@ describe("LINE webhook processor", () => {
     expect(replyFinanceReportCard).toHaveBeenCalledWith("token", expect.objectContaining({ period: "day", expense: 615, categories: { อาหาร: 565, ทั่วไป: 50 } }));
     expect(replyFinanceReportCard).toHaveBeenCalledWith("token", expect.objectContaining({ period: "week", expense: 615, categories: { อาหาร: 565, ทั่วไป: 50 } }));
     expect(replyFinanceReportCard).toHaveBeenCalledWith("token", expect.objectContaining({ period: "month", expense: 615, categories: { อาหาร: 565, ทั่วไป: 50 } }));
+    expect(replyText).not.toHaveBeenCalled();
+    expect(replyRichMenu).not.toHaveBeenCalled();
   });
 
   it("sets a category budget and compares the next natural-language expense against that budget", async () => {
@@ -472,6 +474,7 @@ describe("rich menu webhook regression", () => {
   it.each([["จดบันทึก","record"],["งบประมาณ","budget"],["รายการ","transactions"],["หมวดหมู่","categories"],["ตั้งค่า","settings"],["วิธีใช้งาน","help"],["สวัสดีไมโล","overview"]])("%s replies with %s artwork", async (text,key) => {
     await processEvent(event(text), "{}");
     expect(replyRichMenu).toHaveBeenCalledWith("token", expect.any(String), key);
+    expect(replyText).not.toHaveBeenCalled();
     expect(db.finishWebhookEvent).toHaveBeenCalledWith("richmenu-test", "processed");
   });
   it.each(["งบประมาณ", "รายการ"])("%s denies unavailable account before reading data", async text => {
@@ -488,8 +491,9 @@ describe("rich menu webhook regression", () => {
     expect(db.financeReport).toHaveBeenCalledWith("U1", "month", expect.any(Date), 7);
     expect(generateFinancialInsight).toHaveBeenCalled();
     expect(replyRichMenu).toHaveBeenCalledWith("token", expect.stringContaining("ข้อมูลจริง"), "analysis");
+    expect(replyText).not.toHaveBeenCalled();
   });
-  it.each([["สรุปวันนี้","day"],["สรุปสัปดาห์นี้","week"],["สรุปเดือนนี้","month"],["สรุปปีนี้","year"]])("%s loads the requested period", async (text,period) => {
+  it.each([["สรุป","year"],["สรุปวันนี้","day"],["สรุปสัปดาห์นี้","week"],["สรุปเดือนนี้","month"],["สรุปปีนี้","year"]])("%s loads the requested period", async (text,period) => {
     await processEvent(event(text), "{}");
     expect(db.financeReport).toHaveBeenCalledWith("U1", period, expect.any(Date), 7);
     expect(replyFinanceReportCard).toHaveBeenCalled();

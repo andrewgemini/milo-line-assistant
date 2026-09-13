@@ -26,14 +26,18 @@ describe("rich menu artwork and advertised commands", () => {
     const cmd = parseMiloCommand("เตือน จ่ายค่าเน็ต ทุกเดือนวันที่ 25 เวลา 09:00", new Date("2026-09-12T08:00:00Z"));
     expect(cmd).toMatchObject({type:"reminder",data:{recurrenceType:"month",recurrenceDayOfMonth:25,nextRunAt:new Date("2026-09-25T02:00:00Z")}});
   });
-  it("sends one reply containing labeled artwork, real text and usable actions", async () => {
-    const fetchMock=vi.spyOn(globalThis,"fetch").mockResolvedValue(new Response());
-    await replyRichMenu("r","ยอดจริง 123 บาท","budget",{channelAccessToken:"test",channelSecret:"test"});
-    const payload=JSON.parse(String(fetchMock.mock.calls[0][1]?.body));
-    expect(payload.messages).toHaveLength(3);
-    expect(payload.messages[0].text).toContain("ตัวอย่าง");
-    expect(payload.messages[1].originalContentUrl).toBe("https://milo-line-app.vercel.app/richmenu/budget.png");
-    expect(payload.messages[2].text).toBe("ยอดจริง 123 บาท");
-    expect(payload.messages[2].quickReply.items).toHaveLength(5);
-  });
+  it.each(["record", "analysis", "budget", "transactions", "categories", "settings", "help", "overview"] as const)(
+    "sends %s artwork as one image-only message with usable actions",
+    async key => {
+      const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response());
+      await replyRichMenu("r", "ข้อมูลจริงที่ใช้เฉพาะ fallback", key, { channelAccessToken: "test", channelSecret: "test" });
+      const payload = JSON.parse(String(fetchMock.mock.calls[0][1]?.body));
+      expect(payload.messages).toHaveLength(1);
+      expect(payload.messages[0].type).toBe("image");
+      expect(payload.messages[0].text).toBeUndefined();
+      expect(payload.messages[0].originalContentUrl).toBe(`https://milo-line-app.vercel.app/richmenu/${RICH_MENU_ARTWORK[key].file}`);
+      expect(payload.messages[0].quickReply.items).toHaveLength(5);
+    },
+  );
+
 });

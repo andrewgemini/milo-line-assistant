@@ -410,11 +410,25 @@ export async function getProfile(source: LineSource, credentials = lineCredentia
 }
 
 export async function replyRichMenu(replyToken: string, text: string, artwork: RichMenuArtwork, credentials = lineCredentials()) {
-  return callLine("/v2/bot/message/reply", credentials, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ replyToken, messages: [...artworkMessages(artwork), { type: "text", text: text.slice(0, 5000), quickReply: { items: [
-    { type: "action", action: { type: "message", label: "วันนี้", text: "สรุปวันนี้" } },
-    { type: "action", action: { type: "message", label: "สัปดาห์นี้", text: "สรุปสัปดาห์นี้" } },
-    { type: "action", action: { type: "message", label: "เดือนนี้", text: "สรุปเดือนนี้" } },
-    { type: "action", action: { type: "message", label: "ปีนี้", text: "สรุปปีนี้" } },
-    { type: "action", action: { type: "uri", label: "เปิดแดชบอร์ด", uri: new URL("/dashboard", process.env.MILO_PUBLIC_URL || "https://milo-line-app.vercel.app").href } },
-  ] } }] }) });
+  const [image] = artworkMessages(artwork);
+  if (!image) throw new Error("Milo rich-menu artwork is unavailable");
+  // The caller keeps `text` for text-only fallback if the image reply fails.
+  void text;
+  return callLine("/v2/bot/message/reply", credentials, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      replyToken,
+      messages: [{
+        ...image,
+        quickReply: { items: [
+          { type: "action", action: { type: "message", label: "วันนี้", text: "สรุปวันนี้" } },
+          { type: "action", action: { type: "message", label: "สัปดาห์นี้", text: "สรุปสัปดาห์นี้" } },
+          { type: "action", action: { type: "message", label: "เดือนนี้", text: "สรุปเดือนนี้" } },
+          { type: "action", action: { type: "message", label: "ปีนี้", text: "สรุปปีนี้" } },
+          { type: "action", action: { type: "uri", label: "เปิดแดชบอร์ด", uri: new URL("/dashboard", process.env.MILO_PUBLIC_URL || "https://milo-line-app.vercel.app").href } },
+        ] },
+      }],
+    }),
+  });
 }
