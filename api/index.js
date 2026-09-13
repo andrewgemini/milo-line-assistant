@@ -2149,30 +2149,22 @@ async function replyTextWithQuickReplies(replyToken, text2, actions, credentials
 }
 async function replyGreetingHome(replyToken, credentials = lineCredentials()) {
   const [overviewImage] = artworkMessages("overview");
-  const text2 = [
-    "\u0E2A\u0E27\u0E31\u0E2A\u0E14\u0E35\u0E04\u0E23\u0E31\u0E1A \u{1F44B} \u0E44\u0E21\u0E42\u0E25\u0E1E\u0E23\u0E49\u0E2D\u0E21\u0E0A\u0E48\u0E27\u0E22\u0E14\u0E39\u0E41\u0E25\u0E40\u0E23\u0E37\u0E48\u0E2D\u0E07\u0E40\u0E07\u0E34\u0E19\u0E43\u0E2B\u0E49",
-    "\u0E08\u0E14\u0E23\u0E32\u0E22\u0E23\u0E31\u0E1A\u2013\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22\u0E44\u0E14\u0E49\u0E14\u0E49\u0E27\u0E22\u0E20\u0E32\u0E29\u0E32\u0E1B\u0E01\u0E15\u0E34 \u0E2A\u0E48\u0E07\u0E2A\u0E25\u0E34\u0E1B/\u0E43\u0E1A\u0E40\u0E2A\u0E23\u0E47\u0E08\u0E43\u0E2B\u0E49\u0E44\u0E21\u0E42\u0E25\u0E2D\u0E48\u0E32\u0E19 \u0E2B\u0E23\u0E37\u0E2D\u0E2A\u0E48\u0E07\u0E40\u0E2A\u0E35\u0E22\u0E07\u0E43\u0E2B\u0E49\u0E0A\u0E48\u0E27\u0E22\u0E16\u0E2D\u0E14\u0E41\u0E25\u0E30\u0E08\u0E31\u0E14\u0E2B\u0E21\u0E27\u0E14\u0E44\u0E14\u0E49",
-    "\u0E40\u0E25\u0E37\u0E2D\u0E01\u0E2A\u0E34\u0E48\u0E07\u0E17\u0E35\u0E48\u0E2D\u0E22\u0E32\u0E01\u0E17\u0E33\u0E15\u0E48\u0E2D\u0E44\u0E14\u0E49\u0E40\u0E25\u0E22\u0E19\u0E48\u0E30\u0E08\u0E4A\u0E30 \u{1F43E}"
-  ].join("\n");
+  if (!overviewImage) throw new Error("Milo overview artwork is unavailable");
   return callLine("/v2/bot/message/reply", credentials, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
       replyToken,
-      messages: [
-        overviewImage,
-        {
-          type: "text",
-          text: text2,
-          quickReply: { items: [
-            { type: "action", action: { type: "message", label: "\u0E08\u0E14\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01", text: "\u0E08\u0E14\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01" } },
-            { type: "action", action: { type: "message", label: "\u0E2A\u0E23\u0E38\u0E1B\u0E27\u0E31\u0E19\u0E19\u0E35\u0E49", text: "\u0E2A\u0E23\u0E38\u0E1B\u0E27\u0E31\u0E19\u0E19\u0E35\u0E49" } },
-            { type: "action", action: { type: "message", label: "\u0E07\u0E1A\u0E1B\u0E23\u0E30\u0E21\u0E32\u0E13", text: "\u0E07\u0E1A\u0E1B\u0E23\u0E30\u0E21\u0E32\u0E13" } },
-            { type: "action", action: { type: "message", label: "\u0E27\u0E34\u0E40\u0E04\u0E23\u0E32\u0E30\u0E2B\u0E4C", text: "\u0E27\u0E34\u0E40\u0E04\u0E23\u0E32\u0E30\u0E2B\u0E4C" } },
-            { type: "action", action: { type: "message", label: "\u0E27\u0E34\u0E18\u0E35\u0E43\u0E0A\u0E49\u0E07\u0E32\u0E19", text: "\u0E27\u0E34\u0E18\u0E35\u0E43\u0E0A\u0E49\u0E07\u0E32\u0E19" } }
-          ] }
-        }
-      ]
+      messages: [{
+        ...overviewImage,
+        quickReply: { items: [
+          { type: "action", action: { type: "message", label: "\u0E08\u0E14\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01", text: "\u0E08\u0E14\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01" } },
+          { type: "action", action: { type: "message", label: "\u0E2A\u0E23\u0E38\u0E1B\u0E27\u0E31\u0E19\u0E19\u0E35\u0E49", text: "\u0E2A\u0E23\u0E38\u0E1B\u0E27\u0E31\u0E19\u0E19\u0E35\u0E49" } },
+          { type: "action", action: { type: "message", label: "\u0E07\u0E1A\u0E1B\u0E23\u0E30\u0E21\u0E32\u0E13", text: "\u0E07\u0E1A\u0E1B\u0E23\u0E30\u0E21\u0E32\u0E13" } },
+          { type: "action", action: { type: "message", label: "\u0E27\u0E34\u0E40\u0E04\u0E23\u0E32\u0E30\u0E2B\u0E4C", text: "\u0E27\u0E34\u0E40\u0E04\u0E23\u0E32\u0E30\u0E2B\u0E4C" } },
+          { type: "action", action: { type: "message", label: "\u0E27\u0E34\u0E18\u0E35\u0E43\u0E0A\u0E49\u0E07\u0E32\u0E19", text: "\u0E27\u0E34\u0E18\u0E35\u0E43\u0E0A\u0E49\u0E07\u0E32\u0E19" } }
+        ] }
+      }]
     })
   });
 }
@@ -2451,12 +2443,29 @@ async function replyMention(replyToken, message, lineUserId, credentials = lineC
   });
 }
 async function getMessageContent(messageId, credentials = lineCredentials()) {
-  const response = await fetch(`https://api-data.line.me/v2/bot/message/${messageId}/content`, {
-    method: "GET",
-    headers: { Authorization: `Bearer ${credentials.channelAccessToken}` }
-  });
-  if (!response.ok) throw new Error(`LINE data API ${response.status}: ${await response.text()}`);
-  return Buffer.from(await response.arrayBuffer());
+  const url = `https://api-data.line.me/v2/bot/message/${messageId}/content`;
+  let lastError = "unknown";
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    try {
+      const response = await fetch(url, {
+        method: "GET",
+        headers: { Authorization: `Bearer ${credentials.channelAccessToken}` }
+      });
+      if (response.ok) {
+        const bytes = Buffer.from(await response.arrayBuffer());
+        if (bytes.length > 0) return bytes;
+        lastError = "LINE returned an empty media body";
+      } else {
+        const body = await response.text().catch(() => "");
+        lastError = `LINE data API ${response.status}: ${body || response.statusText}`;
+        if (response.status >= 400 && response.status < 500 && response.status !== 429) break;
+      }
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : "LINE media download failed";
+    }
+    if (attempt < 3) await new Promise((resolve) => setTimeout(resolve, attempt === 1 ? 250 : 700));
+  }
+  throw new Error(lastError);
 }
 async function getProfile(source, credentials = lineCredentials()) {
   if (source.type === "user") {

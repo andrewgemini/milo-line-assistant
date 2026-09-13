@@ -84,30 +84,22 @@ export async function replyTextWithQuickReplies(replyToken: string, text: string
 
 export async function replyGreetingHome(replyToken: string, credentials = lineCredentials()) {
   const [overviewImage] = artworkMessages("overview");
-  const text = [
-    "สวัสดีครับ 👋 ไมโลพร้อมช่วยดูแลเรื่องเงินให้",
-    "จดรายรับ–รายจ่ายได้ด้วยภาษาปกติ ส่งสลิป/ใบเสร็จให้ไมโลอ่าน หรือส่งเสียงให้ช่วยถอดและจัดหมวดได้",
-    "เลือกสิ่งที่อยากทำต่อได้เลยน่ะจ๊ะ 🐾",
-  ].join("\n");
+  if (!overviewImage) throw new Error("Milo overview artwork is unavailable");
   return callLine("/v2/bot/message/reply", credentials, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
       replyToken,
-      messages: [
-        overviewImage,
-        {
-          type: "text",
-          text,
-          quickReply: { items: [
-            { type: "action", action: { type: "message", label: "จดบันทึก", text: "จดบันทึก" } },
-            { type: "action", action: { type: "message", label: "สรุปวันนี้", text: "สรุปวันนี้" } },
-            { type: "action", action: { type: "message", label: "งบประมาณ", text: "งบประมาณ" } },
-            { type: "action", action: { type: "message", label: "วิเคราะห์", text: "วิเคราะห์" } },
-            { type: "action", action: { type: "message", label: "วิธีใช้งาน", text: "วิธีใช้งาน" } },
-          ] },
-        },
-      ],
+      messages: [{
+        ...overviewImage,
+        quickReply: { items: [
+          { type: "action", action: { type: "message", label: "จดบันทึก", text: "จดบันทึก" } },
+          { type: "action", action: { type: "message", label: "สรุปวันนี้", text: "สรุปวันนี้" } },
+          { type: "action", action: { type: "message", label: "งบประมาณ", text: "งบประมาณ" } },
+          { type: "action", action: { type: "message", label: "วิเคราะห์", text: "วิเคราะห์" } },
+          { type: "action", action: { type: "message", label: "วิธีใช้งาน", text: "วิธีใช้งาน" } },
+        ] },
+      }],
     }),
   });
 }
@@ -421,12 +413,29 @@ export async function replyMention(replyToken: string, message: string, lineUser
 }
 
 export async function getMessageContent(messageId: string, credentials = lineCredentials()) {
-  const response = await fetch(`https://api-data.line.me/v2/bot/message/${messageId}/content`, {
-    method: "GET",
-    headers: { Authorization: `Bearer ${credentials.channelAccessToken}` },
-  });
-  if (!response.ok) throw new Error(`LINE data API ${response.status}: ${await response.text()}`);
-  return Buffer.from(await response.arrayBuffer());
+  const url = `https://api-data.line.me/v2/bot/message/${messageId}/content`;
+  let lastError = "unknown";
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    try {
+      const response = await fetch(url, {
+        method: "GET",
+        headers: { Authorization: `Bearer ${credentials.channelAccessToken}` },
+      });
+      if (response.ok) {
+        const bytes = Buffer.from(await response.arrayBuffer());
+        if (bytes.length > 0) return bytes;
+        lastError = "LINE returned an empty media body";
+      } else {
+        const body = await response.text().catch(() => "");
+        lastError = `LINE data API ${response.status}: ${body || response.statusText}`;
+        if (response.status >= 400 && response.status < 500 && response.status !== 429) break;
+      }
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : "LINE media download failed";
+    }
+    if (attempt < 3) await new Promise(resolve => setTimeout(resolve, attempt === 1 ? 250 : 700));
+  }
+  throw new Error(lastError);
 }
 
 export async function getProfile(source: LineSource, credentials = lineCredentials()) {
