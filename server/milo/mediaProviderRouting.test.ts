@@ -40,6 +40,11 @@ describe("Milo production media provider routing", () => {
     expect(imageGatewayToken(env)).toBe("gateway-key");
   });
 
+  it("prefers the rotating function token over an older environment OIDC token", () => {
+    const env = { VERCEL_OIDC_TOKEN: "environment-token" } as NodeJS.ProcessEnv;
+    expect(imageGatewayToken(env, "request-token")).toBe("request-token");
+  });
+
   it("uses the supported Fish Audio transcription model by default", () => {
     expect(gatewayTranscriptionModel({} as NodeJS.ProcessEnv)).toBe("fish-audio/transcribe-1");
     expect(gatewayTranscriptionModel({ MILO_STT_MODEL: "openai/whisper-1" } as NodeJS.ProcessEnv)).toBe("openai/whisper-1");

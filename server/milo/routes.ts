@@ -442,6 +442,17 @@ async function handleText(event: LineEvent, lineChatId: string, lineUserId: stri
 
 type MediaRuntimeContext = { gatewayToken?: string };
 
+class MediaProcessingError extends Error {
+  constructor(message: string, readonly userNotified: boolean) {
+    super(message);
+    this.name = "MediaProcessingError";
+  }
+}
+
+function mediaErrorMessage(error: unknown) {
+  return (error instanceof Error ? error.message : "unknown media error").slice(0, 1500);
+}
+
 async function handleMedia(event: LineEvent, lineChatId: string, lineUserId: string, scope: LineFinanceScope, runtime: MediaRuntimeContext = {}) {
   const message = event.message;
   if (!message) return;
@@ -465,12 +476,19 @@ async function handleMedia(event: LineEvent, lineChatId: string, lineUserId: str
           ? "รับรูปแล้ว แต่ดาวน์โหลดรูปจาก LINE ไม่สำเร็จในครั้งนี้ กรุณาลองส่งภาพใหม่อีกครั้งครับ"
           : "รับไฟล์แล้ว แต่ดาวน์โหลดจาก LINE ไม่สำเร็จในครั้งนี้ กรุณาลองใหม่ครับ";
     if (event.replyToken) {
-      try { await replyText(event.replyToken, fallback); return; }
-      catch (replyError) { console.error("[Milo Media] download fallback reply failed", { messageId: message.id, error: replyError instanceof Error ? replyError.message : "unknown" }); }
+      try {
+        await replyText(event.replyToken, fallback);
+        throw new MediaProcessingError(mediaErrorMessage(error), true);
+      }
+      catch (replyError) {
+        if (replyError instanceof MediaProcessingError) throw replyError;
+        console.error("[Milo Media] download fallback reply failed", { messageId: message.id, error: replyError instanceof Error ? replyError.message : "unknown" });
+      }
     }
-    try { await pushText(lineChatId, fallback); }
+    let userNotified = false;
+    try { await pushText(lineChatId, fallback); userNotified = true; }
     catch (pushError) { console.error("[Milo Media] download fallback push failed", { messageId: message.id, error: pushError instanceof Error ? pushError.message : "unknown" }); }
-    return;
+    throw new MediaProcessingError(mediaErrorMessage(error), userNotified);
   }
 
   let stored: Awaited<ReturnType<typeof storagePut>> | undefined;
@@ -503,9 +521,17 @@ async function handleMedia(event: LineEvent, lineChatId: string, lineUserId: str
       : isImage
         ? "รับรูปแล้ว แต่ยังเตรียมรายการสำหรับตรวจสอบไม่ได้ในครั้งนี้ กรุณาลองส่งภาพใหม่อีกครั้งครับ"
         : "รับไฟล์แล้ว แต่ยังเตรียมรายการสำหรับตรวจสอบไม่ได้ในครั้งนี้ กรุณาลองใหม่ครับ";
-    if (event.replyToken) { try { await replyText(event.replyToken, fallback); return; } catch {} }
-    try { await pushText(lineChatId, fallback); } catch {}
-    return;
+    if (event.replyToken) {
+      try {
+        await replyText(event.replyToken, fallback);
+        throw new MediaProcessingError(mediaErrorMessage(error), true);
+      } catch (replyError) {
+        if (replyError instanceof MediaProcessingError) throw replyError;
+      }
+    }
+    let userNotified = false;
+    try { await pushText(lineChatId, fallback); userNotified = true; } catch {}
+    throw new MediaProcessingError(mediaErrorMessage(error), userNotified);
   }
 
   if (isAudio) {
@@ -517,7 +543,7 @@ async function handleMedia(event: LineEvent, lineChatId: string, lineUserId: str
     }
     try {
       const transcript = await transcribeAudio({ audioBuffer: bytes, mimeType, language: "th", prompt: "ถอดข้อความภาษาไทยเกี่ยวกับรายรับ รายจ่าย จำนวนเงิน และหมวดหมู่", gatewayToken: runtime.gatewayToken });
-      if ("error" in transcript) throw new Error(transcript.error);
+      if ("error" in transcript) throw new Error(`${transcript.error}${transcript.details ? `: ${transcript.details}` : ""}`);
       const financeScope = await resolveFinanceScope(lineUserId, lineChatId, scope);
       const proposal = await buildVoiceProposal(transcript.text, lineUserId, financeScope?.financeAccountId);
       await db.saveVoiceTranscription({ vaultItemId: vaultId, lineChatId, lineUserId, transcript: transcript.text, language: transcript.language, durationSeconds: transcript.duration, proposalJson: JSON.stringify(proposal) });
@@ -531,7 +557,10 @@ async function handleMedia(event: LineEvent, lineChatId: string, lineUserId: str
       const fallback = runtimeMissing
         ? "รับและเก็บข้อความเสียงไว้แล้ว แต่ระบบถอดเสียงยังไม่ได้เชื่อมต่อผู้ให้บริการ STT ใน Production ตอนนี้ กรุณาพิมพ์รายการแทนชั่วคราว เช่น “กินกาแฟ 80” ครับ"
         : "เก็บข้อความเสียงไว้แล้ว แต่ยังถอดเสียงไม่ได้ในครั้งนี้ กรุณาลองอัดใหม่ให้ชัดเจน ความยาวสั้น ๆ และขนาดไม่เกิน 16MB ครับ";
-      await pushText(lineChatId, fallback);
+      let userNotified = false;
+      try { await pushText(lineChatId, fallback); userNotified = true; }
+      catch (pushError) { console.error("[Milo Voice] failure notification failed", { messageId: message.id, error: pushError instanceof Error ? pushError.message : "unknown" }); }
+      throw new MediaProcessingError(mediaErrorMessage(error), userNotified);
     }
     return;
   }
@@ -545,8 +574,14 @@ async function handleMedia(event: LineEvent, lineChatId: string, lineUserId: str
     } catch (error) {
       console.error("[Milo PDF] analysis failed", { messageId: message.id, error: error instanceof Error ? error.message : "unknown" });
       const fallback = "เก็บ PDF ไว้แล้ว แต่ยังอ่านธุรกรรมจากไฟล์นี้ไม่ได้ กรุณาลองไฟล์ที่ไม่ล็อกรหัสและมีข้อความอ่านได้ครับ";
-      if (event.replyToken) { try { await replyText(event.replyToken, fallback); } catch { await pushText(lineChatId, fallback); } }
-      else await pushText(lineChatId, fallback);
+      let userNotified = false;
+      if (event.replyToken) {
+        try { await replyText(event.replyToken, fallback); userNotified = true; }
+        catch { try { await pushText(lineChatId, fallback); userNotified = true; } catch {} }
+      } else {
+        try { await pushText(lineChatId, fallback); userNotified = true; } catch {}
+      }
+      throw new MediaProcessingError(mediaErrorMessage(error), userNotified);
     }
     return;
   }
@@ -566,7 +601,14 @@ async function handleMedia(event: LineEvent, lineChatId: string, lineUserId: str
     await pushText(lineChatId, `อ่านรูปเรียบร้อยแล้ว\n${analysis.summary}\n${proposals || "ยังไม่พบรายการที่ควรบันทึกอัตโนมัติ"}\nตรวจยอด หมวด และวันที่ให้ถูกต้องก่อน แล้วพิมพ์ “ยืนยันค่าใช้จ่าย” เพื่อบันทึก หรือ “ยืนยันรูป” สำหรับรายการเตือน`);
   } catch (error) {
     console.error("[Milo Image] analysis failed", { messageId: message.id, error: error instanceof Error ? error.message : "unknown" });
-    await pushText(lineChatId, "เก็บรูปไว้แล้ว แต่ระบบอ่านสลิป/ใบเสร็จครั้งนี้ไม่สำเร็จ กรุณาลองส่งภาพที่คมชัดและเห็นยอด วันที่ เวลา และผู้รับครบถ้วนอีกครั้งน่ะจ๊ะ");
+    let userNotified = false;
+    try {
+      await pushText(lineChatId, "เก็บรูปไว้แล้ว แต่ระบบอ่านสลิป/ใบเสร็จครั้งนี้ไม่สำเร็จ กรุณาลองส่งภาพที่คมชัดและเห็นยอด วันที่ เวลา และผู้รับครบถ้วนอีกครั้งน่ะจ๊ะ");
+      userNotified = true;
+    } catch (pushError) {
+      console.error("[Milo Image] failure notification failed", { messageId: message.id, error: pushError instanceof Error ? pushError.message : "unknown" });
+    }
+    throw new MediaProcessingError(mediaErrorMessage(error), userNotified);
   }
 }
 
@@ -596,14 +638,16 @@ export async function processEvent(event: LineEvent, rawPayload: string, runtime
         : mediaType === "image"
           ? "รับรูปแล้ว แต่ระบบประมวลผลสลิป/ใบเสร็จครั้งนี้ไม่สำเร็จ กรุณาลองส่งภาพใหม่อีกครั้งครับ"
           : "รับไฟล์แล้ว แต่ระบบประมวลผลครั้งนี้ไม่สำเร็จ กรุณาลองส่งไฟล์ใหม่อีกครั้งครับ";
-      let delivered = false;
-      if (event.replyToken) {
-        try { await replyText(event.replyToken, fallback); delivered = true; }
-        catch (replyError) { console.error("[Milo Media] top-level fallback reply failed", { error: replyError instanceof Error ? replyError.message : "unknown" }); }
-      }
+      let delivered = error instanceof MediaProcessingError && error.userNotified;
       if (!delivered) {
-        try { await pushText(identity.lineChatId, fallback); delivered = true; }
-        catch (pushError) { console.error("[Milo Media] top-level fallback push failed", { error: pushError instanceof Error ? pushError.message : "unknown" }); }
+        if (event.replyToken) {
+          try { await replyText(event.replyToken, fallback); delivered = true; }
+          catch (replyError) { console.error("[Milo Media] top-level fallback reply failed", { error: replyError instanceof Error ? replyError.message : "unknown" }); }
+        }
+        if (!delivered) {
+          try { await pushText(identity.lineChatId, fallback); delivered = true; }
+          catch (pushError) { console.error("[Milo Media] top-level fallback push failed", { error: pushError instanceof Error ? pushError.message : "unknown" }); }
+        }
       }
       try { await db.finishWebhookEvent(event.webhookEventId, "failed", errorMessage); }
       catch (auditError) { console.error("[Milo Media] failed to record webhook failure", { error: auditError instanceof Error ? auditError.message : "unknown" }); }

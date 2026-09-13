@@ -141,7 +141,9 @@ async function analyzeImageWithGatewayKey(dataUrl: string, token: string): Promi
 }
 
 export function imageGatewayToken(env: NodeJS.ProcessEnv = process.env, requestToken?: string) {
-  return (env.AI_GATEWAY_API_KEY || env.VERCEL_OIDC_TOKEN || requestToken || "").trim();
+  // The function-scoped token is fresher than the build/local environment token.
+  // Vercel rotates the request token, so prefer it unless a stable Gateway key exists.
+  return (env.AI_GATEWAY_API_KEY || requestToken || env.VERCEL_OIDC_TOKEN || "").trim();
 }
 
 function imageGatewayMode(env: NodeJS.ProcessEnv = process.env, requestToken?: string) {
@@ -167,10 +169,12 @@ export async function imageAnalysisRuntimeStatus(requestToken?: string) {
 }
 
 export async function analyzeImage(dataUrl: string, options: { gatewayToken?: string } = {}): Promise<ImageAnalysis> {
+  let providerError: unknown;
   if (ENV.forgeApiKey) {
     try {
       return await analyzeImageWithForge(dataUrl);
     } catch (error) {
+      providerError = error;
       console.warn("[Milo Image] primary vision provider failed; using local OCR fallback", {
         error: error instanceof Error ? error.message : "unknown",
       });
@@ -182,11 +186,17 @@ export async function analyzeImage(dataUrl: string, options: { gatewayToken?: st
     try {
       return await analyzeImageWithGatewayKey(dataUrl, gatewayKey);
     } catch (error) {
-      console.warn("[Milo Image] AI Gateway failed; using local OCR fallback", {
+      providerError = error;
+      console.warn("[Milo Image] AI Gateway failed", {
         error: error instanceof Error ? error.message : "unknown",
       });
     }
   }
 
+  // Tesseract is a useful local fallback, but starting its worker in a serverless
+  // webhook can outlive the function and leave LINE events permanently pending.
+  // Surface the provider error instead so the webhook is completed promptly and
+  // production diagnostics retain the real failure reason.
+  if (providerError && process.env.VERCEL) throw providerError;
   return analyzeImageWithOcr(dataUrl);
 }

@@ -1,5 +1,6 @@
 // server/api.ts
 import express2 from "express";
+import crypto7 from "node:crypto";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 
 // server/routers.ts
@@ -3994,7 +3995,7 @@ async function analyzeImageWithGatewayKey(dataUrl, token) {
   }
 }
 function imageGatewayToken(env = process.env, requestToken) {
-  return (env.AI_GATEWAY_API_KEY || env.VERCEL_OIDC_TOKEN || requestToken || "").trim();
+  return (env.AI_GATEWAY_API_KEY || requestToken || env.VERCEL_OIDC_TOKEN || "").trim();
 }
 function imageGatewayMode(env = process.env, requestToken) {
   if ((env.AI_GATEWAY_API_KEY || "").trim()) return "vercel-ai-gateway-key";
@@ -4016,10 +4017,12 @@ async function imageAnalysisRuntimeStatus(requestToken) {
   };
 }
 async function analyzeImage(dataUrl, options = {}) {
+  let providerError;
   if (ENV.forgeApiKey) {
     try {
       return await analyzeImageWithForge(dataUrl);
     } catch (error) {
+      providerError = error;
       console.warn("[Milo Image] primary vision provider failed; using local OCR fallback", {
         error: error instanceof Error ? error.message : "unknown"
       });
@@ -4030,11 +4033,13 @@ async function analyzeImage(dataUrl, options = {}) {
     try {
       return await analyzeImageWithGatewayKey(dataUrl, gatewayKey);
     } catch (error) {
-      console.warn("[Milo Image] AI Gateway failed; using local OCR fallback", {
+      providerError = error;
+      console.warn("[Milo Image] AI Gateway failed", {
         error: error instanceof Error ? error.message : "unknown"
       });
     }
   }
+  if (providerError && process.env.VERCEL) throw providerError;
   return analyzeImageWithOcr(dataUrl);
 }
 
@@ -5231,6 +5236,16 @@ ${incomeSection}
     } else await replyText(event.replyToken, message);
   }
 }
+var MediaProcessingError = class extends Error {
+  constructor(message, userNotified) {
+    super(message);
+    this.userNotified = userNotified;
+    this.name = "MediaProcessingError";
+  }
+};
+function mediaErrorMessage(error) {
+  return (error instanceof Error ? error.message : "unknown media error").slice(0, 1500);
+}
 async function handleMedia(event, lineChatId, lineUserId, scope, runtime = {}) {
   const message = event.message;
   if (!message) return;
@@ -5256,17 +5271,20 @@ async function handleMedia(event, lineChatId, lineUserId, scope, runtime = {}) {
     if (event.replyToken) {
       try {
         await replyText(event.replyToken, fallback);
-        return;
+        throw new MediaProcessingError(mediaErrorMessage(error), true);
       } catch (replyError) {
+        if (replyError instanceof MediaProcessingError) throw replyError;
         console.error("[Milo Media] download fallback reply failed", { messageId: message.id, error: replyError instanceof Error ? replyError.message : "unknown" });
       }
     }
+    let userNotified = false;
     try {
       await pushText(lineChatId, fallback);
+      userNotified = true;
     } catch (pushError) {
       console.error("[Milo Media] download fallback push failed", { messageId: message.id, error: pushError instanceof Error ? pushError.message : "unknown" });
     }
-    return;
+    throw new MediaProcessingError(mediaErrorMessage(error), userNotified);
   }
   let stored;
   try {
@@ -5298,15 +5316,18 @@ async function handleMedia(event, lineChatId, lineUserId, scope, runtime = {}) {
     if (event.replyToken) {
       try {
         await replyText(event.replyToken, fallback);
-        return;
-      } catch {
+        throw new MediaProcessingError(mediaErrorMessage(error), true);
+      } catch (replyError) {
+        if (replyError instanceof MediaProcessingError) throw replyError;
       }
     }
+    let userNotified = false;
     try {
       await pushText(lineChatId, fallback);
+      userNotified = true;
     } catch {
     }
-    return;
+    throw new MediaProcessingError(mediaErrorMessage(error), userNotified);
   }
   if (isAudio) {
     if (event.replyToken) {
@@ -5318,7 +5339,7 @@ async function handleMedia(event, lineChatId, lineUserId, scope, runtime = {}) {
     }
     try {
       const transcript = await transcribeAudio({ audioBuffer: bytes, mimeType, language: "th", prompt: "\u0E16\u0E2D\u0E14\u0E02\u0E49\u0E2D\u0E04\u0E27\u0E32\u0E21\u0E20\u0E32\u0E29\u0E32\u0E44\u0E17\u0E22\u0E40\u0E01\u0E35\u0E48\u0E22\u0E27\u0E01\u0E31\u0E1A\u0E23\u0E32\u0E22\u0E23\u0E31\u0E1A \u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22 \u0E08\u0E33\u0E19\u0E27\u0E19\u0E40\u0E07\u0E34\u0E19 \u0E41\u0E25\u0E30\u0E2B\u0E21\u0E27\u0E14\u0E2B\u0E21\u0E39\u0E48", gatewayToken: runtime.gatewayToken });
-      if ("error" in transcript) throw new Error(transcript.error);
+      if ("error" in transcript) throw new Error(`${transcript.error}${transcript.details ? `: ${transcript.details}` : ""}`);
       const financeScope = await resolveFinanceScope(lineUserId, lineChatId, scope);
       const proposal = await buildVoiceProposal(transcript.text, lineUserId, financeScope?.financeAccountId);
       await saveVoiceTranscription({ vaultItemId: vaultId, lineChatId, lineUserId, transcript: transcript.text, language: transcript.language, durationSeconds: transcript.duration, proposalJson: JSON.stringify(proposal) });
@@ -5331,7 +5352,14 @@ ${proposalLine}
       console.error("[Milo Voice] transcription failed", { messageId: message.id, error: error instanceof Error ? error.message : "unknown" });
       const runtimeMissing = error instanceof Error && /not configured/i.test(error.message);
       const fallback = runtimeMissing ? "\u0E23\u0E31\u0E1A\u0E41\u0E25\u0E30\u0E40\u0E01\u0E47\u0E1A\u0E02\u0E49\u0E2D\u0E04\u0E27\u0E32\u0E21\u0E40\u0E2A\u0E35\u0E22\u0E07\u0E44\u0E27\u0E49\u0E41\u0E25\u0E49\u0E27 \u0E41\u0E15\u0E48\u0E23\u0E30\u0E1A\u0E1A\u0E16\u0E2D\u0E14\u0E40\u0E2A\u0E35\u0E22\u0E07\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E44\u0E14\u0E49\u0E40\u0E0A\u0E37\u0E48\u0E2D\u0E21\u0E15\u0E48\u0E2D\u0E1C\u0E39\u0E49\u0E43\u0E2B\u0E49\u0E1A\u0E23\u0E34\u0E01\u0E32\u0E23 STT \u0E43\u0E19 Production \u0E15\u0E2D\u0E19\u0E19\u0E35\u0E49 \u0E01\u0E23\u0E38\u0E13\u0E32\u0E1E\u0E34\u0E21\u0E1E\u0E4C\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E41\u0E17\u0E19\u0E0A\u0E31\u0E48\u0E27\u0E04\u0E23\u0E32\u0E27 \u0E40\u0E0A\u0E48\u0E19 \u201C\u0E01\u0E34\u0E19\u0E01\u0E32\u0E41\u0E1F 80\u201D \u0E04\u0E23\u0E31\u0E1A" : "\u0E40\u0E01\u0E47\u0E1A\u0E02\u0E49\u0E2D\u0E04\u0E27\u0E32\u0E21\u0E40\u0E2A\u0E35\u0E22\u0E07\u0E44\u0E27\u0E49\u0E41\u0E25\u0E49\u0E27 \u0E41\u0E15\u0E48\u0E22\u0E31\u0E07\u0E16\u0E2D\u0E14\u0E40\u0E2A\u0E35\u0E22\u0E07\u0E44\u0E21\u0E48\u0E44\u0E14\u0E49\u0E43\u0E19\u0E04\u0E23\u0E31\u0E49\u0E07\u0E19\u0E35\u0E49 \u0E01\u0E23\u0E38\u0E13\u0E32\u0E25\u0E2D\u0E07\u0E2D\u0E31\u0E14\u0E43\u0E2B\u0E21\u0E48\u0E43\u0E2B\u0E49\u0E0A\u0E31\u0E14\u0E40\u0E08\u0E19 \u0E04\u0E27\u0E32\u0E21\u0E22\u0E32\u0E27\u0E2A\u0E31\u0E49\u0E19 \u0E46 \u0E41\u0E25\u0E30\u0E02\u0E19\u0E32\u0E14\u0E44\u0E21\u0E48\u0E40\u0E01\u0E34\u0E19 16MB \u0E04\u0E23\u0E31\u0E1A";
-      await pushText(lineChatId, fallback);
+      let userNotified = false;
+      try {
+        await pushText(lineChatId, fallback);
+        userNotified = true;
+      } catch (pushError) {
+        console.error("[Milo Voice] failure notification failed", { messageId: message.id, error: pushError instanceof Error ? pushError.message : "unknown" });
+      }
+      throw new MediaProcessingError(mediaErrorMessage(error), userNotified);
     }
     return;
   }
@@ -5348,13 +5376,26 @@ ${preview || "\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E1E\u0E1A\u0E23\u0E32\u0E22
     } catch (error) {
       console.error("[Milo PDF] analysis failed", { messageId: message.id, error: error instanceof Error ? error.message : "unknown" });
       const fallback = "\u0E40\u0E01\u0E47\u0E1A PDF \u0E44\u0E27\u0E49\u0E41\u0E25\u0E49\u0E27 \u0E41\u0E15\u0E48\u0E22\u0E31\u0E07\u0E2D\u0E48\u0E32\u0E19\u0E18\u0E38\u0E23\u0E01\u0E23\u0E23\u0E21\u0E08\u0E32\u0E01\u0E44\u0E1F\u0E25\u0E4C\u0E19\u0E35\u0E49\u0E44\u0E21\u0E48\u0E44\u0E14\u0E49 \u0E01\u0E23\u0E38\u0E13\u0E32\u0E25\u0E2D\u0E07\u0E44\u0E1F\u0E25\u0E4C\u0E17\u0E35\u0E48\u0E44\u0E21\u0E48\u0E25\u0E47\u0E2D\u0E01\u0E23\u0E2B\u0E31\u0E2A\u0E41\u0E25\u0E30\u0E21\u0E35\u0E02\u0E49\u0E2D\u0E04\u0E27\u0E32\u0E21\u0E2D\u0E48\u0E32\u0E19\u0E44\u0E14\u0E49\u0E04\u0E23\u0E31\u0E1A";
+      let userNotified = false;
       if (event.replyToken) {
         try {
           await replyText(event.replyToken, fallback);
+          userNotified = true;
         } catch {
-          await pushText(lineChatId, fallback);
+          try {
+            await pushText(lineChatId, fallback);
+            userNotified = true;
+          } catch {
+          }
         }
-      } else await pushText(lineChatId, fallback);
+      } else {
+        try {
+          await pushText(lineChatId, fallback);
+          userNotified = true;
+        } catch {
+        }
+      }
+      throw new MediaProcessingError(mediaErrorMessage(error), userNotified);
     }
     return;
   }
@@ -5379,7 +5420,14 @@ ${proposals || "\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E1E\u0E1A\u0E23\u0E32\u0E
 \u0E15\u0E23\u0E27\u0E08\u0E22\u0E2D\u0E14 \u0E2B\u0E21\u0E27\u0E14 \u0E41\u0E25\u0E30\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48\u0E43\u0E2B\u0E49\u0E16\u0E39\u0E01\u0E15\u0E49\u0E2D\u0E07\u0E01\u0E48\u0E2D\u0E19 \u0E41\u0E25\u0E49\u0E27\u0E1E\u0E34\u0E21\u0E1E\u0E4C \u201C\u0E22\u0E37\u0E19\u0E22\u0E31\u0E19\u0E04\u0E48\u0E32\u0E43\u0E0A\u0E49\u0E08\u0E48\u0E32\u0E22\u201D \u0E40\u0E1E\u0E37\u0E48\u0E2D\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01 \u0E2B\u0E23\u0E37\u0E2D \u201C\u0E22\u0E37\u0E19\u0E22\u0E31\u0E19\u0E23\u0E39\u0E1B\u201D \u0E2A\u0E33\u0E2B\u0E23\u0E31\u0E1A\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E40\u0E15\u0E37\u0E2D\u0E19`);
   } catch (error) {
     console.error("[Milo Image] analysis failed", { messageId: message.id, error: error instanceof Error ? error.message : "unknown" });
-    await pushText(lineChatId, "\u0E40\u0E01\u0E47\u0E1A\u0E23\u0E39\u0E1B\u0E44\u0E27\u0E49\u0E41\u0E25\u0E49\u0E27 \u0E41\u0E15\u0E48\u0E23\u0E30\u0E1A\u0E1A\u0E2D\u0E48\u0E32\u0E19\u0E2A\u0E25\u0E34\u0E1B/\u0E43\u0E1A\u0E40\u0E2A\u0E23\u0E47\u0E08\u0E04\u0E23\u0E31\u0E49\u0E07\u0E19\u0E35\u0E49\u0E44\u0E21\u0E48\u0E2A\u0E33\u0E40\u0E23\u0E47\u0E08 \u0E01\u0E23\u0E38\u0E13\u0E32\u0E25\u0E2D\u0E07\u0E2A\u0E48\u0E07\u0E20\u0E32\u0E1E\u0E17\u0E35\u0E48\u0E04\u0E21\u0E0A\u0E31\u0E14\u0E41\u0E25\u0E30\u0E40\u0E2B\u0E47\u0E19\u0E22\u0E2D\u0E14 \u0E27\u0E31\u0E19\u0E17\u0E35\u0E48 \u0E40\u0E27\u0E25\u0E32 \u0E41\u0E25\u0E30\u0E1C\u0E39\u0E49\u0E23\u0E31\u0E1A\u0E04\u0E23\u0E1A\u0E16\u0E49\u0E27\u0E19\u0E2D\u0E35\u0E01\u0E04\u0E23\u0E31\u0E49\u0E07\u0E19\u0E48\u0E30\u0E08\u0E4A\u0E30");
+    let userNotified = false;
+    try {
+      await pushText(lineChatId, "\u0E40\u0E01\u0E47\u0E1A\u0E23\u0E39\u0E1B\u0E44\u0E27\u0E49\u0E41\u0E25\u0E49\u0E27 \u0E41\u0E15\u0E48\u0E23\u0E30\u0E1A\u0E1A\u0E2D\u0E48\u0E32\u0E19\u0E2A\u0E25\u0E34\u0E1B/\u0E43\u0E1A\u0E40\u0E2A\u0E23\u0E47\u0E08\u0E04\u0E23\u0E31\u0E49\u0E07\u0E19\u0E35\u0E49\u0E44\u0E21\u0E48\u0E2A\u0E33\u0E40\u0E23\u0E47\u0E08 \u0E01\u0E23\u0E38\u0E13\u0E32\u0E25\u0E2D\u0E07\u0E2A\u0E48\u0E07\u0E20\u0E32\u0E1E\u0E17\u0E35\u0E48\u0E04\u0E21\u0E0A\u0E31\u0E14\u0E41\u0E25\u0E30\u0E40\u0E2B\u0E47\u0E19\u0E22\u0E2D\u0E14 \u0E27\u0E31\u0E19\u0E17\u0E35\u0E48 \u0E40\u0E27\u0E25\u0E32 \u0E41\u0E25\u0E30\u0E1C\u0E39\u0E49\u0E23\u0E31\u0E1A\u0E04\u0E23\u0E1A\u0E16\u0E49\u0E27\u0E19\u0E2D\u0E35\u0E01\u0E04\u0E23\u0E31\u0E49\u0E07\u0E19\u0E48\u0E30\u0E08\u0E4A\u0E30");
+      userNotified = true;
+    } catch (pushError) {
+      console.error("[Milo Image] failure notification failed", { messageId: message.id, error: pushError instanceof Error ? pushError.message : "unknown" });
+    }
+    throw new MediaProcessingError(mediaErrorMessage(error), userNotified);
   }
 }
 async function processEvent(event, rawPayload, runtime = {}) {
@@ -5410,21 +5458,23 @@ async function processEvent(event, rawPayload, runtime = {}) {
     const isMediaEvent = mediaType === "image" || mediaType === "audio" || mediaType === "file";
     if (isMediaEvent) {
       const fallback = mediaType === "audio" ? "\u0E23\u0E31\u0E1A\u0E02\u0E49\u0E2D\u0E04\u0E27\u0E32\u0E21\u0E40\u0E2A\u0E35\u0E22\u0E07\u0E41\u0E25\u0E49\u0E27 \u0E41\u0E15\u0E48\u0E23\u0E30\u0E1A\u0E1A\u0E1B\u0E23\u0E30\u0E21\u0E27\u0E25\u0E1C\u0E25\u0E04\u0E23\u0E31\u0E49\u0E07\u0E19\u0E35\u0E49\u0E44\u0E21\u0E48\u0E2A\u0E33\u0E40\u0E23\u0E47\u0E08 \u0E01\u0E23\u0E38\u0E13\u0E32\u0E25\u0E2D\u0E07\u0E2A\u0E48\u0E07\u0E40\u0E2A\u0E35\u0E22\u0E07\u0E43\u0E2B\u0E21\u0E48\u0E2D\u0E35\u0E01\u0E04\u0E23\u0E31\u0E49\u0E07\u0E04\u0E23\u0E31\u0E1A" : mediaType === "image" ? "\u0E23\u0E31\u0E1A\u0E23\u0E39\u0E1B\u0E41\u0E25\u0E49\u0E27 \u0E41\u0E15\u0E48\u0E23\u0E30\u0E1A\u0E1A\u0E1B\u0E23\u0E30\u0E21\u0E27\u0E25\u0E1C\u0E25\u0E2A\u0E25\u0E34\u0E1B/\u0E43\u0E1A\u0E40\u0E2A\u0E23\u0E47\u0E08\u0E04\u0E23\u0E31\u0E49\u0E07\u0E19\u0E35\u0E49\u0E44\u0E21\u0E48\u0E2A\u0E33\u0E40\u0E23\u0E47\u0E08 \u0E01\u0E23\u0E38\u0E13\u0E32\u0E25\u0E2D\u0E07\u0E2A\u0E48\u0E07\u0E20\u0E32\u0E1E\u0E43\u0E2B\u0E21\u0E48\u0E2D\u0E35\u0E01\u0E04\u0E23\u0E31\u0E49\u0E07\u0E04\u0E23\u0E31\u0E1A" : "\u0E23\u0E31\u0E1A\u0E44\u0E1F\u0E25\u0E4C\u0E41\u0E25\u0E49\u0E27 \u0E41\u0E15\u0E48\u0E23\u0E30\u0E1A\u0E1A\u0E1B\u0E23\u0E30\u0E21\u0E27\u0E25\u0E1C\u0E25\u0E04\u0E23\u0E31\u0E49\u0E07\u0E19\u0E35\u0E49\u0E44\u0E21\u0E48\u0E2A\u0E33\u0E40\u0E23\u0E47\u0E08 \u0E01\u0E23\u0E38\u0E13\u0E32\u0E25\u0E2D\u0E07\u0E2A\u0E48\u0E07\u0E44\u0E1F\u0E25\u0E4C\u0E43\u0E2B\u0E21\u0E48\u0E2D\u0E35\u0E01\u0E04\u0E23\u0E31\u0E49\u0E07\u0E04\u0E23\u0E31\u0E1A";
-      let delivered = false;
-      if (event.replyToken) {
-        try {
-          await replyText(event.replyToken, fallback);
-          delivered = true;
-        } catch (replyError) {
-          console.error("[Milo Media] top-level fallback reply failed", { error: replyError instanceof Error ? replyError.message : "unknown" });
-        }
-      }
+      let delivered = error instanceof MediaProcessingError && error.userNotified;
       if (!delivered) {
-        try {
-          await pushText(identity.lineChatId, fallback);
-          delivered = true;
-        } catch (pushError) {
-          console.error("[Milo Media] top-level fallback push failed", { error: pushError instanceof Error ? pushError.message : "unknown" });
+        if (event.replyToken) {
+          try {
+            await replyText(event.replyToken, fallback);
+            delivered = true;
+          } catch (replyError) {
+            console.error("[Milo Media] top-level fallback reply failed", { error: replyError instanceof Error ? replyError.message : "unknown" });
+          }
+        }
+        if (!delivered) {
+          try {
+            await pushText(identity.lineChatId, fallback);
+            delivered = true;
+          } catch (pushError) {
+            console.error("[Milo Media] top-level fallback push failed", { error: pushError instanceof Error ? pushError.message : "unknown" });
+          }
         }
       }
       try {
@@ -5683,6 +5733,33 @@ registerFinanceExportRoute(app);
 registerLineWebhook(app);
 app.use(express2.json({ limit: "50mb" }));
 app.use(express2.urlencoded({ limit: "50mb", extended: true }));
+app.post("/api/internal/media-retry", async (req, res) => {
+  const timestamp2 = req.header("x-milo-diagnostic-timestamp") ?? "";
+  const supplied = req.header("x-milo-diagnostic-signature") ?? "";
+  const secret3 = process.env.LINE_CHANNEL_ACCESS_TOKEN ?? "";
+  const timestampMs = Number(timestamp2);
+  if (!secret3 || !Number.isFinite(timestampMs) || Math.abs(Date.now() - timestampMs) > 5 * 6e4) {
+    return res.status(401).json({ error: "unauthorized" });
+  }
+  const expected = crypto7.createHmac("sha256", secret3).update(`media-retry:${timestamp2}`).digest("hex");
+  const suppliedBuffer = Buffer.from(supplied, "utf8");
+  const expectedBuffer = Buffer.from(expected, "utf8");
+  if (suppliedBuffer.length !== expectedBuffer.length || !crypto7.timingSafeEqual(suppliedBuffer, expectedBuffer)) {
+    return res.status(401).json({ error: "unauthorized" });
+  }
+  const input = req.body?.event;
+  if (!input?.webhookEventId || input.type !== "message" || !input.message || !["image", "audio", "file"].includes(input.message.type)) {
+    return res.status(400).json({ error: "invalid media event" });
+  }
+  const retryEvent = {
+    ...input,
+    replyToken: void 0,
+    webhookEventId: `${input.webhookEventId}:retry:${timestamp2}`.slice(0, 128)
+  };
+  const gatewayToken = req.header("x-vercel-oidc-token")?.trim() || void 0;
+  await processEvent(retryEvent, JSON.stringify({ events: [retryEvent] }), { gatewayToken });
+  return res.status(200).json({ ok: true, retryWebhookEventId: retryEvent.webhookEventId });
+});
 registerStorageProxy(app);
 registerOAuthRoutes(app);
 var healthHandler = async (req, res) => {
