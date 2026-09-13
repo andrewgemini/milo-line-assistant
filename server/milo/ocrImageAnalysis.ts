@@ -106,8 +106,8 @@ function extractDateTime(text: string) {
     for (let i = 0; i < monthEntries.length; i += 1) {
       const monthName = monthEntries[i][0];
       const month = monthEntries[i][1];
-      const escaped = monthName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-      const match = normalized.match(new RegExp(`\\b([0-3]?\\d)\\s*${escaped}\\s*(\\d{2,4})\\b`));
+      const escaped = monthName.split("").map(char => char === "." ? "\\.?" : char.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("\\s*");
+      const match = normalized.match(new RegExp(`(?:^|\\s)([0-3]?\\d)\\s*${escaped}\\s*(\\d{2,4})(?=\\s|$)`));
       if (match) {
         dateText = formatIsoDate(normalizeYear(Number(match[2])), month, Number(match[1]));
         break;
@@ -122,22 +122,28 @@ function extractDateTime(text: string) {
 
 function extractMerchant(text: string) {
   const lines = text.split(/\n+/).map(line => line.trim()).filter(Boolean);
-  const direct = lines.find(line => /^(?:ผู้รับ|ไปยัง|ชื่อผู้รับ|recipient|merchant|to)\s*[:：-]?\s*.+/i.test(line));
-  if (direct) return direct.replace(/^(?:ผู้รับ|ไปยัง|ชื่อผู้รับ|recipient|merchant|to)\s*[:：-]?\s*/i, "").trim().slice(0, 120);
-  const markerIndex = lines.findIndex(line => /^(?:ผู้รับ|ไปยัง|ชื่อผู้รับ|recipient|merchant|to)\s*[:：-]?$/i.test(line));
+  const direct = lines.find(line => /^(?:ผู้รับ|ผู้รับเงิน|ไปยัง|ชื่อผู้รับ|recipient|merchant|to)\s*[:：-]?\s*.+/i.test(line));
+  if (direct) return direct.replace(/^(?:ผู้รับ|ผู้รับเงิน|ไปยัง|ชื่อผู้รับ|recipient|merchant|to)\s*[:：-]?\s*/i, "").trim().slice(0, 120);
+  const markerIndex = lines.findIndex(line => /^(?:ผู้รับ|ผู้รับเงิน|ไปยัง|ชื่อผู้รับ|recipient|merchant|to)\s*[:：-]?$/i.test(line));
   if (markerIndex >= 0 && lines[markerIndex + 1]) return lines[markerIndex + 1].slice(0, 120);
-  return "";
+  const merchantLike = lines.find(line => /(?:คาเฟ่|กาแฟ|coffee|cafe|amazon|อเมซอน|ร้าน|บริษัท|จำกัด|co\.?\s*ltd|company)/i.test(line) && !/(ผู้โอน|จากบัญชี|ธ\.|ธนาคาร|bank)/i.test(line));
+  return merchantLike?.slice(0, 120) ?? "";
+}
+
+function extractReference(text: string) {
+  const match = text.match(/(?:เลขที่รายการ|เลขอ้างอิง|หมายเลขอ้างอิง|reference(?:\s*(?:no|number))?|transaction\s*id)\s*[:：#-]?\s*([A-Z0-9-]{6,50})/i);
+  return match?.[1]?.trim() ?? "";
 }
 
 function detectDocumentType(text: string): ImageProposal["documentType"] {
-  if (/(โอนเงิน|โอนสำเร็จ|โอนเงินสำเร็จ|พร้อมเพย์|promptpay|ธ\.|ธนาคาร|bank transfer|transfer success(?:ful)?)/i.test(text)) return "bank_slip";
+  if (/(โอนเงิน|โอนสำเร็จ|โอนเงินสำเร็จ|ชำระเงินสำเร็จ|พร้อมเพย์|promptpay|k\+|กสิกรไทย|ธ\.|ธนาคาร|bank transfer|transfer success(?:ful)?)/i.test(text)) return "bank_slip";
   if (/(ใบเสร็จ|ใบกำกับ|receipt|ยอดสุทธิ|ยอดรวม|total)/i.test(text)) return "receipt";
   if (/(นัด|appointment|วันนัด)/i.test(text)) return "appointment";
   return "unknown";
 }
 
 function guessCategory(text: string) {
-  if (/(กาแฟ|coffee|cafe|อาหาร|restaurant|ข้าว|ชา|เครื่องดื่ม|food)/i.test(text)) return "อาหาร";
+  if (/(กาแฟ|คาเฟ่|อเมซอน|amazon|coffee|cafe|อาหาร|restaurant|ข้าว|ชา|เครื่องดื่ม|food)/i.test(text)) return "อาหาร";
   if (/(น้ำมัน|fuel|gas station|แท็กซี่|taxi|grab|รถไฟ|bts|mrt|ทางด่วน)/i.test(text)) return "เดินทาง";
   if (/(ไฟฟ้า|ประปา|อินเทอร์เน็ต|internet|โทรศัพท์|ค่าไฟ|ค่าน้ำ)/i.test(text)) return "ค่าสาธารณูปโภค";
   if (/(โรงพยาบาล|clinic|คลินิก|ยา|pharmacy|medical)/i.test(text)) return "สุขภาพ";
@@ -154,6 +160,7 @@ export function analyzeOcrText(rawText: string): ImageAnalysis {
   const amount = extractAmount(text);
   const dateTime = extractDateTime(text);
   const merchant = extractMerchant(text);
+  const receiptNumber = extractReference(text);
 
   let kind: ImageProposal["kind"] = "unknown";
   if (amount > 0) kind = "expense";
@@ -175,7 +182,7 @@ export function analyzeOcrText(rawText: string): ImageAnalysis {
     currency: amount > 0 ? "บาท" : "",
     category: kind === "expense" ? guessCategory(text) : "ทั่วไป",
     paymentMethod: documentType === "bank_slip" ? "โอนเงิน" : "",
-    receiptNumber: "",
+    receiptNumber,
     lineItems: [],
     note: `OCR fallback${merchant ? ` • ${merchant}` : ""}`,
   };
@@ -193,14 +200,14 @@ export async function analyzeImageWithOcr(dataUrl: string): Promise<ImageAnalysi
   if (!ocrAssetsReady()) throw new Error(`OCR language data is unavailable at ${DATA_DIR}`);
   fs.mkdirSync(CACHE_DIR, { recursive: true });
   const input = decodeDataUrl(dataUrl);
-  const prepared = await sharp(input)
+  const base = sharp(input)
     .rotate()
-    .resize({ width: 1800, withoutEnlargement: true })
+    .resize({ width: 2200, withoutEnlargement: true })
     .grayscale()
     .normalize()
-    .sharpen()
-    .png()
-    .toBuffer();
+    .sharpen();
+  const prepared = await base.clone().png().toBuffer();
+  const highContrast = await base.clone().threshold(185).png().toBuffer();
 
   const worker = await createWorker(["tha", "eng"], undefined, {
     langPath: DATA_DIR,
@@ -210,7 +217,20 @@ export async function analyzeImageWithOcr(dataUrl: string): Promise<ImageAnalysi
   });
   try {
     const result = await worker.recognize(prepared);
-    return analyzeOcrText(result.data.text || "");
+    const primaryText = result.data.text || "";
+    const primary = analyzeOcrText(primaryText);
+    const primaryProposal = primary.proposals[0];
+    if (primaryProposal && ((primaryProposal.kind === "expense" && primaryProposal.amount > 0 && primaryProposal.documentType !== "unknown") || (primaryProposal.kind === "reminder" && primaryProposal.dateText))) return primary;
+
+    const contrastResult = await worker.recognize(highContrast);
+    const combined = analyzeOcrText(`${primaryText}\n${contrastResult.data.text || ""}`);
+    console.info("[Milo OCR] used high-contrast second pass", {
+      primaryConfidence: primary.confidence,
+      combinedConfidence: combined.confidence,
+      documentType: combined.proposals[0]?.documentType,
+      amount: combined.proposals[0]?.amount,
+    });
+    return combined.confidence >= primary.confidence ? combined : primary;
   } finally {
     await worker.terminate();
   }

@@ -170,9 +170,13 @@ export async function imageAnalysisRuntimeStatus(requestToken?: string) {
 
 export async function analyzeImage(dataUrl: string, options: { gatewayToken?: string } = {}): Promise<ImageAnalysis> {
   let providerError: unknown;
+  let providerAnalysis: ImageAnalysis | undefined;
   if (ENV.forgeApiKey) {
     try {
-      return await analyzeImageWithForge(dataUrl);
+      const analysis = await analyzeImageWithForge(dataUrl);
+      if (analysis.proposals.some(item => (item.kind === "expense" && item.amount > 0) || (item.kind === "reminder" && Boolean(item.dateText)))) return analysis;
+      providerAnalysis = analysis;
+      console.warn("[Milo Image] primary vision provider returned no actionable proposal; trying OCR enrichment");
     } catch (error) {
       providerError = error;
       console.warn("[Milo Image] primary vision provider failed; using local OCR fallback", {
@@ -184,7 +188,10 @@ export async function analyzeImage(dataUrl: string, options: { gatewayToken?: st
   const gatewayKey = imageGatewayToken(process.env, options.gatewayToken);
   if (gatewayKey) {
     try {
-      return await analyzeImageWithGatewayKey(dataUrl, gatewayKey);
+      const analysis = await analyzeImageWithGatewayKey(dataUrl, gatewayKey);
+      if (analysis.proposals.some(item => (item.kind === "expense" && item.amount > 0) || (item.kind === "reminder" && Boolean(item.dateText)))) return analysis;
+      providerAnalysis = analysis;
+      console.warn("[Milo Image] AI Gateway returned no actionable proposal; trying OCR enrichment");
     } catch (error) {
       providerError = error;
       console.warn("[Milo Image] AI Gateway failed", {
@@ -193,10 +200,24 @@ export async function analyzeImage(dataUrl: string, options: { gatewayToken?: st
     }
   }
 
-  // Tesseract is a useful local fallback, but starting its worker in a serverless
-  // webhook can outlive the function and leave LINE events permanently pending.
-  // Surface the provider error instead so the webhook is completed promptly and
-  // production diagnostics retain the real failure reason.
-  if (providerError && process.env.VERCEL) throw providerError;
-  return analyzeImageWithOcr(dataUrl);
+  try {
+    const ocrAnalysis = await analyzeImageWithOcr(dataUrl);
+    if (!providerAnalysis) return ocrAnalysis;
+    const score = (analysis: ImageAnalysis) => analysis.proposals.reduce((total, item) => total
+      + (item.kind === "expense" && item.amount > 0 ? 6 : 0)
+      + (item.kind === "reminder" && item.dateText ? 5 : 0)
+      + (item.documentType !== "unknown" ? 1 : 0)
+      + (item.dateText ? 1 : 0)
+      + (item.merchant ? 0.5 : 0), analysis.confidence);
+    return score(ocrAnalysis) > score(providerAnalysis) ? ocrAnalysis : providerAnalysis;
+  } catch (ocrError) {
+    console.error("[Milo Image] OCR fallback failed", { error: ocrError instanceof Error ? ocrError.message : "unknown" });
+    if (providerAnalysis) return providerAnalysis;
+    if (providerError) {
+      const providerMessage = providerError instanceof Error ? providerError.message : "unknown provider error";
+      const ocrMessage = ocrError instanceof Error ? ocrError.message : "unknown OCR error";
+      throw new Error(`Vision provider failed: ${providerMessage}; OCR fallback failed: ${ocrMessage}`);
+    }
+    throw ocrError;
+  }
 }

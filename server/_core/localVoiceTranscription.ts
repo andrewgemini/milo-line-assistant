@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+﻿import { spawn } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import ffmpegPath from "ffmpeg-static";
@@ -44,6 +44,41 @@ export function localVoiceRuntimeStatus() {
     cacheDir,
     ffmpegAvailable: typeof ffmpegPath === "string" && ffmpegPath.length > 0 && fs.existsSync(ffmpegPath),
   } as const;
+}
+
+export function transcriptQualityIssue(text: string, durationSeconds = 0): string | undefined {
+  const clean = text
+    .normalize("NFKC")
+    .replace(/[“”"'….,!?;:ฯๆ()[\]{}]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!clean) return "empty-transcript";
+
+  const tokens = clean.split(" ").filter(Boolean);
+  if (tokens.length >= 6) {
+    const counts = new Map<string, number>();
+    let longestRun = 1;
+    let currentRun = 1;
+    for (let i = 0; i < tokens.length; i += 1) {
+      const token = tokens[i].toLocaleLowerCase("th-TH");
+      counts.set(token, (counts.get(token) ?? 0) + 1);
+      if (i > 0 && token === tokens[i - 1].toLocaleLowerCase("th-TH")) {
+        currentRun += 1;
+        longestRun = Math.max(longestRun, currentRun);
+      } else currentRun = 1;
+    }
+    const maxCount = Math.max(...Array.from(counts.values()));
+    const dominantShare = maxCount / tokens.length;
+    const uniqueShare = counts.size / tokens.length;
+    if (longestRun >= 4) return "repeated-token-run";
+    if (tokens.length >= 8 && dominantShare >= 0.5 && uniqueShare <= 0.4) return "dominant-repeated-token";
+  }
+
+  const duration = Math.max(0.5, Number.isFinite(durationSeconds) ? durationSeconds : 0.5);
+  const nonSpaceCharacters = clean.replace(/\s/g, "").length;
+  if (duration <= 15 && tokens.length > Math.max(24, Math.ceil(duration * 7))) return "too-many-tokens-for-duration";
+  if (duration <= 15 && nonSpaceCharacters / duration > 28) return "too-many-characters-for-duration";
+  return undefined;
 }
 
 async function decodeToFloat32Mono16k(audioBuffer: Buffer): Promise<Float32Array> {
@@ -140,6 +175,16 @@ export async function transcribeAudioLocal(input: {
 
   const text = String(result?.text || "").trim();
   if (!text) throw new Error("Local Whisper returned empty text");
+  const duration = samples.length / 16000;
+  const qualityIssue = transcriptQualityIssue(text, duration);
+  if (qualityIssue) {
+    console.warn("[Milo Voice Local] rejected low-quality transcript", {
+      reason: qualityIssue,
+      duration: Number(duration.toFixed(2)),
+      preview: text.slice(0, 160),
+    });
+    throw new Error(`Local Whisper rejected low-quality transcript: ${qualityIssue}`);
+  }
   const chunks = Array.isArray(result?.chunks) ? result.chunks : [];
   const segments = chunks.map((chunk: any, index: number) => ({
     id: index,
@@ -157,7 +202,7 @@ export async function transcribeAudioLocal(input: {
   return {
     task: "transcribe",
     language,
-    duration: samples.length / 16000,
+    duration,
     text,
     segments,
   };

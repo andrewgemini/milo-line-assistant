@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { localVoiceRuntimeStatus } from "./localVoiceTranscription";
+import { localVoiceRuntimeStatus, transcriptQualityIssue } from "./localVoiceTranscription";
 import { voiceTranscriptionRuntimeStatus } from "./voiceTranscription";
 
 const ORIGINAL_LOCAL = process.env.MILO_LOCAL_STT_ENABLED;
@@ -44,5 +44,14 @@ describe("local voice transcription runtime", () => {
     expect(status.configured).toBe(true);
     expect(status.mode).toBe("local-whisper-onnx");
     expect(status.local.enabled).toBe(true);
+  });
+
+  it("rejects repeated-token hallucinations from short LINE audio", () => {
+    const repeated = Array.from({ length: 45 }, () => "ลิด").join(" ");
+    expect(transcriptQualityIssue(repeated, 2)).toMatch(/repeated|too-many/);
+  });
+
+  it("accepts a plausible short Thai finance transcript", () => {
+    expect(transcriptQualityIssue("จ่ายกาแฟ 80 บาท", 2.5)).toBeUndefined();
   });
 });

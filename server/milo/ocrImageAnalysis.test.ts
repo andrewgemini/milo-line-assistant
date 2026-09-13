@@ -45,4 +45,27 @@ Fee 15.00 THB
   it("converts Thai numerals before parsing", () => {
     expect(normalizeOcrText("ยอดรวม ๘๐.๕๐ บาท")).toContain("80.50 บาท");
   });
+
+  it("parses a K+ payment slip with abbreviated Buddhist year and transaction reference", () => {
+    const result = analyzeOcrText(`
+ชำระเงินสำเร็จ K+
+13 ก.ย. 69 15:07 น.
+นาย จตุพล
+ธ.กสิกรไทย
+คาเฟ่อเมซอน สน.ปตท.นอก
+เลขที่รายการ 016256150715DQR03239
+จำนวน: 140.00 บาท
+ค่าธรรมเนียม: 0.00 บาท
+`);
+    expect(result.proposals[0]).toMatchObject({
+      kind: "expense",
+      documentType: "bank_slip",
+      amount: 140,
+      dateText: "2026-09-13",
+      timeText: "15:07",
+      category: "อาหาร",
+      receiptNumber: "016256150715DQR03239",
+    });
+    expect(result.proposals[0].merchant).toContain("คาเฟ่");
+  });
 });

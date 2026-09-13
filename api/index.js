@@ -3448,6 +3448,34 @@ function localVoiceRuntimeStatus() {
     ffmpegAvailable: typeof ffmpegPath === "string" && ffmpegPath.length > 0 && fs.existsSync(ffmpegPath)
   };
 }
+function transcriptQualityIssue(text2, durationSeconds = 0) {
+  const clean2 = text2.normalize("NFKC").replace(/[“”"'….,!?;:ฯๆ()[\]{}]/g, " ").replace(/\s+/g, " ").trim();
+  if (!clean2) return "empty-transcript";
+  const tokens = clean2.split(" ").filter(Boolean);
+  if (tokens.length >= 6) {
+    const counts = /* @__PURE__ */ new Map();
+    let longestRun = 1;
+    let currentRun = 1;
+    for (let i = 0; i < tokens.length; i += 1) {
+      const token = tokens[i].toLocaleLowerCase("th-TH");
+      counts.set(token, (counts.get(token) ?? 0) + 1);
+      if (i > 0 && token === tokens[i - 1].toLocaleLowerCase("th-TH")) {
+        currentRun += 1;
+        longestRun = Math.max(longestRun, currentRun);
+      } else currentRun = 1;
+    }
+    const maxCount = Math.max(...Array.from(counts.values()));
+    const dominantShare = maxCount / tokens.length;
+    const uniqueShare = counts.size / tokens.length;
+    if (longestRun >= 4) return "repeated-token-run";
+    if (tokens.length >= 8 && dominantShare >= 0.5 && uniqueShare <= 0.4) return "dominant-repeated-token";
+  }
+  const duration = Math.max(0.5, Number.isFinite(durationSeconds) ? durationSeconds : 0.5);
+  const nonSpaceCharacters = clean2.replace(/\s/g, "").length;
+  if (duration <= 15 && tokens.length > Math.max(24, Math.ceil(duration * 7))) return "too-many-tokens-for-duration";
+  if (duration <= 15 && nonSpaceCharacters / duration > 28) return "too-many-characters-for-duration";
+  return void 0;
+}
 async function decodeToFloat32Mono16k(audioBuffer) {
   const executable = typeof ffmpegPath === "string" ? ffmpegPath : "";
   if (!executable || !fs.existsSync(executable)) throw new Error("ffmpeg-static binary is unavailable");
@@ -3537,6 +3565,16 @@ async function transcribeAudioLocal(input) {
   });
   const text2 = String(result?.text || "").trim();
   if (!text2) throw new Error("Local Whisper returned empty text");
+  const duration = samples.length / 16e3;
+  const qualityIssue = transcriptQualityIssue(text2, duration);
+  if (qualityIssue) {
+    console.warn("[Milo Voice Local] rejected low-quality transcript", {
+      reason: qualityIssue,
+      duration: Number(duration.toFixed(2)),
+      preview: text2.slice(0, 160)
+    });
+    throw new Error(`Local Whisper rejected low-quality transcript: ${qualityIssue}`);
+  }
   const chunks = Array.isArray(result?.chunks) ? result.chunks : [];
   const segments = chunks.map((chunk, index2) => ({
     id: index2,
@@ -3553,7 +3591,7 @@ async function transcribeAudioLocal(input) {
   return {
     task: "transcribe",
     language,
-    duration: samples.length / 16e3,
+    duration,
     text: text2,
     segments
   };
@@ -3981,8 +4019,8 @@ function extractDateTime(text2) {
     for (let i = 0; i < monthEntries.length; i += 1) {
       const monthName = monthEntries[i][0];
       const month = monthEntries[i][1];
-      const escaped = monthName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-      const match = normalized.match(new RegExp(`\\b([0-3]?\\d)\\s*${escaped}\\s*(\\d{2,4})\\b`));
+      const escaped = monthName.split("").map((char) => char === "." ? "\\.?" : char.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("\\s*");
+      const match = normalized.match(new RegExp(`(?:^|\\s)([0-3]?\\d)\\s*${escaped}\\s*(\\d{2,4})(?=\\s|$)`));
       if (match) {
         dateText = formatIsoDate(normalizeYear(Number(match[2])), month, Number(match[1]));
         break;
@@ -3995,20 +4033,25 @@ function extractDateTime(text2) {
 }
 function extractMerchant(text2) {
   const lines = text2.split(/\n+/).map((line) => line.trim()).filter(Boolean);
-  const direct = lines.find((line) => /^(?:ผู้รับ|ไปยัง|ชื่อผู้รับ|recipient|merchant|to)\s*[:：-]?\s*.+/i.test(line));
-  if (direct) return direct.replace(/^(?:ผู้รับ|ไปยัง|ชื่อผู้รับ|recipient|merchant|to)\s*[:：-]?\s*/i, "").trim().slice(0, 120);
-  const markerIndex = lines.findIndex((line) => /^(?:ผู้รับ|ไปยัง|ชื่อผู้รับ|recipient|merchant|to)\s*[:：-]?$/i.test(line));
+  const direct = lines.find((line) => /^(?:ผู้รับ|ผู้รับเงิน|ไปยัง|ชื่อผู้รับ|recipient|merchant|to)\s*[:：-]?\s*.+/i.test(line));
+  if (direct) return direct.replace(/^(?:ผู้รับ|ผู้รับเงิน|ไปยัง|ชื่อผู้รับ|recipient|merchant|to)\s*[:：-]?\s*/i, "").trim().slice(0, 120);
+  const markerIndex = lines.findIndex((line) => /^(?:ผู้รับ|ผู้รับเงิน|ไปยัง|ชื่อผู้รับ|recipient|merchant|to)\s*[:：-]?$/i.test(line));
   if (markerIndex >= 0 && lines[markerIndex + 1]) return lines[markerIndex + 1].slice(0, 120);
-  return "";
+  const merchantLike = lines.find((line) => /(?:คาเฟ่|กาแฟ|coffee|cafe|amazon|อเมซอน|ร้าน|บริษัท|จำกัด|co\.?\s*ltd|company)/i.test(line) && !/(ผู้โอน|จากบัญชี|ธ\.|ธนาคาร|bank)/i.test(line));
+  return merchantLike?.slice(0, 120) ?? "";
+}
+function extractReference(text2) {
+  const match = text2.match(/(?:เลขที่รายการ|เลขอ้างอิง|หมายเลขอ้างอิง|reference(?:\s*(?:no|number))?|transaction\s*id)\s*[:：#-]?\s*([A-Z0-9-]{6,50})/i);
+  return match?.[1]?.trim() ?? "";
 }
 function detectDocumentType(text2) {
-  if (/(โอนเงิน|โอนสำเร็จ|โอนเงินสำเร็จ|พร้อมเพย์|promptpay|ธ\.|ธนาคาร|bank transfer|transfer success(?:ful)?)/i.test(text2)) return "bank_slip";
+  if (/(โอนเงิน|โอนสำเร็จ|โอนเงินสำเร็จ|ชำระเงินสำเร็จ|พร้อมเพย์|promptpay|k\+|กสิกรไทย|ธ\.|ธนาคาร|bank transfer|transfer success(?:ful)?)/i.test(text2)) return "bank_slip";
   if (/(ใบเสร็จ|ใบกำกับ|receipt|ยอดสุทธิ|ยอดรวม|total)/i.test(text2)) return "receipt";
   if (/(นัด|appointment|วันนัด)/i.test(text2)) return "appointment";
   return "unknown";
 }
 function guessCategory(text2) {
-  if (/(กาแฟ|coffee|cafe|อาหาร|restaurant|ข้าว|ชา|เครื่องดื่ม|food)/i.test(text2)) return "\u0E2D\u0E32\u0E2B\u0E32\u0E23";
+  if (/(กาแฟ|คาเฟ่|อเมซอน|amazon|coffee|cafe|อาหาร|restaurant|ข้าว|ชา|เครื่องดื่ม|food)/i.test(text2)) return "\u0E2D\u0E32\u0E2B\u0E32\u0E23";
   if (/(น้ำมัน|fuel|gas station|แท็กซี่|taxi|grab|รถไฟ|bts|mrt|ทางด่วน)/i.test(text2)) return "\u0E40\u0E14\u0E34\u0E19\u0E17\u0E32\u0E07";
   if (/(ไฟฟ้า|ประปา|อินเทอร์เน็ต|internet|โทรศัพท์|ค่าไฟ|ค่าน้ำ)/i.test(text2)) return "\u0E04\u0E48\u0E32\u0E2A\u0E32\u0E18\u0E32\u0E23\u0E13\u0E39\u0E1B\u0E42\u0E20\u0E04";
   if (/(โรงพยาบาล|clinic|คลินิก|ยา|pharmacy|medical)/i.test(text2)) return "\u0E2A\u0E38\u0E02\u0E20\u0E32\u0E1E";
@@ -4024,6 +4067,7 @@ function analyzeOcrText(rawText) {
   const amount = extractAmount(text2);
   const dateTime = extractDateTime(text2);
   const merchant = extractMerchant(text2);
+  const receiptNumber = extractReference(text2);
   let kind = "unknown";
   if (amount > 0) kind = "expense";
   else if (documentType === "appointment" && dateTime.dateText) kind = "reminder";
@@ -4043,7 +4087,7 @@ function analyzeOcrText(rawText) {
     currency: amount > 0 ? "\u0E1A\u0E32\u0E17" : "",
     category: kind === "expense" ? guessCategory(text2) : "\u0E17\u0E31\u0E48\u0E27\u0E44\u0E1B",
     paymentMethod: documentType === "bank_slip" ? "\u0E42\u0E2D\u0E19\u0E40\u0E07\u0E34\u0E19" : "",
-    receiptNumber: "",
+    receiptNumber,
     lineItems: [],
     note: `OCR fallback${merchant ? ` \u2022 ${merchant}` : ""}`
   };
@@ -4054,7 +4098,9 @@ async function analyzeImageWithOcr(dataUrl) {
   if (!ocrAssetsReady()) throw new Error(`OCR language data is unavailable at ${DATA_DIR}`);
   fs2.mkdirSync(CACHE_DIR, { recursive: true });
   const input = decodeDataUrl(dataUrl);
-  const prepared = await sharp3(input).rotate().resize({ width: 1800, withoutEnlargement: true }).grayscale().normalize().sharpen().png().toBuffer();
+  const base = sharp3(input).rotate().resize({ width: 2200, withoutEnlargement: true }).grayscale().normalize().sharpen();
+  const prepared = await base.clone().png().toBuffer();
+  const highContrast = await base.clone().threshold(185).png().toBuffer();
   const worker = await createWorker(["tha", "eng"], void 0, {
     langPath: DATA_DIR,
     cachePath: CACHE_DIR,
@@ -4063,7 +4109,20 @@ async function analyzeImageWithOcr(dataUrl) {
   });
   try {
     const result = await worker.recognize(prepared);
-    return analyzeOcrText(result.data.text || "");
+    const primaryText = result.data.text || "";
+    const primary = analyzeOcrText(primaryText);
+    const primaryProposal = primary.proposals[0];
+    if (primaryProposal && (primaryProposal.kind === "expense" && primaryProposal.amount > 0 && primaryProposal.documentType !== "unknown" || primaryProposal.kind === "reminder" && primaryProposal.dateText)) return primary;
+    const contrastResult = await worker.recognize(highContrast);
+    const combined = analyzeOcrText(`${primaryText}
+${contrastResult.data.text || ""}`);
+    console.info("[Milo OCR] used high-contrast second pass", {
+      primaryConfidence: primary.confidence,
+      combinedConfidence: combined.confidence,
+      documentType: combined.proposals[0]?.documentType,
+      amount: combined.proposals[0]?.amount
+    });
+    return combined.confidence >= primary.confidence ? combined : primary;
   } finally {
     await worker.terminate();
   }
@@ -4200,9 +4259,13 @@ async function imageAnalysisRuntimeStatus(requestToken) {
 }
 async function analyzeImage(dataUrl, options = {}) {
   let providerError;
+  let providerAnalysis;
   if (ENV.forgeApiKey) {
     try {
-      return await analyzeImageWithForge(dataUrl);
+      const analysis = await analyzeImageWithForge(dataUrl);
+      if (analysis.proposals.some((item) => item.kind === "expense" && item.amount > 0 || item.kind === "reminder" && Boolean(item.dateText))) return analysis;
+      providerAnalysis = analysis;
+      console.warn("[Milo Image] primary vision provider returned no actionable proposal; trying OCR enrichment");
     } catch (error) {
       providerError = error;
       console.warn("[Milo Image] primary vision provider failed; using local OCR fallback", {
@@ -4213,7 +4276,10 @@ async function analyzeImage(dataUrl, options = {}) {
   const gatewayKey = imageGatewayToken(process.env, options.gatewayToken);
   if (gatewayKey) {
     try {
-      return await analyzeImageWithGatewayKey(dataUrl, gatewayKey);
+      const analysis = await analyzeImageWithGatewayKey(dataUrl, gatewayKey);
+      if (analysis.proposals.some((item) => item.kind === "expense" && item.amount > 0 || item.kind === "reminder" && Boolean(item.dateText))) return analysis;
+      providerAnalysis = analysis;
+      console.warn("[Milo Image] AI Gateway returned no actionable proposal; trying OCR enrichment");
     } catch (error) {
       providerError = error;
       console.warn("[Milo Image] AI Gateway failed", {
@@ -4221,8 +4287,21 @@ async function analyzeImage(dataUrl, options = {}) {
       });
     }
   }
-  if (providerError && process.env.VERCEL) throw providerError;
-  return analyzeImageWithOcr(dataUrl);
+  try {
+    const ocrAnalysis = await analyzeImageWithOcr(dataUrl);
+    if (!providerAnalysis) return ocrAnalysis;
+    const score = (analysis) => analysis.proposals.reduce((total, item) => total + (item.kind === "expense" && item.amount > 0 ? 6 : 0) + (item.kind === "reminder" && item.dateText ? 5 : 0) + (item.documentType !== "unknown" ? 1 : 0) + (item.dateText ? 1 : 0) + (item.merchant ? 0.5 : 0), analysis.confidence);
+    return score(ocrAnalysis) > score(providerAnalysis) ? ocrAnalysis : providerAnalysis;
+  } catch (ocrError) {
+    console.error("[Milo Image] OCR fallback failed", { error: ocrError instanceof Error ? ocrError.message : "unknown" });
+    if (providerAnalysis) return providerAnalysis;
+    if (providerError) {
+      const providerMessage = providerError instanceof Error ? providerError.message : "unknown provider error";
+      const ocrMessage = ocrError instanceof Error ? ocrError.message : "unknown OCR error";
+      throw new Error(`Vision provider failed: ${providerMessage}; OCR fallback failed: ${ocrMessage}`);
+    }
+    throw ocrError;
+  }
 }
 
 // server/milo/pdfAnalysis.ts
@@ -5953,7 +6032,7 @@ var healthHandler = async (req, res) => {
   res.status(200).json({
     status: "ok",
     service: "milo",
-    release: "media-v3-local-stt-2026-09-14",
+    release: "media-v4-quality-fallback-2026-09-14",
     visionConfigured: runtime.authenticated,
     imageAnalysisMode: mode,
     visionModel: mode === "ocr-fallback" ? "tesseract-tha+eng" : process.env.MILO_VISION_MODEL || (mode.startsWith("vercel-ai-gateway") ? "google/gemini-2.5-flash" : mode.startsWith("forge-vision") ? "gemini-3-flash-preview" : "unconfigured"),
