@@ -19,10 +19,18 @@ import { deliverFinanceDigest, type FinanceDigestType } from "./financeDigest";
 import { buildExpenseNote, formatImageProposal, normalizeExpenseCategory, parseExtractedDate, selectImageProposal } from "./receiptUtils";
 import { applyImageExpenseEdit } from "./imageProposalEdit";
 import { STANDARD_EXPENSE_CATEGORIES, STANDARD_INCOME_CATEGORIES } from "./financeCategories";
-import { financeReportCardText, getMessageContent, getProfile, lineCredentials, postSaveSummaryText, pushText, replyFinanceReportCard, replyFinanceReportCardFallback, replyMention, replyPostSaveSummary, replyPostSaveSummaryFallback, replyPostSaveSummaryImage, replyText, replyVoiceCategoryChoices, replyVoiceProposal, replyVoiceProposalFallback, sourceIdentity, type LineEvent, type VoiceTransactionProposal, verifyLineSignature } from "./line";
+import { financeReportCardText, getMessageContent, getProfile, lineCredentials, postSaveSummaryText, pushText, replyFinanceReportCard, replyFinanceReportCardFallback, replyMention, replyPostSaveSummary, replyPostSaveSummaryFallback, replyPostSaveSummaryImage, replyText, replyTextWithQuickReplies, replyVoiceCategoryChoices, replyVoiceProposal, replyVoiceProposalFallback, sourceIdentity, type LineEvent, type VoiceTransactionProposal, verifyLineSignature } from "./line";
 
 function helpText() {
-  return "สวัสดีครับ ผมไมโล ช่วยได้ในแชทเดียว\n• เตือน ประชุมพรุ่งนี้ 10:00\n• เตือนดื่มน้ำทุก 30 นาที\n• จ่ายกาแฟ 65 / จ่ายค่าไฟ 1200\n• รับเงินเดือน 45000 / รับค่าจ้าง 5000\n• ส่งสลิปหรือใบเสร็จ → แก้ได้ เช่น “แก้ใบเสร็จ ยอด 150” → “ยืนยันค่าใช้จ่าย”\n• ส่ง PDF ใบแจ้งยอด แล้วพิมพ์ “ยืนยัน PDF”\n• ส่งข้อความเสียง แล้วพิมพ์ “ยืนยันเสียง”\n• ตั้งจดอัตโนมัติ ค่าเช่า 5000 ทุกเดือนวันที่ 1 09:00\n• รายการประจำ / พักรายการประจำ 12 / เปิดรายการประจำ 12\n• ส่งออก CSV / ส่งออก Excel\n• ตั้งวันเริ่มงบ 14\n• ค้นหารายการ กาแฟ / แก้รายการ 12 เป็น 180 / ลบรายการ 12\n• สรุปวันนี้ / สรุปสัปดาห์นี้ / สรุปเดือนนี้ / สรุปปีนี้\n• เพิ่มหมวด เดินทาง / ดูหมวด\n• โน้ต รหัส Wi‑Fi ห้องประชุม\n• งาน ส่งสรุปรายสัปดาห์\n• เก็บ ลิงก์หรือข้อความสำคัญ\n• ค้นหา ใบเสร็จ\n\nเชื่อม dashboard: พิมพ์ “ไอดี” ในแชทส่วนตัวกับไมโล";
+  return "ไมโลช่วยเรื่องเงินได้ในแชทนี้ครับ\n• จด: กินกาแฟ 80 / เงินเดือนเข้า 35000\n• สรุป: สรุปวันนี้ / สรุปเดือนนี้\n• วิเคราะห์: วิเคราะห์ / วิเคราะห์เดือนนี้\n• งบ: ตั้งงบ อาหาร 5000\n• หลักฐาน: ส่งสลิป/ใบเสร็จ แล้วตรวจและยืนยัน\n• อัตโนมัติ: ตั้งจดอัตโนมัติ ค่าเช่า 5000 ทุกเดือนวันที่ 1 09:00\n\nต้องการคำสั่งเฉพาะเรื่อง พิมพ์ชื่อเรื่องได้เลย เช่น “งบ”, “รายการ”, “หมวดหมู่”";
+}
+
+function contextualFallback(text: string) {
+  const value = text.trim().replace(/^@?ไมโล\s*/i, "").slice(0, 80);
+  if (/งบ|หมวด/.test(value)) return { text: "ต้องการจัดการงบหรือหมวดไหนครับ?", actions: [{ label: "ดูงบ", text: "งบ" }, { label: "ดูหมวด", text: "หมวดหมู่" }, { label: "ตั้งงบอาหาร", text: "ตั้งงบ อาหาร 5000" }] };
+  if (/สรุป|ยอด|เงิน|วิเคราะห์/.test(value)) return { text: "ต้องการดูภาพรวมช่วงไหนครับ?", actions: [{ label: "สรุปวันนี้", text: "สรุปวันนี้" }, { label: "สรุปเดือนนี้", text: "สรุปเดือนนี้" }, { label: "วิเคราะห์", text: "วิเคราะห์" }] };
+  if (/จด|ซื้อ|กิน|จ่าย|รับ/.test(value)) return { text: "พิมพ์รายการพร้อมยอดได้เลยครับ เช่น “กินกาแฟ 80”", actions: [{ label: "วิธีจด", text: "จดบันทึก" }, { label: "รายการล่าสุด", text: "รายการ" }, { label: "สรุปวันนี้", text: "สรุปวันนี้" }] };
+  return { text: "ไมโลยังไม่แน่ใจว่า “" + (value || "ข้อความนี้") + "” ต้องการทำอะไร เลือกทางลัดได้เลยครับ", actions: [{ label: "จดรายรับ/รายจ่าย", text: "จดบันทึก" }, { label: "สรุปเดือนนี้", text: "สรุปเดือนนี้" }, { label: "วิธีใช้งาน", text: "วิธีใช้งาน" }] };
 }
 
 function formatDate(date: Date) {
@@ -40,7 +48,7 @@ function formatFinancialInsight(insight: Awaited<ReturnType<typeof generateFinan
   const quality = insight.dataSufficiency === "adequate" ? "ข้อมูลเพียงพอสำหรับวิเคราะห์เบื้องต้น" : insight.dataSufficiency === "limited" ? "ข้อมูลยังมีไม่มาก จึงเป็นข้อสังเกตเบื้องต้น" : "ยังไม่มีข้อมูลเพียงพอสำหรับวิเคราะห์";
   const highlights = insight.highlights.map(item => `• ${item}`).join("\n");
   const actions = insight.suggestedActions.map(item => `• ${item}`).join("\n");
-  return `AI สรุปธุรกิจ\n${quality}\n${insight.summary}${highlights ? `\n\nข้อสังเกต\n${highlights}` : ""}${actions ? `\n\nแนวทางจัดการ\n${actions}` : ""}`;
+  return `สรุปวิเคราะห์การเงิน\n${quality}\n${insight.summary}${highlights ? `\n\nข้อสังเกต\n${highlights}` : ""}${actions ? `\n\nแนวทางจัดการ\n${actions}` : ""}`;
 }
 
 async function buildVoiceProposal(transcript: string, lineUserId: string, financeAccountId?: number): Promise<VoiceTransactionProposal> {
@@ -415,7 +423,12 @@ async function handleText(event: LineEvent, lineChatId: string, lineUserId: stri
   } else if (command.type === "help") {
     message = helpText();
   } else {
-    message = "ผมยังไม่เข้าใจ ลองพิมพ์ “ช่วย” เพื่อดูตัวอย่างคำสั่งได้ครับ";
+    if (event.replyToken) {
+      const fallback = contextualFallback(text);
+      await replyTextWithQuickReplies(event.replyToken, fallback.text, fallback.actions);
+      return;
+    }
+    message = "ไมโลยังไม่เข้าใจคำสั่งนี้ครับ";
   }
   if (event.replyToken) {
     const artwork = artworkForCommand(command);

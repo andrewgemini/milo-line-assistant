@@ -40,13 +40,13 @@ vi.mock("./financeExport", () => ({ buildFinanceExportUrl: vi.fn(() => "https://
 vi.mock("../_core/voiceTranscription", () => ({ transcribeAudio: vi.fn() }));
 vi.mock("./financialAssistant", () => ({ generateFinancialInsight: vi.fn(), suggestExpenseCategory: vi.fn() }));
 vi.mock("./line", () => ({
-  replyRichMenu: vi.fn(), getMessageContent: vi.fn(), getProfile: vi.fn(), lineCredentials: vi.fn(() => ({ channelSecret: "test-secret", channelAccessToken: "test-token" })), pushText: vi.fn(), replyMention: vi.fn(), replyText: vi.fn(),
+  replyRichMenu: vi.fn(), getMessageContent: vi.fn(), getProfile: vi.fn(), lineCredentials: vi.fn(() => ({ channelSecret: "test-secret", channelAccessToken: "test-token" })), pushText: vi.fn(), replyMention: vi.fn(), replyText: vi.fn(), replyTextWithQuickReplies: vi.fn(),
   replyVoiceProposal: vi.fn(), replyPostSaveSummary: vi.fn(), replyPostSaveSummaryImage: vi.fn(), replyPostSaveSummaryFallback: vi.fn(), replyVoiceCategoryChoices: vi.fn(), postSaveSummaryText: vi.fn((summary: { amount: number }) => `รายจ่าย ${summary.amount} บาท`), replyFinanceReportCard: vi.fn(), replyFinanceReportCardFallback: vi.fn(), financeReportCardText: vi.fn(() => "สรุปการเงินวันนี้"),
   sourceIdentity: vi.fn(() => ({ lineChatId: "G1", lineUserId: "U1", scope: "group" })), verifyLineSignature: vi.fn(),
 }));
 
 import * as db from "../db";
-import { replyRichMenu, getMessageContent, getProfile, replyFinanceReportCard, replyMention, replyPostSaveSummary, replyPostSaveSummaryImage, replyPostSaveSummaryFallback, replyText, replyVoiceCategoryChoices, replyVoiceProposal, sourceIdentity, verifyLineSignature } from "./line";
+import { replyRichMenu, getMessageContent, getProfile, replyFinanceReportCard, replyMention, replyPostSaveSummary, replyPostSaveSummaryImage, replyPostSaveSummaryFallback, replyText, replyTextWithQuickReplies, replyVoiceCategoryChoices, replyVoiceProposal, sourceIdentity, verifyLineSignature } from "./line";
 import { storageGetSignedUrl, storagePut } from "../storage";
 import { analyzeImage } from "./imageAnalysis";
 import { analyzePdfBuffer } from "./pdfAnalysis";
@@ -108,6 +108,18 @@ describe("LINE webhook processor", () => {
     expect(replyText).toHaveBeenCalledWith("token", "กรุณาระบุชื่อหมวด เช่น เพิ่มหมวดรายจ่าย เดินทาง");
   });
 
+  it("uses three contextual quick replies for an unknown finance intent", async () => {
+    vi.mocked(db.registerWebhookEvent).mockResolvedValue(true);
+    vi.mocked(getProfile).mockResolvedValue({ displayName: "ผู้ส่ง" });
+    vi.mocked(sourceIdentity).mockReturnValue({ lineChatId: "U1", lineUserId: "U1", scope: "user" });
+    vi.mocked(replyTextWithQuickReplies).mockResolvedValue(new Response());
+    await processEvent({ type: "message", webhookEventId: "evt-contextual-fallback", timestamp: Date.now(), replyToken: "token", source: { type: "user", userId: "U1" }, message: { id: "m-context", type: "text", text: "ยอดเงินเป็นไง" } }, "{}");
+    expect(replyTextWithQuickReplies).toHaveBeenCalledWith("token", "ต้องการดูภาพรวมช่วงไหนครับ?", [
+      { label: "สรุปวันนี้", text: "สรุปวันนี้" },
+      { label: "สรุปเดือนนี้", text: "สรุปเดือนนี้" },
+      { label: "วิเคราะห์", text: "วิเคราะห์" },
+    ]);
+  });
   it("returns a LINE User ID only to a private chat for dashboard linking", async () => {
     vi.mocked(db.registerWebhookEvent).mockResolvedValue(true);
     vi.mocked(getProfile).mockResolvedValue({ displayName: "ผู้ส่ง" });
@@ -199,7 +211,7 @@ describe("LINE webhook processor", () => {
     expect(db.addExpenseCategory).toHaveBeenCalledWith("U1", "โบนัส", "income", 7);
     expect(db.listTransactionCategories).toHaveBeenCalledWith("U1", 7);
     expect(replyPostSaveSummaryImage).toHaveBeenCalledWith("token", expect.objectContaining({ transactionType: "expense", amount: 65, category: "อาหาร", dailyExpense: 65 }));
-    expect(replyRichMenu).toHaveBeenCalledWith("token", expect.stringContaining("สวัสดีครับ ผมไมโล"), "help");
+    expect(replyRichMenu).toHaveBeenCalledWith("token", expect.stringContaining("ไมโลช่วยเรื่องเงินได้ในแชทนี้ครับ"), "help");
   });
 
   it("stores a receipt analysis then records its confirmed expense with amount, category, date and merchant note", async () => {

@@ -73,6 +73,14 @@ export async function replyText(replyToken: string, text: string, credentials = 
   return callLine("/v2/bot/message/reply", credentials, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ replyToken, messages: [{ type: "text", text: text.slice(0, 5000) }] }) });
 }
 
+export async function replyTextWithQuickReplies(replyToken: string, text: string, actions: Array<{ label: string; text: string }>, credentials = lineCredentials()) {
+  return callLine("/v2/bot/message/reply", credentials, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ replyToken, messages: [{ type: "text", text: text.slice(0, 5000), quickReply: { items: actions.slice(0, 3).map(action => ({ type: "action", action: { type: "message", label: action.label.slice(0, 20), text: action.text.slice(0, 300) } })) } }] }),
+  });
+}
+
 export type VoiceTransactionProposal = {
   transcript: string;
   transactionType?: "income" | "expense";

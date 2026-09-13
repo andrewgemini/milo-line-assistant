@@ -67,10 +67,10 @@
 
 ## External Production checks ก่อน Final UAT sign-off
 
-1. **LINE Messaging API credential / bot channel** — VERIFIED: `/v2/bot/info`, `/v2/bot/message/quota` และ quota consumption ตอบ HTTP 200 จาก access token ปัจจุบัน; actual inbound text + image + voice + PDF ยังต้องพิสูจน์ด้วย event จาก LINE client จริง
+1. **LINE Messaging API credential / bot channel** — VERIFIED: `/v2/bot/info`, `/v2/bot/message/quota` และ quota consumption ตอบ HTTP 200 จาก access token ปัจจุบัน; LINE client จริงยืนยัน text + dynamic image แล้ว ส่วน voice + PDF ยังต้องพิสูจน์ด้วย event จริง
 2. **OCR Production cold-start** — health ยืนยัน `ocrAssetsReady=true` และ `tesseract-tha+eng`; สลิปจริงยังต้องพิสูจน์ยอด/วันที่/ผู้รับจาก LINE Production
-3. **Dynamic `save-result.png`** — VERIFIED บน Vercel Linux: HTTP 200, `image/png`, 933×1085, `private, no-store, max-age=0`; exact `กินกาแฟ 80` regression ผ่าน และต้องใช้ screenshot LINE client หากต้องการปิด visual-client acceptance 100%
-4. **Dynamic `finance-report.png`** — automated renderer PASS; production LINE image/text parity ยังต้องพิสูจน์จากคำสั่งสรุปจริง
+3. **Dynamic `save-result.png`** — **VISUAL E2E VERIFIED**: Vercel HTTP 200, `image/png`, 933×1085, `private, no-store, max-age=0`; screenshot จาก LINE client จริงยืนยัน `กินกาแฟ 80`, หมวดอาหาร, `฿80`, วันที่/เวลา และ footer แสดงครบ ไม่มี tofu/square (`□`)
+4. **Dynamic `finance-report.png`** — **MONTH VISUAL E2E VERIFIED**: screenshot LINE client จริงจากคำสั่งสรุปยืนยันภาพเดือนนี้และข้อความตรงกันที่ รายรับ 0 บาท / รายจ่าย 770 บาท / คงเหลือ -770 บาท / อาหาร 770 บาท; day/week/year ยังครอบคลุมด้วย automated renderer และควร spot-check ต่อเมื่อทำ Final cross-period sign-off
 5. **Reminder/Recurring cron** — logic/idempotency/downgrade gating PASS; delivery จริงและ no-duplicate ยังต้องพิสูจน์จาก scheduled Production run
 6. **Group LINE** — role isolation PASS ใน automated UAT; owner/contributor/viewer ในกลุ่มจริงยังต้องพิสูจน์จาก LINE Production group
 7. **AI/provider readiness** — LINE provider VERIFIED; OCR fallback พร้อมใช้งานโดยไม่พึ่ง OpenAI key; voice/PDF path ที่ต้องใช้ external provider ยังต้องพิสูจน์ credential/quota ใน Production ตาม flow จริง
@@ -81,7 +81,9 @@
 - Free / Pro / Pro Max ถูก gate ทั้ง backend และ Dashboard UI
 - save-result renderer ใช้ `render=glyph-v2` และ no-store เพื่อกันภาพ cache เก่า
 - การ์ด voice proposal **ไม่พึ่ง Manus storage แล้ว**; artwork ถูก self-host ที่ `https://milo-line-app.vercel.app/milo-voice-proposal-cat.webp` และมี regression test ป้องกันการย้อนกลับไปใช้ `manus.space`
+- คำสั่ง `วิเคราะห์` มี deterministic financial-analysis fallback แล้ว: ถ้า AI provider/quota ใช้งานไม่ได้ ระบบยังสรุปจากยอดจริง, จำนวนรายการ และหมวดรายจ่ายได้โดยไม่ทำให้ webhook เงียบ
+- Unknown intent ใช้ contextual fallback แบบสั้น พร้อม Quick Reply สูงสุด 3 ปุ่มตามบริบท แทนการเท help menu ยาวทุกครั้ง
 
 ## Current automated baseline
 
-รอบ Release Acceptance ล่าสุดยืนยันแล้ว **44 test files / 212 tests PASS**, TypeScript check PASS และ Production build PASS. ชุดทดสอบครอบคลุม plan entitlement/gating, Free downgrade bypass, runtime reminder-delivery gating, admin-linked Pro Max bootstrap, exact `กินกาแฟ 80` glyph regression, finance image, webhook, export, recurring, group/multi-account, receipt-edit flow และ self-hosted LINE voice proposal artwork.
+รอบ Release Acceptance ล่าสุดยืนยันแล้ว **45 test files / 216 tests PASS**, TypeScript check PASS และ Production build PASS. ชุดทดสอบครอบคลุม plan entitlement/gating, Free downgrade bypass, runtime reminder-delivery gating, admin-linked Pro Max bootstrap, exact `กินกาแฟ 80` glyph regression, finance image, webhook, export, recurring, group/multi-account, receipt-edit flow, self-hosted LINE voice proposal artwork, exact `วิเคราะห์` command, deterministic analysis fallback และ contextual Quick Reply fallback.
