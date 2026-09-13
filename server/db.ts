@@ -659,6 +659,15 @@ export async function getOwnerLinkedLineUser() {
   return owner ? getLinkedLineUser(owner.id) : undefined;
 }
 
+export async function isAdminLinkedLineUser(lineUserId: string) {
+  const db = await requireDb();
+  const row = (await db.select({ id: users.id }).from(lineAccountLinks)
+    .innerJoin(users, eq(lineAccountLinks.dashboardUserId, users.id))
+    .where(and(eq(lineAccountLinks.lineUserId, lineUserId), eq(users.role, "admin")))
+    .limit(1))[0];
+  return Boolean(row);
+}
+
 export async function linkLineUser(dashboardUserId: number, lineUserId: string) {
   const db = await requireDb();
   await db.insert(lineAccountLinks).values({ dashboardUserId, lineUserId }).onDuplicateKeyUpdate({ set: { lineUserId } });

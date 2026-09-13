@@ -5,6 +5,7 @@ vi.mock("../db", async () => {
   return {
     ...actual,
     getLinkedLineUser: vi.fn(),
+    isAdminLinkedLineUser: vi.fn(),
     getOrCreatePersonalFinanceAccount: vi.fn(),
     getFinanceAccountAccess: vi.fn(),
     listTransactions: vi.fn(),
@@ -42,7 +43,9 @@ function access(account: typeof personalAccount | typeof groupAccount, role: "ow
 describe("finance account access", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    process.env.MILO_PRO_MAX_LINE_USER_IDS = ownerLineUserId;
     vi.mocked(db.getLinkedLineUser).mockResolvedValue(ownerLineUserId);
+    vi.mocked(db.isAdminLinkedLineUser).mockResolvedValue(true);
     vi.mocked(db.getOrCreatePersonalFinanceAccount).mockResolvedValue(personalAccount as never);
     vi.mocked(db.listTransactions).mockResolvedValue([] as never);
     vi.mocked(db.listTransactionAttachmentsForFinanceAccount).mockResolvedValue([] as never);
@@ -53,6 +56,13 @@ describe("finance account access", () => {
     vi.mocked(db.listFinanceAccounts).mockResolvedValue([personalAccount, groupAccount] as never);
     await expect(caller().milo.financeAccounts.list()).resolves.toEqual([personalAccount, groupAccount]);
     expect(db.listFinanceAccounts).toHaveBeenCalledWith(ownerLineUserId);
+  });
+
+  it("blocks group ledger creation for a Free user", async () => {
+    delete process.env.MILO_PRO_MAX_LINE_USER_IDS;
+    vi.mocked(db.isAdminLinkedLineUser).mockResolvedValue(false);
+    await expect(caller().milo.financeAccounts.createGroup({ lineChatId: "G-team", name: "ค่าใช้จ่ายทีม" })).rejects.toThrow("Pro Max");
+    expect(db.createGroupFinanceAccount).not.toHaveBeenCalled();
   });
 
   it("creates a named group ledger bound to the selected LINE group", async () => {

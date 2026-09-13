@@ -32,7 +32,20 @@
 | 21 | แนบใบเสร็จ/หลักฐาน | transaction ↔ image/PDF/audio evidence linkage | PASS |
 | 22 | แก้ข้อมูลก่อนบันทึกจากใบเสร็จ | `แก้ใบเสร็จ ยอด/หมวด/วันที่/ร้านค้า ...` → update proposal เท่านั้น → ต้องยืนยันจึงบันทึก | PASS |
 | 23 | กราฟวิเคราะห์ขั้นสูง | Area income/expense, Pie category share, Bar category expense จากข้อมูลจริง | PASS |
-| 24 | Free plan | ต้องมี entitlement/plan model และกติกา Free/Pro/Pro Max ที่ชัดเจนก่อนเปิด gating | OPEN |
+| 24 | Free plan | มี entitlement model, default Free, Pro/Pro Max gating, downgrade-bypass regression และ admin-linked UAT bootstrap | PASS |
+
+## Plan / Entitlement model
+
+ระบบเปิดใช้ plan gating จริงตามขอบเขตที่กำหนดไว้:
+
+- **Free**: หมวดหมู่, Budget และสรุปรายเดือน
+- **Pro**: เพิ่ม Reminder, กราฟวิเคราะห์ขั้นสูง และตั้งวันเริ่มรอบงบเอง
+- **Pro Max**: เพิ่ม PDF, LINE Group Accounting และหลายบัญชี
+- LINE User ที่ไม่ได้รับสิทธิ์เพิ่มเติมจะเป็น **Free** โดยอัตโนมัติ
+- LINE User ที่เชื่อมกับ Dashboard role `admin` จะเป็น **Pro Max** สำหรับงาน operation/UAT เพื่อไม่ให้บัญชีดูแลระบบถูกล็อกระหว่าง rollout
+- ผู้ใช้อื่นสามารถ grant plan เพิ่มผ่าน `MILO_PRO_LINE_USER_IDS` หรือ `MILO_PRO_MAX_LINE_USER_IDS`; Pro Max มี precedence เมื่ออยู่ทั้งสองรายการ
+- Gating ถูกบังคับทั้ง LINE workflow และ Dashboard API ในฟีเจอร์ที่อยู่ใน paid tier
+- Regression ครอบคลุมการกัน bypass จาก proposed data เดิม เช่น Free user ยืนยัน PDF เก่า หรือยืนยันรูปที่จะแปลงเป็น Reminder ไม่ได้
 
 ## Acceptance flows สำคัญ
 
@@ -64,4 +77,4 @@
 
 ## Current automated baseline
 
-หลังเพิ่ม UAT ชุดใหม่และ receipt-edit flow รอบล่าสุด ยืนยันแล้ว **42 test files / 198 tests PASS** พร้อม TypeScript check PASS ก่อน release build.
+รอบ Release Acceptance ล่าสุดยืนยันแล้ว **44 test files / 212 tests PASS**, TypeScript check PASS และ Production build PASS. ชุดทดสอบครอบคลุม plan entitlement/gating, Free downgrade bypass, runtime reminder-delivery gating, admin-linked Pro Max bootstrap, exact `กินกาแฟ 80` glyph regression, finance image, webhook, export, recurring, group/multi-account และ receipt-edit flow.

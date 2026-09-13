@@ -12,6 +12,7 @@ import { generateFinancialInsight } from "./milo/financialAssistant";
 import { authenticateAdminPassword } from "./adminPassword";
 import { budgetCycleWindow, formatBudgetCycleLabel } from "./milo/budgetCycle";
 import { assertRecurringCapacity } from "./milo/recurringLimit";
+import { assertMiloEntitlement, hasMiloEntitlement, MILO_PLAN_CAPABILITIES, resolveMiloPlan } from "./milo/entitlements";
 
 export function getSchedulerSessionToken(headers: { cookie?: string; authorization?: string }) {
   const cookieToken = parseCookie(headers.cookie ?? "")[COOKIE_NAME];
@@ -32,11 +33,17 @@ async function requireFinanceAccountScope(dashboardUserId: number, financeAccoun
     ? { account: await db.getOrCreatePersonalFinanceAccount(lineUserId), membership: { role: "owner" as const } }
     : await db.getFinanceAccountAccess(financeAccountId, lineUserId);
   if (!access) throw new Error("คุณไม่มีสิทธิ์เข้าถึงสมุดบัญชีนี้");
-  return { lineUserId, financeAccountId: access.account.id, account: access.account, role: access.membership.role };
+  const plan = await resolveDashboardMiloPlan(lineUserId);
+  if (access.account.accountType === "group") assertMiloEntitlement(plan, "groupAccounting");
+  return { lineUserId, financeAccountId: access.account.id, account: access.account, role: access.membership.role, plan };
 }
 
 function requireFinancePermission(allowed: boolean, message: string) {
   if (!allowed) throw new Error(message);
+}
+
+async function resolveDashboardMiloPlan(lineUserId: string) {
+  return resolveMiloPlan(lineUserId, process.env, await db.isAdminLinkedLineUser(lineUserId));
 }
 
 function requireAdminRole(role: string) {
@@ -69,6 +76,7 @@ export const appRouter = router({
       }),
   }),
   milo: router({
+    plan: protectedProcedure.query(async ({ ctx }) => { const lineUserId = await requireLinkedLineUser(ctx.user.id); const plan = await resolveDashboardMiloPlan(lineUserId); return { plan, ...MILO_PLAN_CAPABILITIES[plan] }; }),
     linkLineAccount: protectedProcedure.input(z.object({ lineUserId: z.string().trim().regex(/^U[0-9a-fA-F]{32}$/, "LINE User ID ต้องขึ้นต้นด้วย U และตามด้วยอักขระ 32 ตัว") })).mutation(async ({ ctx, input }) => {
       const lineUserId = input.lineUserId.trim();
       await db.linkLineUser(ctx.user.id, lineUserId);
@@ -79,16 +87,39 @@ export const appRouter = router({
     }),
     connection: protectedProcedure.query(async ({ ctx }) => ({ lineUserId: await db.getLinkedLineUser(ctx.user.id) ?? null })),
     financeAccounts: router({
-      list: protectedProcedure.query(async ({ ctx }) => db.listFinanceAccounts(await requireLinkedLineUser(ctx.user.id))),
+      list: protectedProcedure.query(async ({ ctx }) => { const lineUserId = await requireLinkedLineUser(ctx.user.id); const plan = await resolveDashboardMiloPlan(lineUserId); const accounts = await db.listFinanceAccounts(lineUserId); return hasMiloEntitlement(plan, "multipleAccounts") ? accounts : accounts.filter(item => item.account.accountType === "personal"); }),
       members: protectedProcedure.input(z.object({ financeAccountId: z.number().int().positive() })).query(async ({ ctx, input }) => { await requireFinanceAccountScope(ctx.user.id, input.financeAccountId); return db.listFinanceAccountMembers(input.financeAccountId); }),
-      createGroup: protectedProcedure.input(z.object({ lineChatId: z.string().trim().min(1).max(128), name: z.string().trim().min(1).max(120) })).mutation(async ({ ctx, input }) => { const lineUserId = await requireLinkedLineUser(ctx.user.id); return { id: await db.createGroupFinanceAccount({ ownerLineUserId: lineUserId, lineChatId: input.lineChatId, name: input.name }) }; }),
+      createGroup: protectedProcedure.input(z.object({ lineChatId: z.string().trim().min(1).max(128), name: z.string().trim().min(1).max(120) })).mutation(async ({ ctx, input }) => { const lineUserId = await requireLinkedLineUser(ctx.user.id); assertMiloEntitlement(await resolveDashboardMiloPlan(lineUserId), "groupAccounting"); return { id: await db.createGroupFinanceAccount({ ownerLineUserId: lineUserId, lineChatId: input.lineChatId, name: input.name }) }; }),
       upsertMember: protectedProcedure.input(z.object({ financeAccountId: z.number().int().positive(), lineUserId: z.string().trim().regex(/^U[0-9a-fA-F]{32}$/, "LINE User ID ต้องขึ้นต้นด้วย U และตามด้วยอักขระ 32 ตัว"), role: z.enum(["manager", "contributor", "viewer"]) })).mutation(async ({ ctx, input }) => { const scope = await requireFinanceAccountScope(ctx.user.id, input.financeAccountId); requireFinancePermission(db.canManageFinanceAccountMembers(scope.role), "เฉพาะเจ้าของสมุดบัญชีที่จัดการสมาชิกได้"); if (!await db.isEligibleGroupFinanceAccountMember(input.financeAccountId, input.lineUserId)) throw new Error("ผู้ใช้นี้ยังไม่มีข้อมูลการเป็นสมาชิกในกลุ่ม LINE นี้"); await db.upsertFinanceAccountMember(input); await db.writeAuditLog({ action: "finance_account.member.upsert", entityType: "finance_account_member", entityId: input.financeAccountId, dashboardUserId: ctx.user.id, actorLineUserId: scope.lineUserId, lineChatId: scope.account.lineChatId ?? undefined, details: { memberLineUserId: input.lineUserId, role: input.role } }); return { success: true } as const; }),
       removeMember: protectedProcedure.input(z.object({ financeAccountId: z.number().int().positive(), lineUserId: z.string().trim().regex(/^U[0-9a-fA-F]{32}$/, "LINE User ID ต้องขึ้นต้นด้วย U และตามด้วยอักขระ 32 ตัว") })).mutation(async ({ ctx, input }) => { const scope = await requireFinanceAccountScope(ctx.user.id, input.financeAccountId); requireFinancePermission(db.canManageFinanceAccountMembers(scope.role), "เฉพาะเจ้าของสมุดบัญชีที่จัดการสมาชิกได้"); const removed = await db.removeFinanceAccountMember(input.financeAccountId, input.lineUserId); if (!removed) throw new Error("ไม่พบสมาชิกที่ลบได้ หรือไม่สามารถลบเจ้าของสมุดบัญชี"); await db.writeAuditLog({ action: "finance_account.member.remove", entityType: "finance_account_member", entityId: input.financeAccountId, dashboardUserId: ctx.user.id, actorLineUserId: scope.lineUserId, lineChatId: scope.account.lineChatId ?? undefined, details: { memberLineUserId: input.lineUserId } }); return { success: true } as const; }),
     }),
-    overview: adminProcedure.query(async ({ ctx }) => { const lineUserId = await db.getLinkedLineUser(ctx.user.id); if (!lineUserId) return { lineUserId: null, reminders: [], todos: [], notes: [], vault: [], groups: [], budgets: [], finance: { income: 0, expense: 0, balance: 0, categories: {} }, financeAnalytics: { daily: [], transactionCount: 0, sevenDayIncome: 0, sevenDayExpense: 0 } }; const personalAccount = await db.getOrCreatePersonalFinanceAccount(lineUserId); const [reminders, todos, notes, vault, groups, budgets, finance, financeAnalytics, financeAccounts] = await Promise.all([db.listReminders(lineUserId), db.listTodos(lineUserId), db.listNotes(lineUserId), db.searchVault(lineUserId), db.listLineGroups(lineUserId), db.listBudgets(lineUserId, undefined, personalAccount.id), db.financeSummary(lineUserId, personalAccount.id), db.financeAnalytics(lineUserId, personalAccount.id), db.listFinanceAccounts(lineUserId)]); return { lineUserId, reminders, todos, notes, vault, groups, budgets, finance, financeAnalytics, financeAccounts, personalFinanceAccountId: personalAccount.id }; }),
+    overview: adminProcedure.query(async ({ ctx }) => {
+      const lineUserId = await db.getLinkedLineUser(ctx.user.id);
+      if (!lineUserId) return { lineUserId: null, plan: "free" as const, planCapabilities: MILO_PLAN_CAPABILITIES.free, reminders: [], todos: [], notes: [], vault: [], groups: [], budgets: [], finance: { income: 0, expense: 0, balance: 0, categories: {} }, financeAnalytics: { daily: [], transactionCount: 0, sevenDayIncome: 0, sevenDayExpense: 0 }, financeAccounts: [] };
+      const plan = await resolveDashboardMiloPlan(lineUserId);
+      const personalAccount = await db.getOrCreatePersonalFinanceAccount(lineUserId);
+      const [reminders, todos, notes, vault, groups, budgets, finance, financeAnalytics, financeAccounts] = await Promise.all([
+        db.listReminders(lineUserId), db.listTodos(lineUserId), db.listNotes(lineUserId), db.searchVault(lineUserId), db.listLineGroups(lineUserId), db.listBudgets(lineUserId, undefined, personalAccount.id), db.financeSummary(lineUserId, personalAccount.id), db.financeAnalytics(lineUserId, personalAccount.id), db.listFinanceAccounts(lineUserId),
+      ]);
+      return {
+        lineUserId,
+        plan,
+        planCapabilities: MILO_PLAN_CAPABILITIES[plan],
+        reminders: hasMiloEntitlement(plan, "reminders") ? reminders : [],
+        todos,
+        notes,
+        vault,
+        groups: hasMiloEntitlement(plan, "groupAccounting") ? groups : [],
+        budgets,
+        finance,
+        financeAnalytics: hasMiloEntitlement(plan, "advancedCharts") ? financeAnalytics : { daily: [], transactionCount: 0, sevenDayIncome: 0, sevenDayExpense: 0 },
+        financeAccounts: hasMiloEntitlement(plan, "multipleAccounts") ? financeAccounts : financeAccounts.filter(item => item.account.accountType === "personal"),
+        personalFinanceAccountId: personalAccount.id,
+      };
+    }),
     reminders: router({
-      list: protectedProcedure.query(async ({ ctx }) => db.listReminders(await requireLinkedLineUser(ctx.user.id))),
-      create: protectedProcedure.input(z.object({ title: z.string().min(1).max(255), dueAt: z.coerce.date(), recurrenceType: z.enum(["once", "minute", "day", "week", "month"]).default("once"), recurrenceInterval: z.number().int().min(1).default(1) })).mutation(async ({ ctx, input }) => { const lineUserId = await requireLinkedLineUser(ctx.user.id); return { id: await db.createReminder({ lineChatId: lineUserId, createdByLineUserId: lineUserId, title: input.title, dueAt: input.dueAt, nextRunAt: input.dueAt, recurrenceType: input.recurrenceType, recurrenceInterval: input.recurrenceInterval }) }; }),
+      list: protectedProcedure.query(async ({ ctx }) => { const lineUserId = await requireLinkedLineUser(ctx.user.id); assertMiloEntitlement(await resolveDashboardMiloPlan(lineUserId), "reminders"); return db.listReminders(lineUserId); }),
+      create: protectedProcedure.input(z.object({ title: z.string().min(1).max(255), dueAt: z.coerce.date(), recurrenceType: z.enum(["once", "minute", "day", "week", "month"]).default("once"), recurrenceInterval: z.number().int().min(1).default(1) })).mutation(async ({ ctx, input }) => { const lineUserId = await requireLinkedLineUser(ctx.user.id); assertMiloEntitlement(await resolveDashboardMiloPlan(lineUserId), "reminders"); return { id: await db.createReminder({ lineChatId: lineUserId, createdByLineUserId: lineUserId, title: input.title, dueAt: input.dueAt, nextRunAt: input.dueAt, recurrenceType: input.recurrenceType, recurrenceInterval: input.recurrenceInterval }) }; }),
       delete: protectedProcedure.input(z.object({ id: z.number().int().positive() })).mutation(async ({ ctx, input }) => { await db.deleteReminder(input.id, await requireLinkedLineUser(ctx.user.id)); return { success: true } as const; }),
     }),
     vault: router({ search: protectedProcedure.input(z.object({ query: z.string().max(255).default("") })).query(async ({ ctx, input }) => db.searchVault(await requireLinkedLineUser(ctx.user.id), input.query)), updateMetadata: protectedProcedure.input(z.object({ id: z.number().int().positive(), tagsText: z.string().max(500).nullable().optional(), sourceUrl: z.string().url().max(2000).nullable().optional() })).mutation(async ({ ctx, input }) => { await db.updateVaultMetadata(input.id, await requireLinkedLineUser(ctx.user.id), { tagsText: input.tagsText, sourceUrl: input.sourceUrl }); return { success: true } as const; }) }),
@@ -96,11 +127,11 @@ export const appRouter = router({
     finance: router({
       summary: protectedProcedure.input(z.object({ financeAccountId: z.number().int().positive().optional() }).optional()).query(async ({ ctx, input }) => { const scope = await requireFinanceAccountScope(ctx.user.id, input?.financeAccountId); return db.financeSummary(scope.lineUserId, scope.financeAccountId); }),
       balanceSnapshot: protectedProcedure.input(z.object({ financeAccountId: z.number().int().positive().optional() }).optional()).query(async ({ ctx, input }) => { const scope = await requireFinanceAccountScope(ctx.user.id, input?.financeAccountId); return db.getBalanceSnapshot(scope.lineUserId, scope.financeAccountId); }),
-      analytics: protectedProcedure.input(z.object({ financeAccountId: z.number().int().positive().optional() }).optional()).query(async ({ ctx, input }) => { const scope = await requireFinanceAccountScope(ctx.user.id, input?.financeAccountId); return db.financeAnalytics(scope.lineUserId, scope.financeAccountId); }),
+      analytics: protectedProcedure.input(z.object({ financeAccountId: z.number().int().positive().optional() }).optional()).query(async ({ ctx, input }) => { const scope = await requireFinanceAccountScope(ctx.user.id, input?.financeAccountId); assertMiloEntitlement(scope.plan, "advancedCharts"); return db.financeAnalytics(scope.lineUserId, scope.financeAccountId); }),
       budgets: protectedProcedure.input(z.object({ financeAccountId: z.number().int().positive().optional(), monthKey: z.string().regex(/^\d{4}-\d{2}$/).optional() }).optional()).query(async ({ ctx, input }) => { const scope = await requireFinanceAccountScope(ctx.user.id, input?.financeAccountId); return db.listBudgets(scope.lineUserId, input?.monthKey, scope.financeAccountId); }),
       budgetCycle: router({
         get: protectedProcedure.input(z.object({ financeAccountId: z.number().int().positive().optional() }).optional()).query(async ({ ctx, input }) => { const scope = await requireFinanceAccountScope(ctx.user.id, input?.financeAccountId); const startDay = await db.getFinanceAccountBudgetCycleStartDay(scope.financeAccountId); const cycle = budgetCycleWindow(new Date(), startDay); return { startDay, key: cycle.key, start: cycle.start, end: cycle.end, label: formatBudgetCycleLabel(new Date(), startDay) }; }),
-        update: protectedProcedure.input(z.object({ day: z.number().int().min(1).max(28), financeAccountId: z.number().int().positive().optional() })).mutation(async ({ ctx, input }) => { const scope = await requireFinanceAccountScope(ctx.user.id, input.financeAccountId); requireFinancePermission(db.canManageFinanceSettings(scope.role), "สิทธิ์ของคุณยังตั้งวันเริ่มรอบงบในสมุดบัญชีนี้ไม่ได้"); const startDay = await db.updateFinanceAccountBudgetCycleStartDay(scope.financeAccountId, input.day); if (!startDay) throw new Error("ไม่สามารถตั้งวันเริ่มรอบงบได้"); await db.writeAuditLog({ action: "finance_budget_cycle.update", entityType: "finance_account", entityId: scope.financeAccountId, dashboardUserId: ctx.user.id, actorLineUserId: scope.lineUserId, lineChatId: scope.account.lineChatId ?? undefined, details: { startDay } }); const cycle = budgetCycleWindow(new Date(), startDay); return { startDay, key: cycle.key, start: cycle.start, end: cycle.end, label: formatBudgetCycleLabel(new Date(), startDay) }; }),
+        update: protectedProcedure.input(z.object({ day: z.number().int().min(1).max(28), financeAccountId: z.number().int().positive().optional() })).mutation(async ({ ctx, input }) => { const scope = await requireFinanceAccountScope(ctx.user.id, input.financeAccountId); assertMiloEntitlement(scope.plan, "customBudgetCycle"); requireFinancePermission(db.canManageFinanceSettings(scope.role), "สิทธิ์ของคุณยังตั้งวันเริ่มรอบงบในสมุดบัญชีนี้ไม่ได้"); const startDay = await db.updateFinanceAccountBudgetCycleStartDay(scope.financeAccountId, input.day); if (!startDay) throw new Error("ไม่สามารถตั้งวันเริ่มรอบงบได้"); await db.writeAuditLog({ action: "finance_budget_cycle.update", entityType: "finance_account", entityId: scope.financeAccountId, dashboardUserId: ctx.user.id, actorLineUserId: scope.lineUserId, lineChatId: scope.account.lineChatId ?? undefined, details: { startDay } }); const cycle = budgetCycleWindow(new Date(), startDay); return { startDay, key: cycle.key, start: cycle.start, end: cycle.end, label: formatBudgetCycleLabel(new Date(), startDay) }; }),
       }),
       openingBalance: protectedProcedure.input(z.object({ amount: z.number().min(0), effectiveAt: z.coerce.date().optional(), financeAccountId: z.number().int().positive().optional() })).mutation(async ({ ctx, input }) => { const scope = await requireFinanceAccountScope(ctx.user.id, input.financeAccountId); requireFinancePermission(db.canManageFinanceSettings(scope.role), "สิทธิ์ของคุณยังตั้งค่ายอดเริ่มต้นในสมุดบัญชีนี้ไม่ได้"); await db.upsertOpeningBalance(scope.lineUserId, input.amount, input.effectiveAt, scope.financeAccountId); await db.writeAuditLog({ action: "finance_opening_balance.set", entityType: "finance_opening_balance", dashboardUserId: ctx.user.id, actorLineUserId: scope.lineUserId, lineChatId: scope.account.lineChatId ?? undefined, details: { financeAccountId: scope.financeAccountId, amount: input.amount, effectiveAt: input.effectiveAt?.toISOString() ?? null } }); return { success: true } as const; }),
       recurring: router({

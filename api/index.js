@@ -982,6 +982,11 @@ async function getOwnerLinkedLineUser() {
   const owner = (await db.select({ id: users.id }).from(users).where(eq(users.openId, ENV.ownerOpenId)).limit(1))[0];
   return owner ? getLinkedLineUser(owner.id) : void 0;
 }
+async function isAdminLinkedLineUser(lineUserId) {
+  const db = await requireDb();
+  const row = (await db.select({ id: users.id }).from(lineAccountLinks).innerJoin(users, eq(lineAccountLinks.dashboardUserId, users.id)).where(and(eq(lineAccountLinks.lineUserId, lineUserId), eq(users.role, "admin"))).limit(1))[0];
+  return Boolean(row);
+}
 async function linkLineUser(dashboardUserId, lineUserId) {
   const db = await requireDb();
   await db.insert(lineAccountLinks).values({ dashboardUserId, lineUserId }).onDuplicateKeyUpdate({ set: { lineUserId } });
@@ -1457,6 +1462,55 @@ var systemRouter = router({
   })
 });
 
+// server/milo/entitlements.ts
+var PLAN_RANK = { free: 0, pro: 1, pro_max: 2 };
+var MILO_ENTITLEMENT_MIN_PLAN = {
+  reminders: "pro",
+  advancedCharts: "pro",
+  customBudgetCycle: "pro",
+  pdf: "pro_max",
+  groupAccounting: "pro_max",
+  multipleAccounts: "pro_max"
+};
+var MILO_PLAN_CAPABILITIES = {
+  free: {
+    label: "Free",
+    included: ["categories", "budget", "monthlySummary"]
+  },
+  pro: {
+    label: "Pro",
+    included: ["categories", "budget", "monthlySummary", "reminders", "advancedCharts", "customBudgetCycle"]
+  },
+  pro_max: {
+    label: "Pro Max",
+    included: ["categories", "budget", "monthlySummary", "reminders", "advancedCharts", "customBudgetCycle", "pdf", "groupAccounting", "multipleAccounts"]
+  }
+};
+function parseLineUserSet(value) {
+  return new Set((value ?? "").split(",").map((item) => item.trim()).filter(Boolean));
+}
+function resolveMiloPlan(lineUserId, env = process.env, adminLinked = false) {
+  if (!lineUserId) return "free";
+  if (adminLinked) return "pro_max";
+  if (parseLineUserSet(env.MILO_PRO_MAX_LINE_USER_IDS).has(lineUserId)) return "pro_max";
+  if (parseLineUserSet(env.MILO_PRO_LINE_USER_IDS).has(lineUserId)) return "pro";
+  return "free";
+}
+function hasMiloEntitlement(plan, entitlement) {
+  return PLAN_RANK[plan] >= PLAN_RANK[MILO_ENTITLEMENT_MIN_PLAN[entitlement]];
+}
+function requiredPlanFor(entitlement) {
+  return MILO_ENTITLEMENT_MIN_PLAN[entitlement];
+}
+function entitlementMessage(entitlement) {
+  const plan = requiredPlanFor(entitlement);
+  const label = MILO_PLAN_CAPABILITIES[plan].label;
+  return `\u0E1F\u0E35\u0E40\u0E08\u0E2D\u0E23\u0E4C\u0E19\u0E35\u0E49\u0E2D\u0E22\u0E39\u0E48\u0E43\u0E19\u0E41\u0E1E\u0E47\u0E01\u0E40\u0E01\u0E08 ${label} \u0E01\u0E23\u0E38\u0E13\u0E32\u0E2D\u0E31\u0E1B\u0E40\u0E01\u0E23\u0E14\u0E41\u0E1E\u0E47\u0E01\u0E40\u0E01\u0E08\u0E01\u0E48\u0E2D\u0E19\u0E43\u0E0A\u0E49\u0E07\u0E32\u0E19\u0E04\u0E23\u0E31\u0E1A`;
+}
+function assertMiloEntitlement(plan, entitlement) {
+  if (!hasMiloEntitlement(plan, entitlement)) throw new Error(entitlementMessage(entitlement));
+}
+
 // server/milo/richMenuArtwork.ts
 var RICH_MENU_ARTWORK = {
   "report-year": {
@@ -1837,7 +1891,8 @@ function miloSaveResultImageUrl(summary) {
     occurredAt: summary.occurredAt.toISOString(),
     budgetSpent: String(summary.budgetSpent),
     budgetLimit: String(summary.budgetLimit),
-    budgetPercent: summary.budgetPercent === void 0 ? "" : String(summary.budgetPercent)
+    budgetPercent: summary.budgetPercent === void 0 ? "" : String(summary.budgetPercent),
+    render: "glyph-v2"
   });
   return `${appBaseUrl}/api/milo/save-result.png?${params.toString()}`;
 }
@@ -2154,6 +2209,12 @@ async function deliverDueReminders(context = {}) {
   let sent = 0;
   let failed = 0;
   for (const reminder of due) {
+    const plan = resolveMiloPlan(
+      reminder.createdByLineUserId,
+      process.env,
+      await isAdminLinkedLineUser(reminder.createdByLineUserId)
+    );
+    if (!hasMiloEntitlement(plan, "reminders")) continue;
     const attemptId = await createReminderDeliveryAttempt({ reminderId: reminder.id, runner: context.runner ?? "manual", taskUid: context.taskUid });
     try {
       await pushText(reminder.lineChatId, `\u{1F514} ${reminder.title}${reminder.detail ? `
@@ -2576,10 +2637,15 @@ async function requireFinanceAccountScope(dashboardUserId, financeAccountId) {
   const lineUserId = await requireLinkedLineUser(dashboardUserId);
   const access = financeAccountId === void 0 ? { account: await getOrCreatePersonalFinanceAccount(lineUserId), membership: { role: "owner" } } : await getFinanceAccountAccess(financeAccountId, lineUserId);
   if (!access) throw new Error("\u0E04\u0E38\u0E13\u0E44\u0E21\u0E48\u0E21\u0E35\u0E2A\u0E34\u0E17\u0E18\u0E34\u0E4C\u0E40\u0E02\u0E49\u0E32\u0E16\u0E36\u0E07\u0E2A\u0E21\u0E38\u0E14\u0E1A\u0E31\u0E0D\u0E0A\u0E35\u0E19\u0E35\u0E49");
-  return { lineUserId, financeAccountId: access.account.id, account: access.account, role: access.membership.role };
+  const plan = await resolveDashboardMiloPlan(lineUserId);
+  if (access.account.accountType === "group") assertMiloEntitlement(plan, "groupAccounting");
+  return { lineUserId, financeAccountId: access.account.id, account: access.account, role: access.membership.role, plan };
 }
 function requireFinancePermission(allowed, message) {
   if (!allowed) throw new Error(message);
+}
+async function resolveDashboardMiloPlan(lineUserId) {
+  return resolveMiloPlan(lineUserId, process.env, await isAdminLinkedLineUser(lineUserId));
 }
 function requireAdminRole(role) {
   if (role !== "admin") throw new Error("\u0E40\u0E09\u0E1E\u0E32\u0E30\u0E1C\u0E39\u0E49\u0E14\u0E39\u0E41\u0E25\u0E42\u0E04\u0E23\u0E07\u0E01\u0E32\u0E23\u0E17\u0E35\u0E48\u0E40\u0E02\u0E49\u0E32\u0E16\u0E36\u0E07\u0E2A\u0E48\u0E27\u0E19\u0E19\u0E35\u0E49\u0E44\u0E14\u0E49");
@@ -2611,6 +2677,11 @@ var appRouter = router({
     })
   }),
   milo: router({
+    plan: protectedProcedure.query(async ({ ctx }) => {
+      const lineUserId = await requireLinkedLineUser(ctx.user.id);
+      const plan = await resolveDashboardMiloPlan(lineUserId);
+      return { plan, ...MILO_PLAN_CAPABILITIES[plan] };
+    }),
     linkLineAccount: protectedProcedure.input(z2.object({ lineUserId: z2.string().trim().regex(/^U[0-9a-fA-F]{32}$/, "LINE User ID \u0E15\u0E49\u0E2D\u0E07\u0E02\u0E36\u0E49\u0E19\u0E15\u0E49\u0E19\u0E14\u0E49\u0E27\u0E22 U \u0E41\u0E25\u0E30\u0E15\u0E32\u0E21\u0E14\u0E49\u0E27\u0E22\u0E2D\u0E31\u0E01\u0E02\u0E23\u0E30 32 \u0E15\u0E31\u0E27") })).mutation(async ({ ctx, input }) => {
       const lineUserId = input.lineUserId.trim();
       await linkLineUser(ctx.user.id, lineUserId);
@@ -2621,13 +2692,19 @@ var appRouter = router({
     }),
     connection: protectedProcedure.query(async ({ ctx }) => ({ lineUserId: await getLinkedLineUser(ctx.user.id) ?? null })),
     financeAccounts: router({
-      list: protectedProcedure.query(async ({ ctx }) => listFinanceAccounts(await requireLinkedLineUser(ctx.user.id))),
+      list: protectedProcedure.query(async ({ ctx }) => {
+        const lineUserId = await requireLinkedLineUser(ctx.user.id);
+        const plan = await resolveDashboardMiloPlan(lineUserId);
+        const accounts = await listFinanceAccounts(lineUserId);
+        return hasMiloEntitlement(plan, "multipleAccounts") ? accounts : accounts.filter((item) => item.account.accountType === "personal");
+      }),
       members: protectedProcedure.input(z2.object({ financeAccountId: z2.number().int().positive() })).query(async ({ ctx, input }) => {
         await requireFinanceAccountScope(ctx.user.id, input.financeAccountId);
         return listFinanceAccountMembers(input.financeAccountId);
       }),
       createGroup: protectedProcedure.input(z2.object({ lineChatId: z2.string().trim().min(1).max(128), name: z2.string().trim().min(1).max(120) })).mutation(async ({ ctx, input }) => {
         const lineUserId = await requireLinkedLineUser(ctx.user.id);
+        assertMiloEntitlement(await resolveDashboardMiloPlan(lineUserId), "groupAccounting");
         return { id: await createGroupFinanceAccount({ ownerLineUserId: lineUserId, lineChatId: input.lineChatId, name: input.name }) };
       }),
       upsertMember: protectedProcedure.input(z2.object({ financeAccountId: z2.number().int().positive(), lineUserId: z2.string().trim().regex(/^U[0-9a-fA-F]{32}$/, "LINE User ID \u0E15\u0E49\u0E2D\u0E07\u0E02\u0E36\u0E49\u0E19\u0E15\u0E49\u0E19\u0E14\u0E49\u0E27\u0E22 U \u0E41\u0E25\u0E30\u0E15\u0E32\u0E21\u0E14\u0E49\u0E27\u0E22\u0E2D\u0E31\u0E01\u0E02\u0E23\u0E30 32 \u0E15\u0E31\u0E27"), role: z2.enum(["manager", "contributor", "viewer"]) })).mutation(async ({ ctx, input }) => {
@@ -2649,15 +2726,45 @@ var appRouter = router({
     }),
     overview: adminProcedure.query(async ({ ctx }) => {
       const lineUserId = await getLinkedLineUser(ctx.user.id);
-      if (!lineUserId) return { lineUserId: null, reminders: [], todos: [], notes: [], vault: [], groups: [], budgets: [], finance: { income: 0, expense: 0, balance: 0, categories: {} }, financeAnalytics: { daily: [], transactionCount: 0, sevenDayIncome: 0, sevenDayExpense: 0 } };
+      if (!lineUserId) return { lineUserId: null, plan: "free", planCapabilities: MILO_PLAN_CAPABILITIES.free, reminders: [], todos: [], notes: [], vault: [], groups: [], budgets: [], finance: { income: 0, expense: 0, balance: 0, categories: {} }, financeAnalytics: { daily: [], transactionCount: 0, sevenDayIncome: 0, sevenDayExpense: 0 }, financeAccounts: [] };
+      const plan = await resolveDashboardMiloPlan(lineUserId);
       const personalAccount = await getOrCreatePersonalFinanceAccount(lineUserId);
-      const [reminders2, todos, notes2, vault, groups, budgets2, finance, financeAnalytics2, financeAccounts2] = await Promise.all([listReminders(lineUserId), listTodos(lineUserId), listNotes(lineUserId), searchVault(lineUserId), listLineGroups(lineUserId), listBudgets(lineUserId, void 0, personalAccount.id), financeSummary(lineUserId, personalAccount.id), financeAnalytics(lineUserId, personalAccount.id), listFinanceAccounts(lineUserId)]);
-      return { lineUserId, reminders: reminders2, todos, notes: notes2, vault, groups, budgets: budgets2, finance, financeAnalytics: financeAnalytics2, financeAccounts: financeAccounts2, personalFinanceAccountId: personalAccount.id };
+      const [reminders2, todos, notes2, vault, groups, budgets2, finance, financeAnalytics2, financeAccounts2] = await Promise.all([
+        listReminders(lineUserId),
+        listTodos(lineUserId),
+        listNotes(lineUserId),
+        searchVault(lineUserId),
+        listLineGroups(lineUserId),
+        listBudgets(lineUserId, void 0, personalAccount.id),
+        financeSummary(lineUserId, personalAccount.id),
+        financeAnalytics(lineUserId, personalAccount.id),
+        listFinanceAccounts(lineUserId)
+      ]);
+      return {
+        lineUserId,
+        plan,
+        planCapabilities: MILO_PLAN_CAPABILITIES[plan],
+        reminders: hasMiloEntitlement(plan, "reminders") ? reminders2 : [],
+        todos,
+        notes: notes2,
+        vault,
+        groups: hasMiloEntitlement(plan, "groupAccounting") ? groups : [],
+        budgets: budgets2,
+        finance,
+        financeAnalytics: hasMiloEntitlement(plan, "advancedCharts") ? financeAnalytics2 : { daily: [], transactionCount: 0, sevenDayIncome: 0, sevenDayExpense: 0 },
+        financeAccounts: hasMiloEntitlement(plan, "multipleAccounts") ? financeAccounts2 : financeAccounts2.filter((item) => item.account.accountType === "personal"),
+        personalFinanceAccountId: personalAccount.id
+      };
     }),
     reminders: router({
-      list: protectedProcedure.query(async ({ ctx }) => listReminders(await requireLinkedLineUser(ctx.user.id))),
+      list: protectedProcedure.query(async ({ ctx }) => {
+        const lineUserId = await requireLinkedLineUser(ctx.user.id);
+        assertMiloEntitlement(await resolveDashboardMiloPlan(lineUserId), "reminders");
+        return listReminders(lineUserId);
+      }),
       create: protectedProcedure.input(z2.object({ title: z2.string().min(1).max(255), dueAt: z2.coerce.date(), recurrenceType: z2.enum(["once", "minute", "day", "week", "month"]).default("once"), recurrenceInterval: z2.number().int().min(1).default(1) })).mutation(async ({ ctx, input }) => {
         const lineUserId = await requireLinkedLineUser(ctx.user.id);
+        assertMiloEntitlement(await resolveDashboardMiloPlan(lineUserId), "reminders");
         return { id: await createReminder({ lineChatId: lineUserId, createdByLineUserId: lineUserId, title: input.title, dueAt: input.dueAt, nextRunAt: input.dueAt, recurrenceType: input.recurrenceType, recurrenceInterval: input.recurrenceInterval }) };
       }),
       delete: protectedProcedure.input(z2.object({ id: z2.number().int().positive() })).mutation(async ({ ctx, input }) => {
@@ -2684,6 +2791,7 @@ var appRouter = router({
       }),
       analytics: protectedProcedure.input(z2.object({ financeAccountId: z2.number().int().positive().optional() }).optional()).query(async ({ ctx, input }) => {
         const scope = await requireFinanceAccountScope(ctx.user.id, input?.financeAccountId);
+        assertMiloEntitlement(scope.plan, "advancedCharts");
         return financeAnalytics(scope.lineUserId, scope.financeAccountId);
       }),
       budgets: protectedProcedure.input(z2.object({ financeAccountId: z2.number().int().positive().optional(), monthKey: z2.string().regex(/^\d{4}-\d{2}$/).optional() }).optional()).query(async ({ ctx, input }) => {
@@ -2699,6 +2807,7 @@ var appRouter = router({
         }),
         update: protectedProcedure.input(z2.object({ day: z2.number().int().min(1).max(28), financeAccountId: z2.number().int().positive().optional() })).mutation(async ({ ctx, input }) => {
           const scope = await requireFinanceAccountScope(ctx.user.id, input.financeAccountId);
+          assertMiloEntitlement(scope.plan, "customBudgetCycle");
           requireFinancePermission(canManageFinanceSettings(scope.role), "\u0E2A\u0E34\u0E17\u0E18\u0E34\u0E4C\u0E02\u0E2D\u0E07\u0E04\u0E38\u0E13\u0E22\u0E31\u0E07\u0E15\u0E31\u0E49\u0E07\u0E27\u0E31\u0E19\u0E40\u0E23\u0E34\u0E48\u0E21\u0E23\u0E2D\u0E1A\u0E07\u0E1A\u0E43\u0E19\u0E2A\u0E21\u0E38\u0E14\u0E1A\u0E31\u0E0D\u0E0A\u0E35\u0E19\u0E35\u0E49\u0E44\u0E21\u0E48\u0E44\u0E14\u0E49");
           const startDay = await updateFinanceAccountBudgetCycleStartDay(scope.financeAccountId, input.day);
           if (!startDay) throw new Error("\u0E44\u0E21\u0E48\u0E2A\u0E32\u0E21\u0E32\u0E23\u0E16\u0E15\u0E31\u0E49\u0E07\u0E27\u0E31\u0E19\u0E40\u0E23\u0E34\u0E48\u0E21\u0E23\u0E2D\u0E1A\u0E07\u0E1A\u0E44\u0E14\u0E49");
@@ -4236,8 +4345,25 @@ ${lineUserId}
     return;
   }
   const command = parseMiloCommand(text2);
+  const plan = resolveMiloPlan(lineUserId, process.env, await isAdminLinkedLineUser(lineUserId));
   let message = "";
   const financeCommands = /* @__PURE__ */ new Set(["expense", "income", "transactionSearch", "transactionDelete", "transactionUpdate", "openingBalance", "financeReport", "aiSummary", "budgetOverview", "transactionList", "voiceConfirm", "voiceEditPrompt", "voiceCategoryChange", "voiceEdit", "budget", "budgetCycleStart", "categoryAdd", "categoryRemove", "categoryList", "imageConfirm", "imageEdit", "pdfConfirm", "recurringCreate", "recurringList", "recurringStatus", "exportFinance"]);
+  if (command.type === "reminder" && !hasMiloEntitlement(plan, "reminders")) {
+    if (event.replyToken) await replyText(event.replyToken, entitlementMessage("reminders"));
+    return;
+  }
+  if (command.type === "pdfConfirm" && !hasMiloEntitlement(plan, "pdf")) {
+    if (event.replyToken) await replyText(event.replyToken, entitlementMessage("pdf"));
+    return;
+  }
+  if (command.type === "budgetCycleStart" && !hasMiloEntitlement(plan, "customBudgetCycle")) {
+    if (event.replyToken) await replyText(event.replyToken, entitlementMessage("customBudgetCycle"));
+    return;
+  }
+  if (scope !== "user" && financeCommands.has(command.type) && !hasMiloEntitlement(plan, "groupAccounting")) {
+    if (event.replyToken) await replyText(event.replyToken, entitlementMessage("groupAccounting"));
+    return;
+  }
   const financeScope = financeCommands.has(command.type) ? await resolveFinanceScope(lineUserId, lineChatId, scope) : void 0;
   if (financeCommands.has(command.type) && !financeScope) {
     if (event.replyToken) await replyText(event.replyToken, financeAccessMessage(scope));
@@ -4579,9 +4705,13 @@ ${incomeSection}
       } else {
         const proposed = parseMiloCommand(`\u0E40\u0E15\u0E37\u0E2D\u0E19 ${proposal.title} ${proposal.dateText} ${proposal.timeText}`);
         if (proposed.type === "reminder") {
-          const id = await createReminder({ lineChatId, createdByLineUserId: lineUserId, ...proposed.data, sourceImageKey: latest.vault.storageKey ?? void 0 });
-          await setImageExtractionStatus(latest.extraction.id, "accepted");
-          message = `\u0E2A\u0E23\u0E49\u0E32\u0E07\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E40\u0E15\u0E37\u0E2D\u0E19\u0E08\u0E32\u0E01\u0E23\u0E39\u0E1B #${id} \u0E41\u0E25\u0E49\u0E27: ${proposed.data.title}`;
+          if (!hasMiloEntitlement(plan, "reminders")) {
+            message = entitlementMessage("reminders");
+          } else {
+            const id = await createReminder({ lineChatId, createdByLineUserId: lineUserId, ...proposed.data, sourceImageKey: latest.vault.storageKey ?? void 0 });
+            await setImageExtractionStatus(latest.extraction.id, "accepted");
+            message = `\u0E2A\u0E23\u0E49\u0E32\u0E07\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E40\u0E15\u0E37\u0E2D\u0E19\u0E08\u0E32\u0E01\u0E23\u0E39\u0E1B #${id} \u0E41\u0E25\u0E49\u0E27: ${proposed.data.title}`;
+          }
         } else {
           message = "\u0E2D\u0E48\u0E32\u0E19\u0E2B\u0E31\u0E27\u0E02\u0E49\u0E2D\u0E08\u0E32\u0E01\u0E23\u0E39\u0E1B\u0E44\u0E14\u0E49 \u0E41\u0E15\u0E48\u0E22\u0E31\u0E07\u0E2D\u0E48\u0E32\u0E19\u0E27\u0E31\u0E19\u0E40\u0E27\u0E25\u0E32\u0E17\u0E35\u0E48\u0E41\u0E19\u0E48\u0E0A\u0E31\u0E14\u0E44\u0E21\u0E48\u0E44\u0E14\u0E49 \u0E25\u0E2D\u0E07\u0E1E\u0E34\u0E21\u0E1E\u0E4C\u0E40\u0E27\u0E25\u0E32\u0E17\u0E35\u0E48\u0E15\u0E49\u0E2D\u0E07\u0E01\u0E32\u0E23\u0E40\u0E1E\u0E34\u0E48\u0E21 \u0E41\u0E25\u0E49\u0E27\u0E2A\u0E48\u0E07\u0E21\u0E32\u0E43\u0E2B\u0E21\u0E48\u0E44\u0E14\u0E49\u0E04\u0E23\u0E31\u0E1A";
         }
@@ -4628,6 +4758,15 @@ async function handleMedia(event, lineChatId, lineUserId, scope) {
   const isImage = message.type === "image";
   const isAudio = message.type === "audio";
   const isPdf = message.type === "file" && /\.pdf$/i.test(message.fileName ?? "");
+  const plan = resolveMiloPlan(lineUserId, process.env, await isAdminLinkedLineUser(lineUserId));
+  if (isPdf && !hasMiloEntitlement(plan, "pdf")) {
+    if (event.replyToken) await replyText(event.replyToken, entitlementMessage("pdf"));
+    return;
+  }
+  if (scope !== "user" && (isImage || isAudio || isPdf) && !hasMiloEntitlement(plan, "groupAccounting")) {
+    if (event.replyToken) await replyText(event.replyToken, entitlementMessage("groupAccounting"));
+    return;
+  }
   const bytes = await getMessageContent(message.id);
   const mimeType = isImage ? "image/jpeg" : isAudio ? "audio/m4a" : isPdf ? "application/pdf" : "application/octet-stream";
   const stored = await storagePut(`milo/${lineChatId}/${message.id}`, bytes, mimeType);

@@ -54,6 +54,7 @@ export function miloSaveResultImageUrl(summary: PostSaveSummary) {
     budgetSpent: String(summary.budgetSpent),
     budgetLimit: String(summary.budgetLimit),
     budgetPercent: summary.budgetPercent === undefined ? "" : String(summary.budgetPercent),
+    render: "glyph-v2",
   });
   return `${appBaseUrl}/api/milo/save-result.png?${params.toString()}`;
 }

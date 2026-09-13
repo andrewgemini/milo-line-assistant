@@ -27,6 +27,7 @@ vi.mock("../db", () => ({
   updateVoiceTranscriptionStatus: vi.fn(),
   updateVoiceTranscript: vi.fn(),
   resolveFinanceAccountForLineEvent: vi.fn(),
+  isAdminLinkedLineUser: vi.fn(),
   canCreateFinanceTransaction: vi.fn(() => true),
   canManageFinanceTransactions: vi.fn(() => true),
   canManageFinanceSettings: vi.fn(() => true),
@@ -56,6 +57,8 @@ import { processEvent, registerLineWebhook } from "./routes";
 describe("LINE webhook processor", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    process.env.MILO_PRO_MAX_LINE_USER_IDS = "U1";
+    vi.mocked(db.isAdminLinkedLineUser).mockResolvedValue(true);
     vi.mocked(db.resolveFinanceAccountForLineEvent).mockResolvedValue({ account: { id: 7 }, membership: { role: "owner" } } as never);
     vi.mocked(db.canCreateFinanceTransaction).mockReturnValue(true);
     vi.mocked(db.canManageFinanceTransactions).mockReturnValue(true);
@@ -112,6 +115,52 @@ describe("LINE webhook processor", () => {
     vi.mocked(replyText).mockResolvedValue(new Response());
     await processEvent({ type: "message", webhookEventId: "evt-line-id", timestamp: Date.now(), replyToken: "token", source: { type: "user", userId: "U1" }, message: { id: "m5", type: "text", text: "ไอดี" } }, "{}");
     expect(replyText).toHaveBeenCalledWith("token", expect.stringContaining("U1"));
+  });
+
+  it("blocks a reminder for a Free user before creating data", async () => {
+    delete process.env.MILO_PRO_MAX_LINE_USER_IDS;
+    vi.mocked(db.isAdminLinkedLineUser).mockResolvedValue(false);
+    vi.mocked(db.registerWebhookEvent).mockResolvedValue(true);
+    vi.mocked(getProfile).mockResolvedValue({ displayName: "ผู้ส่ง" });
+    vi.mocked(sourceIdentity).mockReturnValue({ lineChatId: "U1", lineUserId: "U1", scope: "user" });
+    vi.mocked(replyText).mockResolvedValue(new Response());
+    await processEvent({ type: "message", webhookEventId: "evt-free-reminder", timestamp: Date.now(), replyToken: "token", source: { type: "user", userId: "U1" }, message: { id: "free-reminder", type: "text", text: "เตือนประชุมพรุ่งนี้ 10:00" } }, "{}");
+    expect(db.createReminder).not.toHaveBeenCalled();
+    expect(replyText).toHaveBeenCalledWith("token", expect.stringContaining("Pro"));
+  });
+
+  it("blocks confirmation of an old PDF proposal for a Free user", async () => {
+    delete process.env.MILO_PRO_MAX_LINE_USER_IDS;
+    vi.mocked(db.isAdminLinkedLineUser).mockResolvedValue(false);
+    vi.mocked(db.registerWebhookEvent).mockResolvedValue(true);
+    vi.mocked(getProfile).mockResolvedValue({ displayName: "ผู้ส่ง" });
+    vi.mocked(sourceIdentity).mockReturnValue({ lineChatId: "U1", lineUserId: "U1", scope: "user" });
+    vi.mocked(replyText).mockResolvedValue(new Response());
+
+    await processEvent({ type: "message", webhookEventId: "evt-free-old-pdf", timestamp: Date.now(), replyToken: "token", source: { type: "user", userId: "U1" }, message: { id: "free-old-pdf", type: "text", text: "ยืนยัน PDF" } }, "{}");
+
+    expect(db.latestImageExtraction).not.toHaveBeenCalled();
+    expect(db.createTransaction).not.toHaveBeenCalled();
+    expect(replyText).toHaveBeenCalledWith("token", expect.stringContaining("Pro Max"));
+  });
+
+  it("blocks a Free user from converting an image proposal into a reminder", async () => {
+    delete process.env.MILO_PRO_MAX_LINE_USER_IDS;
+    vi.mocked(db.isAdminLinkedLineUser).mockResolvedValue(false);
+    vi.mocked(db.registerWebhookEvent).mockResolvedValue(true);
+    vi.mocked(getProfile).mockResolvedValue({ displayName: "ผู้ส่ง" });
+    vi.mocked(sourceIdentity).mockReturnValue({ lineChatId: "U1", lineUserId: "U1", scope: "user" });
+    vi.mocked(replyText).mockResolvedValue(new Response());
+    vi.mocked(db.latestImageExtraction).mockResolvedValue({
+      extraction: { id: 901, status: "proposed", extractedJson: JSON.stringify({ proposals: [{ kind: "reminder", title: "นัดหมอ", dateText: "2026-09-20", timeText: "10:00" }] }) },
+      vault: { id: 902, mimeType: "image/jpeg", storageKey: "milo/U1/reminder.jpg" },
+    } as never);
+
+    await processEvent({ type: "message", webhookEventId: "evt-free-image-reminder", timestamp: Date.now(), replyToken: "token", source: { type: "user", userId: "U1" }, message: { id: "free-image-reminder", type: "text", text: "ยืนยันรูป" } }, "{}");
+
+    expect(db.createReminder).not.toHaveBeenCalled();
+    expect(db.setImageExtractionStatus).not.toHaveBeenCalledWith(901, "accepted");
+    expect(replyText).toHaveBeenCalledWith("token", expect.stringContaining("Pro"));
   });
 
   it("persists and replies to the help-menu text workflows in a private chat", async () => {
@@ -393,6 +442,8 @@ describe("LINE webhook processor", () => {
 describe("rich menu webhook regression", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    process.env.MILO_PRO_MAX_LINE_USER_IDS = "U1";
+    vi.mocked(db.isAdminLinkedLineUser).mockResolvedValue(true);
     vi.mocked(db.registerWebhookEvent).mockResolvedValue(true);
     vi.mocked(getProfile).mockResolvedValue({ displayName: "test" });
     vi.mocked(sourceIdentity).mockReturnValue({ lineChatId: "U1", lineUserId: "U1", scope: "user" });

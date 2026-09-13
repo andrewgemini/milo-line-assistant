@@ -14,6 +14,7 @@ import { parseMiloCommand } from "./commandParser";
 import { deliverDueReminders } from "./reminderDelivery";
 import { deliverDueRecurringTransactions } from "./recurringTransactionDelivery";
 import { assertRecurringCapacity } from "./recurringLimit";
+import { entitlementMessage, hasMiloEntitlement, resolveMiloPlan } from "./entitlements";
 import { deliverFinanceDigest, type FinanceDigestType } from "./financeDigest";
 import { buildExpenseNote, formatImageProposal, normalizeExpenseCategory, parseExtractedDate, selectImageProposal } from "./receiptUtils";
 import { applyImageExpenseEdit } from "./imageProposalEdit";
@@ -139,8 +140,13 @@ async function handleText(event: LineEvent, lineChatId: string, lineUserId: stri
     return;
   }
   const command = parseMiloCommand(text);
+  const plan = resolveMiloPlan(lineUserId, process.env, await db.isAdminLinkedLineUser(lineUserId));
   let message = "";
   const financeCommands = new Set(["expense", "income", "transactionSearch", "transactionDelete", "transactionUpdate", "openingBalance", "financeReport", "aiSummary", "budgetOverview", "transactionList", "voiceConfirm", "voiceEditPrompt", "voiceCategoryChange", "voiceEdit", "budget", "budgetCycleStart", "categoryAdd", "categoryRemove", "categoryList", "imageConfirm", "imageEdit", "pdfConfirm", "recurringCreate", "recurringList", "recurringStatus", "exportFinance"]);
+  if (command.type === "reminder" && !hasMiloEntitlement(plan, "reminders")) { if (event.replyToken) await replyText(event.replyToken, entitlementMessage("reminders")); return; }
+  if (command.type === "pdfConfirm" && !hasMiloEntitlement(plan, "pdf")) { if (event.replyToken) await replyText(event.replyToken, entitlementMessage("pdf")); return; }
+  if (command.type === "budgetCycleStart" && !hasMiloEntitlement(plan, "customBudgetCycle")) { if (event.replyToken) await replyText(event.replyToken, entitlementMessage("customBudgetCycle")); return; }
+  if (scope !== "user" && financeCommands.has(command.type) && !hasMiloEntitlement(plan, "groupAccounting")) { if (event.replyToken) await replyText(event.replyToken, entitlementMessage("groupAccounting")); return; }
   const financeScope = financeCommands.has(command.type) ? await resolveFinanceScope(lineUserId, lineChatId, scope) : undefined;
   if (financeCommands.has(command.type) && !financeScope) {
     if (event.replyToken) await replyText(event.replyToken, financeAccessMessage(scope));
@@ -378,9 +384,13 @@ async function handleText(event: LineEvent, lineChatId: string, lineUserId: stri
       } else {
         const proposed = parseMiloCommand(`เตือน ${proposal.title} ${proposal.dateText} ${proposal.timeText}`);
         if (proposed.type === "reminder") {
-          const id = await db.createReminder({ lineChatId, createdByLineUserId: lineUserId, ...proposed.data, sourceImageKey: latest.vault.storageKey ?? undefined });
-          await db.setImageExtractionStatus(latest.extraction.id, "accepted");
-          message = `สร้างรายการเตือนจากรูป #${id} แล้ว: ${proposed.data.title}`;
+          if (!hasMiloEntitlement(plan, "reminders")) {
+            message = entitlementMessage("reminders");
+          } else {
+            const id = await db.createReminder({ lineChatId, createdByLineUserId: lineUserId, ...proposed.data, sourceImageKey: latest.vault.storageKey ?? undefined });
+            await db.setImageExtractionStatus(latest.extraction.id, "accepted");
+            message = `สร้างรายการเตือนจากรูป #${id} แล้ว: ${proposed.data.title}`;
+          }
         } else {
           message = "อ่านหัวข้อจากรูปได้ แต่ยังอ่านวันเวลาที่แน่ชัดไม่ได้ ลองพิมพ์เวลาที่ต้องการเพิ่ม แล้วส่งมาใหม่ได้ครับ";
         }
@@ -422,6 +432,9 @@ async function handleMedia(event: LineEvent, lineChatId: string, lineUserId: str
   const isImage = message.type === "image";
   const isAudio = message.type === "audio";
   const isPdf = message.type === "file" && /\.pdf$/i.test(message.fileName ?? "");
+  const plan = resolveMiloPlan(lineUserId, process.env, await db.isAdminLinkedLineUser(lineUserId));
+  if (isPdf && !hasMiloEntitlement(plan, "pdf")) { if (event.replyToken) await replyText(event.replyToken, entitlementMessage("pdf")); return; }
+  if (scope !== "user" && (isImage || isAudio || isPdf) && !hasMiloEntitlement(plan, "groupAccounting")) { if (event.replyToken) await replyText(event.replyToken, entitlementMessage("groupAccounting")); return; }
   const bytes = await getMessageContent(message.id);
   const mimeType = isImage ? "image/jpeg" : isAudio ? "audio/m4a" : isPdf ? "application/pdf" : "application/octet-stream";
   const stored = await storagePut(`milo/${lineChatId}/${message.id}`, bytes, mimeType);
