@@ -469,6 +469,25 @@ describe("LINE webhook processor", () => {
     expect(db.finishWebhookEvent).toHaveBeenCalledWith("evt-audio-store-fail", "processed");
   });
 
+  it.each([
+    ["image", "รูป"],
+    ["audio", "ข้อความเสียง"],
+  ] as const)("never stays silent when %s fails before media preparation", async (type, expectedWord) => {
+    vi.mocked(db.registerWebhookEvent).mockResolvedValue(true);
+    vi.mocked(getProfile).mockResolvedValue({ displayName: "ผู้ส่ง" });
+    vi.mocked(sourceIdentity).mockReturnValue({ lineChatId: "U1", lineUserId: "U1", scope: "user" });
+    vi.mocked(db.isAdminLinkedLineUser).mockRejectedValueOnce(new Error("plan lookup unavailable"));
+    vi.mocked(replyText).mockResolvedValue(new Response());
+
+    await expect(processEvent({
+      type: "message", webhookEventId: `evt-top-media-${type}`, timestamp: Date.now(), replyToken: "token",
+      source: { type: "user", userId: "U1" }, message: { id: `media-${type}`, type },
+    } as never, "{}")).resolves.toBeUndefined();
+
+    expect(replyText).toHaveBeenCalledWith("token", expect.stringContaining(expectedWord));
+    expect(db.finishWebhookEvent).toHaveBeenCalledWith(`evt-top-media-${type}`, "failed", "plan lookup unavailable");
+  });
+
   it("rejects an HTTP webhook request with a missing or invalid signature", async () => {
     vi.mocked(verifyLineSignature).mockReturnValue(false);
     const app = express(); registerLineWebhook(app);

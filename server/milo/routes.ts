@@ -545,7 +545,29 @@ export async function processEvent(event: LineEvent, rawPayload: string) {
     else if (event.message.type === "image" || event.message.type === "file" || event.message.type === "audio") await handleMedia(event, identity.lineChatId, identity.lineUserId, identity.scope);
     await db.finishWebhookEvent(event.webhookEventId, "processed");
   } catch (error) {
-    await db.finishWebhookEvent(event.webhookEventId, "failed", error instanceof Error ? error.message : "unknown error");
+    const errorMessage = error instanceof Error ? error.message : "unknown error";
+    const mediaType = event.type === "message" ? event.message?.type : undefined;
+    const isMediaEvent = mediaType === "image" || mediaType === "audio" || mediaType === "file";
+    if (isMediaEvent) {
+      const fallback = mediaType === "audio"
+        ? "รับข้อความเสียงแล้ว แต่ระบบประมวลผลครั้งนี้ไม่สำเร็จ กรุณาลองส่งเสียงใหม่อีกครั้งครับ"
+        : mediaType === "image"
+          ? "รับรูปแล้ว แต่ระบบประมวลผลสลิป/ใบเสร็จครั้งนี้ไม่สำเร็จ กรุณาลองส่งภาพใหม่อีกครั้งครับ"
+          : "รับไฟล์แล้ว แต่ระบบประมวลผลครั้งนี้ไม่สำเร็จ กรุณาลองส่งไฟล์ใหม่อีกครั้งครับ";
+      let delivered = false;
+      if (event.replyToken) {
+        try { await replyText(event.replyToken, fallback); delivered = true; }
+        catch (replyError) { console.error("[Milo Media] top-level fallback reply failed", { error: replyError instanceof Error ? replyError.message : "unknown" }); }
+      }
+      if (!delivered) {
+        try { await pushText(identity.lineChatId, fallback); delivered = true; }
+        catch (pushError) { console.error("[Milo Media] top-level fallback push failed", { error: pushError instanceof Error ? pushError.message : "unknown" }); }
+      }
+      try { await db.finishWebhookEvent(event.webhookEventId, "failed", errorMessage); }
+      catch (auditError) { console.error("[Milo Media] failed to record webhook failure", { error: auditError instanceof Error ? auditError.message : "unknown" }); }
+      return;
+    }
+    await db.finishWebhookEvent(event.webhookEventId, "failed", errorMessage);
     throw error;
   }
 }

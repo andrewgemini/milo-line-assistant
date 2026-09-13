@@ -1796,17 +1796,23 @@ function wrappedLines(text2) {
 function layer(text2, left, top, width, fontSize, color, bold = false) {
   return { input: vectorTextSvg(text2, { width, fontSize, color, bold }), left, top, blend: "over" };
 }
-function shapes(key) {
-  const accent = key === "analysis" ? "#20A66E" : key === "budget" ? "#22A66F" : key === "transactions" ? "#D95B8A" : "#5B80C8";
+function shapes(key, lineCount = 0) {
+  const accent = key === "analysis" ? "#27C88B" : key === "budget" ? "#28B875" : key === "transactions" ? "#E96F9B" : "#6B8FDF";
+  const soft = key === "analysis" ? "#E8FFF4" : key === "budget" ? "#EDFFF4" : key === "transactions" ? "#FFF0F5" : "#F0F4FF";
+  const rows = Array.from({ length: Math.min(Math.max(lineCount, 1), 14) }, (_, i) => {
+    const y = 366 + i * 48;
+    const fill = i % 2 === 0 ? "#FFFFFF" : "#FAFFFC";
+    return `<rect x="112" y="${y}" width="856" height="40" rx="14" fill="${fill}" fill-opacity=".96"/>`;
+  }).join("");
   return Buffer.from(`<svg width="${WIDTH}" height="${HEIGHT}" viewBox="0 0 ${WIDTH} ${HEIGHT}" xmlns="http://www.w3.org/2000/svg">
-    <defs><filter id="shadow"><feDropShadow dx="0" dy="8" stdDeviation="16" flood-color="#45695E" flood-opacity=".14"/></filter></defs>
-    <rect x="48" y="182" width="984" height="1088" rx="42" fill="#FFFEFB" fill-opacity=".965" filter="url(#shadow)"/>
-    <rect x="76" y="212" width="928" height="132" rx="30" fill="#EAFBF3" fill-opacity=".98"/>
-    <rect x="76" y="372" width="928" height="800" rx="30" fill="#FFFDF9" stroke="#DDEFE8" stroke-width="2"/>
-    <rect x="76" y="1196" width="928" height="52" rx="26" fill="#EAFBF5"/>
-    <circle cx="132" cy="260" r="30" fill="${accent}"/>
-    <circle cx="121" cy="250" r="6" fill="#fff"/><circle cx="143" cy="250" r="6" fill="#fff"/>
-    <path d="M118 271 Q132 283 146 271" fill="none" stroke="#fff" stroke-width="5" stroke-linecap="round"/>
+    <defs><filter id="shadow"><feDropShadow dx="0" dy="7" stdDeviation="13" flood-color="#3D8066" flood-opacity=".15"/></filter></defs>
+    <rect x="76" y="188" width="928" height="962" rx="38" fill="#FFFDF9" fill-opacity=".94" filter="url(#shadow)"/>
+    <rect x="100" y="214" width="880" height="116" rx="28" fill="${soft}" fill-opacity=".98"/>
+    <circle cx="154" cy="272" r="30" fill="${accent}"/>
+    <circle cx="143" cy="262" r="6" fill="#fff"/><circle cx="165" cy="262" r="6" fill="#fff"/>
+    <path d="M140 283 Q154 296 168 283" fill="none" stroke="#fff" stroke-width="5" stroke-linecap="round"/>
+    ${rows}
+    <rect x="100" y="1092" width="880" height="42" rx="21" fill="#E8FAF2"/>
   </svg>`);
 }
 async function renderRichMenuDataImage(key, text2) {
@@ -1815,18 +1821,17 @@ async function renderRichMenuDataImage(key, text2) {
   const lines = wrappedLines(text2);
   const reference = await loadRichMenuReference(key);
   const layers = [
-    layer("Milo", 184, 224, 180, 38, "#2F9C7D", true),
-    layer(title, 184, 264, 720, 40, "#3F3552", true),
-    layer("\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E08\u0E23\u0E34\u0E07\u0E25\u0E48\u0E32\u0E2A\u0E38\u0E14\u0E08\u0E32\u0E01\u0E1A\u0E31\u0E0D\u0E0A\u0E35\u0E02\u0E2D\u0E07\u0E04\u0E38\u0E13", 184, 310, 720, 20, "#78928D")
+    layer(title, 208, 228, 650, 38, "#3F3552", true),
+    layer("\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E08\u0E23\u0E34\u0E07\u0E25\u0E48\u0E32\u0E2A\u0E38\u0E14\u0E08\u0E32\u0E01\u0E1A\u0E31\u0E0D\u0E0A\u0E35\u0E02\u0E2D\u0E07\u0E04\u0E38\u0E13", 208, 276, 650, 20, "#6F8D82")
   ];
   lines.forEach((lineText, index2) => {
     const bold = index2 === 0 || /^สรุป|^หมวด|^รายการ|^รายรับ|^รายจ่าย|^ข้อมูล|^ข้อสังเกต|^แนวทาง/.test(lineText);
-    layers.push(layer(lineText || " ", 118, 408 + index2 * 32, 840, 21, bold ? "#3E594F" : "#625971", bold));
+    layers.push(layer(lineText || " ", 132, 374 + index2 * 48, 812, 20, bold ? "#3E594F" : "#625971", bold));
   });
   layers.push(
-    layer("Milo \u2022 \u0E43\u0E0A\u0E49\u0E14\u0E35\u0E44\u0E0B\u0E19\u0E4C\u0E15\u0E49\u0E19\u0E09\u0E1A\u0E31\u0E1A \u0E1E\u0E23\u0E49\u0E2D\u0E21\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E08\u0E23\u0E34\u0E07\u0E02\u0E2D\u0E07\u0E04\u0E38\u0E13", 118, 1209, 830, 18, "#4E7F70", true)
+    layer("Milo \u2022 \u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E08\u0E23\u0E34\u0E07\u0E02\u0E2D\u0E07\u0E04\u0E38\u0E13\u0E1A\u0E19\u0E14\u0E35\u0E44\u0E0B\u0E19\u0E4C\u0E15\u0E49\u0E19\u0E09\u0E1A\u0E31\u0E1A", 132, 1100, 800, 17, "#3B7F69", true)
   );
-  return sharp(reference).resize(WIDTH, HEIGHT, { fit: "fill" }).composite([{ input: shapes(key), blend: "over" }, ...layers]).png().toBuffer();
+  return sharp(reference).resize(WIDTH, HEIGHT, { fit: "fill" }).composite([{ input: shapes(key, lines.length), blend: "over" }, ...layers]).png().toBuffer();
 }
 function registerRichMenuDataImageRoute(app2) {
   app2.get("/api/milo/rich-menu-card.png", async (req, res) => {
@@ -1989,29 +1994,27 @@ function financeReportShapesSvg(input) {
   const categories = Object.entries(input.categories).sort((a, b) => b[1] - a[1]).slice(0, 5);
   const maxCategory = Math.max(...categories.map(([, amount]) => amount), 1);
   const categoryBars = categories.map(([, amount], index2) => {
-    const y = 560 + index2 * 64;
-    const width = Math.max(10, Math.round(380 * Math.min(1, amount / maxCategory)));
-    return `<rect x="150" y="${y + 34}" width="380" height="12" rx="6" fill="#E8F2EE"/><rect x="150" y="${y + 34}" width="${width}" height="12" rx="6" fill="${index2 === 0 ? "#53C7A4" : "#93D8C4"}"/>`;
+    const y = 594 + index2 * 58;
+    const width = Math.max(12, Math.round(350 * Math.min(1, amount / maxCategory)));
+    return `<rect x="132" y="${y + 28}" width="350" height="14" rx="7" fill="#EAF4EF"/><rect x="132" y="${y + 28}" width="${width}" height="14" rx="7" fill="${index2 === 0 ? "#32C88A" : "#8EDDBF"}"/>`;
   }).join("");
-  const incomeExpenseTotal = Math.max(input.income + input.expense, 1);
-  const incomeWidth = Math.max(8, Math.round(300 * input.income / incomeExpenseTotal));
-  const expenseWidth = Math.max(8, Math.round(300 * input.expense / incomeExpenseTotal));
+  const total = Math.max(input.income + input.expense, 1);
+  const incomeWidth = Math.max(8, Math.round(255 * input.income / total));
+  const expenseWidth = Math.max(8, Math.round(255 * input.expense / total));
   return Buffer.from(`<svg width="${WIDTH2}" height="${HEIGHT2}" viewBox="0 0 ${WIDTH2} ${HEIGHT2}" xmlns="http://www.w3.org/2000/svg">
-    <defs>
-      <linearGradient id="bg" x1="0" x2="1" y1="0" y2="1"><stop offset="0" stop-color="#F4FFF8"/><stop offset=".5" stop-color="#FFF9F1"/><stop offset="1" stop-color="#F6F0FF"/></linearGradient>
-      <linearGradient id="hero" x1="0" x2="1"><stop offset="0" stop-color="#E1FFF1"/><stop offset="1" stop-color="#F5EEFF"/></linearGradient>
-      <filter id="shadow"><feDropShadow dx="0" dy="8" stdDeviation="16" flood-color="#3D6B5E" flood-opacity=".12"/></filter>
-    </defs>
-    <rect x="42" y="278" width="996" height="1034" rx="42" fill="#FFFEFB" fill-opacity=".965" filter="url(#shadow)"/>
-    <rect x="70" y="312" width="294" height="166" rx="28" fill="#EAF9F3"/>
-    <rect x="393" y="312" width="294" height="166" rx="28" fill="#FDECF2"/>
-    <rect x="716" y="312" width="294" height="166" rx="28" fill="#F1ECFB"/>
-    <rect x="70" y="510" width="570" height="420" rx="30" fill="#FBFFFD" stroke="#DDEFE8" stroke-width="2"/>
-    <rect x="666" y="510" width="344" height="420" rx="30" fill="#FFF8FB" stroke="#F0E1E9" stroke-width="2"/>
-    <rect x="70" y="958" width="940" height="250" rx="30" fill="#FCFAFF" stroke="#E9E2F4" stroke-width="2"/>
-    <rect x="70" y="1234" width="940" height="52" rx="26" fill="#EAFBF5"/>
-    <rect x="690" y="672" width="300" height="14" rx="7" fill="#E6F3EF"/><rect x="690" y="672" width="${incomeWidth}" height="14" rx="7" fill="#50C4A1"/>
-    <rect x="690" y="720" width="300" height="14" rx="7" fill="#F7E6EC"/><rect x="690" y="720" width="${expenseWidth}" height="14" rx="7" fill="#E987A8"/>
+    <defs><filter id="shadow"><feDropShadow dx="0" dy="8" stdDeviation="14" flood-color="#3E8A69" flood-opacity=".16"/></filter></defs>
+    <rect x="60" y="188" width="960" height="1012" rx="38" fill="#FFFDF8" fill-opacity=".97" filter="url(#shadow)"/>
+    <rect x="92" y="282" width="276" height="150" rx="28" fill="#E6FFF2"/>
+    <rect x="402" y="282" width="276" height="150" rx="28" fill="#FFE9F1"/>
+    <rect x="712" y="282" width="276" height="150" rx="28" fill="#EEE8FF"/>
+    <rect x="92" y="466" width="522" height="402" rx="30" fill="#F8FFFB" stroke="#BDEDD7" stroke-width="2"/>
+    <rect x="642" y="466" width="346" height="402" rx="30" fill="#FFF8FC" stroke="#F1C8D8" stroke-width="2"/>
+    <rect x="92" y="892" width="896" height="232" rx="30" fill="#FBF9FF" stroke="#DDD1F3" stroke-width="2"/>
+    <rect x="92" y="1140" width="896" height="44" rx="22" fill="#E7FAF1"/>
+    <circle cx="815" cy="616" r="88" fill="none" stroke="#E4F5EE" stroke-width="24"/>
+    <circle cx="815" cy="616" r="88" fill="none" stroke="#39C98D" stroke-width="24" stroke-linecap="round" stroke-dasharray="350 560" transform="rotate(-90 815 616)"/>
+    <rect x="690" y="742" width="255" height="14" rx="7" fill="#E5F2ED"/><rect x="690" y="742" width="${incomeWidth}" height="14" rx="7" fill="#35C78C"/>
+    <rect x="690" y="792" width="255" height="14" rx="7" fill="#F8E4EC"/><rect x="690" y="792" width="${expenseWidth}" height="14" rx="7" fill="#EB78A1"/>
     ${categoryBars}
   </svg>`);
 }
@@ -2026,55 +2029,54 @@ async function renderFinanceReportImage(input) {
   const savingsRate = input.income > 0 ? Math.round(input.balance / input.income * 100) : 0;
   const topCategory = categories[0];
   const layers = [
-    textLayer("Milo", { left: 170, top: 88, width: 180, fontSize: 44, color: "#2F9C7D", bold: true }),
-    textLayer(title, { left: 106, top: 152, width: 820, fontSize: 48, color: "#263E3A", bold: true }),
-    textLayer(subtitle, { left: 106, top: 218, width: 820, fontSize: 24, color: "#78928D" }),
-    textLayer("\u0E23\u0E32\u0E22\u0E23\u0E31\u0E1A", { left: 100, top: 342, width: 230, fontSize: 22, color: "#628B80" }),
-    textLayer(`${money(input.income)} \u0E1A\u0E32\u0E17`, { left: 100, top: 388, width: 240, fontSize: 36, color: "#247D68", bold: true }),
-    textLayer("\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22", { left: 423, top: 342, width: 230, fontSize: 22, color: "#A57086" }),
-    textLayer(`${money(input.expense)} \u0E1A\u0E32\u0E17`, { left: 423, top: 388, width: 240, fontSize: 36, color: "#BB527C", bold: true }),
-    textLayer("\u0E04\u0E07\u0E40\u0E2B\u0E25\u0E37\u0E2D", { left: 746, top: 342, width: 230, fontSize: 22, color: "#776B8D" }),
-    textLayer(`${money(input.balance)} \u0E1A\u0E32\u0E17`, { left: 746, top: 388, width: 240, fontSize: 36, color: input.balance >= 0 ? "#4C6F65" : "#B85078", bold: true }),
-    textLayer("\u0E2A\u0E31\u0E14\u0E2A\u0E48\u0E27\u0E19\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22\u0E15\u0E32\u0E21\u0E2B\u0E21\u0E27\u0E14", { left: 105, top: 540, width: 470, fontSize: 28, color: "#425C54", bold: true }),
-    textLayer("\u0E20\u0E32\u0E1E\u0E23\u0E27\u0E21", { left: 700, top: 540, width: 250, fontSize: 28, color: "#5D4E72", bold: true }),
-    textLayer("\u0E2D\u0E31\u0E15\u0E23\u0E32\u0E04\u0E07\u0E40\u0E2B\u0E25\u0E37\u0E2D", { left: 700, top: 602, width: 260, fontSize: 21, color: "#85758F" }),
-    textLayer(`${savingsRate}%`, { left: 700, top: 628, width: 260, fontSize: 52, color: savingsRate >= 0 ? "#2E9D7D" : "#C65F82", bold: true }),
-    textLayer("\u0E23\u0E32\u0E22\u0E23\u0E31\u0E1A", { left: 690, top: 688, width: 110, fontSize: 19, color: "#508B7B" }),
-    textLayer("\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22", { left: 690, top: 736, width: 110, fontSize: 19, color: "#A96B83" }),
-    textLayer("\u0E08\u0E33\u0E19\u0E27\u0E19\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23", { left: 700, top: 790, width: 250, fontSize: 20, color: "#85758F" }),
-    textLayer(`${transactionCount.toLocaleString("th-TH-u-nu-latn")} \u0E23\u0E32\u0E22\u0E01\u0E32\u0E23`, { left: 700, top: 824, width: 250, fontSize: 31, color: "#4E435F", bold: true }),
-    textLayer(topCategory ? `\u0E2B\u0E21\u0E27\u0E14\u0E2A\u0E39\u0E07\u0E2A\u0E38\u0E14: ${topCategory[0]}` : "\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E21\u0E35\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22", { left: 700, top: 875, width: 260, fontSize: 20, color: "#765F72", bold: true }),
-    textLayer("\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E25\u0E48\u0E32\u0E2A\u0E38\u0E14", { left: 105, top: 990, width: 360, fontSize: 28, color: "#4B4260", bold: true })
+    textLayer(title, { left: 108, top: 210, width: 650, fontSize: 38, color: "#214A3D", bold: true }),
+    textLayer(subtitle, { left: 108, top: 250, width: 760, fontSize: 20, color: "#6D8C81" }),
+    textLayer("\u0E23\u0E32\u0E22\u0E23\u0E31\u0E1A", { left: 112, top: 310, width: 220, fontSize: 20, color: "#548B7B" }),
+    textLayer(`${money(input.income)} \u0E1A\u0E32\u0E17`, { left: 112, top: 350, width: 230, fontSize: 34, color: "#16875F", bold: true }),
+    textLayer("\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22", { left: 422, top: 310, width: 220, fontSize: 20, color: "#A46A82" }),
+    textLayer(`${money(input.expense)} \u0E1A\u0E32\u0E17`, { left: 422, top: 350, width: 230, fontSize: 34, color: "#CF4F80", bold: true }),
+    textLayer("\u0E04\u0E07\u0E40\u0E2B\u0E25\u0E37\u0E2D", { left: 732, top: 310, width: 220, fontSize: 20, color: "#74668D" }),
+    textLayer(`${money(input.balance)} \u0E1A\u0E32\u0E17`, { left: 732, top: 350, width: 230, fontSize: 34, color: input.balance >= 0 ? "#3C7562" : "#C05076", bold: true }),
+    textLayer("\u0E2A\u0E31\u0E14\u0E2A\u0E48\u0E27\u0E19\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22\u0E15\u0E32\u0E21\u0E2B\u0E21\u0E27\u0E14", { left: 112, top: 494, width: 450, fontSize: 26, color: "#355E50", bold: true }),
+    textLayer("\u0E20\u0E32\u0E1E\u0E23\u0E27\u0E21", { left: 682, top: 494, width: 250, fontSize: 26, color: "#624F76", bold: true }),
+    textLayer("\u0E2D\u0E31\u0E15\u0E23\u0E32\u0E04\u0E07\u0E40\u0E2B\u0E25\u0E37\u0E2D", { left: 706, top: 540, width: 220, fontSize: 19, color: "#8B7895" }),
+    textLayer(`${savingsRate}%`, { left: 706, top: 574, width: 220, fontSize: 48, color: savingsRate >= 0 ? "#25936D" : "#C45F82", bold: true }),
+    textLayer("\u0E23\u0E32\u0E22\u0E23\u0E31\u0E1A", { left: 690, top: 704, width: 100, fontSize: 18, color: "#508B7B" }),
+    textLayer("\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22", { left: 690, top: 754, width: 100, fontSize: 18, color: "#A96B83" }),
+    textLayer("\u0E08\u0E33\u0E19\u0E27\u0E19\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23", { left: 690, top: 814, width: 230, fontSize: 18, color: "#85758F" }),
+    textLayer(`${transactionCount.toLocaleString("th-TH-u-nu-latn")} \u0E23\u0E32\u0E22\u0E01\u0E32\u0E23`, { left: 690, top: 840, width: 230, fontSize: 28, color: "#4E435F", bold: true }),
+    textLayer(topCategory ? `\u0E2B\u0E21\u0E27\u0E14\u0E2A\u0E39\u0E07\u0E2A\u0E38\u0E14: ${topCategory[0]}` : "\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E21\u0E35\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22", { left: 690, top: 866, width: 250, fontSize: 18, color: "#765F72", bold: true }),
+    textLayer("\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E25\u0E48\u0E32\u0E2A\u0E38\u0E14", { left: 112, top: 914, width: 330, fontSize: 26, color: "#4B4260", bold: true })
   ];
   if (!categories.length) {
     layers.push(textLayer("\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E21\u0E35\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22\u0E43\u0E19\u0E0A\u0E48\u0E27\u0E07\u0E19\u0E35\u0E49", { left: 105, top: 620, width: 470, fontSize: 27, color: "#849B96" }));
   } else {
     categories.forEach(([name, amount], index2) => {
-      const y = 574 + index2 * 64;
+      const y = 540 + index2 * 58;
       const share = input.expense > 0 ? Math.round(amount / input.expense * 100) : 0;
       layers.push(
-        textLayer(name, { left: 105, top: y, width: 185, fontSize: 21, color: "#5E716C", bold: index2 === 0 }),
-        textLayer(`${money(amount)} \u0E1A\u0E32\u0E17 \u2022 ${share}%`, { left: 365, top: y, width: 235, fontSize: 20, color: "#A45A75", bold: true, align: "right" })
+        textLayer(name, { left: 112, top: y, width: 180, fontSize: 21, color: "#5E716C", bold: index2 === 0 }),
+        textLayer(`${money(amount)} \u0E1A\u0E32\u0E17 \u2022 ${share}%`, { left: 350, top: y, width: 220, fontSize: 20, color: "#A45A75", bold: true, align: "right" })
       );
     });
   }
   if (!rows.length) {
-    layers.push(textLayer("\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E21\u0E35\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E43\u0E19\u0E0A\u0E48\u0E27\u0E07\u0E40\u0E27\u0E25\u0E32\u0E19\u0E35\u0E49", { left: 105, top: 1055, width: 760, fontSize: 25, color: "#8A8097" }));
+    layers.push(textLayer("\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E21\u0E35\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E43\u0E19\u0E0A\u0E48\u0E27\u0E07\u0E40\u0E27\u0E25\u0E32\u0E19\u0E35\u0E49", { left: 112, top: 970, width: 760, fontSize: 25, color: "#8A8097" }));
   } else {
     rows.forEach((row, index2) => {
-      const y = 1040 + index2 * 42;
+      const y = 960 + index2 * 40;
       const label = (row.note?.trim() || row.category).slice(0, 34);
       const signed = row.transactionType === "income" ? "+" : "-";
       layers.push(
-        textLayer(label, { left: 105, top: y, width: 430, fontSize: 20, color: "#5D536B", bold: index2 === 0 }),
-        textLayer(`${signed}${money(Number(row.amount))} \u0E1A\u0E32\u0E17`, { left: 545, top: y, width: 190, fontSize: 20, color: row.transactionType === "income" ? "#2E9577" : "#C35F82", bold: true, align: "right" }),
-        textLayer(displayRowDate(row.occurredAt), { left: 760, top: y, width: 205, fontSize: 18, color: "#94879E", align: "right" })
+        textLayer(label, { left: 112, top: y, width: 410, fontSize: 20, color: "#5D536B", bold: index2 === 0 }),
+        textLayer(`${signed}${money(Number(row.amount))} \u0E1A\u0E32\u0E17`, { left: 530, top: y, width: 185, fontSize: 20, color: row.transactionType === "income" ? "#2E9577" : "#C35F82", bold: true, align: "right" }),
+        textLayer(displayRowDate(row.occurredAt), { left: 742, top: y, width: 210, fontSize: 18, color: "#94879E", align: "right" })
       );
     });
   }
   layers.push(
-    textLayer("Milo \u0E41\u0E19\u0E30\u0E19\u0E33", { left: 105, top: 1243, width: 145, fontSize: 19, color: "#2E9577", bold: true }),
-    textLayer(insightCopy({ ...input, transactionCount }), { left: 260, top: 1243, width: 710, fontSize: 18, color: "#5A6B66" })
+    textLayer("Milo \u0E41\u0E19\u0E30\u0E19\u0E33", { left: 112, top: 1150, width: 140, fontSize: 17, color: "#2E9577", bold: true }),
+    textLayer(insightCopy({ ...input, transactionCount }), { left: 252, top: 1150, width: 700, fontSize: 16, color: "#5A6B66" })
   );
   return sharp2(reference).resize(WIDTH2, HEIGHT2, { fit: "fill" }).composite([{ input: financeReportShapesSvg({ ...input, transactionCount }), blend: "over" }, ...layers]).png().toBuffer();
 }
@@ -5265,7 +5267,36 @@ async function processEvent(event, rawPayload) {
     else if (event.message.type === "image" || event.message.type === "file" || event.message.type === "audio") await handleMedia(event, identity.lineChatId, identity.lineUserId, identity.scope);
     await finishWebhookEvent(event.webhookEventId, "processed");
   } catch (error) {
-    await finishWebhookEvent(event.webhookEventId, "failed", error instanceof Error ? error.message : "unknown error");
+    const errorMessage = error instanceof Error ? error.message : "unknown error";
+    const mediaType = event.type === "message" ? event.message?.type : void 0;
+    const isMediaEvent = mediaType === "image" || mediaType === "audio" || mediaType === "file";
+    if (isMediaEvent) {
+      const fallback = mediaType === "audio" ? "\u0E23\u0E31\u0E1A\u0E02\u0E49\u0E2D\u0E04\u0E27\u0E32\u0E21\u0E40\u0E2A\u0E35\u0E22\u0E07\u0E41\u0E25\u0E49\u0E27 \u0E41\u0E15\u0E48\u0E23\u0E30\u0E1A\u0E1A\u0E1B\u0E23\u0E30\u0E21\u0E27\u0E25\u0E1C\u0E25\u0E04\u0E23\u0E31\u0E49\u0E07\u0E19\u0E35\u0E49\u0E44\u0E21\u0E48\u0E2A\u0E33\u0E40\u0E23\u0E47\u0E08 \u0E01\u0E23\u0E38\u0E13\u0E32\u0E25\u0E2D\u0E07\u0E2A\u0E48\u0E07\u0E40\u0E2A\u0E35\u0E22\u0E07\u0E43\u0E2B\u0E21\u0E48\u0E2D\u0E35\u0E01\u0E04\u0E23\u0E31\u0E49\u0E07\u0E04\u0E23\u0E31\u0E1A" : mediaType === "image" ? "\u0E23\u0E31\u0E1A\u0E23\u0E39\u0E1B\u0E41\u0E25\u0E49\u0E27 \u0E41\u0E15\u0E48\u0E23\u0E30\u0E1A\u0E1A\u0E1B\u0E23\u0E30\u0E21\u0E27\u0E25\u0E1C\u0E25\u0E2A\u0E25\u0E34\u0E1B/\u0E43\u0E1A\u0E40\u0E2A\u0E23\u0E47\u0E08\u0E04\u0E23\u0E31\u0E49\u0E07\u0E19\u0E35\u0E49\u0E44\u0E21\u0E48\u0E2A\u0E33\u0E40\u0E23\u0E47\u0E08 \u0E01\u0E23\u0E38\u0E13\u0E32\u0E25\u0E2D\u0E07\u0E2A\u0E48\u0E07\u0E20\u0E32\u0E1E\u0E43\u0E2B\u0E21\u0E48\u0E2D\u0E35\u0E01\u0E04\u0E23\u0E31\u0E49\u0E07\u0E04\u0E23\u0E31\u0E1A" : "\u0E23\u0E31\u0E1A\u0E44\u0E1F\u0E25\u0E4C\u0E41\u0E25\u0E49\u0E27 \u0E41\u0E15\u0E48\u0E23\u0E30\u0E1A\u0E1A\u0E1B\u0E23\u0E30\u0E21\u0E27\u0E25\u0E1C\u0E25\u0E04\u0E23\u0E31\u0E49\u0E07\u0E19\u0E35\u0E49\u0E44\u0E21\u0E48\u0E2A\u0E33\u0E40\u0E23\u0E47\u0E08 \u0E01\u0E23\u0E38\u0E13\u0E32\u0E25\u0E2D\u0E07\u0E2A\u0E48\u0E07\u0E44\u0E1F\u0E25\u0E4C\u0E43\u0E2B\u0E21\u0E48\u0E2D\u0E35\u0E01\u0E04\u0E23\u0E31\u0E49\u0E07\u0E04\u0E23\u0E31\u0E1A";
+      let delivered = false;
+      if (event.replyToken) {
+        try {
+          await replyText(event.replyToken, fallback);
+          delivered = true;
+        } catch (replyError) {
+          console.error("[Milo Media] top-level fallback reply failed", { error: replyError instanceof Error ? replyError.message : "unknown" });
+        }
+      }
+      if (!delivered) {
+        try {
+          await pushText(identity.lineChatId, fallback);
+          delivered = true;
+        } catch (pushError) {
+          console.error("[Milo Media] top-level fallback push failed", { error: pushError instanceof Error ? pushError.message : "unknown" });
+        }
+      }
+      try {
+        await finishWebhookEvent(event.webhookEventId, "failed", errorMessage);
+      } catch (auditError) {
+        console.error("[Milo Media] failed to record webhook failure", { error: auditError instanceof Error ? auditError.message : "unknown" });
+      }
+      return;
+    }
+    await finishWebhookEvent(event.webhookEventId, "failed", errorMessage);
     throw error;
   }
 }
