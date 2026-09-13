@@ -31,7 +31,7 @@ function clean(value: string) {
 }
 
 function compactText(value: string) {
-  const normalized = clean(value).slice(0, 1600);
+  const normalized = clean(value).slice(0, 1000);
   return normalized || "ยังไม่มีข้อมูลสำหรับแสดงผล";
 }
 

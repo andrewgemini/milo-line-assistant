@@ -1724,7 +1724,7 @@ function clean(value) {
   return withoutPictographs.replace(/[\u200B\u200C\u200D\uFEFF]/g, "").replace(/\r/g, "").trim();
 }
 function compactText(value) {
-  const normalized = clean(value).slice(0, 1600);
+  const normalized = clean(value).slice(0, 1e3);
   return normalized || "\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E21\u0E35\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E2A\u0E33\u0E2B\u0E23\u0E31\u0E1A\u0E41\u0E2A\u0E14\u0E07\u0E1C\u0E25";
 }
 function encode(key, text2) {

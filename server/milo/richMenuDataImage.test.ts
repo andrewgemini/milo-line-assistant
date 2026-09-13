@@ -20,4 +20,14 @@ describe("dynamic rich-menu data images", () => {
     expect(isDynamicRichMenuArtwork("record")).toBe(false);
     expect(isDynamicRichMenuArtwork("analysis")).toBe(true);
   });
+  it("keeps signed dynamic image URLs within the LINE 2000-character limit", () => {
+    let seed = 123456789;
+    const chars: string[] = [];
+    for (let i = 0; i < 1600; i += 1) {
+      seed = (seed * 1664525 + 1013904223) >>> 0;
+      chars.push(String.fromCodePoint(0x0e01 + (seed % 80)));
+    }
+    const url = buildRichMenuDataImageUrl("analysis", chars.join(""));
+    expect(url.length).toBeLessThanOrEqual(2000);
+  });
 });
