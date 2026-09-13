@@ -2121,10 +2121,10 @@ function sourceIdentity(source) {
   if (source.type === "group") return { lineChatId: source.groupId, lineUserId: source.userId, scope: "group" };
   return { lineChatId: source.roomId, lineUserId: source.userId, scope: "room" };
 }
-async function callLine(path3, credentials, init) {
-  const response = await fetch(`https://api.line.me${path3}`, { ...init, headers: { Authorization: `Bearer ${credentials.channelAccessToken}`, ...init.headers } });
+async function callLine(path4, credentials, init) {
+  const response = await fetch(`https://api.line.me${path4}`, { ...init, headers: { Authorization: `Bearer ${credentials.channelAccessToken}`, ...init.headers } });
   if (!response.ok) throw new Error(`LINE API ${response.status}: ${await response.text()}`);
-  console.info("[Milo LINE] message delivered", { endpoint: path3, status: response.status });
+  console.info("[Milo LINE] message delivered", { endpoint: path4, status: response.status });
   return response;
 }
 var MILO_RICH_MENU_IMAGE_BASE_URL = (process.env.MILO_RICH_MENU_IMAGE_BASE_URL ?? "https://milo-line-app.vercel.app/milo-richmenu").replace(/\/+$/, "");
@@ -2483,8 +2483,8 @@ async function getProfile(source, credentials = lineCredentials()) {
     return await response2.json();
   }
   if (!source.userId) return void 0;
-  const path3 = source.type === "group" ? `/v2/bot/group/${source.groupId}/member/${source.userId}` : `/v2/bot/room/${source.roomId}/member/${source.userId}`;
-  const response = await callLine(path3, credentials, { method: "GET" });
+  const path4 = source.type === "group" ? `/v2/bot/group/${source.groupId}/member/${source.userId}` : `/v2/bot/room/${source.roomId}/member/${source.userId}`;
+  const response = await callLine(path4, credentials, { method: "GET" });
   return await response.json();
 }
 async function replyRichMenu(replyToken, text2, artwork, credentials = lineCredentials()) {
@@ -3406,6 +3406,160 @@ import express from "express";
 // server/_core/voiceTranscription.ts
 import { transcribe as gatewayTranscribe } from "ai";
 import { createGateway, gateway } from "@ai-sdk/gateway";
+
+// server/_core/localVoiceTranscription.ts
+import { spawn } from "node:child_process";
+import fs from "node:fs";
+import path2 from "node:path";
+import ffmpegPath from "ffmpeg-static";
+var DEFAULT_MODEL = "onnx-community/whisper-tiny";
+var DEFAULT_DTYPE = "q8";
+var transcriberPromise;
+function cacheDirPath() {
+  return path2.resolve(process.env.MILO_LOCAL_STT_CACHE_DIR || path2.join(process.cwd(), "models", "transformers-cache"));
+}
+function modelName() {
+  return (process.env.MILO_LOCAL_STT_MODEL || DEFAULT_MODEL).trim();
+}
+function bundledModelReady(cacheDir = cacheDirPath(), model = modelName()) {
+  const modelRoot = path2.join(cacheDir, ...model.split("/"));
+  return [
+    "config.json",
+    "tokenizer.json",
+    path2.join("onnx", "encoder_model_quantized.onnx"),
+    path2.join("onnx", "decoder_model_merged_quantized.onnx")
+  ].every((file) => fs.existsSync(path2.join(modelRoot, file)));
+}
+function enabledFlag() {
+  const raw = (process.env.MILO_LOCAL_STT_ENABLED || "").trim();
+  if (raw) return /^(1|true|yes|on)$/i.test(raw);
+  return bundledModelReady();
+}
+function localVoiceRuntimeStatus() {
+  const cacheDir = cacheDirPath();
+  const model = modelName();
+  const bundled = bundledModelReady(cacheDir, model);
+  return {
+    enabled: enabledFlag(),
+    bundled,
+    model,
+    dtype: (process.env.MILO_LOCAL_STT_DTYPE || DEFAULT_DTYPE).trim(),
+    cacheDir,
+    ffmpegAvailable: typeof ffmpegPath === "string" && ffmpegPath.length > 0 && fs.existsSync(ffmpegPath)
+  };
+}
+async function decodeToFloat32Mono16k(audioBuffer) {
+  const executable = typeof ffmpegPath === "string" ? ffmpegPath : "";
+  if (!executable || !fs.existsSync(executable)) throw new Error("ffmpeg-static binary is unavailable");
+  const args = [
+    "-hide_banner",
+    "-loglevel",
+    "error",
+    "-i",
+    "pipe:0",
+    "-vn",
+    "-ac",
+    "1",
+    "-ar",
+    "16000",
+    "-f",
+    "f32le",
+    "-acodec",
+    "pcm_f32le",
+    "pipe:1"
+  ];
+  return await new Promise((resolve, reject) => {
+    const child = spawn(executable, args);
+    const stdout = [];
+    const stderr = [];
+    child.stdout.on("data", (chunk) => stdout.push(Buffer.from(chunk)));
+    child.stderr.on("data", (chunk) => stderr.push(Buffer.from(chunk)));
+    child.once("error", reject);
+    child.once("close", (code) => {
+      if (code !== 0) {
+        reject(new Error(`ffmpeg decode failed (${code}): ${Buffer.concat(stderr).toString("utf8").slice(0, 1e3)}`));
+        return;
+      }
+      const pcm = Buffer.concat(stdout);
+      if (!pcm.length || pcm.length % 4 !== 0) {
+        reject(new Error("ffmpeg returned empty or invalid PCM audio"));
+        return;
+      }
+      const copied = pcm.buffer.slice(pcm.byteOffset, pcm.byteOffset + pcm.byteLength);
+      resolve(new Float32Array(copied));
+    });
+    child.stdin.end(audioBuffer);
+  });
+}
+async function getTranscriber() {
+  if (!transcriberPromise) {
+    transcriberPromise = (async () => {
+      const { env, pipeline } = await import("@huggingface/transformers");
+      const status = localVoiceRuntimeStatus();
+      env.cacheDir = status.cacheDir;
+      env.allowLocalModels = true;
+      env.allowRemoteModels = !status.bundled;
+      console.info("[Milo Voice Local] loading model", {
+        model: status.model,
+        dtype: status.dtype,
+        cacheDir: status.cacheDir,
+        bundled: status.bundled
+      });
+      return await pipeline("automatic-speech-recognition", status.model, {
+        dtype: status.dtype
+      });
+    })().catch((error) => {
+      transcriberPromise = void 0;
+      throw error;
+    });
+  }
+  return transcriberPromise;
+}
+async function transcribeAudioLocal(input) {
+  const status = localVoiceRuntimeStatus();
+  if (!status.enabled) throw new Error("Local STT is disabled");
+  if (!status.ffmpegAvailable) throw new Error("Local STT requires ffmpeg-static");
+  const started = Date.now();
+  const samples = await decodeToFloat32Mono16k(Buffer.from(input.audioBuffer));
+  console.info("[Milo Voice Local] decoded audio", {
+    samples: samples.length,
+    seconds: Number((samples.length / 16e3).toFixed(2)),
+    decodeMs: Date.now() - started
+  });
+  const transcriber = await getTranscriber();
+  const language = (input.language || "th").trim();
+  const result = await transcriber(samples, {
+    language,
+    task: "transcribe",
+    return_timestamps: true,
+    chunk_length_s: 30,
+    stride_length_s: 5
+  });
+  const text2 = String(result?.text || "").trim();
+  if (!text2) throw new Error("Local Whisper returned empty text");
+  const chunks = Array.isArray(result?.chunks) ? result.chunks : [];
+  const segments = chunks.map((chunk, index2) => ({
+    id: index2,
+    seek: 0,
+    start: Number(chunk?.timestamp?.[0] || 0),
+    end: Number(chunk?.timestamp?.[1] || 0),
+    text: String(chunk?.text || "").trim(),
+    tokens: [],
+    temperature: 0,
+    avg_logprob: 0,
+    compression_ratio: 0,
+    no_speech_prob: 0
+  }));
+  return {
+    task: "transcribe",
+    language,
+    duration: samples.length / 16e3,
+    text: text2,
+    segments
+  };
+}
+
+// server/_core/voiceTranscription.ts
 function gatewayAuthAvailable(env = process.env, requestToken) {
   return Boolean(
     (env.AI_GATEWAY_API_KEY || "").trim() || (env.VERCEL_OIDC_TOKEN || "").trim() || requestToken?.trim()
@@ -3418,9 +3572,11 @@ function voiceTranscriptionRuntimeStatus(requestToken) {
   const forge = Boolean(ENV.forgeApiUrl && ENV.forgeApiKey);
   const openai = Boolean((process.env.OPENAI_API_KEY || "").trim());
   const gatewayAvailable = gatewayAuthAvailable(process.env, requestToken);
+  const local = localVoiceRuntimeStatus();
   return {
-    configured: forge || openai || gatewayAvailable,
-    mode: forge ? "forge-whisper" : openai ? "openai-whisper" : gatewayAvailable ? "vercel-ai-gateway-stt" : "unconfigured"
+    configured: local.enabled || forge || openai || gatewayAvailable,
+    mode: local.enabled ? "local-whisper-onnx" : forge ? "forge-whisper" : openai ? "openai-whisper" : gatewayAvailable ? "vercel-ai-gateway-stt" : "unconfigured",
+    local
   };
 }
 function getFileExtension(mimeType) {
@@ -3543,11 +3699,12 @@ async function transcribeAudio(options) {
     const forgeConfigured = Boolean(ENV.forgeApiUrl && ENV.forgeApiKey);
     const openAIKey = (process.env.OPENAI_API_KEY || "").trim();
     const gatewayConfigured = gatewayAuthAvailable(process.env, options.gatewayToken);
-    if (!forgeConfigured && !openAIKey && !gatewayConfigured) {
+    const localConfigured = localVoiceRuntimeStatus().enabled;
+    if (!localConfigured && !forgeConfigured && !openAIKey && !gatewayConfigured) {
       return {
         error: "Voice transcription service is not configured",
         code: "SERVICE_ERROR",
-        details: "Use Vercel AI Gateway/OIDC, AI_GATEWAY_API_KEY, Forge credentials, or OPENAI_API_KEY"
+        details: "Enable local STT or use Vercel AI Gateway/OIDC, AI_GATEWAY_API_KEY, Forge credentials, or OPENAI_API_KEY"
       };
     }
     let audioBuffer;
@@ -3588,6 +3745,22 @@ async function transcribeAudio(options) {
         code: "FILE_TOO_LARGE",
         details: `File size is ${sizeMB.toFixed(2)}MB, maximum allowed is 16MB`
       };
+    }
+    if (localConfigured) {
+      try {
+        return await transcribeAudioLocal({ audioBuffer, language: options.language || "th" });
+      } catch (error) {
+        console.warn("[Milo Voice] Local transcription failed; trying remote fallback", {
+          error: error instanceof Error ? error.message : "unknown"
+        });
+        if (!forgeConfigured && !gatewayConfigured && !openAIKey) {
+          return {
+            error: "Local transcription failed",
+            code: "TRANSCRIPTION_FAILED",
+            details: error instanceof Error ? error.message : "Local Whisper failed"
+          };
+        }
+      }
     }
     if (forgeConfigured) {
       const baseUrl = ENV.forgeApiUrl.endsWith("/") ? ENV.forgeApiUrl : `${ENV.forgeApiUrl}/`;
@@ -3705,13 +3878,13 @@ async function storagePut(relKey, data, contentType = "application/octet-stream"
 }
 
 // server/milo/ocrImageAnalysis.ts
-import fs from "node:fs";
+import fs2 from "node:fs";
 import os from "node:os";
-import path2 from "node:path";
+import path3 from "node:path";
 import sharp3 from "sharp";
 import { createWorker } from "tesseract.js";
-var DATA_DIR = path2.join(process.cwd(), "api", "tessdata");
-var CACHE_DIR = path2.join(os.tmpdir(), "milo-tesscache");
+var DATA_DIR = path3.join(process.cwd(), "api", "tessdata");
+var CACHE_DIR = path3.join(os.tmpdir(), "milo-tesscache");
 var thaiDigitMap = {
   "\u0E50": "0",
   "\u0E51": "1",
@@ -3739,7 +3912,7 @@ var thaiMonths = {
   "\u0E18.\u0E04.": 12
 };
 function ocrAssetsReady() {
-  return fs.existsSync(path2.join(DATA_DIR, "tha.traineddata.gz")) && fs.existsSync(path2.join(DATA_DIR, "eng.traineddata.gz"));
+  return fs2.existsSync(path3.join(DATA_DIR, "tha.traineddata.gz")) && fs2.existsSync(path3.join(DATA_DIR, "eng.traineddata.gz"));
 }
 function decodeDataUrl(dataUrl) {
   const match = dataUrl.match(/^data:([^;]+);base64,([\s\S]+)$/);
@@ -3879,7 +4052,7 @@ function analyzeOcrText(rawText) {
 }
 async function analyzeImageWithOcr(dataUrl) {
   if (!ocrAssetsReady()) throw new Error(`OCR language data is unavailable at ${DATA_DIR}`);
-  fs.mkdirSync(CACHE_DIR, { recursive: true });
+  fs2.mkdirSync(CACHE_DIR, { recursive: true });
   const input = decodeDataUrl(dataUrl);
   const prepared = await sharp3(input).rotate().resize({ width: 1800, withoutEnlargement: true }).grayscale().normalize().sharpen().png().toBuffer();
   const worker = await createWorker(["tha", "eng"], void 0, {
@@ -5550,8 +5723,8 @@ function registerMiloCron(app2) {
       return res.status(500).json({ error: error instanceof Error ? error.message : "unknown", timestamp: (/* @__PURE__ */ new Date()).toISOString() });
     }
   });
-  const registerFinanceDigestRoute = (path3, settingKey, digestType) => {
-    app2.post(path3, async (req, res) => {
+  const registerFinanceDigestRoute = (path4, settingKey, digestType) => {
+    app2.post(path4, async (req, res) => {
       try {
         const user = await sdk.authenticateRequest(req);
         if (!user.isCron || !user.taskUid) return res.status(403).json({ error: "cron-only" });
@@ -5780,13 +5953,15 @@ var healthHandler = async (req, res) => {
   res.status(200).json({
     status: "ok",
     service: "milo",
-    release: "media-input-fix-2026-09-13",
+    release: "media-v3-local-stt-2026-09-14",
     visionConfigured: runtime.authenticated,
     imageAnalysisMode: mode,
     visionModel: mode === "ocr-fallback" ? "tesseract-tha+eng" : process.env.MILO_VISION_MODEL || (mode.startsWith("vercel-ai-gateway") ? "google/gemini-2.5-flash" : mode.startsWith("forge-vision") ? "gemini-3-flash-preview" : "unconfigured"),
     ocrAssetsReady: runtime.ocrAssetsReady,
     voiceConfigured: voice.configured,
     voiceTranscriptionMode: voice.mode,
+    voiceLocalBundled: voice.local?.bundled ?? false,
+    voiceLocalModel: voice.local?.model ?? null,
     timestamp: (/* @__PURE__ */ new Date()).toISOString()
   });
 };

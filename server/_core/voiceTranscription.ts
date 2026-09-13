@@ -6,6 +6,7 @@
 import { transcribe as gatewayTranscribe } from "ai";
 import { createGateway, gateway } from "@ai-sdk/gateway";
 import { ENV } from "./env";
+import { localVoiceRuntimeStatus, transcribeAudioLocal } from "./localVoiceTranscription";
 
 export type TranscribeOptions = {
   audioUrl?: string;
@@ -61,15 +62,19 @@ export function voiceTranscriptionRuntimeStatus(requestToken?: string) {
   const forge = Boolean(ENV.forgeApiUrl && ENV.forgeApiKey);
   const openai = Boolean((process.env.OPENAI_API_KEY || "").trim());
   const gatewayAvailable = gatewayAuthAvailable(process.env, requestToken);
+  const local = localVoiceRuntimeStatus();
   return {
-    configured: forge || openai || gatewayAvailable,
-    mode: forge
-      ? "forge-whisper"
-      : openai
-        ? "openai-whisper"
-        : gatewayAvailable
-          ? "vercel-ai-gateway-stt"
-          : "unconfigured",
+    configured: local.enabled || forge || openai || gatewayAvailable,
+    mode: local.enabled
+      ? "local-whisper-onnx"
+      : forge
+        ? "forge-whisper"
+        : openai
+          ? "openai-whisper"
+          : gatewayAvailable
+            ? "vercel-ai-gateway-stt"
+            : "unconfigured",
+    local,
   } as const;
 }
 
@@ -200,12 +205,13 @@ export async function transcribeAudio(options: TranscribeOptions): Promise<Trans
     const forgeConfigured = Boolean(ENV.forgeApiUrl && ENV.forgeApiKey);
     const openAIKey = (process.env.OPENAI_API_KEY || "").trim();
     const gatewayConfigured = gatewayAuthAvailable(process.env, options.gatewayToken);
+    const localConfigured = localVoiceRuntimeStatus().enabled;
 
-    if (!forgeConfigured && !openAIKey && !gatewayConfigured) {
+    if (!localConfigured && !forgeConfigured && !openAIKey && !gatewayConfigured) {
       return {
         error: "Voice transcription service is not configured",
         code: "SERVICE_ERROR",
-        details: "Use Vercel AI Gateway/OIDC, AI_GATEWAY_API_KEY, Forge credentials, or OPENAI_API_KEY",
+        details: "Enable local STT or use Vercel AI Gateway/OIDC, AI_GATEWAY_API_KEY, Forge credentials, or OPENAI_API_KEY",
       };
     }
 
@@ -248,6 +254,23 @@ export async function transcribeAudio(options: TranscribeOptions): Promise<Trans
         code: "FILE_TOO_LARGE",
         details: `File size is ${sizeMB.toFixed(2)}MB, maximum allowed is 16MB`,
       };
+    }
+
+    if (localConfigured) {
+      try {
+        return await transcribeAudioLocal({ audioBuffer, language: options.language || "th" });
+      } catch (error) {
+        console.warn("[Milo Voice] Local transcription failed; trying remote fallback", {
+          error: error instanceof Error ? error.message : "unknown",
+        });
+        if (!forgeConfigured && !gatewayConfigured && !openAIKey) {
+          return {
+            error: "Local transcription failed",
+            code: "TRANSCRIPTION_FAILED",
+            details: error instanceof Error ? error.message : "Local Whisper failed",
+          };
+        }
+      }
     }
 
     if (forgeConfigured) {
