@@ -236,7 +236,7 @@ describe("LINE webhook processor", () => {
     expect(db.saveImageExtraction).toHaveBeenCalledWith(9, "expense", expect.stringContaining("ร้านกาแฟ"), 0.94);
     vi.mocked(db.latestImageExtraction).mockResolvedValue({ extraction: { id: 3, status: "proposed", extractedJson: JSON.stringify(receiptAnalysis) }, vault: { id: 9, storageKey: "milo/U1/img-1" } } as never);
     await processEvent({ type: "message", webhookEventId: "evt-confirm-receipt", timestamp: Date.now(), replyToken: "token", source: { type: "user", userId: "U1" }, message: { id: "txt-1", type: "text", text: "ยืนยันค่าใช้จ่าย" } }, "{}");
-    expect(db.createTransaction).toHaveBeenCalledWith(expect.objectContaining({ lineChatId: "U1", lineUserId: "U1", transactionType: "expense", amount: 125, category: "อาหาร", occurredAt: new Date(2026, 7, 27, 12, 0, 0, 0) }));
+    expect(db.createTransaction).toHaveBeenCalledWith(expect.objectContaining({ lineChatId: "U1", lineUserId: "U1", transactionType: "expense", amount: 125, category: "อาหาร", occurredAt: new Date("2026-08-27T03:15:00.000Z") }));
     expect(db.createTransaction).toHaveBeenCalledWith(expect.objectContaining({ note: expect.stringContaining("ร้านค้า/คู่ค้า: ร้านกาแฟ") }));
     expect(db.linkTransactionAttachment).toHaveBeenCalledWith({ transactionId: 155, vaultItemId: 9, lineUserId: "U1", label: "ใบเสร็จต้นฉบับ" });
     expect(db.setImageExtractionStatus).toHaveBeenCalledWith(3, "accepted");

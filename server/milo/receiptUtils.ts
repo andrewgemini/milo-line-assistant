@@ -19,7 +19,7 @@ export function normalizeExpenseCategory(value?: string, context = "") {
   return categoryRules.find(([pattern]) => pattern.test(text))?.[1] ?? (value?.trim() || "ทั่วไป");
 }
 
-export function parseExtractedDate(value?: string) {
+export function parseExtractedDate(value?: string, timeText?: string) {
   const text = value?.trim();
   if (!text) return undefined;
   const iso = text.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
@@ -34,8 +34,15 @@ export function parseExtractedDate(value?: string) {
   if (thaiWords) { year = Number(thaiWords[3]); month = months[thaiWords[2]]; day = Number(thaiWords[1]); }
   if (year === undefined || month === undefined || day === undefined) return undefined;
   if (year > 2400) year -= 543;
-  const result = new Date(year, month, day, 12, 0, 0, 0);
-  return result.getFullYear() === year && result.getMonth() === month && result.getDate() === day ? result : undefined;
+  const time = timeText?.trim().match(/^(\d{1,2})[:.](\d{2})(?:\s*น\.?)?$/);
+  const hour = time ? Number(time[1]) : 12;
+  const minute = time ? Number(time[2]) : 0;
+  if (hour > 23 || minute > 59) return undefined;
+  const result = new Date(Date.UTC(year, month, day, hour - 7, minute, 0, 0));
+  const bangkok = new Date(result.getTime() + 7 * 60 * 60 * 1000);
+  return bangkok.getUTCFullYear() === year && bangkok.getUTCMonth() === month && bangkok.getUTCDate() === day
+    ? result
+    : undefined;
 }
 
 export function selectImageProposal(proposals: ProposalLike[] = []) {

@@ -10,7 +10,10 @@ describe("receipt utilities", () => {
   it("parses Thai Buddhist-era numeric dates without guessing malformed dates", () => {
     expect(parseExtractedDate("27/08/2569")?.toISOString().slice(0, 10)).toBe("2026-08-27");
     expect(parseExtractedDate("27 ส.ค. 2569")?.toISOString().slice(0, 10)).toBe("2026-08-27");
+    expect(parseExtractedDate("27/08/2569", "10:15")?.toISOString()).toBe("2026-08-27T03:15:00.000Z");
+    expect(parseExtractedDate("2026-08-27", "23.45 น.")?.toISOString()).toBe("2026-08-27T16:45:00.000Z");
     expect(parseExtractedDate("31/02/2569")).toBeUndefined();
+    expect(parseExtractedDate("27/08/2569", "25:00")).toBeUndefined();
   });
 
   it("prioritizes a payable expense over other image proposals", () => {

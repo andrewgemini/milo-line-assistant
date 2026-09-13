@@ -43,13 +43,15 @@ export type TranscriptionError = {
   details?: string;
 };
 
-function gatewayAuthAvailable() {
+export function gatewayAuthAvailable(env: NodeJS.ProcessEnv = process.env) {
   return Boolean(
-    (process.env.AI_GATEWAY_API_KEY || "").trim() ||
-    (process.env.VERCEL_OIDC_TOKEN || "").trim() ||
-    process.env.VERCEL ||
-    process.env.VERCEL_ENV
+    (env.AI_GATEWAY_API_KEY || "").trim() ||
+    (env.VERCEL_OIDC_TOKEN || "").trim()
   );
+}
+
+export function gatewayTranscriptionModel(env: NodeJS.ProcessEnv = process.env) {
+  return (env.MILO_STT_MODEL || "fish-audio/transcribe-1").trim();
 }
 
 export function voiceTranscriptionRuntimeStatus() {
@@ -160,7 +162,7 @@ async function transcribeWithGateway(
   audioBuffer: Buffer,
   options: TranscribeOptions,
 ): Promise<TranscriptionResponse> {
-  const modelId = (process.env.MILO_STT_MODEL || "fish-audio/transcribe-1-free").trim();
+  const modelId = gatewayTranscriptionModel();
   const result = await gatewayTranscribe({
     model: gateway.transcriptionModel(modelId),
     audio: audioBuffer,
@@ -172,7 +174,7 @@ async function transcribeWithGateway(
     language: result.language || options.language || "th",
     duration: result.durationInSeconds || 0,
     text: result.text,
-    segments: result.segments.map((segment, index) => ({
+    segments: (result.segments ?? []).map((segment, index) => ({
       id: index,
       seek: 0,
       start: segment.startSecond,

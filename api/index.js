@@ -3395,10 +3395,13 @@ import express from "express";
 
 // server/_core/voiceTranscription.ts
 import { gateway, transcribe as gatewayTranscribe } from "ai";
-function gatewayAuthAvailable() {
+function gatewayAuthAvailable(env = process.env) {
   return Boolean(
-    (process.env.AI_GATEWAY_API_KEY || "").trim() || (process.env.VERCEL_OIDC_TOKEN || "").trim() || process.env.VERCEL || process.env.VERCEL_ENV
+    (env.AI_GATEWAY_API_KEY || "").trim() || (env.VERCEL_OIDC_TOKEN || "").trim()
   );
+}
+function gatewayTranscriptionModel(env = process.env) {
+  return (env.MILO_STT_MODEL || "fish-audio/transcribe-1").trim();
 }
 function voiceTranscriptionRuntimeStatus() {
   const forge = Boolean(ENV.forgeApiUrl && ENV.forgeApiKey);
@@ -3498,7 +3501,7 @@ async function parseProviderResponse(response, provider) {
   return whisperResponse;
 }
 async function transcribeWithGateway(audioBuffer, options) {
-  const modelId = (process.env.MILO_STT_MODEL || "fish-audio/transcribe-1-free").trim();
+  const modelId = gatewayTranscriptionModel();
   const result = await gatewayTranscribe({
     model: gateway.transcriptionModel(modelId),
     audio: audioBuffer,
@@ -3509,7 +3512,7 @@ async function transcribeWithGateway(audioBuffer, options) {
     language: result.language || options.language || "th",
     duration: result.durationInSeconds || 0,
     text: result.text,
-    segments: result.segments.map((segment, index2) => ({
+    segments: (result.segments ?? []).map((segment, index2) => ({
       id: index2,
       seek: 0,
       start: segment.startSecond,
@@ -3988,16 +3991,25 @@ async function analyzeImageWithGatewayKey(dataUrl, token) {
     throw error;
   }
 }
+function imageGatewayToken(env = process.env) {
+  return (env.AI_GATEWAY_API_KEY || env.VERCEL_OIDC_TOKEN || "").trim();
+}
+function imageGatewayMode(env = process.env) {
+  if ((env.AI_GATEWAY_API_KEY || "").trim()) return "vercel-ai-gateway-key";
+  if ((env.VERCEL_OIDC_TOKEN || "").trim()) return "vercel-ai-gateway-oidc";
+  return void 0;
+}
 function imageAnalysisMode() {
   if (ENV.forgeApiKey) return ocrAssetsReady() ? "forge-vision+ocr-fallback" : "forge-vision";
-  if ((process.env.AI_GATEWAY_API_KEY || "").trim()) return ocrAssetsReady() ? "vercel-ai-gateway-key+ocr-fallback" : "vercel-ai-gateway-key";
+  const gatewayMode = imageGatewayMode();
+  if (gatewayMode) return ocrAssetsReady() ? `${gatewayMode}+ocr-fallback` : gatewayMode;
   return ocrAssetsReady() ? "ocr-fallback" : "unconfigured";
 }
 async function imageAnalysisRuntimeStatus() {
   const mode = imageAnalysisMode();
   return {
     mode,
-    authenticated: Boolean(ENV.forgeApiKey || (process.env.AI_GATEWAY_API_KEY || "").trim() || ocrAssetsReady()),
+    authenticated: Boolean(ENV.forgeApiKey || imageGatewayToken() || ocrAssetsReady()),
     ocrAssetsReady: ocrAssetsReady()
   };
 }
@@ -4011,7 +4023,7 @@ async function analyzeImage(dataUrl) {
       });
     }
   }
-  const gatewayKey = (process.env.AI_GATEWAY_API_KEY || "").trim();
+  const gatewayKey = imageGatewayToken();
   if (gatewayKey) {
     try {
       return await analyzeImageWithGatewayKey(dataUrl, gatewayKey);
@@ -4583,7 +4595,7 @@ function normalizeExpenseCategory(value, context = "") {
   if (!text2) return "\u0E17\u0E31\u0E48\u0E27\u0E44\u0E1B";
   return categoryRules.find(([pattern]) => pattern.test(text2))?.[1] ?? (value?.trim() || "\u0E17\u0E31\u0E48\u0E27\u0E44\u0E1B");
 }
-function parseExtractedDate(value) {
+function parseExtractedDate(value, timeText) {
   const text2 = value?.trim();
   if (!text2) return void 0;
   const iso2 = text2.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
@@ -4610,8 +4622,13 @@ function parseExtractedDate(value) {
   }
   if (year === void 0 || month === void 0 || day === void 0) return void 0;
   if (year > 2400) year -= 543;
-  const result = new Date(year, month, day, 12, 0, 0, 0);
-  return result.getFullYear() === year && result.getMonth() === month && result.getDate() === day ? result : void 0;
+  const time = timeText?.trim().match(/^(\d{1,2})[:.](\d{2})(?:\s*น\.?)?$/);
+  const hour = time ? Number(time[1]) : 12;
+  const minute = time ? Number(time[2]) : 0;
+  if (hour > 23 || minute > 59) return void 0;
+  const result = new Date(Date.UTC(year, month, day, hour - 7, minute, 0, 0));
+  const bangkok = new Date(result.getTime() + 7 * 60 * 60 * 1e3);
+  return bangkok.getUTCFullYear() === year && bangkok.getUTCMonth() === month && bangkok.getUTCDate() === day ? result : void 0;
 }
 function selectImageProposal(proposals = []) {
   return proposals.find((item) => item.kind === "expense" && Number(item.amount) > 0) ?? proposals.find((item) => item.kind === "reminder");
@@ -4898,7 +4915,7 @@ ${results.map((item) => `#${item.id} \xB7 ${item.transactionType === "expense" ?
     } else {
       const proposed = proposalFromStoredTranscript(voice.transcript, voice.proposalJson);
       if (proposed.transactionType && proposed.amount && proposed.category) {
-        const occurredAt = /* @__PURE__ */ new Date();
+        const occurredAt = Number.isFinite(event.timestamp) ? new Date(event.timestamp) : /* @__PURE__ */ new Date();
         const transactionId = await createTransaction({ lineChatId, lineUserId, financeAccountId: financeScope.financeAccountId, transactionType: proposed.transactionType, amount: proposed.amount, category: proposed.category, note: proposed.note, occurredAt, source: "line_audio" });
         await linkTransactionAttachment({ transactionId, vaultItemId: voice.vaultItemId, lineUserId, label: "\u0E44\u0E1F\u0E25\u0E4C\u0E40\u0E2A\u0E35\u0E22\u0E07\u0E15\u0E49\u0E19\u0E09\u0E1A\u0E31\u0E1A" });
         await updateVoiceTranscriptionStatus(voice.id, "accepted");
@@ -5107,7 +5124,7 @@ ${incomeSection}
       let skipped = 0;
       for (const raw of proposals) {
         const proposal = raw;
-        const occurredAt = parseExtractedDate(String(proposal.dateText ?? ""));
+        const occurredAt = parseExtractedDate(String(proposal.dateText ?? ""), String(proposal.timeText ?? ""));
         if (!occurredAt) {
           skipped += 1;
           continue;
@@ -5139,7 +5156,7 @@ ${incomeSection}
       } else if (proposal.kind === "expense" && Number(proposal.amount ?? 0) > 0) {
         const amount = Number(proposal.amount ?? 0);
         const category = normalizeExpenseCategory(proposal.category, `${proposal.title ?? ""} ${proposal.merchant ?? ""} ${proposal.note ?? ""}`);
-        const occurredAt = parseExtractedDate(command.dateText) ?? parseExtractedDate(proposal.dateText);
+        const occurredAt = parseExtractedDate(command.dateText ?? proposal.dateText, proposal.timeText);
         if (!occurredAt) {
           message = `\u0E2D\u0E48\u0E32\u0E19\u0E22\u0E2D\u0E14 ${amount.toLocaleString("th-TH")} \u0E1A\u0E32\u0E17\u0E44\u0E14\u0E49 \u0E41\u0E15\u0E48\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48\u0E43\u0E19${proposal.documentType === "bank_slip" ? "\u0E2A\u0E25\u0E34\u0E1B" : "\u0E43\u0E1A\u0E40\u0E2A\u0E23\u0E47\u0E08"}\u0E44\u0E21\u0E48\u0E0A\u0E31\u0E14 \u0E08\u0E36\u0E07\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E40\u0E1E\u0E37\u0E48\u0E2D\u0E1B\u0E49\u0E2D\u0E07\u0E01\u0E31\u0E19\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E1C\u0E34\u0E14\u0E1E\u0E25\u0E32\u0E14
 \u0E01\u0E23\u0E38\u0E13\u0E32\u0E1E\u0E34\u0E21\u0E1E\u0E4C \u201C\u0E22\u0E37\u0E19\u0E22\u0E31\u0E19\u0E04\u0E48\u0E32\u0E43\u0E0A\u0E49\u0E08\u0E48\u0E32\u0E22 \u0E27\u0E31\u0E19\u0E17\u0E35\u0E48 27/08/2569\u201D \u0E42\u0E14\u0E22\u0E41\u0E17\u0E19\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48\u0E08\u0E23\u0E34\u0E07`;
@@ -5672,7 +5689,7 @@ var healthHandler = async (_req, res) => {
   res.status(200).json({
     status: "ok",
     service: "milo",
-    release: "media-voice-gateway-2026-09-13",
+    release: "media-input-fix-2026-09-13",
     visionConfigured: runtime.authenticated,
     imageAnalysisMode: mode,
     visionModel: mode === "ocr-fallback" ? "tesseract-tha+eng" : process.env.MILO_VISION_MODEL || (mode.startsWith("vercel-ai-gateway") ? "google/gemini-2.5-flash" : mode.startsWith("forge-vision") ? "gemini-3-flash-preview" : "unconfigured"),

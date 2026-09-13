@@ -208,7 +208,7 @@ async function handleText(event: LineEvent, lineChatId: string, lineUserId: stri
     } else {
       const proposed = proposalFromStoredTranscript(voice.transcript, voice.proposalJson);
       if (proposed.transactionType && proposed.amount && proposed.category) {
-        const occurredAt = new Date();
+        const occurredAt = Number.isFinite(event.timestamp) ? new Date(event.timestamp) : new Date();
         const transactionId = await db.createTransaction({ lineChatId, lineUserId, financeAccountId: financeScope!.financeAccountId, transactionType: proposed.transactionType, amount: proposed.amount, category: proposed.category, note: proposed.note, occurredAt, source: "line_audio" });
         await db.linkTransactionAttachment({ transactionId, vaultItemId: voice.vaultItemId, lineUserId, label: "ไฟล์เสียงต้นฉบับ" });
         await db.updateVoiceTranscriptionStatus(voice.id, "accepted");
@@ -354,7 +354,7 @@ async function handleText(event: LineEvent, lineChatId: string, lineUserId: stri
       let created = 0; let skipped = 0;
       for (const raw of proposals) {
         const proposal = raw as any;
-        const occurredAt = parseExtractedDate(String(proposal.dateText ?? ""));
+        const occurredAt = parseExtractedDate(String(proposal.dateText ?? ""), String(proposal.timeText ?? ""));
         if (!occurredAt) { skipped += 1; continue; }
         const amount = Number(proposal.amount);
         const category = normalizeExpenseCategory(String(proposal.category ?? ""), `${proposal.title ?? ""} ${proposal.merchant ?? ""} ${proposal.note ?? ""}`);
@@ -379,7 +379,7 @@ async function handleText(event: LineEvent, lineChatId: string, lineUserId: stri
       } else if (proposal.kind === "expense" && Number(proposal.amount ?? 0) > 0) {
         const amount = Number(proposal.amount ?? 0);
         const category = normalizeExpenseCategory(proposal.category, `${proposal.title ?? ""} ${proposal.merchant ?? ""} ${proposal.note ?? ""}`);
-        const occurredAt = parseExtractedDate(command.dateText) ?? parseExtractedDate(proposal.dateText);
+        const occurredAt = parseExtractedDate(command.dateText ?? proposal.dateText, proposal.timeText);
         if (!occurredAt) {
           message = `อ่านยอด ${amount.toLocaleString("th-TH")} บาทได้ แต่วันที่ใน${proposal.documentType === "bank_slip" ? "สลิป" : "ใบเสร็จ"}ไม่ชัด จึงยังไม่บันทึกเพื่อป้องกันข้อมูลผิดพลาด\nกรุณาพิมพ์ “ยืนยันค่าใช้จ่าย วันที่ 27/08/2569” โดยแทนวันที่จริง`;
         } else {

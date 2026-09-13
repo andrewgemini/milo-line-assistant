@@ -140,9 +140,20 @@ async function analyzeImageWithGatewayKey(dataUrl: string, token: string): Promi
   }
 }
 
+export function imageGatewayToken(env: NodeJS.ProcessEnv = process.env) {
+  return (env.AI_GATEWAY_API_KEY || env.VERCEL_OIDC_TOKEN || "").trim();
+}
+
+function imageGatewayMode(env: NodeJS.ProcessEnv = process.env) {
+  if ((env.AI_GATEWAY_API_KEY || "").trim()) return "vercel-ai-gateway-key";
+  if ((env.VERCEL_OIDC_TOKEN || "").trim()) return "vercel-ai-gateway-oidc";
+  return undefined;
+}
+
 export function imageAnalysisMode() {
   if (ENV.forgeApiKey) return ocrAssetsReady() ? "forge-vision+ocr-fallback" : "forge-vision";
-  if ((process.env.AI_GATEWAY_API_KEY || "").trim()) return ocrAssetsReady() ? "vercel-ai-gateway-key+ocr-fallback" : "vercel-ai-gateway-key";
+  const gatewayMode = imageGatewayMode();
+  if (gatewayMode) return ocrAssetsReady() ? `${gatewayMode}+ocr-fallback` : gatewayMode;
   return ocrAssetsReady() ? "ocr-fallback" : "unconfigured";
 }
 
@@ -150,7 +161,7 @@ export async function imageAnalysisRuntimeStatus() {
   const mode = imageAnalysisMode();
   return {
     mode,
-    authenticated: Boolean(ENV.forgeApiKey || (process.env.AI_GATEWAY_API_KEY || "").trim() || ocrAssetsReady()),
+    authenticated: Boolean(ENV.forgeApiKey || imageGatewayToken() || ocrAssetsReady()),
     ocrAssetsReady: ocrAssetsReady(),
   };
 }
@@ -166,7 +177,7 @@ export async function analyzeImage(dataUrl: string): Promise<ImageAnalysis> {
     }
   }
 
-  const gatewayKey = (process.env.AI_GATEWAY_API_KEY || "").trim();
+  const gatewayKey = imageGatewayToken();
   if (gatewayKey) {
     try {
       return await analyzeImageWithGatewayKey(dataUrl, gatewayKey);
