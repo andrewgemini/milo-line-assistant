@@ -3,6 +3,7 @@
  * Forge Whisper remains primary when configured; OpenAI Whisper is used as a
  * secondary provider when OPENAI_API_KEY is available.
  */
+import { gateway, transcribe as gatewayTranscribe } from "ai";
 import { ENV } from "./env";
 
 export type TranscribeOptions = {
@@ -42,12 +43,28 @@ export type TranscriptionError = {
   details?: string;
 };
 
+function gatewayAuthAvailable() {
+  return Boolean(
+    (process.env.AI_GATEWAY_API_KEY || "").trim() ||
+    (process.env.VERCEL_OIDC_TOKEN || "").trim() ||
+    process.env.VERCEL ||
+    process.env.VERCEL_ENV
+  );
+}
+
 export function voiceTranscriptionRuntimeStatus() {
   const forge = Boolean(ENV.forgeApiUrl && ENV.forgeApiKey);
   const openai = Boolean((process.env.OPENAI_API_KEY || "").trim());
+  const gatewayAvailable = gatewayAuthAvailable();
   return {
-    configured: forge || openai,
-    mode: forge ? "forge-whisper" : openai ? "openai-whisper" : "unconfigured",
+    configured: forge || openai || gatewayAvailable,
+    mode: forge
+      ? "forge-whisper"
+      : openai
+        ? "openai-whisper"
+        : gatewayAvailable
+          ? "vercel-ai-gateway-stt"
+          : "unconfigured",
   } as const;
 }
 
@@ -139,15 +156,48 @@ async function parseProviderResponse(response: Response, provider: string): Prom
   return whisperResponse;
 }
 
+async function transcribeWithGateway(
+  audioBuffer: Buffer,
+  options: TranscribeOptions,
+): Promise<TranscriptionResponse> {
+  const modelId = (process.env.MILO_STT_MODEL || "fish-audio/transcribe-1-free").trim();
+  const result = await gatewayTranscribe({
+    model: gateway.transcriptionModel(modelId),
+    audio: audioBuffer,
+    maxRetries: 1,
+  });
+
+  return {
+    task: "transcribe",
+    language: result.language || options.language || "th",
+    duration: result.durationInSeconds || 0,
+    text: result.text,
+    segments: result.segments.map((segment, index) => ({
+      id: index,
+      seek: 0,
+      start: segment.startSecond,
+      end: segment.endSecond,
+      text: segment.text,
+      tokens: [],
+      temperature: 0,
+      avg_logprob: 0,
+      compression_ratio: 0,
+      no_speech_prob: 0,
+    })),
+  };
+}
+
 export async function transcribeAudio(options: TranscribeOptions): Promise<TranscriptionResponse | TranscriptionError> {
   try {
     const forgeConfigured = Boolean(ENV.forgeApiUrl && ENV.forgeApiKey);
     const openAIKey = (process.env.OPENAI_API_KEY || "").trim();
-    if (!forgeConfigured && !openAIKey) {
+    const gatewayConfigured = gatewayAuthAvailable();
+
+    if (!forgeConfigured && !openAIKey && !gatewayConfigured) {
       return {
         error: "Voice transcription service is not configured",
         code: "SERVICE_ERROR",
-        details: "Set BUILT_IN_FORGE_API_URL + BUILT_IN_FORGE_API_KEY or OPENAI_API_KEY",
+        details: "Use Vercel AI Gateway/OIDC, AI_GATEWAY_API_KEY, Forge credentials, or OPENAI_API_KEY",
       };
     }
 
@@ -197,19 +247,37 @@ export async function transcribeAudio(options: TranscribeOptions): Promise<Trans
       const fullUrl = new URL("v1/audio/transcriptions", baseUrl).toString();
       try {
         const response = await callTranscriptionProvider(fullUrl, ENV.forgeApiKey, audioBuffer, mimeType, options);
-        if (response.ok || !openAIKey) return parseProviderResponse(response, "forge");
-        console.warn("[Milo Voice] Forge transcription failed; trying OpenAI fallback", { status: response.status });
+        const parsed = await parseProviderResponse(response, "forge");
+        if (!("error" in parsed) || (!gatewayConfigured && !openAIKey)) return parsed;
+        console.warn("[Milo Voice] Forge transcription failed; trying fallback provider", { status: response.status });
       } catch (error) {
-        if (!openAIKey) {
+        if (!gatewayConfigured && !openAIKey) {
           return {
             error: "Transcription service request failed",
             code: "TRANSCRIPTION_FAILED",
             details: error instanceof Error ? error.message : "Forge transcription failed",
           };
         }
-        console.warn("[Milo Voice] Forge transcription unavailable; trying OpenAI fallback", {
+        console.warn("[Milo Voice] Forge transcription unavailable; trying fallback provider", {
           error: error instanceof Error ? error.message : "unknown",
         });
+      }
+    }
+
+    if (gatewayConfigured) {
+      try {
+        return await transcribeWithGateway(audioBuffer, options);
+      } catch (error) {
+        console.warn("[Milo Voice] AI Gateway transcription failed", {
+          error: error instanceof Error ? error.message : "unknown",
+        });
+        if (!openAIKey) {
+          return {
+            error: "Transcription service request failed",
+            code: "TRANSCRIPTION_FAILED",
+            details: error instanceof Error ? error.message : "AI Gateway transcription failed",
+          };
+        }
       }
     }
 
