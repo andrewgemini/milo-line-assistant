@@ -1,4 +1,5 @@
 import { artworkMessages, type RichMenuArtwork } from "./richMenuArtwork";
+import { buildRichMenuDataImageUrl, isDynamicRichMenuArtwork } from "./richMenuDataImage";
 import { budgetStatusCopy } from "./budgetStatus";
 import { buildFinanceReportImageUrl } from "./financeReportImage";
 import crypto from "node:crypto";
@@ -410,10 +411,11 @@ export async function getProfile(source: LineSource, credentials = lineCredentia
 }
 
 export async function replyRichMenu(replyToken: string, text: string, artwork: RichMenuArtwork, credentials = lineCredentials()) {
-  const [image] = artworkMessages(artwork);
-  if (!image) throw new Error("Milo rich-menu artwork is unavailable");
-  // The caller keeps `text` for text-only fallback if the image reply fails.
-  void text;
+  const [staticImage] = artworkMessages(artwork);
+  if (!staticImage) throw new Error("Milo rich-menu artwork is unavailable");
+  const image = isDynamicRichMenuArtwork(artwork)
+    ? { type: "image", originalContentUrl: buildRichMenuDataImageUrl(artwork, text), previewImageUrl: buildRichMenuDataImageUrl(artwork, text) }
+    : staticImage;
   return callLine("/v2/bot/message/reply", credentials, {
     method: "POST",
     headers: { "content-type": "application/json" },

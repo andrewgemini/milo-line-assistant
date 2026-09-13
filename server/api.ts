@@ -7,6 +7,7 @@ import { registerStorageProxy } from "./_core/storageProxy";
 import { registerLineWebhook, registerMiloCron } from "./milo/routes";
 import { registerSaveResultImageRoute } from "./milo/saveResultImage";
 import { registerFinanceReportImageRoute } from "./milo/financeReportImage";
+import { registerRichMenuDataImageRoute } from "./milo/richMenuDataImage";
 import { registerFinanceExportRoute } from "./milo/financeExport";
 import { analyzeImage, imageAnalysisRuntimeStatus } from "./milo/imageAnalysis";
 import { sdk } from "./_core/sdk";
@@ -23,6 +24,7 @@ app.set("trust proxy", 1);
 // registered before the generic JSON parser.
 registerSaveResultImageRoute(app);
 registerFinanceReportImageRoute(app);
+registerRichMenuDataImageRoute(app);
 registerFinanceExportRoute(app);
 registerLineWebhook(app);
 

@@ -1140,8 +1140,8 @@ var SDKServer = class {
     return new Map(Object.entries(parsed));
   }
   getSessionSecret() {
-    const secret2 = ENV.cookieSecret;
-    return new TextEncoder().encode(secret2);
+    const secret3 = ENV.cookieSecret;
+    return new TextEncoder().encode(secret3);
   }
   /**
    * Create a session token for a Manus user openId
@@ -1583,26 +1583,9 @@ function artworkMessages(key) {
   return [{ type: "image", originalContentUrl: url, previewImageUrl: url.replace(/\.png$/, "-preview.jpg") }];
 }
 
-// server/milo/budgetStatus.ts
-function getBudgetMetrics(spent, limit) {
-  const safeSpent = Number.isFinite(spent) ? Math.max(0, spent) : 0;
-  const safeLimit = Number.isFinite(limit) ? Math.max(0, limit) : 0;
-  if (safeLimit <= 0) return { usagePercent: 0, overPercent: 0, remaining: 0, isOverBudget: false };
-  const usagePercent = Math.max(0, Math.round(safeSpent / safeLimit * 100));
-  const remaining = safeLimit - safeSpent;
-  const isOverBudget = safeSpent > safeLimit;
-  const rawOverPercent = isOverBudget ? (safeSpent - safeLimit) / safeLimit * 100 : 0;
-  const overPercent = isOverBudget ? Math.max(1, Math.round(rawOverPercent)) : 0;
-  return { usagePercent, overPercent, remaining, isOverBudget };
-}
-function budgetStatusCopy(category, spent, limit) {
-  if (!(Number.isFinite(limit) && limit > 0)) return "";
-  const metrics = getBudgetMetrics(spent, limit);
-  return metrics.isOverBudget ? `\u0E2B\u0E21\u0E27\u0E14${category}\u0E40\u0E01\u0E34\u0E19\u0E07\u0E1A ${metrics.overPercent}% \u0E41\u0E25\u0E49\u0E27\u0E19\u0E48\u0E30\u0E08\u0E4A\u0E30` : `\u0E2B\u0E21\u0E27\u0E14${category}\u0E43\u0E0A\u0E49\u0E44\u0E1B ${metrics.usagePercent}% \u0E02\u0E2D\u0E07\u0E07\u0E1A\u0E41\u0E25\u0E49\u0E27\u0E19\u0E48\u0E30\u0E08\u0E4A\u0E30`;
-}
-
-// server/milo/financeReportImage.ts
+// server/milo/richMenuDataImage.ts
 import crypto2 from "node:crypto";
+import { deflateRawSync, inflateRawSync } from "node:zlib";
 import sharp from "sharp";
 
 // server/milo/vectorText.ts
@@ -1720,9 +1703,151 @@ function vectorTextSvg(text2, options) {
   return Buffer.from(`<svg width="${options.width}" height="${height}" viewBox="0 0 ${options.width} ${height}" xmlns="http://www.w3.org/2000/svg"><g>${paths.join("")}</g></svg>`);
 }
 
-// server/milo/financeReportImage.ts
+// server/milo/richMenuDataImage.ts
 var WIDTH = 1080;
 var HEIGHT = 1350;
+var DATA_KEYS = /* @__PURE__ */ new Set(["analysis", "budget", "transactions", "categories"]);
+var titleByKey = {
+  analysis: "\u0E27\u0E34\u0E40\u0E04\u0E23\u0E32\u0E30\u0E2B\u0E4C\u0E01\u0E32\u0E23\u0E40\u0E07\u0E34\u0E19",
+  budget: "\u0E07\u0E1A\u0E1B\u0E23\u0E30\u0E21\u0E32\u0E13",
+  transactions: "\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E25\u0E48\u0E32\u0E2A\u0E38\u0E14",
+  categories: "\u0E2B\u0E21\u0E27\u0E14\u0E2B\u0E21\u0E39\u0E48"
+};
+function secret() {
+  return process.env.LINE_CHANNEL_SECRET?.trim() || process.env.SESSION_SECRET?.trim() || "milo-richmenu-data-image-v1";
+}
+function clean(value) {
+  const withoutPictographs = Array.from(value.normalize("NFC")).filter((char) => {
+    const cp = char.codePointAt(0) ?? 0;
+    return cp !== 65039 && !(cp >= 126976 && cp <= 129791) && !(cp >= 9728 && cp <= 10175);
+  }).join("");
+  return withoutPictographs.replace(/[\u200B\u200C\u200D\uFEFF]/g, "").replace(/\r/g, "").trim();
+}
+function compactText(value) {
+  const normalized = clean(value).slice(0, 1600);
+  return normalized || "\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E21\u0E35\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E2A\u0E33\u0E2B\u0E23\u0E31\u0E1A\u0E41\u0E2A\u0E14\u0E07\u0E1C\u0E25";
+}
+function encode(key, text2) {
+  const payload = JSON.stringify({ key, text: compactText(text2) });
+  return deflateRawSync(Buffer.from(payload, "utf8"), { level: 9 }).toString("base64url");
+}
+function sign(data) {
+  return crypto2.createHmac("sha256", secret()).update(data).digest("hex");
+}
+function isDynamicRichMenuArtwork(key) {
+  return DATA_KEYS.has(key);
+}
+function buildRichMenuDataImageUrl(key, text2) {
+  if (!isDynamicRichMenuArtwork(key)) throw new Error(`Artwork ${key} is not data-driven`);
+  const base = (process.env.MILO_APP_BASE_URL ?? process.env.MILO_SAVE_RESULT_IMAGE_BASE_URL ?? "https://milo-line-app.vercel.app").replace(/\/+$/, "");
+  const data = encode(key, text2);
+  return `${base}/api/milo/rich-menu-card.png?data=${encodeURIComponent(data)}&sig=${sign(data)}&render=richmenu-data-v1`;
+}
+function decode(req) {
+  const data = typeof req.query.data === "string" ? req.query.data : "";
+  const supplied = typeof req.query.sig === "string" ? req.query.sig : "";
+  if (!data || data.length > 3500 || !supplied) return void 0;
+  const expected = sign(data);
+  const a = Buffer.from(supplied);
+  const b = Buffer.from(expected);
+  if (a.length !== b.length || !crypto2.timingSafeEqual(a, b)) return void 0;
+  try {
+    const parsed = JSON.parse(inflateRawSync(Buffer.from(data, "base64url")).toString("utf8"));
+    if (!parsed.key || !isDynamicRichMenuArtwork(parsed.key) || typeof parsed.text !== "string") return void 0;
+    return { key: parsed.key, text: compactText(parsed.text) };
+  } catch {
+    return void 0;
+  }
+}
+var segmenter = new Intl.Segmenter("th", { granularity: "grapheme" });
+function wrapLine(value, max = 42) {
+  const parts = Array.from(segmenter.segment(value)).map((item) => item.segment);
+  const lines = [];
+  for (let i = 0; i < parts.length; i += max) lines.push(parts.slice(i, i + max).join(""));
+  return lines.length ? lines : [""];
+}
+function wrappedLines(text2) {
+  const lines = clean(text2).split("\n").flatMap((line) => wrapLine(line.trim(), 42));
+  const maxLines = 24;
+  if (lines.length <= maxLines) return lines;
+  return [...lines.slice(0, maxLines - 1), "\u2026"];
+}
+function layer(text2, left, top, width, fontSize, color, bold = false) {
+  return { input: vectorTextSvg(text2, { width, fontSize, color, bold }), left, top, blend: "over" };
+}
+function shapes(key) {
+  const accent = key === "analysis" ? "#7556A8" : key === "budget" ? "#21A77B" : key === "transactions" ? "#D45B88" : "#5B80C8";
+  return Buffer.from(`<svg width="${WIDTH}" height="${HEIGHT}" viewBox="0 0 ${WIDTH} ${HEIGHT}" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <linearGradient id="bg" x1="0" x2="1" y1="0" y2="1"><stop offset="0" stop-color="#F1FFF8"/><stop offset=".52" stop-color="#FFF9F0"/><stop offset="1" stop-color="#F5EFFF"/></linearGradient>
+      <filter id="shadow"><feDropShadow dx="0" dy="8" stdDeviation="16" flood-color="#45695E" flood-opacity=".12"/></filter>
+    </defs>
+    <rect width="1080" height="1350" fill="url(#bg)"/>
+    <rect x="42" y="38" width="996" height="1274" rx="42" fill="#FFFEFB" filter="url(#shadow)"/>
+    <rect x="70" y="68" width="940" height="170" rx="34" fill="#ECF9F4"/>
+    <circle cx="130" cy="126" r="32" fill="${accent}"/>
+    <circle cx="118" cy="116" r="7" fill="#FFFFFF"/><circle cx="142" cy="116" r="7" fill="#FFFFFF"/>
+    <path d="M115 136 Q130 148 145 136" fill="none" stroke="#FFFFFF" stroke-width="5" stroke-linecap="round"/>
+    <rect x="70" y="270" width="940" height="900" rx="32" fill="#FBFAFF" stroke="#E9E2F4" stroke-width="2"/>
+    <rect x="70" y="1202" width="940" height="72" rx="30" fill="#EAFBF5"/>
+  </svg>`);
+}
+async function renderRichMenuDataImage(key, text2) {
+  if (!isDynamicRichMenuArtwork(key)) throw new Error(`Artwork ${key} is not data-driven`);
+  const title = titleByKey[key] ?? "Milo";
+  const lines = wrappedLines(text2);
+  const layers = [
+    layer("Milo", 185, 90, 180, 42, "#2F9C7D", true),
+    layer(title, 185, 142, 720, 44, "#3F3552", true),
+    layer("\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E08\u0E23\u0E34\u0E07\u0E25\u0E48\u0E32\u0E2A\u0E38\u0E14\u0E08\u0E32\u0E01\u0E1A\u0E31\u0E0D\u0E0A\u0E35\u0E02\u0E2D\u0E07\u0E04\u0E38\u0E13", 185, 198, 720, 22, "#78928D")
+  ];
+  lines.forEach((lineText, index2) => {
+    const bold = index2 === 0 || /^สรุป|^หมวด|^รายการ|^รายรับ|^รายจ่าย/.test(lineText);
+    layers.push(layer(lineText || " ", 112, 308 + index2 * 35, 850, 23, bold ? "#4B4260" : "#625971", bold));
+  });
+  layers.push(
+    layer("Milo \u2022 \u0E41\u0E2A\u0E14\u0E07\u0E1C\u0E25\u0E40\u0E1B\u0E47\u0E19\u0E20\u0E32\u0E1E\u0E40\u0E14\u0E35\u0E22\u0E27 \u0E44\u0E21\u0E48\u0E21\u0E35\u0E02\u0E49\u0E2D\u0E04\u0E27\u0E32\u0E21\u0E0B\u0E49\u0E33\u0E15\u0E32\u0E21\u0E2B\u0E25\u0E31\u0E07", 118, 1222, 830, 19, "#4E7F70", true)
+  );
+  return sharp(shapes(key)).composite(layers).png().toBuffer();
+}
+function registerRichMenuDataImageRoute(app2) {
+  app2.get("/api/milo/rich-menu-card.png", async (req, res) => {
+    const input = decode(req);
+    if (!input) return res.status(401).type("text/plain").send("Invalid rich-menu image link");
+    try {
+      const image = await renderRichMenuDataImage(input.key, input.text);
+      res.set({ "Content-Type": "image/png", "Cache-Control": "private, no-store, max-age=0" });
+      return res.status(200).send(image);
+    } catch (error) {
+      console.error("[Milo Rich Menu Image] render failed", error);
+      return res.status(500).type("text/plain").send("Unable to render rich-menu image");
+    }
+  });
+}
+
+// server/milo/budgetStatus.ts
+function getBudgetMetrics(spent, limit) {
+  const safeSpent = Number.isFinite(spent) ? Math.max(0, spent) : 0;
+  const safeLimit = Number.isFinite(limit) ? Math.max(0, limit) : 0;
+  if (safeLimit <= 0) return { usagePercent: 0, overPercent: 0, remaining: 0, isOverBudget: false };
+  const usagePercent = Math.max(0, Math.round(safeSpent / safeLimit * 100));
+  const remaining = safeLimit - safeSpent;
+  const isOverBudget = safeSpent > safeLimit;
+  const rawOverPercent = isOverBudget ? (safeSpent - safeLimit) / safeLimit * 100 : 0;
+  const overPercent = isOverBudget ? Math.max(1, Math.round(rawOverPercent)) : 0;
+  return { usagePercent, overPercent, remaining, isOverBudget };
+}
+function budgetStatusCopy(category, spent, limit) {
+  if (!(Number.isFinite(limit) && limit > 0)) return "";
+  const metrics = getBudgetMetrics(spent, limit);
+  return metrics.isOverBudget ? `\u0E2B\u0E21\u0E27\u0E14${category}\u0E40\u0E01\u0E34\u0E19\u0E07\u0E1A ${metrics.overPercent}% \u0E41\u0E25\u0E49\u0E27\u0E19\u0E48\u0E30\u0E08\u0E4A\u0E30` : `\u0E2B\u0E21\u0E27\u0E14${category}\u0E43\u0E0A\u0E49\u0E44\u0E1B ${metrics.usagePercent}% \u0E02\u0E2D\u0E07\u0E07\u0E1A\u0E41\u0E25\u0E49\u0E27\u0E19\u0E48\u0E30\u0E08\u0E4A\u0E30`;
+}
+
+// server/milo/financeReportImage.ts
+import crypto3 from "node:crypto";
+import sharp2 from "sharp";
+var WIDTH2 = 1080;
+var HEIGHT2 = 1350;
 var money = (value) => value.toLocaleString("th-TH-u-nu-latn", { maximumFractionDigits: 2 });
 var periodLabel = {
   day: "\u0E27\u0E31\u0E19\u0E19\u0E35\u0E49",
@@ -1730,7 +1855,7 @@ var periodLabel = {
   month: "\u0E40\u0E14\u0E37\u0E2D\u0E19\u0E19\u0E35\u0E49",
   year: "\u0E1B\u0E35\u0E19\u0E35\u0E49"
 };
-function secret() {
+function secret2() {
   return process.env.LINE_CHANNEL_SECRET?.trim() || process.env.SESSION_SECRET?.trim() || "milo-report-image-v1";
 }
 function iso(value) {
@@ -1761,13 +1886,13 @@ function encodePayload(input) {
     subtitle: input.subtitle?.slice(0, 120)
   })).toString("base64url");
 }
-function sign(payload) {
-  return crypto2.createHmac("sha256", secret()).update(payload).digest("hex");
+function sign2(payload) {
+  return crypto3.createHmac("sha256", secret2()).update(payload).digest("hex");
 }
 function buildFinanceReportImageUrl(input) {
   const base = (process.env.MILO_SAVE_RESULT_IMAGE_BASE_URL ?? process.env.MILO_APP_BASE_URL ?? "https://milo-line-app.vercel.app").replace(/\/+$/, "");
   const data = encodePayload(input);
-  return `${base}/api/milo/finance-report.png?data=${encodeURIComponent(data)}&sig=${sign(data)}&render=summary-v3`;
+  return `${base}/api/milo/finance-report.png?data=${encodeURIComponent(data)}&sig=${sign2(data)}&render=summary-v3`;
 }
 function validNumber(value) {
   const n = Number(value);
@@ -1777,10 +1902,10 @@ function decodeInput(req) {
   const data = typeof req.query.data === "string" ? req.query.data : "";
   const supplied = typeof req.query.sig === "string" ? req.query.sig : "";
   if (!data || data.length > 8e3 || !supplied) return void 0;
-  const expected = sign(data);
+  const expected = sign2(data);
   const a = Buffer.from(supplied);
   const b = Buffer.from(expected);
-  if (a.length !== b.length || !crypto2.timingSafeEqual(a, b)) return void 0;
+  if (a.length !== b.length || !crypto3.timingSafeEqual(a, b)) return void 0;
   try {
     const parsed = JSON.parse(Buffer.from(data, "base64url").toString("utf8"));
     if (!parsed.period || !["day", "week", "month", "year"].includes(parsed.period)) return void 0;
@@ -1853,7 +1978,7 @@ function financeReportShapesSvg(input) {
   const incomeExpenseTotal = Math.max(input.income + input.expense, 1);
   const incomeWidth = Math.max(8, Math.round(300 * input.income / incomeExpenseTotal));
   const expenseWidth = Math.max(8, Math.round(300 * input.expense / incomeExpenseTotal));
-  return Buffer.from(`<svg width="${WIDTH}" height="${HEIGHT}" viewBox="0 0 ${WIDTH} ${HEIGHT}" xmlns="http://www.w3.org/2000/svg">
+  return Buffer.from(`<svg width="${WIDTH2}" height="${HEIGHT2}" viewBox="0 0 ${WIDTH2} ${HEIGHT2}" xmlns="http://www.w3.org/2000/svg">
     <defs>
       <linearGradient id="bg" x1="0" x2="1" y1="0" y2="1"><stop offset="0" stop-color="#F4FFF8"/><stop offset=".5" stop-color="#FFF9F1"/><stop offset="1" stop-color="#F6F0FF"/></linearGradient>
       <linearGradient id="hero" x1="0" x2="1"><stop offset="0" stop-color="#E1FFF1"/><stop offset="1" stop-color="#F5EEFF"/></linearGradient>
@@ -1934,7 +2059,7 @@ async function renderFinanceReportImage(input) {
     textLayer("Milo \u0E41\u0E19\u0E30\u0E19\u0E33", { left: 105, top: 1243, width: 145, fontSize: 19, color: "#2E9577", bold: true }),
     textLayer(insightCopy({ ...input, transactionCount }), { left: 260, top: 1243, width: 710, fontSize: 18, color: "#5A6B66" })
   );
-  return sharp(financeReportShapesSvg({ ...input, transactionCount })).composite(layers).png().toBuffer();
+  return sharp2(financeReportShapesSvg({ ...input, transactionCount })).composite(layers).png().toBuffer();
 }
 function registerFinanceReportImageRoute(app2) {
   app2.get("/api/milo/finance-report.png", async (req, res) => {
@@ -1952,15 +2077,15 @@ function registerFinanceReportImageRoute(app2) {
 }
 
 // server/milo/line.ts
-import crypto3 from "node:crypto";
+import crypto4 from "node:crypto";
 function lineCredentials() {
   return { channelSecret: process.env.LINE_CHANNEL_SECRET ?? "", channelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN ?? "" };
 }
-function verifyLineSignature(body, signature, secret2) {
-  if (!signature || !secret2) return false;
-  const computed = Buffer.from(crypto3.createHmac("sha256", secret2).update(body).digest("base64"));
+function verifyLineSignature(body, signature, secret3) {
+  if (!signature || !secret3) return false;
+  const computed = Buffer.from(crypto4.createHmac("sha256", secret3).update(body).digest("base64"));
   const supplied = Buffer.from(signature);
-  return computed.length === supplied.length && crypto3.timingSafeEqual(computed, supplied);
+  return computed.length === supplied.length && crypto4.timingSafeEqual(computed, supplied);
 }
 function sourceIdentity(source) {
   if (source.type === "user") return { lineChatId: source.userId, lineUserId: source.userId, scope: "user" };
@@ -2296,9 +2421,9 @@ async function getProfile(source, credentials = lineCredentials()) {
   return await response.json();
 }
 async function replyRichMenu(replyToken, text2, artwork, credentials = lineCredentials()) {
-  const [image] = artworkMessages(artwork);
-  if (!image) throw new Error("Milo rich-menu artwork is unavailable");
-  void text2;
+  const [staticImage] = artworkMessages(artwork);
+  if (!staticImage) throw new Error("Milo rich-menu artwork is unavailable");
+  const image = isDynamicRichMenuArtwork(artwork) ? { type: "image", originalContentUrl: buildRichMenuDataImageUrl(artwork, text2), previewImageUrl: buildRichMenuDataImageUrl(artwork, text2) } : staticImage;
   return callLine("/v2/bot/message/reply", credentials, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -2660,7 +2785,7 @@ async function generateFinancialInsight(input) {
 }
 
 // server/adminPassword.ts
-import crypto4 from "node:crypto";
+import crypto5 from "node:crypto";
 import mysql2 from "mysql2/promise";
 var SCRYPT_N = 16384;
 var SCRYPT_R = 8;
@@ -2691,14 +2816,14 @@ async function ensurePasswordColumn(db) {
 }
 function scrypt(password, salt) {
   return new Promise((resolve, reject) => {
-    crypto4.scrypt(password, salt, KEYLEN, { N: SCRYPT_N, r: SCRYPT_R, p: SCRYPT_P }, (error, derived) => {
+    crypto5.scrypt(password, salt, KEYLEN, { N: SCRYPT_N, r: SCRYPT_R, p: SCRYPT_P }, (error, derived) => {
       if (error) reject(error);
       else resolve(derived);
     });
   });
 }
 async function hashAdminPassword(password) {
-  const salt = crypto4.randomBytes(SALT_BYTES);
+  const salt = crypto5.randomBytes(SALT_BYTES);
   const derived = await scrypt(password, salt);
   return `scrypt$${SCRYPT_N}$${SCRYPT_R}$${SCRYPT_P}$${salt.toString("hex")}$${derived.toString("hex")}`;
 }
@@ -2713,9 +2838,9 @@ async function verifyAdminPassword(password, encoded) {
   const costP = Number(p);
   if (!salt.length || !expected.length || !Number.isInteger(costN) || !Number.isInteger(costR) || !Number.isInteger(costP) || costN < 1024 || costR < 1 || costP < 1 || expected.length !== KEYLEN) return false;
   const derived = await new Promise((resolve, reject) => {
-    crypto4.scrypt(password, salt, expected.length, { N: costN, r: costR, p: costP }, (error, value) => error ? reject(error) : resolve(value));
+    crypto5.scrypt(password, salt, expected.length, { N: costN, r: costR, p: costP }, (error, value) => error ? reject(error) : resolve(value));
   });
-  return crypto4.timingSafeEqual(expected, derived);
+  return crypto5.timingSafeEqual(expected, derived);
 }
 function configuredUsername() {
   const username = (process.env.ADMIN_USERNAME ?? "").trim();
@@ -3405,7 +3530,7 @@ async function storageGetSignedUrl(relKey) {
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import sharp2 from "sharp";
+import sharp3 from "sharp";
 import { createWorker } from "tesseract.js";
 var DATA_DIR = path.join(process.cwd(), "api", "tessdata");
 var CACHE_DIR = path.join(os.tmpdir(), "milo-tesscache");
@@ -3578,7 +3703,7 @@ async function analyzeImageWithOcr(dataUrl) {
   if (!ocrAssetsReady()) throw new Error(`OCR language data is unavailable at ${DATA_DIR}`);
   fs.mkdirSync(CACHE_DIR, { recursive: true });
   const input = decodeDataUrl(dataUrl);
-  const prepared = await sharp2(input).rotate().resize({ width: 1800, withoutEnlargement: true }).grayscale().normalize().sharpen().png().toBuffer();
+  const prepared = await sharp3(input).rotate().resize({ width: 1800, withoutEnlargement: true }).grayscale().normalize().sharpen().png().toBuffer();
   const worker = await createWorker(["tha", "eng"], void 0, {
     langPath: DATA_DIR,
     cachePath: CACHE_DIR,
@@ -3800,7 +3925,7 @@ ${text2}` }
 }
 
 // server/milo/financeExport.ts
-import crypto5 from "node:crypto";
+import crypto6 from "node:crypto";
 import * as XLSX from "xlsx";
 function exportSecret() {
   const value = process.env.LINE_CHANNEL_SECRET?.trim() || process.env.CRON_SECRET?.trim() || process.env.SESSION_SECRET?.trim();
@@ -3810,17 +3935,17 @@ function exportSecret() {
 function signaturePayload(lineUserId, financeAccountId, format, expires) {
   return `${lineUserId}|${financeAccountId}|${format}|${expires}`;
 }
-function sign2(lineUserId, financeAccountId, format, expires) {
-  return crypto5.createHmac("sha256", exportSecret()).update(signaturePayload(lineUserId, financeAccountId, format, expires)).digest("hex");
+function sign3(lineUserId, financeAccountId, format, expires) {
+  return crypto6.createHmac("sha256", exportSecret()).update(signaturePayload(lineUserId, financeAccountId, format, expires)).digest("hex");
 }
 function safeEqual(a, b) {
   const aa = Buffer.from(a);
   const bb = Buffer.from(b);
-  return aa.length === bb.length && crypto5.timingSafeEqual(aa, bb);
+  return aa.length === bb.length && crypto6.timingSafeEqual(aa, bb);
 }
 function buildFinanceExportUrl(input) {
   const expires = Math.floor(Date.now() / 1e3) + Math.min(Math.max(input.ttlSeconds ?? 600, 60), 3600);
-  const sig = sign2(input.lineUserId, input.financeAccountId, input.format, expires);
+  const sig = sign3(input.lineUserId, input.financeAccountId, input.format, expires);
   const base = (process.env.MILO_APP_BASE_URL ?? process.env.MILO_SAVE_RESULT_IMAGE_BASE_URL ?? "https://milo-line-app.vercel.app").replace(/\/+$/, "");
   const params = new URLSearchParams({ user: input.lineUserId, account: String(input.financeAccountId), format: input.format, expires: String(expires), sig });
   return `${base}/api/milo/export?${params.toString()}`;
@@ -3856,7 +3981,7 @@ function registerFinanceExportRoute(app2) {
       const expires = Number(req.query.expires ?? 0);
       const supplied = String(req.query.sig ?? "");
       if (!lineUserId || !Number.isInteger(financeAccountId) || financeAccountId <= 0 || !Number.isInteger(expires) || expires < Math.floor(Date.now() / 1e3) || !supplied) return res.status(401).type("text/plain").send("Export link expired or invalid");
-      const expected = sign2(lineUserId, financeAccountId, format, expires);
+      const expected = sign3(lineUserId, financeAccountId, format, expires);
       if (!safeEqual(supplied, expected)) return res.status(401).type("text/plain").send("Export link expired or invalid");
       const access = await getFinanceAccountAccess(financeAccountId, lineUserId);
       if (!access) return res.status(403).type("text/plain").send("No access to this finance account");
@@ -5057,12 +5182,12 @@ function registerMiloCron(app2) {
       const isVercelCron = req.method === "GET" && req.headers["user-agent"] === "vercel-cron/1.0";
       let taskUid;
       if (isVercelCron) {
-        const secret2 = process.env.CRON_SECRET?.trim();
+        const secret3 = process.env.CRON_SECRET?.trim();
         const authorization = req.headers.authorization;
         const headerSecret = req.headers["x-cron-secret"];
-        const bearerValid = authorization === `Bearer ${secret2}`;
-        const headerValid = headerSecret === secret2;
-        if (!secret2 || !bearerValid && !headerValid) return res.status(401).json({ error: "cron-unauthorized" });
+        const bearerValid = authorization === `Bearer ${secret3}`;
+        const headerValid = headerSecret === secret3;
+        if (!secret3 || !bearerValid && !headerValid) return res.status(401).json({ error: "cron-unauthorized" });
         const schedule = await getAutomationSetting("reminder-delivery-primary");
         if (!schedule?.isEnabled) return res.json({ ok: true, skipped: "disabled" });
         taskUid = schedule.scheduleCronTaskUid ?? "vercel-cron-reminders";
@@ -5102,7 +5227,7 @@ function registerMiloCron(app2) {
 }
 
 // server/milo/saveResultImage.ts
-import sharp3 from "sharp";
+import sharp4 from "sharp";
 var money2 = (value) => normalizeRenderText(value.toLocaleString("th-TH-u-nu-latn", { maximumFractionDigits: 2 }));
 var thaiDateTime2 = (value) => normalizeRenderText(new Intl.DateTimeFormat("th-TH-u-nu-latn", {
   day: "2-digit",
@@ -5256,7 +5381,7 @@ function registerSaveResultImageRoute(app2) {
       const svg = buildSaveResultSvg({ transactionType, item, category, amount, occurredAt, budgetSpent, budgetLimit });
       const shapesOnlySvg = svg.replace(/<text\b[^>]*>[\s\S]*?<\/text>/g, "");
       const textLayers = buildThaiTextLayers({ transactionType, item, category, amount, occurredAt, budgetSpent, budgetLimit });
-      const output = await sharp3(template).composite([{ input: Buffer.from(shapesOnlySvg), top: 0, left: 0 }, ...textLayers]).png().toBuffer();
+      const output = await sharp4(template).composite([{ input: Buffer.from(shapesOnlySvg), top: 0, left: 0 }, ...textLayers]).png().toBuffer();
       res.set({ "Content-Type": "image/png", "Cache-Control": "private, no-store, max-age=0" });
       return res.status(200).send(output);
     } catch (error) {
@@ -5271,6 +5396,7 @@ var app = express2();
 app.set("trust proxy", 1);
 registerSaveResultImageRoute(app);
 registerFinanceReportImageRoute(app);
+registerRichMenuDataImageRoute(app);
 registerFinanceExportRoute(app);
 registerLineWebhook(app);
 app.use(express2.json({ limit: "50mb" }));
