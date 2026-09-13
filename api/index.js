@@ -705,6 +705,15 @@ async function createVaultItem(input) {
   });
   return Number(result[0].insertId);
 }
+async function findVaultItemByLineMessageId(lineMessageId, lineUserId, lineChatId) {
+  const db = await requireDb();
+  return (await db.select({ id: vaultItems.id }).from(vaultItems).where(and(
+    eq(vaultItems.lineMessageId, lineMessageId),
+    eq(vaultItems.createdByLineUserId, lineUserId),
+    eq(vaultItems.lineChatId, lineChatId),
+    eq(vaultItems.status, "active")
+  )).limit(1))[0];
+}
 async function searchVault(lineUserId, term = "") {
   const db = await requireDb();
   const base = and(eq(vaultItems.createdByLineUserId, lineUserId), eq(vaultItems.status, "active"));
@@ -5298,7 +5307,8 @@ async function handleMedia(event, lineChatId, lineUserId, scope, runtime = {}) {
   }
   let vaultId;
   try {
-    vaultId = await createVaultItem({
+    const existing = await findVaultItemByLineMessageId(message.id, lineUserId, lineChatId);
+    vaultId = existing?.id ?? await createVaultItem({
       lineChatId,
       createdByLineUserId: lineUserId,
       itemType: isImage ? "image" : "file",

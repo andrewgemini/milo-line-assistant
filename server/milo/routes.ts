@@ -502,18 +502,19 @@ async function handleMedia(event: LineEvent, lineChatId: string, lineUserId: str
 
   let vaultId: number;
   try {
-    vaultId = await db.createVaultItem({
-      lineChatId,
-      createdByLineUserId: lineUserId,
-      itemType: isImage ? "image" : "file",
-      title: message.fileName ?? (isImage ? "รูปจาก LINE" : isAudio ? "ข้อความเสียงจาก LINE" : "ไฟล์จาก LINE"),
-      searchableText: message.fileName,
-      originalFilename: message.fileName,
-      mimeType,
-      storageKey: stored?.key,
-      storageUrl: stored?.url,
-      lineMessageId: message.id,
-    });
+    const existing = await db.findVaultItemByLineMessageId(message.id, lineUserId, lineChatId);
+    vaultId = existing?.id ?? await db.createVaultItem({
+        lineChatId,
+        createdByLineUserId: lineUserId,
+        itemType: isImage ? "image" : "file",
+        title: message.fileName ?? (isImage ? "รูปจาก LINE" : isAudio ? "ข้อความเสียงจาก LINE" : "ไฟล์จาก LINE"),
+        searchableText: message.fileName,
+        originalFilename: message.fileName,
+        mimeType,
+        storageKey: stored?.key,
+        storageUrl: stored?.url,
+        lineMessageId: message.id,
+      });
   } catch (error) {
     console.error("[Milo Media] vault metadata failed", { messageId: message.id, type: message.type, error: error instanceof Error ? error.message : "unknown" });
     const fallback = isAudio

@@ -14,6 +14,7 @@ vi.mock("../db", () => ({
   createNote: vi.fn(),
   createTodo: vi.fn(),
   createVaultItem: vi.fn(),
+  findVaultItemByLineMessageId: vi.fn(),
   searchVault: vi.fn(),
   addExpenseCategory: vi.fn(),
   listExpenseCategories: vi.fn(),
@@ -358,7 +359,7 @@ describe("LINE webhook processor", () => {
 
     expect(replyText).toHaveBeenCalledWith("token", expect.stringContaining("กำลังถอดเสียง"));
     expect(line.pushText).toHaveBeenCalledWith("U1", expect.stringContaining("ยังไม่ได้เชื่อมต่อผู้ให้บริการ STT"));
-    expect(db.finishWebhookEvent).toHaveBeenCalledWith("evt-audio-no-stt", "processed");
+    expect(db.finishWebhookEvent).toHaveBeenCalledWith("evt-audio-no-stt", "failed", "Voice transcription service is not configured");
   });
 
   it("updates the pending voice transcript and returns a fresh proposal when the user chooses edit", async () => {
@@ -499,7 +500,7 @@ describe("LINE webhook processor", () => {
     await processEvent({ type: "message", webhookEventId: "evt-image-download-fail", timestamp: Date.now(), replyToken: "token", source: { type: "user", userId: "U1" }, message: { id: "img-fail", type: "image" } }, "{}");
 
     expect(replyText).toHaveBeenCalledWith("token", expect.stringContaining("รับรูปแล้ว"));
-    expect(db.finishWebhookEvent).toHaveBeenCalledWith("evt-image-download-fail", "processed");
+    expect(db.finishWebhookEvent).toHaveBeenCalledWith("evt-image-download-fail", "failed", "LINE content unavailable");
   });
 
   it("continues voice transcription when permanent storage is unavailable", async () => {

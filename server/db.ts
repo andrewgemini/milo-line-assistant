@@ -325,6 +325,19 @@ export async function createVaultItem(input: {
   return Number(result[0].insertId);
 }
 
+export async function findVaultItemByLineMessageId(lineMessageId: string, lineUserId: string, lineChatId: string) {
+  const db = await requireDb();
+  return (await db.select({ id: vaultItems.id })
+    .from(vaultItems)
+    .where(and(
+      eq(vaultItems.lineMessageId, lineMessageId),
+      eq(vaultItems.createdByLineUserId, lineUserId),
+      eq(vaultItems.lineChatId, lineChatId),
+      eq(vaultItems.status, "active"),
+    ))
+    .limit(1))[0];
+}
+
 export async function searchVault(lineUserId: string, term = "") {
   const db = await requireDb();
   const base = and(eq(vaultItems.createdByLineUserId, lineUserId), eq(vaultItems.status, "active"));
