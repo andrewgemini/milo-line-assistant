@@ -745,3 +745,22 @@ export async function finishFinanceDigestDelivery(id: number, status: "sent" | "
   const db = await requireDb();
   await db.update(financeDigestDeliveries).set({ status, errorMessage: errorMessage ?? null, finishedAt: new Date() }).where(eq(financeDigestDeliveries.id, id));
 }
+
+export async function financeDigestAutomationStatus(targetLineUserId: string) {
+  const db = await requireDb();
+  const keys = ["finance-digest-daily", "finance-digest-weekly"];
+  const settings = await db.select().from(automationSettings).where(inArray(automationSettings.settingKey, keys)).orderBy(automationSettings.settingKey);
+  const deliveries = await db.select().from(financeDigestDeliveries)
+    .where(eq(financeDigestDeliveries.targetLineUserId, targetLineUserId))
+    .orderBy(desc(financeDigestDeliveries.createdAt))
+    .limit(12);
+  return { settings, deliveries };
+}
+
+export async function setFinanceDigestAutomationEnabled(settingKey: "finance-digest-daily" | "finance-digest-weekly", isEnabled: boolean) {
+  const db = await requireDb();
+  const current = (await db.select().from(automationSettings).where(eq(automationSettings.settingKey, settingKey)).limit(1))[0];
+  if (!current) throw new Error("ยังไม่พบ scheduler ของสรุปการเงินนี้");
+  await db.update(automationSettings).set({ isEnabled }).where(eq(automationSettings.settingKey, settingKey));
+  return { ...current, isEnabled };
+}

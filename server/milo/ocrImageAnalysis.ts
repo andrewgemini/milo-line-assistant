@@ -5,7 +5,7 @@ import { createRequire } from "node:module";
 import sharp from "sharp";
 import { createWorker } from "tesseract.js";
 import type { ImageAnalysis, ImageProposal } from "./imageAnalysis";
-import { enrichThaiReceiptProposal } from "./thaiReceiptParser";
+import { enrichThaiReceiptProposal, extractThaiSlipDateTime } from "./thaiReceiptParser";
 
 const DATA_DIR = path.join(process.cwd(), "api", "tessdata");
 const CACHE_DIR = path.join(os.tmpdir(), "milo-tesscache");
@@ -45,10 +45,10 @@ function decodeDataUrl(dataUrl: string) {
 export async function buildReceiptHeaderDataUrl(dataUrl: string) {
   const input = decodeDataUrl(dataUrl);
   const trimmed = await sharp(input).rotate().trim({ threshold: 10 }).png().toBuffer({ resolveWithObject: true });
-  const headerHeight = Math.max(1, Math.floor(trimmed.info.height * 0.58));
+  const headerHeight = Math.max(1, Math.floor(trimmed.info.height * 0.75));
   const header = await sharp(trimmed.data)
     .extract({ left: 0, top: 0, width: trimmed.info.width, height: headerHeight })
-    .resize({ width: 2800, fit: "inside", withoutEnlargement: false, kernel: sharp.kernel.lanczos3 })
+    .resize({ width: 3200, fit: "inside", withoutEnlargement: false, kernel: sharp.kernel.lanczos3 })
     .sharpen({ sigma: 1.1 })
     .png()
     .toBuffer();
@@ -272,7 +272,7 @@ export function analyzeOcrText(rawText: string): ImageAnalysis {
   const text = normalizeOcrText(rawText);
   const documentType = detectDocumentType(text);
   const amount = extractAmount(text);
-  const dateTime = extractDateTime(text);
+  const dateTime = extractThaiSlipDateTime(text);
   const merchant = extractMerchant(text);
   const receiptNumber = extractReference(text);
   let kind: ImageProposal["kind"] = "unknown";
@@ -322,15 +322,15 @@ export async function analyzeImageWithOcr(dataUrl: string): Promise<ImageAnalysi
 
   const meta = await sharp(input).rotate().metadata();
   const imageHeight = meta.height || 0;
-  const topCropHeight = imageHeight > 0 ? Math.max(1, Math.floor(imageHeight * 0.58)) : 0;
+  const topCropHeight = imageHeight > 0 ? Math.max(1, Math.floor(imageHeight * 0.72)) : 0;
   const topFocus = topCropHeight > 0
     ? sharp(input).rotate().extract({ left: 0, top: 0, width: meta.width || 1, height: topCropHeight })
-      .resize({ width: 2400, fit: "inside", withoutEnlargement: false, kernel: sharp.kernel.lanczos3 })
+      .resize({ width: 3000, fit: "inside", withoutEnlargement: false, kernel: sharp.kernel.lanczos3 })
       .grayscale().normalize().sharpen({ sigma: 1.15 })
     : undefined;
 
   const trimmed = await sharp(input).rotate().trim({ threshold: 12 }).png().toBuffer({ resolveWithObject: true });
-  const trimmedHeaderHeight = Math.max(1, Math.floor(trimmed.info.height * 0.38));
+  const trimmedHeaderHeight = Math.max(1, Math.floor(trimmed.info.height * 0.62));
   const trimmedHeader = sharp(trimmed.data)
     .extract({ left: 0, top: 0, width: trimmed.info.width, height: trimmedHeaderHeight })
     .resize({ width: 3200, fit: "inside", withoutEnlargement: false, kernel: sharp.kernel.lanczos3 })
@@ -340,7 +340,11 @@ export async function analyzeImageWithOcr(dataUrl: string): Promise<ImageAnalysi
     { label: "normalized-upscaled", bytes: await base.clone().png().toBuffer(), psm: "6" },
     { label: "trimmed-header-sparse", bytes: await trimmedHeader.clone().linear(1.18, -12).png().toBuffer(), psm: "11" },
     { label: "trimmed-header-threshold", bytes: await trimmedHeader.clone().threshold(170).png().toBuffer(), psm: "11" },
-    ...(topFocus ? [{ label: "top-focus", bytes: await topFocus.clone().png().toBuffer(), psm: "6" as const }] : []),
+    ...(topFocus ? [
+      { label: "top-focus", bytes: await topFocus.clone().png().toBuffer(), psm: "6" as const },
+      { label: "top-focus-sparse", bytes: await topFocus.clone().linear(1.28, -18).png().toBuffer(), psm: "11" as const },
+      { label: "top-focus-threshold", bytes: await topFocus.clone().threshold(182).png().toBuffer(), psm: "11" as const },
+    ] : []),
     { label: "medium-contrast", bytes: await base.clone().linear(1.25, -20).png().toBuffer(), psm: "6" },
   ];
 

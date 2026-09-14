@@ -1,7 +1,7 @@
-import { invokeLLM } from "../_core/llm";
+﻿import { invokeLLM } from "../_core/llm";
 import { ENV } from "../_core/env";
 import { analyzeImageWithOcr, buildReceiptHeaderDataUrl, ocrAssetsReady } from "./ocrImageAnalysis";
-import { normalizeThaiMerchantName } from "./thaiReceiptParser";
+import { extractThaiSlipDateTime, normalizeThaiMerchantName } from "./thaiReceiptParser";
 
 export type ImageProposal = {
   kind: "reminder" | "expense" | "unknown";
@@ -60,7 +60,6 @@ const schema = {
 
 const SYSTEM_PROMPT = "คุณคือไมโล ผู้ช่วยภาษาไทย อ่านภาพใบนัด ตาราง สลิปโอนเงิน และใบเสร็จอย่างระมัดระวัง คืน JSON ตาม schema เท่านั้น ห้ามเดาหรือแต่งข้อความ/ตัวเลขที่อ่านไม่ชัด สำหรับสลิปให้ใช้ยอดโอนจริง ไม่ใช้ยอดคงเหลือหรือค่าธรรมเนียม สำหรับใบเสร็จให้ใช้ยอดที่จ่ายจริงหลังส่วนลดหรือสิทธิช่วยเหลือ โดยให้ความสำคัญกับช่อง จำนวนเงินที่ชำระ, ยอดที่ชำระ, ยอดสุทธิ มากกว่าค่าสินค้า/บริการก่อนส่วนลด หากวันที่อ่านได้แน่ชัดให้ส่ง dateText รูปแบบ YYYY-MM-DD มิฉะนั้นเป็นสตริงว่าง สำหรับค่าใช้จ่ายให้แยก merchant แบบชื่อร้านจริงเท่านั้น ไม่รวมรายการสินค้า/ส่วนลด/ยอดเงิน, paymentMethod, receiptNumber, lineItems รายการสำคัญ และเลือก category ภาษาไทยจาก อาหาร, เดินทาง, ค่าสาธารณูปโภค, สุขภาพ, การศึกษา, บันเทิง, ช้อปปิ้ง, ท่องเที่ยว, ทั่วไป หากไม่พบข้อมูลที่บันทึกได้ให้ใช้ kind=unknown และ amount=0";
 const USER_PROMPT = "วิเคราะห์ภาพเพื่อหาใบนัดหรือธุรกรรมค่าใช้จ่ายจากสลิป/ใบเสร็จ โดยเสนอข้อมูลเพื่อให้ผู้ใช้ยืนยันก่อนบันทึกเท่านั้น";
-const RECEIPT_REPAIR_PROMPT = "ตรวจภาพซ้ำอย่างละเอียดโดยโฟกัสเฉพาะวันที่ วัน/เดือน/ปี เวลา และชื่อร้าน/ผู้รับเงินที่พิมพ์อยู่บนเอกสารจริง โดยเฉพาะข้อความตัวเล็กบริเวณส่วนบนของใบเสร็จ ห้ามใช้วันที่ปัจจุบันหรือเดา หากเห็นวันที่ไทย เช่น 14 ก.ย. 2569 ให้แปลงเป็น 2026-09-14 คืน JSON ตาม schema เดิม ฟิลด์ที่อ่านไม่ได้ให้เป็นค่าว่าง";
 
 function parseAnalysisContent(content: unknown): ImageAnalysis {
   if (typeof content !== "string" || !content.trim()) throw new Error("Image model did not return JSON");
@@ -142,6 +141,88 @@ async function analyzeImageWithGatewayKey(dataUrl: string, token: string, userPr
   }
 }
 
+type ReceiptDateRepair = { dateText: string; timeText: string; evidence: string };
+
+const receiptDateSchema = {
+  type: "object",
+  properties: {
+    dateText: { type: "string" },
+    timeText: { type: "string" },
+    evidence: { type: "string" },
+  },
+  required: ["dateText", "timeText", "evidence"],
+  additionalProperties: false,
+} as const;
+
+function parseReceiptDateRepairContent(content: unknown): ReceiptDateRepair {
+  if (typeof content !== "string" || !content.trim()) throw new Error("Receipt date repair returned empty content");
+  const cleaned = content.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "");
+  const firstBrace = cleaned.indexOf("{");
+  const lastBrace = cleaned.lastIndexOf("}");
+  const json = firstBrace >= 0 && lastBrace > firstBrace ? cleaned.slice(firstBrace, lastBrace + 1) : cleaned;
+  const parsed = JSON.parse(json) as Partial<ReceiptDateRepair>;
+  const rawDate = String(parsed.dateText || "").trim();
+  const rawTime = String(parsed.timeText || "").trim();
+  const evidence = String(parsed.evidence || "").trim();
+  const dt = extractThaiSlipDateTime([rawDate, rawTime, evidence].filter(Boolean).join(" "));
+  return {
+    dateText: /^20\d{2}-\d{2}-\d{2}$/.test(rawDate) ? rawDate : dt.dateText,
+    timeText: /^([01]\d|2[0-3]):[0-5]\d$/.test(rawTime) ? rawTime : dt.timeText,
+    evidence,
+  };
+}
+
+async function receiptDateRepairRequest(dataUrl: string, token: string): Promise<ReceiptDateRepair> {
+  const body: Record<string, unknown> = {
+    model: process.env.MILO_VISION_MODEL || "google/gemini-2.5-flash",
+    messages: [
+      { role: "system", content: "à¸„à¸¸à¸“à¹€à¸›à¹‡à¸™ OCR verifier à¸ªà¸³à¸«à¸£à¸±à¸šà¹ƒà¸šà¹€à¸ªà¸£à¹‡à¸ˆà¹„à¸—à¸¢ à¸‡à¸²à¸™à¹€à¸”à¸µà¸¢à¸§à¸„à¸·à¸­à¸­à¹ˆà¸²à¸™à¸‚à¹‰à¸­à¸„à¸§à¸²à¸¡à¸§à¸±à¸™à¸—à¸³à¸£à¸²à¸¢à¸à¸²à¸£à¹à¸¥à¸°à¹€à¸§à¸¥à¸²à¸—à¸µà¹ˆà¸žà¸´à¸¡à¸žà¹Œà¸­à¸¢à¸¹à¹ˆà¹ƒà¸™à¸ à¸²à¸žà¸ˆà¸£à¸´à¸‡ à¸«à¹‰à¸²à¸¡à¹€à¸”à¸²à¸ˆà¸²à¸à¹€à¸§à¸¥à¸²à¸ªà¹ˆà¸‡à¸£à¸¹à¸› à¸§à¸±à¸™à¸—à¸µà¹ˆà¸›à¸±à¸ˆà¸ˆà¸¸à¸šà¸±à¸™ à¸«à¸£à¸·à¸­à¸šà¸£à¸´à¸šà¸—à¸­à¸·à¹ˆà¸™ à¸–à¹‰à¸²à¸­à¹ˆà¸²à¸™à¸§à¸±à¸™à¹€à¸”à¸·à¸­à¸™à¸›à¸µà¹„à¸¡à¹ˆà¸Šà¸±à¸”à¹ƒà¸«à¹‰ dateText à¹€à¸›à¹‡à¸™à¸ªà¸•à¸£à¸´à¸‡à¸§à¹ˆà¸²à¸‡ à¸–à¹‰à¸²à¸­à¹ˆà¸²à¸™à¹€à¸§à¸¥à¸²à¹„à¸¡à¹ˆà¸Šà¸±à¸”à¹ƒà¸«à¹‰ timeText à¹€à¸›à¹‡à¸™à¸ªà¸•à¸£à¸´à¸‡à¸§à¹ˆà¸²à¸‡ dateText à¸•à¹‰à¸­à¸‡à¹€à¸›à¹‡à¸™ YYYY-MM-DD à¹€à¸—à¹ˆà¸²à¸™à¸±à¹‰à¸™ à¹à¸¥à¸° evidence à¹ƒà¸«à¹‰à¸„à¸±à¸”à¸‚à¹‰à¸­à¸„à¸§à¸²à¸¡à¸ªà¸±à¹‰à¸™à¹† à¸—à¸µà¹ˆà¸¡à¸­à¸‡à¹€à¸«à¹‡à¸™à¸‹à¸¶à¹ˆà¸‡à¸£à¸­à¸‡à¸£à¸±à¸šà¸§à¸±à¸™à¸—à¸µà¹ˆ/à¹€à¸§à¸¥à¸²" },
+      { role: "user", content: [{ type: "text", text: "à¸•à¸£à¸§à¸ˆà¹€à¸‰à¸žà¸²à¸°à¸§à¸±à¸™à¸—à¸³à¸£à¸²à¸¢à¸à¸²à¸£à¹à¸¥à¸°à¹€à¸§à¸¥à¸²à¹ƒà¸™à¹€à¸­à¸à¸ªà¸²à¸£à¸™à¸µà¹‰ à¸¡à¸­à¸‡à¸—à¸±à¹‰à¸‡à¸«à¸±à¸§à¹€à¸­à¸à¸ªà¸²à¸£ à¸šà¸£à¸£à¸—à¸±à¸”à¹ƒà¸à¸¥à¹‰à¸„à¸³à¸§à¹ˆà¸² à¸—à¸³à¸£à¸²à¸¢à¸à¸²à¸£à¸ªà¸³à¹€à¸£à¹‡à¸ˆ/à¸§à¸±à¸™à¸—à¸µà¹ˆ/à¹€à¸§à¸¥à¸² à¹à¸¥à¸°à¸šà¸£à¸´à¹€à¸§à¸“à¸£à¸­à¸šà¸¢à¸­à¸”à¹€à¸‡à¸´à¸™ à¸§à¸±à¸™à¸—à¸µà¹ˆà¸­à¸²à¸ˆà¹€à¸›à¹‡à¸™ à¸ž.à¸¨. à¹€à¸Šà¹ˆà¸™ 14 à¸.à¸¢. 2569, 14 à¸à¸±à¸™à¸¢à¸²à¸¢à¸™ 2569, 14/09/2569, 14.09.69 à¸«à¸²à¸à¸¡à¸­à¸‡à¹„à¸¡à¹ˆà¹€à¸«à¹‡à¸™à¸§à¸±à¸™à¹€à¸”à¸·à¸­à¸™à¸›à¸µà¸ˆà¸£à¸´à¸‡à¹ƒà¸«à¹‰à¸„à¸·à¸™ dateText à¸§à¹ˆà¸²à¸‡" }, { type: "image_url", image_url: { url: dataUrl, detail: "high" } }] },
+    ],
+    stream: false,
+    temperature: 0,
+    response_format: { type: "json_schema", json_schema: { name: "milo_receipt_date_repair", strict: true, schema: receiptDateSchema } },
+  };
+  const run = async (structured: boolean) => {
+    const requestBody = { ...body };
+    if (!structured) delete (requestBody as any).response_format;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 30_000);
+    try {
+      const response = await fetch("https://ai-gateway.vercel.sh/v1/chat/completions", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify(requestBody),
+        signal: controller.signal,
+      });
+      const payload = await response.json().catch(() => ({})) as { choices?: Array<{ message?: { content?: unknown } }>; error?: { message?: string } };
+      if (!response.ok) throw new Error(payload.error?.message || `AI Gateway returned HTTP ${response.status}`);
+      return parseReceiptDateRepairContent(payload.choices?.[0]?.message?.content);
+    } finally {
+      clearTimeout(timeout);
+    }
+  };
+  try {
+    return await run(true);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "unknown";
+    if (/response.?format|json.?schema|structured|invalid.*schema/i.test(message)) return run(false);
+    throw error;
+  }
+}
+
+function mergeDedicatedDateRepair(base: ImageAnalysis, repair: ReceiptDateRepair) {
+  const b = base.proposals[0];
+  if (!b || !repair.dateText) return base;
+  return {
+    ...base,
+    summary: b.kind === "expense"
+      ? `à¸­à¹ˆà¸²à¸™${b.documentType === "bank_slip" ? "à¸ªà¸¥à¸´à¸›" : "à¹ƒà¸šà¹€à¸ªà¸£à¹‡à¸ˆ"}à¹„à¸”à¹‰ à¸¢à¸­à¸” ${b.amount.toLocaleString("th-TH")} à¸šà¸²à¸— à¸§à¸±à¸™à¸—à¸µà¹ˆ ${repair.dateText}`
+      : base.summary,
+    confidence: Math.max(base.confidence, 0.9),
+    proposals: [{ ...b, dateText: repair.dateText, timeText: b.timeText || repair.timeText }, ...base.proposals.slice(1)],
+  };
+}
 export function imageGatewayToken(env: NodeJS.ProcessEnv = process.env, requestToken?: string) {
   return (env.AI_GATEWAY_API_KEY || requestToken || env.VERCEL_OIDC_TOKEN || "").trim();
 }
@@ -216,25 +297,6 @@ export function mergeImageAnalyses(primary: ImageAnalysis, ocr: ImageAnalysis): 
   return { summary, confidence: Math.max(primary.confidence, ocr.confidence), proposals: [merged, ...primary.proposals.slice(1)] };
 }
 
-function mergeFocusedDateRepair(base: ImageAnalysis, repair: ImageAnalysis) {
-  const b = base.proposals[0];
-  const r = repair.proposals[0];
-  if (!b || !r?.dateText) return base;
-  return {
-    ...base,
-    summary: b.kind === "expense"
-      ? `อ่าน${b.documentType === "bank_slip" ? "สลิป" : "ใบเสร็จ"}ได้ ยอด ${b.amount.toLocaleString("th-TH")} บาท วันที่ ${r.dateText}`
-      : base.summary,
-    confidence: Math.max(base.confidence, repair.confidence),
-    proposals: [{
-      ...b,
-      dateText: r.dateText,
-      timeText: b.timeText || r.timeText,
-      receiptNumber: b.receiptNumber || r.receiptNumber,
-    }, ...base.proposals.slice(1)],
-  };
-}
-
 export async function analyzeImage(dataUrl: string, options: { gatewayToken?: string } = {}): Promise<ImageAnalysis> {
   let providerError: unknown;
   let providerAnalysis: ImageAnalysis | undefined;
@@ -276,8 +338,14 @@ export async function analyzeImage(dataUrl: string, options: { gatewayToken?: st
       if (gatewayKey && proposal?.kind === "expense" && !proposal.dateText && proposal.timeText) {
         try {
           const headerDataUrl = await buildReceiptHeaderDataUrl(dataUrl).catch(() => dataUrl);
-          const repair = await analyzeImageWithGatewayKey(headerDataUrl, gatewayKey, RECEIPT_REPAIR_PROMPT);
-          selected = mergeFocusedDateRepair(selected, repair);
+          const repair = await receiptDateRepairRequest(headerDataUrl, gatewayKey);
+          console.info("[Milo Image] focused date repair", { dateText: repair.dateText, timeText: repair.timeText, evidence: repair.evidence.slice(0, 120) });
+          selected = mergeDedicatedDateRepair(selected, repair);
+          if (!selected.proposals[0]?.dateText && headerDataUrl !== dataUrl) {
+            const fullRepair = await receiptDateRepairRequest(dataUrl, gatewayKey);
+            console.info("[Milo Image] full-image date repair", { dateText: fullRepair.dateText, timeText: fullRepair.timeText, evidence: fullRepair.evidence.slice(0, 120) });
+            selected = mergeDedicatedDateRepair(selected, fullRepair);
+          }
         } catch (repairError) {
           console.warn("[Milo Image] OCR-only focused receipt date repair failed", {
             error: repairError instanceof Error ? repairError.message : "unknown",
@@ -303,8 +371,14 @@ export async function analyzeImage(dataUrl: string, options: { gatewayToken?: st
     if (gatewayKey && selectedProposal?.kind === "expense" && !selectedProposal.dateText && selectedProposal.timeText) {
       try {
         const headerDataUrl = await buildReceiptHeaderDataUrl(dataUrl).catch(() => dataUrl);
-        const repair = await analyzeImageWithGatewayKey(headerDataUrl, gatewayKey, RECEIPT_REPAIR_PROMPT);
-        selected = mergeFocusedDateRepair(selected, repair);
+        const repair = await receiptDateRepairRequest(headerDataUrl, gatewayKey);
+          console.info("[Milo Image] focused date repair", { dateText: repair.dateText, timeText: repair.timeText, evidence: repair.evidence.slice(0, 120) });
+          selected = mergeDedicatedDateRepair(selected, repair);
+          if (!selected.proposals[0]?.dateText && headerDataUrl !== dataUrl) {
+            const fullRepair = await receiptDateRepairRequest(dataUrl, gatewayKey);
+            console.info("[Milo Image] full-image date repair", { dateText: fullRepair.dateText, timeText: fullRepair.timeText, evidence: fullRepair.evidence.slice(0, 120) });
+            selected = mergeDedicatedDateRepair(selected, fullRepair);
+          }
       } catch (repairError) {
         console.warn("[Milo Image] focused receipt date repair failed", {
           error: repairError instanceof Error ? repairError.message : "unknown",

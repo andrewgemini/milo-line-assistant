@@ -157,6 +157,14 @@ export const appRouter = router({
     }),
     admin: router({ auditLogs: protectedProcedure.input(z.object({ limit: z.number().int().min(1).max(250).default(100) }).optional()).query(async ({ ctx, input }) => { requireAdminRole(ctx.user.role); return db.listAuditLogs(input?.limit ?? 100); }), users: protectedProcedure.query(async ({ ctx }) => { requireAdminRole(ctx.user.role); return db.listDashboardUsers(); }), updateUserRole: protectedProcedure.input(z.object({ id: z.number().int().positive(), role: z.enum(["viewer", "user", "manager", "admin"]) })).mutation(async ({ ctx, input }) => { requireAdminRole(ctx.user.role); await db.updateDashboardUserRole(input.id, input.role, ctx.user.id); return { success: true } as const; }) }),
     automation: router({
+      financeDigestStatus: protectedProcedure.query(async ({ ctx }) => db.financeDigestAutomationStatus(await requireLinkedLineUser(ctx.user.id))),
+      setFinanceDigestEnabled: protectedProcedure.input(z.object({ digestType: z.enum(["daily", "weekly"]), enabled: z.boolean() })).mutation(async ({ ctx, input }) => {
+        requireAdminRole(ctx.user.role);
+        const settingKey = input.digestType === "daily" ? "finance-digest-daily" : "finance-digest-weekly";
+        const result = await db.setFinanceDigestAutomationEnabled(settingKey, input.enabled);
+        await db.writeAuditLog({ action: "finance_digest.setting.update", entityType: "automation_setting", dashboardUserId: ctx.user.id, details: { settingKey, enabled: input.enabled } });
+        return result;
+      }),
       runDueNow: protectedProcedure.mutation(async ({ ctx }) => { if (ctx.user.role !== "admin") throw new Error("เฉพาะผู้ดูแลโครงการที่สั่งประมวลผล reminder ได้"); return deliverDueReminders({ runner: "manual" }); }),
       setupReminderDelivery: protectedProcedure.mutation(async ({ ctx }) => {
         if (ctx.user.role !== "admin") throw new Error("เฉพาะผู้ดูแลโครงการที่ตั้งงานส่งเตือนได้");

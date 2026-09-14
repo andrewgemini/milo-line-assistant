@@ -18,6 +18,17 @@ describe("OCR slip parser", () => {
     expect(analyzeOcrText("ใบเสร็จ\nเวลา 12.50 น.\nยอดรวม 40 บาท").proposals[0].timeText).toBe("12:50");
   });
 
+  it("recovers the welfare receipt date when OCR spaces numeric digits and cleans the merchant", () => {
+    const result = analyzeOcrText(`
+ฆ ร้านกระเพรากลางซอย ถุง อาหาร ของหวาน เครื่องคื่ม
+วันที่ 1 4 / 0 9 / 2 5 6 9 10:57 น.
+ค่าสินค้า/บริการ 75 บาท
+สิทธิไทยช่วยไทยพลัส -45 บาท
+จำนวนเงินที่ชำระ 30 บาท
+`);
+    expect(result.proposals[0]).toMatchObject({ kind: "expense", documentType: "receipt", merchant: "ร้านกระเพรากลางซอย", dateText: "2026-09-14", timeText: "10:57", amount: 30, category: "อาหาร" });
+  });
+
   it("normalizes Thai digits and parses a Thai bank slip", () => {
     const result = analyzeOcrText(`
 โอนเงินสำเร็จ

@@ -3,6 +3,8 @@ import type { ImageProposal } from "./imageAnalysis";
 const monthNumbers: Record<string, number> = {
   "ม.ค.": 1, "ก.พ.": 2, "มี.ค.": 3, "เม.ย.": 4, "พ.ค.": 5, "มิ.ย.": 6,
   "ก.ค.": 7, "ส.ค.": 8, "ก.ย.": 9, "ต.ค.": 10, "พ.ย.": 11, "ธ.ค.": 12,
+  "มกราคม": 1, "กุมภาพันธ์": 2, "มีนาคม": 3, "เมษายน": 4, "พฤษภาคม": 5, "มิถุนายน": 6,
+  "กรกฎาคม": 7, "สิงหาคม": 8, "กันยายน": 9, "ตุลาคม": 10, "พฤศจิกายน": 11, "ธันวาคม": 12,
 };
 
 const thaiDigits: Record<string, string> = {
@@ -61,31 +63,52 @@ export function extractThaiSlipDateTime(text: string) {
   const flat = compact(text.replace(/\r?\n/g, " "));
   let dateText = "";
 
-  for (const [name, month] of Object.entries(monthNumbers)) {
-    const escaped = name
-      .split("")
-      .map(char => char === "." ? "\\s*\\.?\\s*" : `${char.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*`)
-      .join("");
-    const match = flat.match(new RegExp(`(?:^|\\s)([0-3]?\\d)\\s*${escaped}(\\d(?:\\s*\\d){1,3})(?=\\s|$)`));
-    if (match) {
-      const year = Number(match[2].replace(/\s+/g, ""));
-      dateText = isoDate(normalizeYear(year), month, Number(match[1]));
-      break;
+  const iso = flat.match(/(?:^|[^0-9])(2\s*0\s*\d\s*\d)\s*[\/.-]\s*([01]?\s*\d)\s*[\/.-]\s*([0-3]?\s*\d)(?=$|[^0-9])/);
+  if (iso) {
+    const year = Number(iso[1].replace(/\s+/g, ""));
+    const month = Number(iso[2].replace(/\s+/g, ""));
+    const day = Number(iso[3].replace(/\s+/g, ""));
+    dateText = isoDate(year, month, day);
+  }
+
+  if (!dateText) {
+    const numericPatterns = [
+      /(?:^|[^0-9])([0-3]?\s*\d)\s*[\/.-]\s*([01]?\s*\d)\s*[\/.-]\s*(2\s*[05]\s*\d\s*\d|\d\s*\d)(?=$|[^0-9])/,
+      /(?:วันที่|date)\s*[:：-]?\s*([0-3]?\s*\d)\s+([01]?\s*\d)\s+(2\s*[05]\s*\d\s*\d|\d\s*\d)(?=$|[^0-9])/i,
+    ];
+    for (const pattern of numericPatterns) {
+      const match = flat.match(pattern);
+      if (!match) continue;
+      const day = Number(match[1].replace(/\s+/g, ""));
+      const month = Number(match[2].replace(/\s+/g, ""));
+      const year = Number(match[3].replace(/\s+/g, ""));
+      dateText = isoDate(normalizeYear(year), month, day);
+      if (dateText) break;
     }
   }
 
   if (!dateText) {
-    const numeric = flat.match(/\b([0-3]?\d)[\/-]([01]?\d)[\/-](\d{2,4})\b/);
-    if (numeric) dateText = isoDate(normalizeYear(Number(numeric[3])), Number(numeric[2]), Number(numeric[1]));
+    for (const [name, month] of Object.entries(monthNumbers)) {
+      const escaped = name
+        .split("")
+        .map(char => char === "." ? "\\s*\\.?\\s*" : char.replace(/[.*+?^$()|[\]\\{}]/g, "\\$&") + "\\s*")
+        .join("");
+      const pattern = new RegExp("(?:^|\\s)([0-3]?\\s*\\d)\\s*" + escaped + "(2\\s*[05]\\s*\\d\\s*\\d|\\d\\s*\\d)(?=\\s|$)");
+      const match = flat.match(pattern);
+      if (!match) continue;
+      const day = Number(match[1].replace(/\s+/g, ""));
+      const year = Number(match[2].replace(/\s+/g, ""));
+      dateText = isoDate(normalizeYear(year), month, day);
+      if (dateText) break;
+    }
   }
 
-  const time = flat.match(/\b([01]?\d|2[0-3]):([0-5]\d)\b/)
-    || flat.match(/(?:เวลา\s*)\b([01]?\d|2[0-3])\.([0-5]\d)\s*(?:น\.)?/)
-    || flat.match(/\b([01]?\d|2[0-3])\.([0-5]\d)\s*น\./);
+  const time = flat.match(/(?:^|[^0-9])([01]?\s*\d|2\s*[0-3])\s*:\s*([0-5]\s*\d)(?=$|[^0-9])/)
+    || flat.match(/(?:เวลา\s*)?([01]?\s*\d|2\s*[0-3])\s*\.\s*([0-5]\s*\d)\s*(?:น\.)/);
 
   return {
     dateText,
-    timeText: time ? `${String(Number(time[1])).padStart(2, "0")}:${time[2]}` : "",
+    timeText: time ? String(Number(time[1].replace(/\s+/g, ""))).padStart(2, "0") + ":" + time[2].replace(/\s+/g, "") : "",
   };
 }
 
@@ -103,12 +126,15 @@ function isKbankNoise(line: string) {
 export function normalizeThaiMerchantName(value: string) {
   let cleaned = compact(value)
     .replace(/^[=•·|:;._\-–—>]+\s*/, "")
+    .replace(/^[A-Za-zก-๙]{1,2}\s+(?=ร้าน)/, "")
     .replace(/^[A-Za-z0-9]{1,4}[\s|:;._-]+(?=[ก-๙])/, "")
     .replace(/คาเฟ[่]?\s*อเมซอน/gi, "คาเฟ่ อเมซอน")
     .replace(/cafe\s*amazon/gi, "Cafe Amazon")
     .replace(/([ก-๙])\s+(เฮ้าส์)/g, "$1$2")
     .replace(/เพชรเกษม\s*(\d)\s+(\d{2})(?=\b|\s|$)/gi, "เพชรเกษม$1$2")
     .replace(/เอกซ์เพรส/g, "เอ็กซ์เพรส")
+    .replace(/\s+(?:ถุง|ของหวาน|เครื่อง(?:ดื่ม|คื่ม))(?=\s|$)[\s\S]*$/i, "")
+    .replace(/\s+(?:ค่าสินค้า\s*\/\s*บริการ|จำนวนเงินที่ชำระ|ยอด(?:ที่)?ชำระ|สิทธิไทยช่วยไทยพลัส)[\s\S]*$/i, "")
     .replace(/\s+(?:[A-Z0-9]{14,}|\d{10,})\s*$/i, "")
     .trim();
 
@@ -160,13 +186,11 @@ export function extractKbankMerchant(text: string) {
 
 export function extractReceiptMerchant(text: string) {
   const lines = text.split(/\n+/).map(compact).filter(Boolean);
-  const candidate = lines.find(line => /^(?:ร้าน|บจก\.?|หจก\.?|บริษัท|cj\b|cafe\b)/i.test(line)
+  const cleanedLines = lines.map(cleanMerchant);
+  const candidate = cleanedLines.find(line => /^(?:ร้าน|บจก\.?|หจก\.?|บริษัท|cj\b|cafe\b)/i.test(line)
     && !/(ค่าสินค้า|ยอด|จำนวนเงิน|ส่วนลด|สิทธิ|บาท|ค่าธรรมเนียม)/i.test(line));
   if (!candidate) return "";
-  return cleanMerchant(candidate)
-    .replace(/\s+(?:ถุง|อาหาร|ของหวาน|เครื่องดื่ม)\b.*$/i, "")
-    .trim()
-    .slice(0, 180);
+  return candidate.trim().slice(0, 180);
 }
 
 export function extractReceiptLineItems(text: string) {

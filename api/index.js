@@ -1046,6 +1046,20 @@ async function finishFinanceDigestDelivery(id, status, errorMessage) {
   const db = await requireDb();
   await db.update(financeDigestDeliveries).set({ status, errorMessage: errorMessage ?? null, finishedAt: /* @__PURE__ */ new Date() }).where(eq(financeDigestDeliveries.id, id));
 }
+async function financeDigestAutomationStatus(targetLineUserId) {
+  const db = await requireDb();
+  const keys = ["finance-digest-daily", "finance-digest-weekly"];
+  const settings = await db.select().from(automationSettings).where(inArray(automationSettings.settingKey, keys)).orderBy(automationSettings.settingKey);
+  const deliveries = await db.select().from(financeDigestDeliveries).where(eq(financeDigestDeliveries.targetLineUserId, targetLineUserId)).orderBy(desc(financeDigestDeliveries.createdAt)).limit(12);
+  return { settings, deliveries };
+}
+async function setFinanceDigestAutomationEnabled(settingKey, isEnabled) {
+  const db = await requireDb();
+  const current = (await db.select().from(automationSettings).where(eq(automationSettings.settingKey, settingKey)).limit(1))[0];
+  if (!current) throw new Error("\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E1E\u0E1A scheduler \u0E02\u0E2D\u0E07\u0E2A\u0E23\u0E38\u0E1B\u0E01\u0E32\u0E23\u0E40\u0E07\u0E34\u0E19\u0E19\u0E35\u0E49");
+  await db.update(automationSettings).set({ isEnabled }).where(eq(automationSettings.settingKey, settingKey));
+  return { ...current, isEnabled };
+}
 
 // server/_core/sdk.ts
 var isNonEmptyString = (value) => typeof value === "string" && value.length > 0;
@@ -3278,6 +3292,14 @@ var appRouter = router({
       return { success: true };
     }) }),
     automation: router({
+      financeDigestStatus: protectedProcedure.query(async ({ ctx }) => financeDigestAutomationStatus(await requireLinkedLineUser(ctx.user.id))),
+      setFinanceDigestEnabled: protectedProcedure.input(z2.object({ digestType: z2.enum(["daily", "weekly"]), enabled: z2.boolean() })).mutation(async ({ ctx, input }) => {
+        requireAdminRole(ctx.user.role);
+        const settingKey = input.digestType === "daily" ? "finance-digest-daily" : "finance-digest-weekly";
+        const result = await setFinanceDigestAutomationEnabled(settingKey, input.enabled);
+        await writeAuditLog({ action: "finance_digest.setting.update", entityType: "automation_setting", dashboardUserId: ctx.user.id, details: { settingKey, enabled: input.enabled } });
+        return result;
+      }),
       runDueNow: protectedProcedure.mutation(async ({ ctx }) => {
         if (ctx.user.role !== "admin") throw new Error("\u0E40\u0E09\u0E1E\u0E32\u0E30\u0E1C\u0E39\u0E49\u0E14\u0E39\u0E41\u0E25\u0E42\u0E04\u0E23\u0E07\u0E01\u0E32\u0E23\u0E17\u0E35\u0E48\u0E2A\u0E31\u0E48\u0E07\u0E1B\u0E23\u0E30\u0E21\u0E27\u0E25\u0E1C\u0E25 reminder \u0E44\u0E14\u0E49");
         return deliverDueReminders({ runner: "manual" });
@@ -3936,7 +3958,19 @@ var monthNumbers = {
   "\u0E01.\u0E22.": 9,
   "\u0E15.\u0E04.": 10,
   "\u0E1E.\u0E22.": 11,
-  "\u0E18.\u0E04.": 12
+  "\u0E18.\u0E04.": 12,
+  "\u0E21\u0E01\u0E23\u0E32\u0E04\u0E21": 1,
+  "\u0E01\u0E38\u0E21\u0E20\u0E32\u0E1E\u0E31\u0E19\u0E18\u0E4C": 2,
+  "\u0E21\u0E35\u0E19\u0E32\u0E04\u0E21": 3,
+  "\u0E40\u0E21\u0E29\u0E32\u0E22\u0E19": 4,
+  "\u0E1E\u0E24\u0E29\u0E20\u0E32\u0E04\u0E21": 5,
+  "\u0E21\u0E34\u0E16\u0E38\u0E19\u0E32\u0E22\u0E19": 6,
+  "\u0E01\u0E23\u0E01\u0E0E\u0E32\u0E04\u0E21": 7,
+  "\u0E2A\u0E34\u0E07\u0E2B\u0E32\u0E04\u0E21": 8,
+  "\u0E01\u0E31\u0E19\u0E22\u0E32\u0E22\u0E19": 9,
+  "\u0E15\u0E38\u0E25\u0E32\u0E04\u0E21": 10,
+  "\u0E1E\u0E24\u0E28\u0E08\u0E34\u0E01\u0E32\u0E22\u0E19": 11,
+  "\u0E18\u0E31\u0E19\u0E27\u0E32\u0E04\u0E21": 12
 };
 var thaiDigits = {
   "\u0E50": "0",
@@ -3992,23 +4026,44 @@ function extractThaiPayableAmount(text2) {
 function extractThaiSlipDateTime(text2) {
   const flat = compact(text2.replace(/\r?\n/g, " "));
   let dateText = "";
-  for (const [name, month] of Object.entries(monthNumbers)) {
-    const escaped = name.split("").map((char) => char === "." ? "\\s*\\.?\\s*" : `${char.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*`).join("");
-    const match = flat.match(new RegExp(`(?:^|\\s)([0-3]?\\d)\\s*${escaped}(\\d(?:\\s*\\d){1,3})(?=\\s|$)`));
-    if (match) {
-      const year = Number(match[2].replace(/\s+/g, ""));
-      dateText = isoDate(normalizeYear(year), month, Number(match[1]));
-      break;
+  const iso2 = flat.match(/(?:^|[^0-9])(2\s*0\s*\d\s*\d)\s*[\/.-]\s*([01]?\s*\d)\s*[\/.-]\s*([0-3]?\s*\d)(?=$|[^0-9])/);
+  if (iso2) {
+    const year = Number(iso2[1].replace(/\s+/g, ""));
+    const month = Number(iso2[2].replace(/\s+/g, ""));
+    const day = Number(iso2[3].replace(/\s+/g, ""));
+    dateText = isoDate(year, month, day);
+  }
+  if (!dateText) {
+    const numericPatterns = [
+      /(?:^|[^0-9])([0-3]?\s*\d)\s*[\/.-]\s*([01]?\s*\d)\s*[\/.-]\s*(2\s*[05]\s*\d\s*\d|\d\s*\d)(?=$|[^0-9])/,
+      /(?:วันที่|date)\s*[:：-]?\s*([0-3]?\s*\d)\s+([01]?\s*\d)\s+(2\s*[05]\s*\d\s*\d|\d\s*\d)(?=$|[^0-9])/i
+    ];
+    for (const pattern of numericPatterns) {
+      const match = flat.match(pattern);
+      if (!match) continue;
+      const day = Number(match[1].replace(/\s+/g, ""));
+      const month = Number(match[2].replace(/\s+/g, ""));
+      const year = Number(match[3].replace(/\s+/g, ""));
+      dateText = isoDate(normalizeYear(year), month, day);
+      if (dateText) break;
     }
   }
   if (!dateText) {
-    const numeric = flat.match(/\b([0-3]?\d)[\/-]([01]?\d)[\/-](\d{2,4})\b/);
-    if (numeric) dateText = isoDate(normalizeYear(Number(numeric[3])), Number(numeric[2]), Number(numeric[1]));
+    for (const [name, month] of Object.entries(monthNumbers)) {
+      const escaped = name.split("").map((char) => char === "." ? "\\s*\\.?\\s*" : char.replace(/[.*+?^$()|[\]\\{}]/g, "\\$&") + "\\s*").join("");
+      const pattern = new RegExp("(?:^|\\s)([0-3]?\\s*\\d)\\s*" + escaped + "(2\\s*[05]\\s*\\d\\s*\\d|\\d\\s*\\d)(?=\\s|$)");
+      const match = flat.match(pattern);
+      if (!match) continue;
+      const day = Number(match[1].replace(/\s+/g, ""));
+      const year = Number(match[2].replace(/\s+/g, ""));
+      dateText = isoDate(normalizeYear(year), month, day);
+      if (dateText) break;
+    }
   }
-  const time = flat.match(/\b([01]?\d|2[0-3]):([0-5]\d)\b/) || flat.match(/(?:เวลา\s*)\b([01]?\d|2[0-3])\.([0-5]\d)\s*(?:น\.)?/) || flat.match(/\b([01]?\d|2[0-3])\.([0-5]\d)\s*น\./);
+  const time = flat.match(/(?:^|[^0-9])([01]?\s*\d|2\s*[0-3])\s*:\s*([0-5]\s*\d)(?=$|[^0-9])/) || flat.match(/(?:เวลา\s*)?([01]?\s*\d|2\s*[0-3])\s*\.\s*([0-5]\s*\d)\s*(?:น\.)/);
   return {
     dateText,
-    timeText: time ? `${String(Number(time[1])).padStart(2, "0")}:${time[2]}` : ""
+    timeText: time ? String(Number(time[1].replace(/\s+/g, ""))).padStart(2, "0") + ":" + time[2].replace(/\s+/g, "") : ""
   };
 }
 function isKbankNoise(line) {
@@ -4022,7 +4077,7 @@ function isKbankNoise(line) {
   return false;
 }
 function normalizeThaiMerchantName(value) {
-  let cleaned = compact(value).replace(/^[=•·|:;._\-–—>]+\s*/, "").replace(/^[A-Za-z0-9]{1,4}[\s|:;._-]+(?=[ก-๙])/, "").replace(/คาเฟ[่]?\s*อเมซอน/gi, "\u0E04\u0E32\u0E40\u0E1F\u0E48 \u0E2D\u0E40\u0E21\u0E0B\u0E2D\u0E19").replace(/cafe\s*amazon/gi, "Cafe Amazon").replace(/([ก-๙])\s+(เฮ้าส์)/g, "$1$2").replace(/เพชรเกษม\s*(\d)\s+(\d{2})(?=\b|\s|$)/gi, "\u0E40\u0E1E\u0E0A\u0E23\u0E40\u0E01\u0E29\u0E21$1$2").replace(/เอกซ์เพรส/g, "\u0E40\u0E2D\u0E47\u0E01\u0E0B\u0E4C\u0E40\u0E1E\u0E23\u0E2A").replace(/\s+(?:[A-Z0-9]{14,}|\d{10,})\s*$/i, "").trim();
+  let cleaned = compact(value).replace(/^[=•·|:;._\-–—>]+\s*/, "").replace(/^[A-Za-zก-๙]{1,2}\s+(?=ร้าน)/, "").replace(/^[A-Za-z0-9]{1,4}[\s|:;._-]+(?=[ก-๙])/, "").replace(/คาเฟ[่]?\s*อเมซอน/gi, "\u0E04\u0E32\u0E40\u0E1F\u0E48 \u0E2D\u0E40\u0E21\u0E0B\u0E2D\u0E19").replace(/cafe\s*amazon/gi, "Cafe Amazon").replace(/([ก-๙])\s+(เฮ้าส์)/g, "$1$2").replace(/เพชรเกษม\s*(\d)\s+(\d{2})(?=\b|\s|$)/gi, "\u0E40\u0E1E\u0E0A\u0E23\u0E40\u0E01\u0E29\u0E21$1$2").replace(/เอกซ์เพรส/g, "\u0E40\u0E2D\u0E47\u0E01\u0E0B\u0E4C\u0E40\u0E1E\u0E23\u0E2A").replace(/\s+(?:ถุง|ของหวาน|เครื่อง(?:ดื่ม|คื่ม))(?=\s|$)[\s\S]*$/i, "").replace(/\s+(?:ค่าสินค้า\s*\/\s*บริการ|จำนวนเงินที่ชำระ|ยอด(?:ที่)?ชำระ|สิทธิไทยช่วยไทยพลัส)[\s\S]*$/i, "").replace(/\s+(?:[A-Z0-9]{14,}|\d{10,})\s*$/i, "").trim();
   if (/^CJ\s*\d{3,5}\b/i.test(cleaned)) {
     const match = cleaned.match(/^CJ\s*(\d{3,5})\s*(.*)$/i);
     if (match) {
@@ -4059,9 +4114,10 @@ function extractKbankMerchant(text2) {
 }
 function extractReceiptMerchant(text2) {
   const lines = text2.split(/\n+/).map(compact).filter(Boolean);
-  const candidate = lines.find((line) => /^(?:ร้าน|บจก\.?|หจก\.?|บริษัท|cj\b|cafe\b)/i.test(line) && !/(ค่าสินค้า|ยอด|จำนวนเงิน|ส่วนลด|สิทธิ|บาท|ค่าธรรมเนียม)/i.test(line));
+  const cleanedLines = lines.map(cleanMerchant);
+  const candidate = cleanedLines.find((line) => /^(?:ร้าน|บจก\.?|หจก\.?|บริษัท|cj\b|cafe\b)/i.test(line) && !/(ค่าสินค้า|ยอด|จำนวนเงิน|ส่วนลด|สิทธิ|บาท|ค่าธรรมเนียม)/i.test(line));
   if (!candidate) return "";
-  return cleanMerchant(candidate).replace(/\s+(?:ถุง|อาหาร|ของหวาน|เครื่องดื่ม)\b.*$/i, "").trim().slice(0, 180);
+  return candidate.trim().slice(0, 180);
 }
 function extractReceiptLineItems(text2) {
   const lines = text2.split(/\n+/).map(compact).filter(Boolean);
@@ -4120,20 +4176,6 @@ var thaiDigitMap = {
   "\u0E58": "8",
   "\u0E59": "9"
 };
-var thaiMonths = {
-  "\u0E21.\u0E04.": 1,
-  "\u0E01.\u0E1E.": 2,
-  "\u0E21\u0E35.\u0E04.": 3,
-  "\u0E40\u0E21.\u0E22.": 4,
-  "\u0E1E.\u0E04.": 5,
-  "\u0E21\u0E34.\u0E22.": 6,
-  "\u0E01.\u0E04.": 7,
-  "\u0E2A.\u0E04.": 8,
-  "\u0E01.\u0E22.": 9,
-  "\u0E15.\u0E04.": 10,
-  "\u0E1E.\u0E22.": 11,
-  "\u0E18.\u0E04.": 12
-};
 function ocrAssetsReady() {
   return fs2.existsSync(path3.join(DATA_DIR, "tha.traineddata.gz")) && fs2.existsSync(path3.join(DATA_DIR, "eng.traineddata.gz"));
 }
@@ -4147,8 +4189,8 @@ function decodeDataUrl(dataUrl) {
 async function buildReceiptHeaderDataUrl(dataUrl) {
   const input = decodeDataUrl(dataUrl);
   const trimmed = await sharp3(input).rotate().trim({ threshold: 10 }).png().toBuffer({ resolveWithObject: true });
-  const headerHeight = Math.max(1, Math.floor(trimmed.info.height * 0.58));
-  const header = await sharp3(trimmed.data).extract({ left: 0, top: 0, width: trimmed.info.width, height: headerHeight }).resize({ width: 2800, fit: "inside", withoutEnlargement: false, kernel: sharp3.kernel.lanczos3 }).sharpen({ sigma: 1.1 }).png().toBuffer();
+  const headerHeight = Math.max(1, Math.floor(trimmed.info.height * 0.75));
+  const header = await sharp3(trimmed.data).extract({ left: 0, top: 0, width: trimmed.info.width, height: headerHeight }).resize({ width: 3200, fit: "inside", withoutEnlargement: false, kernel: sharp3.kernel.lanczos3 }).sharpen({ sigma: 1.1 }).png().toBuffer();
   return `data:image/png;base64,${header.toString("base64")}`;
 }
 function normalizeDigits(text2) {
@@ -4210,45 +4252,6 @@ function extractAmount(text2) {
   }
   candidates.sort((a, b) => b.score - a.score || b.amount - a.amount);
   return candidates[0]?.amount ?? 0;
-}
-function normalizeYear2(raw) {
-  if (raw >= 2400) return raw - 543;
-  if (raw >= 1e3) return raw;
-  if (raw >= 50) return raw + 2500 - 543;
-  return raw + 2e3;
-}
-function validDateParts(year, month, day) {
-  const date = new Date(Date.UTC(year, month - 1, day));
-  return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
-}
-function formatIsoDate(year, month, day) {
-  if (!validDateParts(year, month, day)) return "";
-  return `${String(year).padStart(4, "0")}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-}
-function extractDateTime(text2) {
-  const normalized = text2.replace(/\s+/g, " ");
-  let dateText = "";
-  let timeText = "";
-  const iso2 = normalized.match(/\b(20\d{2})[-\/]([01]?\d)[-\/]([0-3]?\d)\b/);
-  if (iso2) dateText = formatIsoDate(Number(iso2[1]), Number(iso2[2]), Number(iso2[3]));
-  if (!dateText) {
-    const numeric = normalized.match(/\b([0-3]?\d)[\/-]([01]?\d)[\/-](\d{2,4})\b/);
-    if (numeric) dateText = formatIsoDate(normalizeYear2(Number(numeric[3])), Number(numeric[2]), Number(numeric[1]));
-  }
-  if (!dateText) {
-    for (const [monthName, month] of Object.entries(thaiMonths)) {
-      const escaped = monthName.split("").map((char) => char === "." ? "\\s*\\.?\\s*" : `${char.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*`).join("");
-      const match = normalized.match(new RegExp(`(?:^|\\s)([0-3]?\\d)\\s*${escaped}(\\d(?:\\s*\\d){1,3})(?=\\s|$)`));
-      if (match) {
-        const year = Number(match[2].replace(/\s+/g, ""));
-        dateText = formatIsoDate(normalizeYear2(year), month, Number(match[1]));
-        break;
-      }
-    }
-  }
-  const time = normalized.match(/\b([01]?\d|2[0-3]):([0-5]\d)\b/) || normalized.match(/\b([01]?\d|2[0-3])\.([0-5]\d)\s*น\./);
-  if (time) timeText = `${String(Number(time[1])).padStart(2, "0")}:${time[2]}`;
-  return { dateText, timeText };
 }
 function cleanMerchantCandidate(raw) {
   let value = raw.replace(/^(?:ผู้รับ|ผู้รับเงิน|ไปยัง|ชื่อผู้รับ|recipient|merchant|to)\s*[:：-]?\s*/i, "").replace(/(?:^|\s)(?:เลขที่รายการ|เลขอ้างอิง|หมายเลขอ้างอิง|reference(?:\s*(?:no|number))?|transaction\s*id)\s*[:：#-]?[\s\S]*$/i, "").replace(/(?:^|\s)(?:จำนวน(?:เงิน)?|ยอด(?:โอน|ชำระ|สุทธิ|รวม)|ค่าธรรมเนียม|fee)\s*[:：=\-]?[\s\S]*$/i, "").replace(/\s+(?:[A-Z0-9]{16,}|\d{12,})\s*$/i, "").replace(/^[^A-Za-z\u0E00-\u0E7F]+/, "").trim();
@@ -4321,7 +4324,7 @@ function analyzeOcrText(rawText) {
   const text2 = normalizeOcrText(rawText);
   const documentType = detectDocumentType(text2);
   const amount = extractAmount(text2);
-  const dateTime = extractDateTime(text2);
+  const dateTime = extractThaiSlipDateTime(text2);
   const merchant = extractMerchant(text2);
   const receiptNumber = extractReference(text2);
   let kind = "unknown";
@@ -4365,16 +4368,20 @@ async function analyzeImageWithOcr(dataUrl) {
   const base = sharp3(input).rotate().resize({ width: 2e3, fit: "inside", withoutEnlargement: false, kernel: sharp3.kernel.lanczos3 }).grayscale().normalize().sharpen({ sigma: 1.05 });
   const meta = await sharp3(input).rotate().metadata();
   const imageHeight = meta.height || 0;
-  const topCropHeight = imageHeight > 0 ? Math.max(1, Math.floor(imageHeight * 0.58)) : 0;
-  const topFocus = topCropHeight > 0 ? sharp3(input).rotate().extract({ left: 0, top: 0, width: meta.width || 1, height: topCropHeight }).resize({ width: 2400, fit: "inside", withoutEnlargement: false, kernel: sharp3.kernel.lanczos3 }).grayscale().normalize().sharpen({ sigma: 1.15 }) : void 0;
+  const topCropHeight = imageHeight > 0 ? Math.max(1, Math.floor(imageHeight * 0.72)) : 0;
+  const topFocus = topCropHeight > 0 ? sharp3(input).rotate().extract({ left: 0, top: 0, width: meta.width || 1, height: topCropHeight }).resize({ width: 3e3, fit: "inside", withoutEnlargement: false, kernel: sharp3.kernel.lanczos3 }).grayscale().normalize().sharpen({ sigma: 1.15 }) : void 0;
   const trimmed = await sharp3(input).rotate().trim({ threshold: 12 }).png().toBuffer({ resolveWithObject: true });
-  const trimmedHeaderHeight = Math.max(1, Math.floor(trimmed.info.height * 0.38));
+  const trimmedHeaderHeight = Math.max(1, Math.floor(trimmed.info.height * 0.62));
   const trimmedHeader = sharp3(trimmed.data).extract({ left: 0, top: 0, width: trimmed.info.width, height: trimmedHeaderHeight }).resize({ width: 3200, fit: "inside", withoutEnlargement: false, kernel: sharp3.kernel.lanczos3 }).grayscale().normalize().sharpen({ sigma: 1.2 });
   const variants = [
     { label: "normalized-upscaled", bytes: await base.clone().png().toBuffer(), psm: "6" },
     { label: "trimmed-header-sparse", bytes: await trimmedHeader.clone().linear(1.18, -12).png().toBuffer(), psm: "11" },
     { label: "trimmed-header-threshold", bytes: await trimmedHeader.clone().threshold(170).png().toBuffer(), psm: "11" },
-    ...topFocus ? [{ label: "top-focus", bytes: await topFocus.clone().png().toBuffer(), psm: "6" }] : [],
+    ...topFocus ? [
+      { label: "top-focus", bytes: await topFocus.clone().png().toBuffer(), psm: "6" },
+      { label: "top-focus-sparse", bytes: await topFocus.clone().linear(1.28, -18).png().toBuffer(), psm: "11" },
+      { label: "top-focus-threshold", bytes: await topFocus.clone().threshold(182).png().toBuffer(), psm: "11" }
+    ] : [],
     { label: "medium-contrast", bytes: await base.clone().linear(1.25, -20).png().toBuffer(), psm: "6" }
   ];
   const workerPath = requireOcr.resolve("tesseract.js/src/worker-script/node/index.js");
@@ -4466,7 +4473,6 @@ var schema2 = {
 };
 var SYSTEM_PROMPT = "\u0E04\u0E38\u0E13\u0E04\u0E37\u0E2D\u0E44\u0E21\u0E42\u0E25 \u0E1C\u0E39\u0E49\u0E0A\u0E48\u0E27\u0E22\u0E20\u0E32\u0E29\u0E32\u0E44\u0E17\u0E22 \u0E2D\u0E48\u0E32\u0E19\u0E20\u0E32\u0E1E\u0E43\u0E1A\u0E19\u0E31\u0E14 \u0E15\u0E32\u0E23\u0E32\u0E07 \u0E2A\u0E25\u0E34\u0E1B\u0E42\u0E2D\u0E19\u0E40\u0E07\u0E34\u0E19 \u0E41\u0E25\u0E30\u0E43\u0E1A\u0E40\u0E2A\u0E23\u0E47\u0E08\u0E2D\u0E22\u0E48\u0E32\u0E07\u0E23\u0E30\u0E21\u0E31\u0E14\u0E23\u0E30\u0E27\u0E31\u0E07 \u0E04\u0E37\u0E19 JSON \u0E15\u0E32\u0E21 schema \u0E40\u0E17\u0E48\u0E32\u0E19\u0E31\u0E49\u0E19 \u0E2B\u0E49\u0E32\u0E21\u0E40\u0E14\u0E32\u0E2B\u0E23\u0E37\u0E2D\u0E41\u0E15\u0E48\u0E07\u0E02\u0E49\u0E2D\u0E04\u0E27\u0E32\u0E21/\u0E15\u0E31\u0E27\u0E40\u0E25\u0E02\u0E17\u0E35\u0E48\u0E2D\u0E48\u0E32\u0E19\u0E44\u0E21\u0E48\u0E0A\u0E31\u0E14 \u0E2A\u0E33\u0E2B\u0E23\u0E31\u0E1A\u0E2A\u0E25\u0E34\u0E1B\u0E43\u0E2B\u0E49\u0E43\u0E0A\u0E49\u0E22\u0E2D\u0E14\u0E42\u0E2D\u0E19\u0E08\u0E23\u0E34\u0E07 \u0E44\u0E21\u0E48\u0E43\u0E0A\u0E49\u0E22\u0E2D\u0E14\u0E04\u0E07\u0E40\u0E2B\u0E25\u0E37\u0E2D\u0E2B\u0E23\u0E37\u0E2D\u0E04\u0E48\u0E32\u0E18\u0E23\u0E23\u0E21\u0E40\u0E19\u0E35\u0E22\u0E21 \u0E2A\u0E33\u0E2B\u0E23\u0E31\u0E1A\u0E43\u0E1A\u0E40\u0E2A\u0E23\u0E47\u0E08\u0E43\u0E2B\u0E49\u0E43\u0E0A\u0E49\u0E22\u0E2D\u0E14\u0E17\u0E35\u0E48\u0E08\u0E48\u0E32\u0E22\u0E08\u0E23\u0E34\u0E07\u0E2B\u0E25\u0E31\u0E07\u0E2A\u0E48\u0E27\u0E19\u0E25\u0E14\u0E2B\u0E23\u0E37\u0E2D\u0E2A\u0E34\u0E17\u0E18\u0E34\u0E0A\u0E48\u0E27\u0E22\u0E40\u0E2B\u0E25\u0E37\u0E2D \u0E42\u0E14\u0E22\u0E43\u0E2B\u0E49\u0E04\u0E27\u0E32\u0E21\u0E2A\u0E33\u0E04\u0E31\u0E0D\u0E01\u0E31\u0E1A\u0E0A\u0E48\u0E2D\u0E07 \u0E08\u0E33\u0E19\u0E27\u0E19\u0E40\u0E07\u0E34\u0E19\u0E17\u0E35\u0E48\u0E0A\u0E33\u0E23\u0E30, \u0E22\u0E2D\u0E14\u0E17\u0E35\u0E48\u0E0A\u0E33\u0E23\u0E30, \u0E22\u0E2D\u0E14\u0E2A\u0E38\u0E17\u0E18\u0E34 \u0E21\u0E32\u0E01\u0E01\u0E27\u0E48\u0E32\u0E04\u0E48\u0E32\u0E2A\u0E34\u0E19\u0E04\u0E49\u0E32/\u0E1A\u0E23\u0E34\u0E01\u0E32\u0E23\u0E01\u0E48\u0E2D\u0E19\u0E2A\u0E48\u0E27\u0E19\u0E25\u0E14 \u0E2B\u0E32\u0E01\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48\u0E2D\u0E48\u0E32\u0E19\u0E44\u0E14\u0E49\u0E41\u0E19\u0E48\u0E0A\u0E31\u0E14\u0E43\u0E2B\u0E49\u0E2A\u0E48\u0E07 dateText \u0E23\u0E39\u0E1B\u0E41\u0E1A\u0E1A YYYY-MM-DD \u0E21\u0E34\u0E09\u0E30\u0E19\u0E31\u0E49\u0E19\u0E40\u0E1B\u0E47\u0E19\u0E2A\u0E15\u0E23\u0E34\u0E07\u0E27\u0E48\u0E32\u0E07 \u0E2A\u0E33\u0E2B\u0E23\u0E31\u0E1A\u0E04\u0E48\u0E32\u0E43\u0E0A\u0E49\u0E08\u0E48\u0E32\u0E22\u0E43\u0E2B\u0E49\u0E41\u0E22\u0E01 merchant \u0E41\u0E1A\u0E1A\u0E0A\u0E37\u0E48\u0E2D\u0E23\u0E49\u0E32\u0E19\u0E08\u0E23\u0E34\u0E07\u0E40\u0E17\u0E48\u0E32\u0E19\u0E31\u0E49\u0E19 \u0E44\u0E21\u0E48\u0E23\u0E27\u0E21\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E2A\u0E34\u0E19\u0E04\u0E49\u0E32/\u0E2A\u0E48\u0E27\u0E19\u0E25\u0E14/\u0E22\u0E2D\u0E14\u0E40\u0E07\u0E34\u0E19, paymentMethod, receiptNumber, lineItems \u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E2A\u0E33\u0E04\u0E31\u0E0D \u0E41\u0E25\u0E30\u0E40\u0E25\u0E37\u0E2D\u0E01 category \u0E20\u0E32\u0E29\u0E32\u0E44\u0E17\u0E22\u0E08\u0E32\u0E01 \u0E2D\u0E32\u0E2B\u0E32\u0E23, \u0E40\u0E14\u0E34\u0E19\u0E17\u0E32\u0E07, \u0E04\u0E48\u0E32\u0E2A\u0E32\u0E18\u0E32\u0E23\u0E13\u0E39\u0E1B\u0E42\u0E20\u0E04, \u0E2A\u0E38\u0E02\u0E20\u0E32\u0E1E, \u0E01\u0E32\u0E23\u0E28\u0E36\u0E01\u0E29\u0E32, \u0E1A\u0E31\u0E19\u0E40\u0E17\u0E34\u0E07, \u0E0A\u0E49\u0E2D\u0E1B\u0E1B\u0E34\u0E49\u0E07, \u0E17\u0E48\u0E2D\u0E07\u0E40\u0E17\u0E35\u0E48\u0E22\u0E27, \u0E17\u0E31\u0E48\u0E27\u0E44\u0E1B \u0E2B\u0E32\u0E01\u0E44\u0E21\u0E48\u0E1E\u0E1A\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E17\u0E35\u0E48\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E44\u0E14\u0E49\u0E43\u0E2B\u0E49\u0E43\u0E0A\u0E49 kind=unknown \u0E41\u0E25\u0E30 amount=0";
 var USER_PROMPT = "\u0E27\u0E34\u0E40\u0E04\u0E23\u0E32\u0E30\u0E2B\u0E4C\u0E20\u0E32\u0E1E\u0E40\u0E1E\u0E37\u0E48\u0E2D\u0E2B\u0E32\u0E43\u0E1A\u0E19\u0E31\u0E14\u0E2B\u0E23\u0E37\u0E2D\u0E18\u0E38\u0E23\u0E01\u0E23\u0E23\u0E21\u0E04\u0E48\u0E32\u0E43\u0E0A\u0E49\u0E08\u0E48\u0E32\u0E22\u0E08\u0E32\u0E01\u0E2A\u0E25\u0E34\u0E1B/\u0E43\u0E1A\u0E40\u0E2A\u0E23\u0E47\u0E08 \u0E42\u0E14\u0E22\u0E40\u0E2A\u0E19\u0E2D\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E40\u0E1E\u0E37\u0E48\u0E2D\u0E43\u0E2B\u0E49\u0E1C\u0E39\u0E49\u0E43\u0E0A\u0E49\u0E22\u0E37\u0E19\u0E22\u0E31\u0E19\u0E01\u0E48\u0E2D\u0E19\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E40\u0E17\u0E48\u0E32\u0E19\u0E31\u0E49\u0E19";
-var RECEIPT_REPAIR_PROMPT = "\u0E15\u0E23\u0E27\u0E08\u0E20\u0E32\u0E1E\u0E0B\u0E49\u0E33\u0E2D\u0E22\u0E48\u0E32\u0E07\u0E25\u0E30\u0E40\u0E2D\u0E35\u0E22\u0E14\u0E42\u0E14\u0E22\u0E42\u0E1F\u0E01\u0E31\u0E2A\u0E40\u0E09\u0E1E\u0E32\u0E30\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48 \u0E27\u0E31\u0E19/\u0E40\u0E14\u0E37\u0E2D\u0E19/\u0E1B\u0E35 \u0E40\u0E27\u0E25\u0E32 \u0E41\u0E25\u0E30\u0E0A\u0E37\u0E48\u0E2D\u0E23\u0E49\u0E32\u0E19/\u0E1C\u0E39\u0E49\u0E23\u0E31\u0E1A\u0E40\u0E07\u0E34\u0E19\u0E17\u0E35\u0E48\u0E1E\u0E34\u0E21\u0E1E\u0E4C\u0E2D\u0E22\u0E39\u0E48\u0E1A\u0E19\u0E40\u0E2D\u0E01\u0E2A\u0E32\u0E23\u0E08\u0E23\u0E34\u0E07 \u0E42\u0E14\u0E22\u0E40\u0E09\u0E1E\u0E32\u0E30\u0E02\u0E49\u0E2D\u0E04\u0E27\u0E32\u0E21\u0E15\u0E31\u0E27\u0E40\u0E25\u0E47\u0E01\u0E1A\u0E23\u0E34\u0E40\u0E27\u0E13\u0E2A\u0E48\u0E27\u0E19\u0E1A\u0E19\u0E02\u0E2D\u0E07\u0E43\u0E1A\u0E40\u0E2A\u0E23\u0E47\u0E08 \u0E2B\u0E49\u0E32\u0E21\u0E43\u0E0A\u0E49\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48\u0E1B\u0E31\u0E08\u0E08\u0E38\u0E1A\u0E31\u0E19\u0E2B\u0E23\u0E37\u0E2D\u0E40\u0E14\u0E32 \u0E2B\u0E32\u0E01\u0E40\u0E2B\u0E47\u0E19\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48\u0E44\u0E17\u0E22 \u0E40\u0E0A\u0E48\u0E19 14 \u0E01.\u0E22. 2569 \u0E43\u0E2B\u0E49\u0E41\u0E1B\u0E25\u0E07\u0E40\u0E1B\u0E47\u0E19 2026-09-14 \u0E04\u0E37\u0E19 JSON \u0E15\u0E32\u0E21 schema \u0E40\u0E14\u0E34\u0E21 \u0E1F\u0E34\u0E25\u0E14\u0E4C\u0E17\u0E35\u0E48\u0E2D\u0E48\u0E32\u0E19\u0E44\u0E21\u0E48\u0E44\u0E14\u0E49\u0E43\u0E2B\u0E49\u0E40\u0E1B\u0E47\u0E19\u0E04\u0E48\u0E32\u0E27\u0E48\u0E32\u0E07";
 function parseAnalysisContent(content) {
   if (typeof content !== "string" || !content.trim()) throw new Error("Image model did not return JSON");
   const cleaned = content.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "");
@@ -4539,6 +4545,81 @@ async function analyzeImageWithGatewayKey(dataUrl, token, userPrompt = USER_PROM
     throw error;
   }
 }
+var receiptDateSchema = {
+  type: "object",
+  properties: {
+    dateText: { type: "string" },
+    timeText: { type: "string" },
+    evidence: { type: "string" }
+  },
+  required: ["dateText", "timeText", "evidence"],
+  additionalProperties: false
+};
+function parseReceiptDateRepairContent(content) {
+  if (typeof content !== "string" || !content.trim()) throw new Error("Receipt date repair returned empty content");
+  const cleaned = content.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "");
+  const firstBrace = cleaned.indexOf("{");
+  const lastBrace = cleaned.lastIndexOf("}");
+  const json = firstBrace >= 0 && lastBrace > firstBrace ? cleaned.slice(firstBrace, lastBrace + 1) : cleaned;
+  const parsed = JSON.parse(json);
+  const rawDate = String(parsed.dateText || "").trim();
+  const rawTime = String(parsed.timeText || "").trim();
+  const evidence = String(parsed.evidence || "").trim();
+  const dt = extractThaiSlipDateTime([rawDate, rawTime, evidence].filter(Boolean).join(" "));
+  return {
+    dateText: /^20\d{2}-\d{2}-\d{2}$/.test(rawDate) ? rawDate : dt.dateText,
+    timeText: /^([01]\d|2[0-3]):[0-5]\d$/.test(rawTime) ? rawTime : dt.timeText,
+    evidence
+  };
+}
+async function receiptDateRepairRequest(dataUrl, token) {
+  const body = {
+    model: process.env.MILO_VISION_MODEL || "google/gemini-2.5-flash",
+    messages: [
+      { role: "system", content: "\xE0\xB8\u201E\xE0\xB8\xB8\xE0\xB8\u201C\xE0\xB9\u20AC\xE0\xB8\u203A\xE0\xB9\u2021\xE0\xB8\u2122 OCR verifier \xE0\xB8\xAA\xE0\xB8\xB3\xE0\xB8\xAB\xE0\xB8\xA3\xE0\xB8\xB1\xE0\xB8\u0161\xE0\xB9\u0192\xE0\xB8\u0161\xE0\xB9\u20AC\xE0\xB8\xAA\xE0\xB8\xA3\xE0\xB9\u2021\xE0\xB8\u02C6\xE0\xB9\u201E\xE0\xB8\u2014\xE0\xB8\xA2 \xE0\xB8\u2021\xE0\xB8\xB2\xE0\xB8\u2122\xE0\xB9\u20AC\xE0\xB8\u201D\xE0\xB8\xB5\xE0\xB8\xA2\xE0\xB8\xA7\xE0\xB8\u201E\xE0\xB8\xB7\xE0\xB8\xAD\xE0\xB8\xAD\xE0\xB9\u02C6\xE0\xB8\xB2\xE0\xB8\u2122\xE0\xB8\u201A\xE0\xB9\u2030\xE0\xB8\xAD\xE0\xB8\u201E\xE0\xB8\xA7\xE0\xB8\xB2\xE0\xB8\xA1\xE0\xB8\xA7\xE0\xB8\xB1\xE0\xB8\u2122\xE0\xB8\u2014\xE0\xB8\xB3\xE0\xB8\xA3\xE0\xB8\xB2\xE0\xB8\xA2\xE0\xB8\x81\xE0\xB8\xB2\xE0\xB8\xA3\xE0\xB9\x81\xE0\xB8\xA5\xE0\xB8\xB0\xE0\xB9\u20AC\xE0\xB8\xA7\xE0\xB8\xA5\xE0\xB8\xB2\xE0\xB8\u2014\xE0\xB8\xB5\xE0\xB9\u02C6\xE0\xB8\u017E\xE0\xB8\xB4\xE0\xB8\xA1\xE0\xB8\u017E\xE0\xB9\u0152\xE0\xB8\xAD\xE0\xB8\xA2\xE0\xB8\xB9\xE0\xB9\u02C6\xE0\xB9\u0192\xE0\xB8\u2122\xE0\xB8\xA0\xE0\xB8\xB2\xE0\xB8\u017E\xE0\xB8\u02C6\xE0\xB8\xA3\xE0\xB8\xB4\xE0\xB8\u2021 \xE0\xB8\xAB\xE0\xB9\u2030\xE0\xB8\xB2\xE0\xB8\xA1\xE0\xB9\u20AC\xE0\xB8\u201D\xE0\xB8\xB2\xE0\xB8\u02C6\xE0\xB8\xB2\xE0\xB8\x81\xE0\xB9\u20AC\xE0\xB8\xA7\xE0\xB8\xA5\xE0\xB8\xB2\xE0\xB8\xAA\xE0\xB9\u02C6\xE0\xB8\u2021\xE0\xB8\xA3\xE0\xB8\xB9\xE0\xB8\u203A \xE0\xB8\xA7\xE0\xB8\xB1\xE0\xB8\u2122\xE0\xB8\u2014\xE0\xB8\xB5\xE0\xB9\u02C6\xE0\xB8\u203A\xE0\xB8\xB1\xE0\xB8\u02C6\xE0\xB8\u02C6\xE0\xB8\xB8\xE0\xB8\u0161\xE0\xB8\xB1\xE0\xB8\u2122 \xE0\xB8\xAB\xE0\xB8\xA3\xE0\xB8\xB7\xE0\xB8\xAD\xE0\xB8\u0161\xE0\xB8\xA3\xE0\xB8\xB4\xE0\xB8\u0161\xE0\xB8\u2014\xE0\xB8\xAD\xE0\xB8\xB7\xE0\xB9\u02C6\xE0\xB8\u2122 \xE0\xB8\u2013\xE0\xB9\u2030\xE0\xB8\xB2\xE0\xB8\xAD\xE0\xB9\u02C6\xE0\xB8\xB2\xE0\xB8\u2122\xE0\xB8\xA7\xE0\xB8\xB1\xE0\xB8\u2122\xE0\xB9\u20AC\xE0\xB8\u201D\xE0\xB8\xB7\xE0\xB8\xAD\xE0\xB8\u2122\xE0\xB8\u203A\xE0\xB8\xB5\xE0\xB9\u201E\xE0\xB8\xA1\xE0\xB9\u02C6\xE0\xB8\u0160\xE0\xB8\xB1\xE0\xB8\u201D\xE0\xB9\u0192\xE0\xB8\xAB\xE0\xB9\u2030 dateText \xE0\xB9\u20AC\xE0\xB8\u203A\xE0\xB9\u2021\xE0\xB8\u2122\xE0\xB8\xAA\xE0\xB8\u2022\xE0\xB8\xA3\xE0\xB8\xB4\xE0\xB8\u2021\xE0\xB8\xA7\xE0\xB9\u02C6\xE0\xB8\xB2\xE0\xB8\u2021 \xE0\xB8\u2013\xE0\xB9\u2030\xE0\xB8\xB2\xE0\xB8\xAD\xE0\xB9\u02C6\xE0\xB8\xB2\xE0\xB8\u2122\xE0\xB9\u20AC\xE0\xB8\xA7\xE0\xB8\xA5\xE0\xB8\xB2\xE0\xB9\u201E\xE0\xB8\xA1\xE0\xB9\u02C6\xE0\xB8\u0160\xE0\xB8\xB1\xE0\xB8\u201D\xE0\xB9\u0192\xE0\xB8\xAB\xE0\xB9\u2030 timeText \xE0\xB9\u20AC\xE0\xB8\u203A\xE0\xB9\u2021\xE0\xB8\u2122\xE0\xB8\xAA\xE0\xB8\u2022\xE0\xB8\xA3\xE0\xB8\xB4\xE0\xB8\u2021\xE0\xB8\xA7\xE0\xB9\u02C6\xE0\xB8\xB2\xE0\xB8\u2021 dateText \xE0\xB8\u2022\xE0\xB9\u2030\xE0\xB8\xAD\xE0\xB8\u2021\xE0\xB9\u20AC\xE0\xB8\u203A\xE0\xB9\u2021\xE0\xB8\u2122 YYYY-MM-DD \xE0\xB9\u20AC\xE0\xB8\u2014\xE0\xB9\u02C6\xE0\xB8\xB2\xE0\xB8\u2122\xE0\xB8\xB1\xE0\xB9\u2030\xE0\xB8\u2122 \xE0\xB9\x81\xE0\xB8\xA5\xE0\xB8\xB0 evidence \xE0\xB9\u0192\xE0\xB8\xAB\xE0\xB9\u2030\xE0\xB8\u201E\xE0\xB8\xB1\xE0\xB8\u201D\xE0\xB8\u201A\xE0\xB9\u2030\xE0\xB8\xAD\xE0\xB8\u201E\xE0\xB8\xA7\xE0\xB8\xB2\xE0\xB8\xA1\xE0\xB8\xAA\xE0\xB8\xB1\xE0\xB9\u2030\xE0\xB8\u2122\xE0\xB9\u2020 \xE0\xB8\u2014\xE0\xB8\xB5\xE0\xB9\u02C6\xE0\xB8\xA1\xE0\xB8\xAD\xE0\xB8\u2021\xE0\xB9\u20AC\xE0\xB8\xAB\xE0\xB9\u2021\xE0\xB8\u2122\xE0\xB8\u2039\xE0\xB8\xB6\xE0\xB9\u02C6\xE0\xB8\u2021\xE0\xB8\xA3\xE0\xB8\xAD\xE0\xB8\u2021\xE0\xB8\xA3\xE0\xB8\xB1\xE0\xB8\u0161\xE0\xB8\xA7\xE0\xB8\xB1\xE0\xB8\u2122\xE0\xB8\u2014\xE0\xB8\xB5\xE0\xB9\u02C6/\xE0\xB9\u20AC\xE0\xB8\xA7\xE0\xB8\xA5\xE0\xB8\xB2" },
+      { role: "user", content: [{ type: "text", text: "\xE0\xB8\u2022\xE0\xB8\xA3\xE0\xB8\xA7\xE0\xB8\u02C6\xE0\xB9\u20AC\xE0\xB8\u2030\xE0\xB8\u017E\xE0\xB8\xB2\xE0\xB8\xB0\xE0\xB8\xA7\xE0\xB8\xB1\xE0\xB8\u2122\xE0\xB8\u2014\xE0\xB8\xB3\xE0\xB8\xA3\xE0\xB8\xB2\xE0\xB8\xA2\xE0\xB8\x81\xE0\xB8\xB2\xE0\xB8\xA3\xE0\xB9\x81\xE0\xB8\xA5\xE0\xB8\xB0\xE0\xB9\u20AC\xE0\xB8\xA7\xE0\xB8\xA5\xE0\xB8\xB2\xE0\xB9\u0192\xE0\xB8\u2122\xE0\xB9\u20AC\xE0\xB8\xAD\xE0\xB8\x81\xE0\xB8\xAA\xE0\xB8\xB2\xE0\xB8\xA3\xE0\xB8\u2122\xE0\xB8\xB5\xE0\xB9\u2030 \xE0\xB8\xA1\xE0\xB8\xAD\xE0\xB8\u2021\xE0\xB8\u2014\xE0\xB8\xB1\xE0\xB9\u2030\xE0\xB8\u2021\xE0\xB8\xAB\xE0\xB8\xB1\xE0\xB8\xA7\xE0\xB9\u20AC\xE0\xB8\xAD\xE0\xB8\x81\xE0\xB8\xAA\xE0\xB8\xB2\xE0\xB8\xA3 \xE0\xB8\u0161\xE0\xB8\xA3\xE0\xB8\xA3\xE0\xB8\u2014\xE0\xB8\xB1\xE0\xB8\u201D\xE0\xB9\u0192\xE0\xB8\x81\xE0\xB8\xA5\xE0\xB9\u2030\xE0\xB8\u201E\xE0\xB8\xB3\xE0\xB8\xA7\xE0\xB9\u02C6\xE0\xB8\xB2 \xE0\xB8\u2014\xE0\xB8\xB3\xE0\xB8\xA3\xE0\xB8\xB2\xE0\xB8\xA2\xE0\xB8\x81\xE0\xB8\xB2\xE0\xB8\xA3\xE0\xB8\xAA\xE0\xB8\xB3\xE0\xB9\u20AC\xE0\xB8\xA3\xE0\xB9\u2021\xE0\xB8\u02C6/\xE0\xB8\xA7\xE0\xB8\xB1\xE0\xB8\u2122\xE0\xB8\u2014\xE0\xB8\xB5\xE0\xB9\u02C6/\xE0\xB9\u20AC\xE0\xB8\xA7\xE0\xB8\xA5\xE0\xB8\xB2 \xE0\xB9\x81\xE0\xB8\xA5\xE0\xB8\xB0\xE0\xB8\u0161\xE0\xB8\xA3\xE0\xB8\xB4\xE0\xB9\u20AC\xE0\xB8\xA7\xE0\xB8\u201C\xE0\xB8\xA3\xE0\xB8\xAD\xE0\xB8\u0161\xE0\xB8\xA2\xE0\xB8\xAD\xE0\xB8\u201D\xE0\xB9\u20AC\xE0\xB8\u2021\xE0\xB8\xB4\xE0\xB8\u2122 \xE0\xB8\xA7\xE0\xB8\xB1\xE0\xB8\u2122\xE0\xB8\u2014\xE0\xB8\xB5\xE0\xB9\u02C6\xE0\xB8\xAD\xE0\xB8\xB2\xE0\xB8\u02C6\xE0\xB9\u20AC\xE0\xB8\u203A\xE0\xB9\u2021\xE0\xB8\u2122 \xE0\xB8\u017E.\xE0\xB8\xA8. \xE0\xB9\u20AC\xE0\xB8\u0160\xE0\xB9\u02C6\xE0\xB8\u2122 14 \xE0\xB8\x81.\xE0\xB8\xA2. 2569, 14 \xE0\xB8\x81\xE0\xB8\xB1\xE0\xB8\u2122\xE0\xB8\xA2\xE0\xB8\xB2\xE0\xB8\xA2\xE0\xB8\u2122 2569, 14/09/2569, 14.09.69 \xE0\xB8\xAB\xE0\xB8\xB2\xE0\xB8\x81\xE0\xB8\xA1\xE0\xB8\xAD\xE0\xB8\u2021\xE0\xB9\u201E\xE0\xB8\xA1\xE0\xB9\u02C6\xE0\xB9\u20AC\xE0\xB8\xAB\xE0\xB9\u2021\xE0\xB8\u2122\xE0\xB8\xA7\xE0\xB8\xB1\xE0\xB8\u2122\xE0\xB9\u20AC\xE0\xB8\u201D\xE0\xB8\xB7\xE0\xB8\xAD\xE0\xB8\u2122\xE0\xB8\u203A\xE0\xB8\xB5\xE0\xB8\u02C6\xE0\xB8\xA3\xE0\xB8\xB4\xE0\xB8\u2021\xE0\xB9\u0192\xE0\xB8\xAB\xE0\xB9\u2030\xE0\xB8\u201E\xE0\xB8\xB7\xE0\xB8\u2122 dateText \xE0\xB8\xA7\xE0\xB9\u02C6\xE0\xB8\xB2\xE0\xB8\u2021" }, { type: "image_url", image_url: { url: dataUrl, detail: "high" } }] }
+    ],
+    stream: false,
+    temperature: 0,
+    response_format: { type: "json_schema", json_schema: { name: "milo_receipt_date_repair", strict: true, schema: receiptDateSchema } }
+  };
+  const run = async (structured) => {
+    const requestBody = { ...body };
+    if (!structured) delete requestBody.response_format;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 3e4);
+    try {
+      const response = await fetch("https://ai-gateway.vercel.sh/v1/chat/completions", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify(requestBody),
+        signal: controller.signal
+      });
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error?.message || `AI Gateway returned HTTP ${response.status}`);
+      return parseReceiptDateRepairContent(payload.choices?.[0]?.message?.content);
+    } finally {
+      clearTimeout(timeout);
+    }
+  };
+  try {
+    return await run(true);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "unknown";
+    if (/response.?format|json.?schema|structured|invalid.*schema/i.test(message)) return run(false);
+    throw error;
+  }
+}
+function mergeDedicatedDateRepair(base, repair) {
+  const b = base.proposals[0];
+  if (!b || !repair.dateText) return base;
+  return {
+    ...base,
+    summary: b.kind === "expense" ? `\xE0\xB8\xAD\xE0\xB9\u02C6\xE0\xB8\xB2\xE0\xB8\u2122${b.documentType === "bank_slip" ? "\xE0\xB8\xAA\xE0\xB8\xA5\xE0\xB8\xB4\xE0\xB8\u203A" : "\xE0\xB9\u0192\xE0\xB8\u0161\xE0\xB9\u20AC\xE0\xB8\xAA\xE0\xB8\xA3\xE0\xB9\u2021\xE0\xB8\u02C6"}\xE0\xB9\u201E\xE0\xB8\u201D\xE0\xB9\u2030 \xE0\xB8\xA2\xE0\xB8\xAD\xE0\xB8\u201D ${b.amount.toLocaleString("th-TH")} \xE0\xB8\u0161\xE0\xB8\xB2\xE0\xB8\u2014 \xE0\xB8\xA7\xE0\xB8\xB1\xE0\xB8\u2122\xE0\xB8\u2014\xE0\xB8\xB5\xE0\xB9\u02C6 ${repair.dateText}` : base.summary,
+    confidence: Math.max(base.confidence, 0.9),
+    proposals: [{ ...b, dateText: repair.dateText, timeText: b.timeText || repair.timeText }, ...base.proposals.slice(1)]
+  };
+}
 function imageGatewayToken(env = process.env, requestToken) {
   return (env.AI_GATEWAY_API_KEY || requestToken || env.VERCEL_OIDC_TOKEN || "").trim();
 }
@@ -4599,22 +4680,6 @@ function mergeImageAnalyses(primary, ocr) {
   const summary = merged.kind === "expense" ? `\u0E2D\u0E48\u0E32\u0E19${merged.documentType === "bank_slip" ? "\u0E2A\u0E25\u0E34\u0E1B" : "\u0E43\u0E1A\u0E40\u0E2A\u0E23\u0E47\u0E08"}\u0E44\u0E14\u0E49 \u0E22\u0E2D\u0E14 ${merged.amount.toLocaleString("th-TH")} \u0E1A\u0E32\u0E17${merged.dateText ? ` \u0E27\u0E31\u0E19\u0E17\u0E35\u0E48 ${merged.dateText}` : " \u0E41\u0E15\u0E48\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E0A\u0E31\u0E14"}` : primary.summary || ocr.summary;
   return { summary, confidence: Math.max(primary.confidence, ocr.confidence), proposals: [merged, ...primary.proposals.slice(1)] };
 }
-function mergeFocusedDateRepair(base, repair) {
-  const b = base.proposals[0];
-  const r = repair.proposals[0];
-  if (!b || !r?.dateText) return base;
-  return {
-    ...base,
-    summary: b.kind === "expense" ? `\u0E2D\u0E48\u0E32\u0E19${b.documentType === "bank_slip" ? "\u0E2A\u0E25\u0E34\u0E1B" : "\u0E43\u0E1A\u0E40\u0E2A\u0E23\u0E47\u0E08"}\u0E44\u0E14\u0E49 \u0E22\u0E2D\u0E14 ${b.amount.toLocaleString("th-TH")} \u0E1A\u0E32\u0E17 \u0E27\u0E31\u0E19\u0E17\u0E35\u0E48 ${r.dateText}` : base.summary,
-    confidence: Math.max(base.confidence, repair.confidence),
-    proposals: [{
-      ...b,
-      dateText: r.dateText,
-      timeText: b.timeText || r.timeText,
-      receiptNumber: b.receiptNumber || r.receiptNumber
-    }, ...base.proposals.slice(1)]
-  };
-}
 async function analyzeImage(dataUrl, options = {}) {
   let providerError;
   let providerAnalysis;
@@ -4653,8 +4718,14 @@ async function analyzeImage(dataUrl, options = {}) {
       if (gatewayKey && proposal?.kind === "expense" && !proposal.dateText && proposal.timeText) {
         try {
           const headerDataUrl = await buildReceiptHeaderDataUrl(dataUrl).catch(() => dataUrl);
-          const repair = await analyzeImageWithGatewayKey(headerDataUrl, gatewayKey, RECEIPT_REPAIR_PROMPT);
-          selected2 = mergeFocusedDateRepair(selected2, repair);
+          const repair = await receiptDateRepairRequest(headerDataUrl, gatewayKey);
+          console.info("[Milo Image] focused date repair", { dateText: repair.dateText, timeText: repair.timeText, evidence: repair.evidence.slice(0, 120) });
+          selected2 = mergeDedicatedDateRepair(selected2, repair);
+          if (!selected2.proposals[0]?.dateText && headerDataUrl !== dataUrl) {
+            const fullRepair = await receiptDateRepairRequest(dataUrl, gatewayKey);
+            console.info("[Milo Image] full-image date repair", { dateText: fullRepair.dateText, timeText: fullRepair.timeText, evidence: fullRepair.evidence.slice(0, 120) });
+            selected2 = mergeDedicatedDateRepair(selected2, fullRepair);
+          }
         } catch (repairError) {
           console.warn("[Milo Image] OCR-only focused receipt date repair failed", {
             error: repairError instanceof Error ? repairError.message : "unknown"
@@ -4670,8 +4741,14 @@ async function analyzeImage(dataUrl, options = {}) {
     if (gatewayKey && selectedProposal?.kind === "expense" && !selectedProposal.dateText && selectedProposal.timeText) {
       try {
         const headerDataUrl = await buildReceiptHeaderDataUrl(dataUrl).catch(() => dataUrl);
-        const repair = await analyzeImageWithGatewayKey(headerDataUrl, gatewayKey, RECEIPT_REPAIR_PROMPT);
-        selected = mergeFocusedDateRepair(selected, repair);
+        const repair = await receiptDateRepairRequest(headerDataUrl, gatewayKey);
+        console.info("[Milo Image] focused date repair", { dateText: repair.dateText, timeText: repair.timeText, evidence: repair.evidence.slice(0, 120) });
+        selected = mergeDedicatedDateRepair(selected, repair);
+        if (!selected.proposals[0]?.dateText && headerDataUrl !== dataUrl) {
+          const fullRepair = await receiptDateRepairRequest(dataUrl, gatewayKey);
+          console.info("[Milo Image] full-image date repair", { dateText: fullRepair.dateText, timeText: fullRepair.timeText, evidence: fullRepair.evidence.slice(0, 120) });
+          selected = mergeDedicatedDateRepair(selected, fullRepair);
+        }
       } catch (repairError) {
         console.warn("[Milo Image] focused receipt date repair failed", {
           error: repairError instanceof Error ? repairError.message : "unknown"
@@ -6436,7 +6513,7 @@ var healthHandler = async (req, res) => {
   res.status(200).json({
     status: "ok",
     service: "milo",
-    release: "media-v14-header-vision-date-2026-09-14",
+    release: "dashboard-media-v16-receipt-date-repair-2026-09-14",
     visionConfigured: runtime.authenticated,
     imageAnalysisMode: mode,
     visionModel: mode === "ocr-fallback" ? "tesseract-tha+eng" : process.env.MILO_VISION_MODEL || (mode.startsWith("vercel-ai-gateway") ? "google/gemini-2.5-flash" : mode.startsWith("forge-vision") ? "gemini-3-flash-preview" : "unconfigured"),

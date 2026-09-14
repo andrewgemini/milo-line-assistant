@@ -56,6 +56,17 @@ CJ 1685 เพชรเกษม106
       .toEqual({ dateText: "2026-09-14", timeText: "10:57" });
   });
 
+  it("recovers spaced numeric receipt dates and full Thai month names", () => {
+    expect(extractThaiSlipDateTime("วันที่ 1 4 / 0 9 / 2 5 6 9 เวลา 10:57 น.")).toEqual({ dateText: "2026-09-14", timeText: "10:57" });
+    expect(extractThaiSlipDateTime("วันที่ 14.09.69 10:57")).toEqual({ dateText: "2026-09-14", timeText: "10:57" });
+    expect(extractThaiSlipDateTime("14 กันยายน 2569 10:57 น.")).toEqual({ dateText: "2026-09-14", timeText: "10:57" });
+  });
+
+  it("cleans the noisy merchant line from the welfare receipt", () => {
+    expect(normalizeThaiMerchantName("ฆ ร้านกระเพรากลางซอย ถุง อาหาร ของหวาน เครื่องคื่ม ค่าสินค้า/บริการ 75 บาท สิทธิไทยช่วยไทยพลัส -45 บาท"))
+      .toBe("ร้านกระเพรากลางซอย");
+  });
+
   it("uses the actual paid amount after a welfare subsidy instead of the gross service amount", () => {
     const text = `
 ร้านกระเพรากลางซอย

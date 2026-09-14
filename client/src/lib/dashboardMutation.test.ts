@@ -25,6 +25,11 @@ describe("dashboard mutation pending state", () => {
     expect(filterFinanceTransactions(rows, "45000")).toEqual([rows[1]]);
     expect(filterFinanceTransactions(rows, "  ")).toEqual(rows);
     expect(filterFinanceTransactions(rows, "เดินทาง")).toEqual([]);
+    expect(filterFinanceTransactions(rows, "", { transactionType: "expense" })).toEqual([rows[0]]);
+    expect(filterFinanceTransactions(rows, "", { transactionType: "income" })).toEqual([rows[1]]);
+    expect(filterFinanceTransactions(rows, "", { category: "อาหาร" })).toEqual([rows[0]]);
+    expect(filterFinanceTransactions(rows, "กาแฟ", { transactionType: "expense", category: "อาหาร" })).toEqual([rows[0]]);
+    expect(filterFinanceTransactions(rows, "กาแฟ", { transactionType: "income" })).toEqual([]);
   });
 
   it("filters vault metadata by file title, tags, or source link without creating items", () => {

@@ -12,10 +12,18 @@ export function transactionPageWindow(itemCount: number, requestedPage: number, 
   return { page, pageCount, start: page * pageSize, end: (page + 1) * pageSize };
 }
 
-export function filterFinanceTransactions<T extends { transactionType: string; amount: string | number; category: string; note: string | null }>(items: T[], query: string) {
+export type FinanceTransactionFilter = { transactionType?: "all" | "income" | "expense"; category?: string };
+
+export function filterFinanceTransactions<T extends { transactionType: string; amount: string | number; category: string; note: string | null }>(items: T[], query: string, filter: FinanceTransactionFilter = {}) {
   const normalized = query.trim().toLocaleLowerCase("th-TH");
-  if (!normalized) return items;
-  return items.filter(item => `${item.transactionType} ${item.amount} ${item.category} ${item.note ?? ""}`.toLocaleLowerCase("th-TH").includes(normalized));
+  const transactionType = filter.transactionType ?? "all";
+  const category = filter.category?.trim() ?? "";
+  return items.filter(item => {
+    if (transactionType !== "all" && item.transactionType !== transactionType) return false;
+    if (category && item.category !== category) return false;
+    if (!normalized) return true;
+    return `${item.transactionType} ${item.amount} ${item.category} ${item.note ?? ""}`.toLocaleLowerCase("th-TH").includes(normalized);
+  });
 }
 
 export function filterVaultMetadata<T extends { title: string; tagsText: string | null; sourceUrl: string | null }>(items: T[], query: string) {
