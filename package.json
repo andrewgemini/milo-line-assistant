@@ -12,7 +12,8 @@
     "test": "vitest run",
     "db:push": "drizzle-kit generate && drizzle-kit migrate",
     "test:release": "vitest run --maxWorkers=1 --minWorkers=1 --testTimeout=15000",
-    "release:gate": "pnpm check && pnpm test:release && pnpm build"
+    "release:gate": "pnpm check && pnpm test:release && pnpm build",
+    "recovery:verify": "node scripts/recovery-drill.mjs"
   },
   "dependencies": {
     "@ai-sdk/gateway": "^4.0.80",
