@@ -6385,6 +6385,14 @@ function displayCategory(category, transactionType) {
   if (transactionType === "expense" && normalized === "\u0E2D\u0E32\u0E2B\u0E32\u0E23") return "\u0E04\u0E48\u0E32\u0E2D\u0E32\u0E2B\u0E32\u0E23";
   return normalized;
 }
+function saveResultPrimaryFontSize(value, lineCount = 1) {
+  const normalized = normalizeRenderText(value).replace(/\s+/g, " ").trim();
+  const graphemeCount = Array.from(renderSegmenter.segment(normalized)).length;
+  if (lineCount > 1) return 27;
+  if (/^ร้านค้า\/คู่ค้า\s*:/i.test(normalized) || graphemeCount > 20) return 30;
+  if (graphemeCount > 14) return 36;
+  return 47;
+}
 function buildSaveResultSvg(input) {
   const { transactionType, amount, occurredAt, budgetSpent, budgetLimit } = input;
   const display = saveResultDisplayText(input.item);
@@ -6457,6 +6465,7 @@ function buildThaiTextLayers(input) {
   const display = saveResultDisplayText(input.item);
   const item = display.primary || "\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23";
   const itemLines = display.primaryLines.length ? display.primaryLines : [item];
+  const itemFontSize = saveResultPrimaryFontSize(item, itemLines.length);
   const category = compact2(input.category, 24) || "\u0E17\u0E31\u0E48\u0E27\u0E44\u0E1B";
   const categoryLabel = displayCategory(category, input.transactionType);
   const metrics = getBudgetMetrics(input.budgetSpent, input.budgetLimit);
@@ -6468,7 +6477,7 @@ function buildThaiTextLayers(input) {
     vectorLayer(typeLabel, { left: 78, top: 351, width: 170, fontSize: 27, color: "#FFFFFF", bold: true, align: "center" }),
     vectorLayer(`\u2022 ${categoryLabel}`, { left: 273, top: 344, width: 560, fontSize: 34, color: "#183D3A", bold: true }),
     vectorLayer(thaiDateTime2(input.occurredAt), { left: 80, top: 411, width: 760, fontSize: 24, color: "#4B6173", bold: true }),
-    ...itemLines.length > 1 ? itemLines.slice(0, 2).map((line, index2) => vectorLayer(line, { left: 80, top: 452 + index2 * 34, width: 470, fontSize: 27, color: "#163D3C", bold: true })) : [vectorLayer(item, { left: 80, top: 457, width: 470, fontSize: 47, color: "#163D3C", bold: true })],
+    ...itemLines.length > 1 ? itemLines.slice(0, 2).map((line, index2) => vectorLayer(line, { left: 80, top: 452 + index2 * 34, width: 470, fontSize: 27, color: "#163D3C", bold: true })) : [vectorLayer(item, { left: 80, top: 457, width: 470, fontSize: itemFontSize, color: "#163D3C", bold: true })],
     vectorLayer(`\u0E3F${money2(input.amount)}`, { left: 555, top: 453, width: 289, fontSize: 55, color: accent, bold: true, align: "right" })
   ];
   if (input.budgetLimit > 0) {
@@ -6545,7 +6554,7 @@ var healthHandler = async (req, res) => {
   res.status(200).json({
     status: "ok",
     service: "milo",
-    release: "dashboard-media-v17-time-only-receipt-fallback-2026-09-14",
+    release: "dashboard-media-v18-save-card-merchant-fit-2026-09-14",
     visionConfigured: runtime.authenticated,
     imageAnalysisMode: mode,
     visionModel: mode === "ocr-fallback" ? "tesseract-tha+eng" : process.env.MILO_VISION_MODEL || (mode.startsWith("vercel-ai-gateway") ? "google/gemini-2.5-flash" : mode.startsWith("forge-vision") ? "gemini-3-flash-preview" : "unconfigured"),

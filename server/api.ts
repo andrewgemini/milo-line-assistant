@@ -43,7 +43,7 @@ const healthHandler = async (req: express.Request, res: express.Response) => {
   res.status(200).json({
     status: "ok",
     service: "milo",
-    release: "dashboard-media-v17-time-only-receipt-fallback-2026-09-14",
+    release: "dashboard-media-v18-save-card-merchant-fit-2026-09-14",
     visionConfigured: runtime.authenticated,
     imageAnalysisMode: mode,
     visionModel: mode === "ocr-fallback" ? "tesseract-tha+eng" : process.env.MILO_VISION_MODEL || (mode.startsWith("vercel-ai-gateway") ? "google/gemini-2.5-flash" : mode.startsWith("forge-vision") ? "gemini-3-flash-preview" : "unconfigured"),

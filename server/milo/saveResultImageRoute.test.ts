@@ -3,7 +3,7 @@ import sharp from "sharp";
 import type { AddressInfo } from "node:net";
 import { describe, expect, it } from "vitest";
 import { findMissingGlyphs } from "./vectorText";
-import { registerSaveResultImageRoute, saveResultDisplayText } from "./saveResultImage";
+import { registerSaveResultImageRoute, saveResultDisplayText, saveResultPrimaryFontSize } from "./saveResultImage";
 
 describe("save-result vector image route UAT", () => {
   it("wraps a long K+ merchant across two lines without losing the merchant name", () => {
@@ -14,6 +14,14 @@ describe("save-result vector image route UAT", () => {
     expect(display.primaryLines.join("")).not.toContain("...");
     expect(display.secondary).toContain("รายการ: กาแฟ");
     expect(display.secondary).toContain("เลขที่: 016256150715DQR03239");
+  });
+
+  it("shrinks a medium-length Thai merchant before it reaches the amount column", () => {
+    const display = saveResultDisplayText("ร้านค้า/คู่ค้า: ร้านกระเพรากลางซอย | รายการ: รายการจากใบเสร็จ");
+    expect(display.primary).toBe("ร้านค้า/คู่ค้า: ร้านกระเพรากลางซอย");
+    expect(display.primaryLines).toEqual(["ร้านค้า/คู่ค้า: ร้านกระเพรากลางซอย"]);
+    expect(saveResultPrimaryFontSize(display.primary, display.primaryLines.length)).toBe(30);
+    expect(saveResultPrimaryFontSize("กินกาแฟ", 1)).toBe(47);
   });
 
   it("renders the exact กินกาแฟ 80 production case without missing Thai/number/symbol glyphs", async () => {

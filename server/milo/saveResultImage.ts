@@ -65,6 +65,15 @@ function displayCategory(category: string, transactionType: "expense" | "income"
   return normalized;
 }
 
+export function saveResultPrimaryFontSize(value: string, lineCount = 1) {
+  const normalized = normalizeRenderText(value).replace(/\s+/g, " ").trim();
+  const graphemeCount = Array.from(renderSegmenter.segment(normalized)).length;
+  if (lineCount > 1) return 27;
+  if (/^ร้านค้า\/คู่ค้า\s*:/i.test(normalized) || graphemeCount > 20) return 30;
+  if (graphemeCount > 14) return 36;
+  return 47;
+}
+
 export function buildSaveResultSvg(input: {
   transactionType: "expense" | "income";
   item: string;
@@ -166,6 +175,7 @@ function buildThaiTextLayers(input: {
   const display = saveResultDisplayText(input.item);
   const item = display.primary || "รายการ";
   const itemLines = display.primaryLines.length ? display.primaryLines : [item];
+  const itemFontSize = saveResultPrimaryFontSize(item, itemLines.length);
   const category = compact(input.category, 24) || "ทั่วไป";
   const categoryLabel = displayCategory(category, input.transactionType);
   const metrics = getBudgetMetrics(input.budgetSpent, input.budgetLimit);
@@ -179,7 +189,7 @@ function buildThaiTextLayers(input: {
     vectorLayer(thaiDateTime(input.occurredAt), { left: 80, top: 411, width: 760, fontSize: 24, color: "#4B6173", bold: true }),
     ...(itemLines.length > 1
       ? itemLines.slice(0, 2).map((line, index) => vectorLayer(line, { left: 80, top: 452 + index * 34, width: 470, fontSize: 27, color: "#163D3C", bold: true }))
-      : [vectorLayer(item, { left: 80, top: 457, width: 470, fontSize: 47, color: "#163D3C", bold: true })]),
+      : [vectorLayer(item, { left: 80, top: 457, width: 470, fontSize: itemFontSize, color: "#163D3C", bold: true })]),
     vectorLayer(`฿${money(input.amount)}`, { left: 555, top: 453, width: 289, fontSize: 55, color: accent, bold: true, align: "right" }),
   ];
   if (input.budgetLimit > 0) {
