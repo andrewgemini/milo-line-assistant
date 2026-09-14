@@ -5,8 +5,16 @@ const monthNumbers: Record<string, number> = {
   "ก.ค.": 7, "ส.ค.": 8, "ก.ย.": 9, "ต.ค.": 10, "พ.ย.": 11, "ธ.ค.": 12,
 };
 
+const thaiDigits: Record<string, string> = {
+  "๐": "0", "๑": "1", "๒": "2", "๓": "3", "๔": "4",
+  "๕": "5", "๖": "6", "๗": "7", "๘": "8", "๙": "9",
+};
+
 function compact(value: string) {
-  return value.replace(/[\t ]+/g, " ").trim();
+  return value
+    .replace(/[๐-๙]/g, digit => thaiDigits[digit] || digit)
+    .replace(/[\t ]+/g, " ")
+    .trim();
 }
 
 function normalizeYear(value: number) {
@@ -52,22 +60,33 @@ export function extractThaiPayableAmount(text: string) {
 export function extractThaiSlipDateTime(text: string) {
   const flat = compact(text.replace(/\r?\n/g, " "));
   let dateText = "";
+
   for (const [name, month] of Object.entries(monthNumbers)) {
-    const escaped = name.replace(/\./g, "\\.?").replace(/\s+/g, "\\s*");
-    const match = flat.match(new RegExp(`(?:^|\\s)([0-3]?\\d)\\s*${escaped}\\s*(\\d{2,4})(?=\\s|$)`));
+    const escaped = name
+      .split("")
+      .map(char => char === "." ? "\\s*\\.?\\s*" : `${char.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*`)
+      .join("");
+    const match = flat.match(new RegExp(`(?:^|\\s)([0-3]?\\d)\\s*${escaped}(\\d(?:\\s*\\d){1,3})(?=\\s|$)`));
     if (match) {
-      dateText = isoDate(normalizeYear(Number(match[2])), month, Number(match[1]));
+      const year = Number(match[2].replace(/\s+/g, ""));
+      dateText = isoDate(normalizeYear(year), month, Number(match[1]));
       break;
     }
   }
+
   if (!dateText) {
     const numeric = flat.match(/\b([0-3]?\d)[\/-]([01]?\d)[\/-](\d{2,4})\b/);
     if (numeric) dateText = isoDate(normalizeYear(Number(numeric[3])), Number(numeric[2]), Number(numeric[1]));
   }
+
   const time = flat.match(/\b([01]?\d|2[0-3]):([0-5]\d)\b/)
     || flat.match(/(?:เวลา\s*)\b([01]?\d|2[0-3])\.([0-5]\d)\s*(?:น\.)?/)
     || flat.match(/\b([01]?\d|2[0-3])\.([0-5]\d)\s*น\./);
-  return { dateText, timeText: time ? `${String(Number(time[1])).padStart(2, "0")}:${time[2]}` : "" };
+
+  return {
+    dateText,
+    timeText: time ? `${String(Number(time[1])).padStart(2, "0")}:${time[2]}` : "",
+  };
 }
 
 function isKbankNoise(line: string) {
@@ -88,14 +107,28 @@ export function normalizeThaiMerchantName(value: string) {
     .replace(/คาเฟ[่]?\s*อเมซอน/gi, "คาเฟ่ อเมซอน")
     .replace(/cafe\s*amazon/gi, "Cafe Amazon")
     .replace(/([ก-๙])\s+(เฮ้าส์)/g, "$1$2")
-    .replace(/เพชรเกษม\s*(\d)\s+(\d{2})(?=\b|\s)/gi, "เพชรเกษม$1$2")
+    .replace(/เพชรเกษม\s*(\d)\s+(\d{2})(?=\b|\s|$)/gi, "เพชรเกษม$1$2")
     .replace(/เอกซ์เพรส/g, "เอ็กซ์เพรส")
     .replace(/\s+(?:[A-Z0-9]{14,}|\d{10,})\s*$/i, "")
     .trim();
 
-  // Common OCR noise after a legal/company suffix, e.g. "กรุ๊ป 2รอ".
-  // Only remove a short mixed digit token so legitimate branch names remain.
-  cleaned = cleaned.replace(/((?:กรุ๊ป|จำกัด|ลิมิเต็ด))\s+[0-9][A-Za-zก-๙]{1,3}\s*$/i, "$1");
+  // CJ has a stable legal merchant name, while OCR often corrupts only the
+  // company suffix (for example "กรป2รว"). Preserve the readable store code
+  // and branch, then canonicalize the fixed legal suffix.
+  if (/^CJ\s*\d{3,5}\b/i.test(cleaned)) {
+    const match = cleaned.match(/^CJ\s*(\d{3,5})\s*(.*)$/i);
+    if (match) {
+      let branch = match[2]
+        .replace(/\s+(?:บจก\.?|บริษัท|ซี\.?\s*เจ\.?|เอกซ์เพรส|เอ็กซ์เพรส|กรุ๊ป|กรป).*$/i, "")
+        .replace(/\s+[0-9][A-Za-zก-๙]{1,5}\s*$/i, "")
+        .trim();
+      branch = branch.replace(/เพชรเกษม\s*(\d)\s+(\d{2})(?=\b|\s|$)/gi, "เพชรเกษม$1$2");
+      cleaned = `CJ ${match[1]}${branch ? ` ${branch}` : ""} บจก. ซี.เจ. เอ็กซ์เพรส กรุ๊ป`;
+    }
+  } else {
+    cleaned = cleaned.replace(/((?:กรุ๊ป|จำกัด|ลิมิเต็ด))\s+[0-9][A-Za-zก-๙]{1,5}\s*$/i, "$1");
+  }
+
   return compact(cleaned);
 }
 
@@ -110,6 +143,7 @@ export function extractKbankMerchant(text: string) {
   const accountIndex = lines.findIndex(line => /(?:xxx|x{3,})[-x\d]*|ธ\.?กสิกรไทย/i.test(line));
   const start = accountIndex >= 0 ? accountIndex + 1 : Math.max(0, end - 5);
   const candidates: string[] = [];
+
   for (let i = start; i < end && candidates.length < 3; i += 1) {
     const line = lines[i];
     if (isKbankNoise(line)) continue;
@@ -120,6 +154,7 @@ export function extractKbankMerchant(text: string) {
     if (fingerprint.length >= 5 && combined.includes(fingerprint)) continue;
     candidates.push(cleaned);
   }
+
   return cleanMerchant(candidates.join(" ")).slice(0, 180);
 }
 
@@ -138,12 +173,14 @@ export function extractReceiptLineItems(text: string) {
   const lines = text.split(/\n+/).map(compact).filter(Boolean);
   const labels = /ค่าสินค้า\s*\/\s*บริการ|สิทธิ.*(?:พลัส|ช่วย)|ส่วนลด|จำนวนเงินที่ชำระ|ยอดที่ชำระ|ยอดสุทธิ/i;
   const out: string[] = [];
+
   for (let i = 0; i < lines.length; i += 1) {
     if (!labels.test(lines[i])) continue;
     const joined = /\d/.test(lines[i]) ? lines[i] : [lines[i], lines[i + 1]].filter(Boolean).join(" ");
     const cleaned = compact(joined);
     if (cleaned && !out.includes(cleaned)) out.push(cleaned);
   }
+
   return out.slice(0, 6);
 }
 
@@ -155,11 +192,12 @@ export function enrichThaiReceiptProposal(text: string, proposal: ImageProposal)
   const merchant = kbank ? extractKbankMerchant(text) : receiptLike ? extractReceiptMerchant(text) : "";
   const lineItems = receiptLike ? extractReceiptLineItems(text) : [];
   const documentType = proposal.documentType === "unknown" && receiptLike ? "receipt" : proposal.documentType;
+
   return {
     ...proposal,
     documentType,
     amount: payable > 0 ? payable : proposal.amount,
-    merchant: merchant || proposal.merchant,
+    merchant: merchant || normalizeThaiMerchantName(proposal.merchant),
     dateText: proposal.dateText || dateTime.dateText,
     timeText: proposal.timeText || dateTime.timeText,
     lineItems: lineItems.length ? Array.from(new Set([...(proposal.lineItems || []), ...lineItems])) : proposal.lineItems,

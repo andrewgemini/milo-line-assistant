@@ -3938,8 +3938,20 @@ var monthNumbers = {
   "\u0E1E.\u0E22.": 11,
   "\u0E18.\u0E04.": 12
 };
+var thaiDigits = {
+  "\u0E50": "0",
+  "\u0E51": "1",
+  "\u0E52": "2",
+  "\u0E53": "3",
+  "\u0E54": "4",
+  "\u0E55": "5",
+  "\u0E56": "6",
+  "\u0E57": "7",
+  "\u0E58": "8",
+  "\u0E59": "9"
+};
 function compact(value) {
-  return value.replace(/[\t ]+/g, " ").trim();
+  return value.replace(/[๐-๙]/g, (digit) => thaiDigits[digit] || digit).replace(/[\t ]+/g, " ").trim();
 }
 function normalizeYear(value) {
   if (value >= 2400) return value - 543;
@@ -3981,10 +3993,11 @@ function extractThaiSlipDateTime(text2) {
   const flat = compact(text2.replace(/\r?\n/g, " "));
   let dateText = "";
   for (const [name, month] of Object.entries(monthNumbers)) {
-    const escaped = name.replace(/\./g, "\\.?").replace(/\s+/g, "\\s*");
-    const match = flat.match(new RegExp(`(?:^|\\s)([0-3]?\\d)\\s*${escaped}\\s*(\\d{2,4})(?=\\s|$)`));
+    const escaped = name.split("").map((char) => char === "." ? "\\s*\\.?\\s*" : `${char.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*`).join("");
+    const match = flat.match(new RegExp(`(?:^|\\s)([0-3]?\\d)\\s*${escaped}(\\d(?:\\s*\\d){1,3})(?=\\s|$)`));
     if (match) {
-      dateText = isoDate(normalizeYear(Number(match[2])), month, Number(match[1]));
+      const year = Number(match[2].replace(/\s+/g, ""));
+      dateText = isoDate(normalizeYear(year), month, Number(match[1]));
       break;
     }
   }
@@ -3993,7 +4006,10 @@ function extractThaiSlipDateTime(text2) {
     if (numeric) dateText = isoDate(normalizeYear(Number(numeric[3])), Number(numeric[2]), Number(numeric[1]));
   }
   const time = flat.match(/\b([01]?\d|2[0-3]):([0-5]\d)\b/) || flat.match(/(?:เวลา\s*)\b([01]?\d|2[0-3])\.([0-5]\d)\s*(?:น\.)?/) || flat.match(/\b([01]?\d|2[0-3])\.([0-5]\d)\s*น\./);
-  return { dateText, timeText: time ? `${String(Number(time[1])).padStart(2, "0")}:${time[2]}` : "" };
+  return {
+    dateText,
+    timeText: time ? `${String(Number(time[1])).padStart(2, "0")}:${time[2]}` : ""
+  };
 }
 function isKbankNoise(line) {
   const value = compact(line);
@@ -4006,8 +4022,17 @@ function isKbankNoise(line) {
   return false;
 }
 function normalizeThaiMerchantName(value) {
-  let cleaned = compact(value).replace(/^[=•·|:;._\-–—>]+\s*/, "").replace(/^[A-Za-z0-9]{1,4}[\s|:;._-]+(?=[ก-๙])/, "").replace(/คาเฟ[่]?\s*อเมซอน/gi, "\u0E04\u0E32\u0E40\u0E1F\u0E48 \u0E2D\u0E40\u0E21\u0E0B\u0E2D\u0E19").replace(/cafe\s*amazon/gi, "Cafe Amazon").replace(/([ก-๙])\s+(เฮ้าส์)/g, "$1$2").replace(/เพชรเกษม\s*(\d)\s+(\d{2})(?=\b|\s)/gi, "\u0E40\u0E1E\u0E0A\u0E23\u0E40\u0E01\u0E29\u0E21$1$2").replace(/เอกซ์เพรส/g, "\u0E40\u0E2D\u0E47\u0E01\u0E0B\u0E4C\u0E40\u0E1E\u0E23\u0E2A").replace(/\s+(?:[A-Z0-9]{14,}|\d{10,})\s*$/i, "").trim();
-  cleaned = cleaned.replace(/((?:กรุ๊ป|จำกัด|ลิมิเต็ด))\s+[0-9][A-Za-zก-๙]{1,3}\s*$/i, "$1");
+  let cleaned = compact(value).replace(/^[=•·|:;._\-–—>]+\s*/, "").replace(/^[A-Za-z0-9]{1,4}[\s|:;._-]+(?=[ก-๙])/, "").replace(/คาเฟ[่]?\s*อเมซอน/gi, "\u0E04\u0E32\u0E40\u0E1F\u0E48 \u0E2D\u0E40\u0E21\u0E0B\u0E2D\u0E19").replace(/cafe\s*amazon/gi, "Cafe Amazon").replace(/([ก-๙])\s+(เฮ้าส์)/g, "$1$2").replace(/เพชรเกษม\s*(\d)\s+(\d{2})(?=\b|\s|$)/gi, "\u0E40\u0E1E\u0E0A\u0E23\u0E40\u0E01\u0E29\u0E21$1$2").replace(/เอกซ์เพรส/g, "\u0E40\u0E2D\u0E47\u0E01\u0E0B\u0E4C\u0E40\u0E1E\u0E23\u0E2A").replace(/\s+(?:[A-Z0-9]{14,}|\d{10,})\s*$/i, "").trim();
+  if (/^CJ\s*\d{3,5}\b/i.test(cleaned)) {
+    const match = cleaned.match(/^CJ\s*(\d{3,5})\s*(.*)$/i);
+    if (match) {
+      let branch = match[2].replace(/\s+(?:บจก\.?|บริษัท|ซี\.?\s*เจ\.?|เอกซ์เพรส|เอ็กซ์เพรส|กรุ๊ป|กรป).*$/i, "").replace(/\s+[0-9][A-Za-zก-๙]{1,5}\s*$/i, "").trim();
+      branch = branch.replace(/เพชรเกษม\s*(\d)\s+(\d{2})(?=\b|\s|$)/gi, "\u0E40\u0E1E\u0E0A\u0E23\u0E40\u0E01\u0E29\u0E21$1$2");
+      cleaned = `CJ ${match[1]}${branch ? ` ${branch}` : ""} \u0E1A\u0E08\u0E01. \u0E0B\u0E35.\u0E40\u0E08. \u0E40\u0E2D\u0E47\u0E01\u0E0B\u0E4C\u0E40\u0E1E\u0E23\u0E2A \u0E01\u0E23\u0E38\u0E4A\u0E1B`;
+    }
+  } else {
+    cleaned = cleaned.replace(/((?:กรุ๊ป|จำกัด|ลิมิเต็ด))\s+[0-9][A-Za-zก-๙]{1,5}\s*$/i, "$1");
+  }
   return compact(cleaned);
 }
 function cleanMerchant(value) {
@@ -4062,7 +4087,7 @@ function enrichThaiReceiptProposal(text2, proposal) {
     ...proposal,
     documentType,
     amount: payable > 0 ? payable : proposal.amount,
-    merchant: merchant || proposal.merchant,
+    merchant: merchant || normalizeThaiMerchantName(proposal.merchant),
     dateText: proposal.dateText || dateTime.dateText,
     timeText: proposal.timeText || dateTime.timeText,
     lineItems: lineItems.length ? Array.from(/* @__PURE__ */ new Set([...proposal.lineItems || [], ...lineItems])) : proposal.lineItems
@@ -4205,10 +4230,11 @@ function extractDateTime(text2) {
   }
   if (!dateText) {
     for (const [monthName, month] of Object.entries(thaiMonths)) {
-      const escaped = monthName.split("").map((char) => char === "." ? "\\.?" : char.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("\\s*");
-      const match = normalized.match(new RegExp(`(?:^|\\s)([0-3]?\\d)\\s*${escaped}\\s*(\\d{2,4})(?=\\s|$)`));
+      const escaped = monthName.split("").map((char) => char === "." ? "\\s*\\.?\\s*" : `${char.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*`).join("");
+      const match = normalized.match(new RegExp(`(?:^|\\s)([0-3]?\\d)\\s*${escaped}(\\d(?:\\s*\\d){1,3})(?=\\s|$)`));
       if (match) {
-        dateText = formatIsoDate(normalizeYear2(Number(match[2])), month, Number(match[1]));
+        const year = Number(match[2].replace(/\s+/g, ""));
+        dateText = formatIsoDate(normalizeYear2(year), month, Number(match[1]));
         break;
       }
     }
@@ -4238,16 +4264,16 @@ function extractMerchant(text2) {
   if (direct) return cleanMerchantCandidate(direct);
   const markerIndex = lines.findIndex((line) => /^(?:ผู้รับ|ผู้รับเงิน|ไปยัง|ชื่อผู้รับ|recipient|merchant|to)\s*[:：-]?$/i.test(line));
   if (markerIndex >= 0 && lines[markerIndex + 1]) return cleanMerchantCandidate(lines[markerIndex + 1]);
-  const merchantIndex = lines.findIndex((line) => /(?:คาเฟ่|คาเฟอเมซอน|กาแฟ|coffee|cafe|amazon|อเมซอน|ร้าน|บริษัท|จำกัด|บจก\.?|หจก\.?|co\.?\s*ltd|company)/i.test(line) && !/(ผู้โอน|จากบัญชี|ธ\.|ธนาคาร|bank|เลขที่รายการ|ค่าธรรมเนียม)/i.test(line));
+  const merchantIndex = lines.findIndex((line) => /(?:คาเฟ่|คาเฟอเมซอน|กาแฟ|coffee|cafe|amazon|อเมซอน|ร้าน|บริษัท|จำกัด|บจก\.?|หจก\.?|co\.?\s*ltd|company|\bcj\b)/i.test(line) && !/(ผู้โอน|จากบัญชี|ธ\.|ธนาคาร|bank|เลขที่รายการ|ค่าธรรมเนียม)/i.test(line));
   if (merchantIndex >= 0) {
     const parts = [cleanMerchantCandidate(lines[merchantIndex])].filter(Boolean);
     for (let i = merchantIndex + 1; i < Math.min(lines.length, merchantIndex + 4); i += 1) {
       if (merchantBoundary(lines[i])) break;
       const next = cleanMerchantCandidate(lines[i]);
       if (!next || !/[A-Za-z\u0E00-\u0E7F]/.test(next)) break;
-      const compact3 = (value) => value.toLowerCase().replace(/[^a-z0-9\u0E00-\u0E7F]/g, "");
-      const existing = compact3(parts.join(" "));
-      const candidate = compact3(next);
+      const compactValue = (value) => value.toLowerCase().replace(/[^a-z0-9\u0E00-\u0E7F]/g, "");
+      const existing = compactValue(parts.join(" "));
+      const candidate = compactValue(next);
       if (candidate.length >= 5 && existing.includes(candidate)) continue;
       parts.push(next);
     }
@@ -4269,18 +4295,18 @@ function extractReference(text2) {
 }
 function detectDocumentType(text2) {
   if (/(โอนเงิน|โอนสำเร็จ|โอนเงินสำเร็จ|ชำระเงินสำเร็จ|พร้อมเพย์|promptpay|k\+|กสิกรไทย|ธ\.|ธนาคาร|bank transfer|transfer success(?:ful)?)/i.test(text2)) return "bank_slip";
-  if (/(ใบเสร็จ|ใบกำกับ|receipt|ยอดสุทธิ|ยอดรวม|total)/i.test(text2)) return "receipt";
+  if (/(ใบเสร็จ|ใบกำกับ|receipt|ยอดสุทธิ|ยอดรวม|total|ค่าสินค้า\s*\/\s*บริการ|จำนวนเงินที่ชำระ)/i.test(text2)) return "receipt";
   if (/(นัด|appointment|วันนัด)/i.test(text2)) return "appointment";
   return "unknown";
 }
 function guessCategory(text2) {
-  if (/(กาแฟ|คาเฟ่|อเมซอน|amazon|coffee|cafe|อาหาร|restaurant|ข้าว|ชา|เครื่องดื่ม|food)/i.test(text2)) return "\u0E2D\u0E32\u0E2B\u0E32\u0E23";
+  if (/(กาแฟ|คาเฟ่|อเมซอน|amazon|coffee|cafe|อาหาร|restaurant|ข้าว|ชา|เครื่องดื่ม|food|กระเพรา|กะเพรา)/i.test(text2)) return "\u0E2D\u0E32\u0E2B\u0E32\u0E23";
   if (/(น้ำมัน|fuel|gas station|แท็กซี่|taxi|grab|รถไฟ|bts|mrt|ทางด่วน)/i.test(text2)) return "\u0E40\u0E14\u0E34\u0E19\u0E17\u0E32\u0E07";
   if (/(ไฟฟ้า|ประปา|อินเทอร์เน็ต|internet|โทรศัพท์|ค่าไฟ|ค่าน้ำ)/i.test(text2)) return "\u0E04\u0E48\u0E32\u0E2A\u0E32\u0E18\u0E32\u0E23\u0E13\u0E39\u0E1B\u0E42\u0E20\u0E04";
   if (/(โรงพยาบาล|clinic|คลินิก|ยา|pharmacy|medical)/i.test(text2)) return "\u0E2A\u0E38\u0E02\u0E20\u0E32\u0E1E";
   if (/(โรงเรียน|ค่าเรียน|tuition|course|หนังสือ|book)/i.test(text2)) return "\u0E01\u0E32\u0E23\u0E28\u0E36\u0E01\u0E29\u0E32";
   if (/(movie|cinema|เกม|game|netflix|spotify|บันเทิง)/i.test(text2)) return "\u0E1A\u0E31\u0E19\u0E40\u0E17\u0E34\u0E07";
-  if (/(shop|store|ห้าง|shopping|ช้อป|สินค้า)/i.test(text2)) return "\u0E0A\u0E49\u0E2D\u0E1B\u0E1B\u0E34\u0E49\u0E07";
+  if (/(shop|store|ห้าง|shopping|ช้อป|สินค้า|\bcj\b)/i.test(text2)) return "\u0E0A\u0E49\u0E2D\u0E1B\u0E1B\u0E34\u0E49\u0E07";
   if (/(hotel|โรงแรม|flight|เที่ยวบิน|travel|ท่องเที่ยว)/i.test(text2)) return "\u0E17\u0E48\u0E2D\u0E07\u0E40\u0E17\u0E35\u0E48\u0E22\u0E27";
   return "\u0E17\u0E31\u0E48\u0E27\u0E44\u0E1B";
 }
@@ -4334,11 +4360,15 @@ async function analyzeImageWithOcr(dataUrl) {
   const imageHeight = meta.height || 0;
   const topCropHeight = imageHeight > 0 ? Math.max(1, Math.floor(imageHeight * 0.58)) : 0;
   const topFocus = topCropHeight > 0 ? sharp3(input).rotate().extract({ left: 0, top: 0, width: meta.width || 1, height: topCropHeight }).resize({ width: 2400, fit: "inside", withoutEnlargement: false, kernel: sharp3.kernel.lanczos3 }).grayscale().normalize().sharpen({ sigma: 1.15 }) : void 0;
+  const trimmed = await sharp3(input).rotate().trim({ threshold: 12 }).png().toBuffer({ resolveWithObject: true });
+  const trimmedHeaderHeight = Math.max(1, Math.floor(trimmed.info.height * 0.38));
+  const trimmedHeader = sharp3(trimmed.data).extract({ left: 0, top: 0, width: trimmed.info.width, height: trimmedHeaderHeight }).resize({ width: 3200, fit: "inside", withoutEnlargement: false, kernel: sharp3.kernel.lanczos3 }).grayscale().normalize().sharpen({ sigma: 1.2 });
   const variants = [
-    { label: "normalized-upscaled", bytes: await base.clone().png().toBuffer() },
-    ...topFocus ? [{ label: "top-focus", bytes: await topFocus.clone().png().toBuffer() }] : [],
-    { label: "medium-contrast", bytes: await base.clone().linear(1.25, -20).png().toBuffer() },
-    { label: "threshold-175", bytes: await base.clone().threshold(175).png().toBuffer() }
+    { label: "normalized-upscaled", bytes: await base.clone().png().toBuffer(), psm: "6" },
+    { label: "trimmed-header-sparse", bytes: await trimmedHeader.clone().linear(1.18, -12).png().toBuffer(), psm: "11" },
+    { label: "trimmed-header-threshold", bytes: await trimmedHeader.clone().threshold(170).png().toBuffer(), psm: "11" },
+    ...topFocus ? [{ label: "top-focus", bytes: await topFocus.clone().png().toBuffer(), psm: "6" }] : [],
+    { label: "medium-contrast", bytes: await base.clone().linear(1.25, -20).png().toBuffer(), psm: "6" }
   ];
   const workerPath = requireOcr.resolve("tesseract.js/src/worker-script/node/index.js");
   if (!fs2.existsSync(workerPath)) throw new Error("OCR worker is missing from deployment");
@@ -4361,17 +4391,25 @@ async function analyzeImageWithOcr(dataUrl) {
     throw error;
   });
   try {
-    await worker.setParameters({ preserve_interword_spaces: "1", tessedit_pageseg_mode: "6" });
+    await worker.setParameters({ preserve_interword_spaces: "1" });
     const texts = [];
     let best;
     let bestScore = -Infinity;
     for (const variant of variants) {
+      await worker.setParameters({ tessedit_pageseg_mode: variant.psm });
       const result = await withOcrDeadline(worker.recognize(variant.bytes), "recognition");
       const raw = result.data.text || "";
       texts.push(raw);
       const analysis = analyzeOcrText(texts.join("\n"));
       const score = scoreAnalysis(analysis);
-      console.info("[Milo OCR] pass", { label: variant.label, chars: raw.length, confidence: analysis.confidence, documentType: analysis.proposals[0]?.documentType, amount: analysis.proposals[0]?.amount, dateText: analysis.proposals[0]?.dateText });
+      console.info("[Milo OCR] pass", {
+        label: variant.label,
+        chars: raw.length,
+        confidence: analysis.confidence,
+        documentType: analysis.proposals[0]?.documentType,
+        amount: analysis.proposals[0]?.amount,
+        dateText: analysis.proposals[0]?.dateText
+      });
       if (score > bestScore) {
         best = analysis;
         bestScore = score;
@@ -4421,6 +4459,7 @@ var schema2 = {
 };
 var SYSTEM_PROMPT = "\u0E04\u0E38\u0E13\u0E04\u0E37\u0E2D\u0E44\u0E21\u0E42\u0E25 \u0E1C\u0E39\u0E49\u0E0A\u0E48\u0E27\u0E22\u0E20\u0E32\u0E29\u0E32\u0E44\u0E17\u0E22 \u0E2D\u0E48\u0E32\u0E19\u0E20\u0E32\u0E1E\u0E43\u0E1A\u0E19\u0E31\u0E14 \u0E15\u0E32\u0E23\u0E32\u0E07 \u0E2A\u0E25\u0E34\u0E1B\u0E42\u0E2D\u0E19\u0E40\u0E07\u0E34\u0E19 \u0E41\u0E25\u0E30\u0E43\u0E1A\u0E40\u0E2A\u0E23\u0E47\u0E08\u0E2D\u0E22\u0E48\u0E32\u0E07\u0E23\u0E30\u0E21\u0E31\u0E14\u0E23\u0E30\u0E27\u0E31\u0E07 \u0E04\u0E37\u0E19 JSON \u0E15\u0E32\u0E21 schema \u0E40\u0E17\u0E48\u0E32\u0E19\u0E31\u0E49\u0E19 \u0E2B\u0E49\u0E32\u0E21\u0E40\u0E14\u0E32\u0E2B\u0E23\u0E37\u0E2D\u0E41\u0E15\u0E48\u0E07\u0E02\u0E49\u0E2D\u0E04\u0E27\u0E32\u0E21/\u0E15\u0E31\u0E27\u0E40\u0E25\u0E02\u0E17\u0E35\u0E48\u0E2D\u0E48\u0E32\u0E19\u0E44\u0E21\u0E48\u0E0A\u0E31\u0E14 \u0E2A\u0E33\u0E2B\u0E23\u0E31\u0E1A\u0E2A\u0E25\u0E34\u0E1B\u0E43\u0E2B\u0E49\u0E43\u0E0A\u0E49\u0E22\u0E2D\u0E14\u0E42\u0E2D\u0E19\u0E08\u0E23\u0E34\u0E07 \u0E44\u0E21\u0E48\u0E43\u0E0A\u0E49\u0E22\u0E2D\u0E14\u0E04\u0E07\u0E40\u0E2B\u0E25\u0E37\u0E2D\u0E2B\u0E23\u0E37\u0E2D\u0E04\u0E48\u0E32\u0E18\u0E23\u0E23\u0E21\u0E40\u0E19\u0E35\u0E22\u0E21 \u0E2A\u0E33\u0E2B\u0E23\u0E31\u0E1A\u0E43\u0E1A\u0E40\u0E2A\u0E23\u0E47\u0E08\u0E43\u0E2B\u0E49\u0E43\u0E0A\u0E49\u0E22\u0E2D\u0E14\u0E17\u0E35\u0E48\u0E08\u0E48\u0E32\u0E22\u0E08\u0E23\u0E34\u0E07\u0E2B\u0E25\u0E31\u0E07\u0E2A\u0E48\u0E27\u0E19\u0E25\u0E14\u0E2B\u0E23\u0E37\u0E2D\u0E2A\u0E34\u0E17\u0E18\u0E34\u0E0A\u0E48\u0E27\u0E22\u0E40\u0E2B\u0E25\u0E37\u0E2D \u0E42\u0E14\u0E22\u0E43\u0E2B\u0E49\u0E04\u0E27\u0E32\u0E21\u0E2A\u0E33\u0E04\u0E31\u0E0D\u0E01\u0E31\u0E1A\u0E0A\u0E48\u0E2D\u0E07 \u0E08\u0E33\u0E19\u0E27\u0E19\u0E40\u0E07\u0E34\u0E19\u0E17\u0E35\u0E48\u0E0A\u0E33\u0E23\u0E30, \u0E22\u0E2D\u0E14\u0E17\u0E35\u0E48\u0E0A\u0E33\u0E23\u0E30, \u0E22\u0E2D\u0E14\u0E2A\u0E38\u0E17\u0E18\u0E34 \u0E21\u0E32\u0E01\u0E01\u0E27\u0E48\u0E32\u0E04\u0E48\u0E32\u0E2A\u0E34\u0E19\u0E04\u0E49\u0E32/\u0E1A\u0E23\u0E34\u0E01\u0E32\u0E23\u0E01\u0E48\u0E2D\u0E19\u0E2A\u0E48\u0E27\u0E19\u0E25\u0E14 \u0E2B\u0E32\u0E01\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48\u0E2D\u0E48\u0E32\u0E19\u0E44\u0E14\u0E49\u0E41\u0E19\u0E48\u0E0A\u0E31\u0E14\u0E43\u0E2B\u0E49\u0E2A\u0E48\u0E07 dateText \u0E23\u0E39\u0E1B\u0E41\u0E1A\u0E1A YYYY-MM-DD \u0E21\u0E34\u0E09\u0E30\u0E19\u0E31\u0E49\u0E19\u0E40\u0E1B\u0E47\u0E19\u0E2A\u0E15\u0E23\u0E34\u0E07\u0E27\u0E48\u0E32\u0E07 \u0E2A\u0E33\u0E2B\u0E23\u0E31\u0E1A\u0E04\u0E48\u0E32\u0E43\u0E0A\u0E49\u0E08\u0E48\u0E32\u0E22\u0E43\u0E2B\u0E49\u0E41\u0E22\u0E01 merchant \u0E41\u0E1A\u0E1A\u0E0A\u0E37\u0E48\u0E2D\u0E23\u0E49\u0E32\u0E19\u0E08\u0E23\u0E34\u0E07\u0E40\u0E17\u0E48\u0E32\u0E19\u0E31\u0E49\u0E19 \u0E44\u0E21\u0E48\u0E23\u0E27\u0E21\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E2A\u0E34\u0E19\u0E04\u0E49\u0E32/\u0E2A\u0E48\u0E27\u0E19\u0E25\u0E14/\u0E22\u0E2D\u0E14\u0E40\u0E07\u0E34\u0E19, paymentMethod, receiptNumber, lineItems \u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E2A\u0E33\u0E04\u0E31\u0E0D \u0E41\u0E25\u0E30\u0E40\u0E25\u0E37\u0E2D\u0E01 category \u0E20\u0E32\u0E29\u0E32\u0E44\u0E17\u0E22\u0E08\u0E32\u0E01 \u0E2D\u0E32\u0E2B\u0E32\u0E23, \u0E40\u0E14\u0E34\u0E19\u0E17\u0E32\u0E07, \u0E04\u0E48\u0E32\u0E2A\u0E32\u0E18\u0E32\u0E23\u0E13\u0E39\u0E1B\u0E42\u0E20\u0E04, \u0E2A\u0E38\u0E02\u0E20\u0E32\u0E1E, \u0E01\u0E32\u0E23\u0E28\u0E36\u0E01\u0E29\u0E32, \u0E1A\u0E31\u0E19\u0E40\u0E17\u0E34\u0E07, \u0E0A\u0E49\u0E2D\u0E1B\u0E1B\u0E34\u0E49\u0E07, \u0E17\u0E48\u0E2D\u0E07\u0E40\u0E17\u0E35\u0E48\u0E22\u0E27, \u0E17\u0E31\u0E48\u0E27\u0E44\u0E1B \u0E2B\u0E32\u0E01\u0E44\u0E21\u0E48\u0E1E\u0E1A\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E17\u0E35\u0E48\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E44\u0E14\u0E49\u0E43\u0E2B\u0E49\u0E43\u0E0A\u0E49 kind=unknown \u0E41\u0E25\u0E30 amount=0";
 var USER_PROMPT = "\u0E27\u0E34\u0E40\u0E04\u0E23\u0E32\u0E30\u0E2B\u0E4C\u0E20\u0E32\u0E1E\u0E40\u0E1E\u0E37\u0E48\u0E2D\u0E2B\u0E32\u0E43\u0E1A\u0E19\u0E31\u0E14\u0E2B\u0E23\u0E37\u0E2D\u0E18\u0E38\u0E23\u0E01\u0E23\u0E23\u0E21\u0E04\u0E48\u0E32\u0E43\u0E0A\u0E49\u0E08\u0E48\u0E32\u0E22\u0E08\u0E32\u0E01\u0E2A\u0E25\u0E34\u0E1B/\u0E43\u0E1A\u0E40\u0E2A\u0E23\u0E47\u0E08 \u0E42\u0E14\u0E22\u0E40\u0E2A\u0E19\u0E2D\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E40\u0E1E\u0E37\u0E48\u0E2D\u0E43\u0E2B\u0E49\u0E1C\u0E39\u0E49\u0E43\u0E0A\u0E49\u0E22\u0E37\u0E19\u0E22\u0E31\u0E19\u0E01\u0E48\u0E2D\u0E19\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E40\u0E17\u0E48\u0E32\u0E19\u0E31\u0E49\u0E19";
+var RECEIPT_REPAIR_PROMPT = "\u0E15\u0E23\u0E27\u0E08\u0E20\u0E32\u0E1E\u0E0B\u0E49\u0E33\u0E2D\u0E22\u0E48\u0E32\u0E07\u0E25\u0E30\u0E40\u0E2D\u0E35\u0E22\u0E14\u0E42\u0E14\u0E22\u0E42\u0E1F\u0E01\u0E31\u0E2A\u0E40\u0E09\u0E1E\u0E32\u0E30\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48 \u0E27\u0E31\u0E19/\u0E40\u0E14\u0E37\u0E2D\u0E19/\u0E1B\u0E35 \u0E40\u0E27\u0E25\u0E32 \u0E41\u0E25\u0E30\u0E0A\u0E37\u0E48\u0E2D\u0E23\u0E49\u0E32\u0E19/\u0E1C\u0E39\u0E49\u0E23\u0E31\u0E1A\u0E40\u0E07\u0E34\u0E19\u0E17\u0E35\u0E48\u0E1E\u0E34\u0E21\u0E1E\u0E4C\u0E2D\u0E22\u0E39\u0E48\u0E1A\u0E19\u0E40\u0E2D\u0E01\u0E2A\u0E32\u0E23\u0E08\u0E23\u0E34\u0E07 \u0E42\u0E14\u0E22\u0E40\u0E09\u0E1E\u0E32\u0E30\u0E02\u0E49\u0E2D\u0E04\u0E27\u0E32\u0E21\u0E15\u0E31\u0E27\u0E40\u0E25\u0E47\u0E01\u0E1A\u0E23\u0E34\u0E40\u0E27\u0E13\u0E2A\u0E48\u0E27\u0E19\u0E1A\u0E19\u0E02\u0E2D\u0E07\u0E43\u0E1A\u0E40\u0E2A\u0E23\u0E47\u0E08 \u0E2B\u0E49\u0E32\u0E21\u0E43\u0E0A\u0E49\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48\u0E1B\u0E31\u0E08\u0E08\u0E38\u0E1A\u0E31\u0E19\u0E2B\u0E23\u0E37\u0E2D\u0E40\u0E14\u0E32 \u0E2B\u0E32\u0E01\u0E40\u0E2B\u0E47\u0E19\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48\u0E44\u0E17\u0E22 \u0E40\u0E0A\u0E48\u0E19 14 \u0E01.\u0E22. 2569 \u0E43\u0E2B\u0E49\u0E41\u0E1B\u0E25\u0E07\u0E40\u0E1B\u0E47\u0E19 2026-09-14 \u0E04\u0E37\u0E19 JSON \u0E15\u0E32\u0E21 schema \u0E40\u0E14\u0E34\u0E21 \u0E1F\u0E34\u0E25\u0E14\u0E4C\u0E17\u0E35\u0E48\u0E2D\u0E48\u0E32\u0E19\u0E44\u0E21\u0E48\u0E44\u0E14\u0E49\u0E43\u0E2B\u0E49\u0E40\u0E1B\u0E47\u0E19\u0E04\u0E48\u0E32\u0E27\u0E48\u0E32\u0E07";
 function parseAnalysisContent(content) {
   if (typeof content !== "string" || !content.trim()) throw new Error("Image model did not return JSON");
   const cleaned = content.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "");
@@ -4448,7 +4487,7 @@ async function analyzeImageWithForge(dataUrl) {
   });
   return parseAnalysisContent(response.choices[0]?.message.content);
 }
-async function gatewayRequest(dataUrl, token, structured) {
+async function gatewayRequest(dataUrl, token, structured, userPrompt = USER_PROMPT) {
   const body = {
     model: process.env.MILO_VISION_MODEL || "google/gemini-2.5-flash",
     messages: [
@@ -4456,7 +4495,7 @@ async function gatewayRequest(dataUrl, token, structured) {
       {
         role: "user",
         content: [
-          { type: "text", text: USER_PROMPT },
+          { type: "text", text: userPrompt },
           { type: "image_url", image_url: { url: dataUrl, detail: "high" } }
         ]
       }
@@ -4484,12 +4523,12 @@ async function gatewayRequest(dataUrl, token, structured) {
     clearTimeout(timeout);
   }
 }
-async function analyzeImageWithGatewayKey(dataUrl, token) {
+async function analyzeImageWithGatewayKey(dataUrl, token, userPrompt = USER_PROMPT) {
   try {
-    return await gatewayRequest(dataUrl, token, true);
+    return await gatewayRequest(dataUrl, token, true, userPrompt);
   } catch (error) {
     const message = error instanceof Error ? error.message : "unknown";
-    if (/response.?format|json.?schema|structured/i.test(message)) return gatewayRequest(dataUrl, token, false);
+    if (/response.?format|json.?schema|structured/i.test(message)) return gatewayRequest(dataUrl, token, false, userPrompt);
     throw error;
   }
 }
@@ -4553,6 +4592,22 @@ function mergeImageAnalyses(primary, ocr) {
   const summary = merged.kind === "expense" ? `\u0E2D\u0E48\u0E32\u0E19${merged.documentType === "bank_slip" ? "\u0E2A\u0E25\u0E34\u0E1B" : "\u0E43\u0E1A\u0E40\u0E2A\u0E23\u0E47\u0E08"}\u0E44\u0E14\u0E49 \u0E22\u0E2D\u0E14 ${merged.amount.toLocaleString("th-TH")} \u0E1A\u0E32\u0E17${merged.dateText ? ` \u0E27\u0E31\u0E19\u0E17\u0E35\u0E48 ${merged.dateText}` : " \u0E41\u0E15\u0E48\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E0A\u0E31\u0E14"}` : primary.summary || ocr.summary;
   return { summary, confidence: Math.max(primary.confidence, ocr.confidence), proposals: [merged, ...primary.proposals.slice(1)] };
 }
+function mergeFocusedDateRepair(base, repair) {
+  const b = base.proposals[0];
+  const r = repair.proposals[0];
+  if (!b || !r?.dateText) return base;
+  return {
+    ...base,
+    summary: b.kind === "expense" ? `\u0E2D\u0E48\u0E32\u0E19${b.documentType === "bank_slip" ? "\u0E2A\u0E25\u0E34\u0E1B" : "\u0E43\u0E1A\u0E40\u0E2A\u0E23\u0E47\u0E08"}\u0E44\u0E14\u0E49 \u0E22\u0E2D\u0E14 ${b.amount.toLocaleString("th-TH")} \u0E1A\u0E32\u0E17 \u0E27\u0E31\u0E19\u0E17\u0E35\u0E48 ${r.dateText}` : base.summary,
+    confidence: Math.max(base.confidence, repair.confidence),
+    proposals: [{
+      ...b,
+      dateText: r.dateText,
+      timeText: b.timeText || r.timeText,
+      receiptNumber: b.receiptNumber || r.receiptNumber
+    }, ...base.proposals.slice(1)]
+  };
+}
 async function analyzeImage(dataUrl, options = {}) {
   let providerError;
   let providerAnalysis;
@@ -4587,8 +4642,20 @@ async function analyzeImage(dataUrl, options = {}) {
     const ocrAnalysis = await analyzeImageWithOcr(dataUrl);
     if (!providerAnalysis) return ocrAnalysis;
     const score = (analysis) => analysis.proposals.reduce((total, item) => total + (item.kind === "expense" && item.amount > 0 ? 6 : 0) + (item.kind === "reminder" && item.dateText ? 5 : 0) + (item.documentType !== "unknown" ? 1 : 0) + (item.dateText ? 1 : 0) + (item.merchant ? 0.5 : 0), analysis.confidence);
-    const merged = mergeImageAnalyses(providerAnalysis, ocrAnalysis);
-    return score(merged) >= Math.max(score(ocrAnalysis), score(providerAnalysis)) ? merged : score(ocrAnalysis) > score(providerAnalysis) ? ocrAnalysis : providerAnalysis;
+    let merged = mergeImageAnalyses(providerAnalysis, ocrAnalysis);
+    let selected = score(merged) >= Math.max(score(ocrAnalysis), score(providerAnalysis)) ? merged : score(ocrAnalysis) > score(providerAnalysis) ? ocrAnalysis : providerAnalysis;
+    const selectedProposal = selected.proposals[0];
+    if (gatewayKey && selectedProposal?.kind === "expense" && !selectedProposal.dateText && selectedProposal.timeText) {
+      try {
+        const repair = await analyzeImageWithGatewayKey(dataUrl, gatewayKey, RECEIPT_REPAIR_PROMPT);
+        selected = mergeFocusedDateRepair(selected, repair);
+      } catch (repairError) {
+        console.warn("[Milo Image] focused receipt date repair failed", {
+          error: repairError instanceof Error ? repairError.message : "unknown"
+        });
+      }
+    }
+    return selected;
   } catch (ocrError) {
     console.error("[Milo Image] OCR fallback failed", { error: ocrError instanceof Error ? ocrError.message : "unknown" });
     if (providerAnalysis) return providerAnalysis;
@@ -6346,7 +6413,7 @@ var healthHandler = async (req, res) => {
   res.status(200).json({
     status: "ok",
     service: "milo",
-    release: "media-v12-ocr-focus-cleanup-2026-09-14",
+    release: "media-v13-receipt-date-cj-2026-09-14",
     visionConfigured: runtime.authenticated,
     imageAnalysisMode: mode,
     visionModel: mode === "ocr-fallback" ? "tesseract-tha+eng" : process.env.MILO_VISION_MODEL || (mode.startsWith("vercel-ai-gateway") ? "google/gemini-2.5-flash" : mode.startsWith("forge-vision") ? "gemini-3-flash-preview" : "unconfigured"),

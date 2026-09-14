@@ -46,6 +46,16 @@ CJ 1685 เพชรเกษม106
       .toBe("CJ 1685 เพชรเกษม106 บจก. ซี.เจ. เอ็กซ์เพรส กรุ๊ป");
   });
 
+  it("canonicalizes heavily corrupted CJ company suffixes", () => {
+    expect(normalizeThaiMerchantName("CJ 1685 เพชรเกษม106 บจก. ซี.เจ. เอกซ์เพรส กรป2รว"))
+      .toBe("CJ 1685 เพชรเกษม106 บจก. ซี.เจ. เอ็กซ์เพรส กรุ๊ป");
+  });
+
+  it("parses Thai dates even when OCR inserts spaces around month punctuation", () => {
+    expect(extractThaiSlipDateTime("ร้านกระเพรากลางซอย\n14 ก . ย . 2 5 6 9 10:57 น."))
+      .toEqual({ dateText: "2026-09-14", timeText: "10:57" });
+  });
+
   it("uses the actual paid amount after a welfare subsidy instead of the gross service amount", () => {
     const text = `
 ร้านกระเพรากลางซอย

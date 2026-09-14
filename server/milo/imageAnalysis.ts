@@ -60,6 +60,7 @@ const schema = {
 
 const SYSTEM_PROMPT = "คุณคือไมโล ผู้ช่วยภาษาไทย อ่านภาพใบนัด ตาราง สลิปโอนเงิน และใบเสร็จอย่างระมัดระวัง คืน JSON ตาม schema เท่านั้น ห้ามเดาหรือแต่งข้อความ/ตัวเลขที่อ่านไม่ชัด สำหรับสลิปให้ใช้ยอดโอนจริง ไม่ใช้ยอดคงเหลือหรือค่าธรรมเนียม สำหรับใบเสร็จให้ใช้ยอดที่จ่ายจริงหลังส่วนลดหรือสิทธิช่วยเหลือ โดยให้ความสำคัญกับช่อง จำนวนเงินที่ชำระ, ยอดที่ชำระ, ยอดสุทธิ มากกว่าค่าสินค้า/บริการก่อนส่วนลด หากวันที่อ่านได้แน่ชัดให้ส่ง dateText รูปแบบ YYYY-MM-DD มิฉะนั้นเป็นสตริงว่าง สำหรับค่าใช้จ่ายให้แยก merchant แบบชื่อร้านจริงเท่านั้น ไม่รวมรายการสินค้า/ส่วนลด/ยอดเงิน, paymentMethod, receiptNumber, lineItems รายการสำคัญ และเลือก category ภาษาไทยจาก อาหาร, เดินทาง, ค่าสาธารณูปโภค, สุขภาพ, การศึกษา, บันเทิง, ช้อปปิ้ง, ท่องเที่ยว, ทั่วไป หากไม่พบข้อมูลที่บันทึกได้ให้ใช้ kind=unknown และ amount=0";
 const USER_PROMPT = "วิเคราะห์ภาพเพื่อหาใบนัดหรือธุรกรรมค่าใช้จ่ายจากสลิป/ใบเสร็จ โดยเสนอข้อมูลเพื่อให้ผู้ใช้ยืนยันก่อนบันทึกเท่านั้น";
+const RECEIPT_REPAIR_PROMPT = "ตรวจภาพซ้ำอย่างละเอียดโดยโฟกัสเฉพาะวันที่ วัน/เดือน/ปี เวลา และชื่อร้าน/ผู้รับเงินที่พิมพ์อยู่บนเอกสารจริง โดยเฉพาะข้อความตัวเล็กบริเวณส่วนบนของใบเสร็จ ห้ามใช้วันที่ปัจจุบันหรือเดา หากเห็นวันที่ไทย เช่น 14 ก.ย. 2569 ให้แปลงเป็น 2026-09-14 คืน JSON ตาม schema เดิม ฟิลด์ที่อ่านไม่ได้ให้เป็นค่าว่าง";
 
 function parseAnalysisContent(content: unknown): ImageAnalysis {
   if (typeof content !== "string" || !content.trim()) throw new Error("Image model did not return JSON");
@@ -90,7 +91,7 @@ async function analyzeImageWithForge(dataUrl: string): Promise<ImageAnalysis> {
   return parseAnalysisContent(response.choices[0]?.message.content);
 }
 
-async function gatewayRequest(dataUrl: string, token: string, structured: boolean) {
+async function gatewayRequest(dataUrl: string, token: string, structured: boolean, userPrompt = USER_PROMPT) {
   const body: Record<string, unknown> = {
     model: process.env.MILO_VISION_MODEL || "google/gemini-2.5-flash",
     messages: [
@@ -98,7 +99,7 @@ async function gatewayRequest(dataUrl: string, token: string, structured: boolea
       {
         role: "user",
         content: [
-          { type: "text", text: USER_PROMPT },
+          { type: "text", text: userPrompt },
           { type: "image_url", image_url: { url: dataUrl, detail: "high" } },
         ],
       },
@@ -131,19 +132,17 @@ async function gatewayRequest(dataUrl: string, token: string, structured: boolea
   }
 }
 
-async function analyzeImageWithGatewayKey(dataUrl: string, token: string): Promise<ImageAnalysis> {
+async function analyzeImageWithGatewayKey(dataUrl: string, token: string, userPrompt = USER_PROMPT): Promise<ImageAnalysis> {
   try {
-    return await gatewayRequest(dataUrl, token, true);
+    return await gatewayRequest(dataUrl, token, true, userPrompt);
   } catch (error) {
     const message = error instanceof Error ? error.message : "unknown";
-    if (/response.?format|json.?schema|structured/i.test(message)) return gatewayRequest(dataUrl, token, false);
+    if (/response.?format|json.?schema|structured/i.test(message)) return gatewayRequest(dataUrl, token, false, userPrompt);
     throw error;
   }
 }
 
 export function imageGatewayToken(env: NodeJS.ProcessEnv = process.env, requestToken?: string) {
-  // The function-scoped token is fresher than the build/local environment token.
-  // Vercel rotates the request token, so prefer it unless a stable Gateway key exists.
   return (env.AI_GATEWAY_API_KEY || requestToken || env.VERCEL_OIDC_TOKEN || "").trim();
 }
 
@@ -169,11 +168,6 @@ export async function imageAnalysisRuntimeStatus(requestToken?: string) {
   };
 }
 
-function expenseComplete(analysis: ImageAnalysis) {
-  const proposal = analysis.proposals.find(item => item.kind === "expense" && item.amount > 0);
-  return Boolean(proposal?.dateText && proposal?.merchant);
-}
-
 function merchantQuality(value: string) {
   const candidate = normalizeThaiMerchantName(value);
   if (!candidate) return -100;
@@ -188,12 +182,14 @@ export function mergeImageAnalyses(primary: ImageAnalysis, ocr: ImageAnalysis): 
   const o = ocr.proposals[0];
   if (!p) return ocr;
   if (!o) return primary;
+
   const documentType = p.documentType !== "unknown" ? p.documentType : o.documentType;
   const preferOcrAmount = o.amount > 0 && (p.amount <= 0 || (documentType === "receipt" && o.amount !== p.amount));
   const amount = preferOcrAmount ? o.amount : (p.amount || o.amount);
   const primaryMerchant = normalizeThaiMerchantName(p.merchant);
   const ocrMerchant = normalizeThaiMerchantName(o.merchant);
   const merchant = merchantQuality(ocrMerchant) >= merchantQuality(primaryMerchant) ? ocrMerchant : primaryMerchant;
+
   const merged: ImageProposal = {
     ...p,
     kind: (p.kind === "expense" || o.kind === "expense") && amount > 0 ? "expense" : p.kind,
@@ -208,17 +204,41 @@ export function mergeImageAnalyses(primary: ImageAnalysis, ocr: ImageAnalysis): 
     receiptNumber: p.receiptNumber || o.receiptNumber,
     lineItems: Array.from(new Set([...(p.lineItems || []), ...(o.lineItems || [])])).slice(0, 10),
     note: p.note || o.note,
-    title: documentType === "bank_slip" && o.title === "รายการโอนเงิน" && !o.note ? o.title : (p.title && p.title !== "ข้อมูลจากรูป" ? p.title : (o.title || p.title)),
+    title: documentType === "bank_slip" && o.title === "รายการโอนเงิน" && !o.note
+      ? o.title
+      : (p.title && p.title !== "ข้อมูลจากรูป" ? p.title : (o.title || p.title)),
   };
+
   const summary = merged.kind === "expense"
     ? `อ่าน${merged.documentType === "bank_slip" ? "สลิป" : "ใบเสร็จ"}ได้ ยอด ${merged.amount.toLocaleString("th-TH")} บาท${merged.dateText ? ` วันที่ ${merged.dateText}` : " แต่วันที่ยังไม่ชัด"}`
     : primary.summary || ocr.summary;
+
   return { summary, confidence: Math.max(primary.confidence, ocr.confidence), proposals: [merged, ...primary.proposals.slice(1)] };
+}
+
+function mergeFocusedDateRepair(base: ImageAnalysis, repair: ImageAnalysis) {
+  const b = base.proposals[0];
+  const r = repair.proposals[0];
+  if (!b || !r?.dateText) return base;
+  return {
+    ...base,
+    summary: b.kind === "expense"
+      ? `อ่าน${b.documentType === "bank_slip" ? "สลิป" : "ใบเสร็จ"}ได้ ยอด ${b.amount.toLocaleString("th-TH")} บาท วันที่ ${r.dateText}`
+      : base.summary,
+    confidence: Math.max(base.confidence, repair.confidence),
+    proposals: [{
+      ...b,
+      dateText: r.dateText,
+      timeText: b.timeText || r.timeText,
+      receiptNumber: b.receiptNumber || r.receiptNumber,
+    }, ...base.proposals.slice(1)],
+  };
 }
 
 export async function analyzeImage(dataUrl: string, options: { gatewayToken?: string } = {}): Promise<ImageAnalysis> {
   let providerError: unknown;
   let providerAnalysis: ImageAnalysis | undefined;
+
   if (ENV.forgeApiKey) {
     try {
       const analysis = await analyzeImageWithForge(dataUrl);
@@ -251,14 +271,32 @@ export async function analyzeImage(dataUrl: string, options: { gatewayToken?: st
   try {
     const ocrAnalysis = await analyzeImageWithOcr(dataUrl);
     if (!providerAnalysis) return ocrAnalysis;
+
     const score = (analysis: ImageAnalysis) => analysis.proposals.reduce((total, item) => total
       + (item.kind === "expense" && item.amount > 0 ? 6 : 0)
       + (item.kind === "reminder" && item.dateText ? 5 : 0)
       + (item.documentType !== "unknown" ? 1 : 0)
       + (item.dateText ? 1 : 0)
       + (item.merchant ? 0.5 : 0), analysis.confidence);
-    const merged = mergeImageAnalyses(providerAnalysis, ocrAnalysis);
-    return score(merged) >= Math.max(score(ocrAnalysis), score(providerAnalysis)) ? merged : (score(ocrAnalysis) > score(providerAnalysis) ? ocrAnalysis : providerAnalysis);
+
+    let merged = mergeImageAnalyses(providerAnalysis, ocrAnalysis);
+    let selected = score(merged) >= Math.max(score(ocrAnalysis), score(providerAnalysis))
+      ? merged
+      : (score(ocrAnalysis) > score(providerAnalysis) ? ocrAnalysis : providerAnalysis);
+
+    const selectedProposal = selected.proposals[0];
+    if (gatewayKey && selectedProposal?.kind === "expense" && !selectedProposal.dateText && selectedProposal.timeText) {
+      try {
+        const repair = await analyzeImageWithGatewayKey(dataUrl, gatewayKey, RECEIPT_REPAIR_PROMPT);
+        selected = mergeFocusedDateRepair(selected, repair);
+      } catch (repairError) {
+        console.warn("[Milo Image] focused receipt date repair failed", {
+          error: repairError instanceof Error ? repairError.message : "unknown",
+        });
+      }
+    }
+
+    return selected;
   } catch (ocrError) {
     console.error("[Milo Image] OCR fallback failed", { error: ocrError instanceof Error ? ocrError.message : "unknown" });
     if (providerAnalysis) return providerAnalysis;

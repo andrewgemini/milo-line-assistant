@@ -149,10 +149,11 @@ function extractDateTime(text: string) {
   }
   if (!dateText) {
     for (const [monthName, month] of Object.entries(thaiMonths)) {
-      const escaped = monthName.split("").map(char => char === "." ? "\\.?" : char.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("\\s*");
-      const match = normalized.match(new RegExp(`(?:^|\\s)([0-3]?\\d)\\s*${escaped}\\s*(\\d{2,4})(?=\\s|$)`));
+      const escaped = monthName.split("").map(char => char === "." ? "\\s*\\.?\\s*" : `${char.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*`).join("");
+      const match = normalized.match(new RegExp(`(?:^|\\s)([0-3]?\\d)\\s*${escaped}(\\d(?:\\s*\\d){1,3})(?=\\s|$)`));
       if (match) {
-        dateText = formatIsoDate(normalizeYear(Number(match[2])), month, Number(match[1]));
+        const year = Number(match[2].replace(/\s+/g, ""));
+        dateText = formatIsoDate(normalizeYear(year), month, Number(match[1]));
         break;
       }
     }
@@ -171,9 +172,6 @@ function cleanMerchantCandidate(raw: string) {
     .replace(/^[^A-Za-z\u0E00-\u0E7F]+/, "")
     .trim();
 
-  // K+ OCR occasionally prepends a tiny Latin fragment (for example "ys")
-  // before an otherwise readable Thai merchant name. Treat that as OCR noise,
-  // but only when Thai text follows so genuine English merchant names are kept.
   if (/[\u0E00-\u0E7F]/.test(value)) {
     value = value.replace(/^[A-Za-z0-9]{1,4}[\s|:;._-]+(?=[\u0E00-\u0E7F])/, "");
   }
@@ -205,28 +203,23 @@ function extractMerchant(text: string) {
   const markerIndex = lines.findIndex(line => /^(?:ผู้รับ|ผู้รับเงิน|ไปยัง|ชื่อผู้รับ|recipient|merchant|to)\s*[:：-]?$/i.test(line));
   if (markerIndex >= 0 && lines[markerIndex + 1]) return cleanMerchantCandidate(lines[markerIndex + 1]);
 
-  const merchantIndex = lines.findIndex(line => /(?:คาเฟ่|คาเฟอเมซอน|กาแฟ|coffee|cafe|amazon|อเมซอน|ร้าน|บริษัท|จำกัด|บจก\.?|หจก\.?|co\.?\s*ltd|company)/i.test(line)
+  const merchantIndex = lines.findIndex(line => /(?:คาเฟ่|คาเฟอเมซอน|กาแฟ|coffee|cafe|amazon|อเมซอน|ร้าน|บริษัท|จำกัด|บจก\.?|หจก\.?|co\.?\s*ltd|company|\bcj\b)/i.test(line)
     && !/(ผู้โอน|จากบัญชี|ธ\.|ธนาคาร|bank|เลขที่รายการ|ค่าธรรมเนียม)/i.test(line));
   if (merchantIndex >= 0) {
     const parts = [cleanMerchantCandidate(lines[merchantIndex])].filter(Boolean);
-    // K+ may split a long merchant/branch name across two or three OCR lines.
-    // Preserve those lines until the transaction fields begin, but never absorb
-    // reference numbers, amounts, bank/sender details or memo fields.
     for (let i = merchantIndex + 1; i < Math.min(lines.length, merchantIndex + 4); i += 1) {
       if (merchantBoundary(lines[i])) break;
       const next = cleanMerchantCandidate(lines[i]);
       if (!next || !/[A-Za-z\u0E00-\u0E7F]/.test(next)) break;
-      const compact = (value: string) => value.toLowerCase().replace(/[^a-z0-9\u0E00-\u0E7F]/g, "");
-      const existing = compact(parts.join(" "));
-      const candidate = compact(next);
+      const compactValue = (value: string) => value.toLowerCase().replace(/[^a-z0-9\u0E00-\u0E7F]/g, "");
+      const existing = compactValue(parts.join(" "));
+      const candidate = compactValue(next);
       if (candidate.length >= 5 && existing.includes(candidate)) continue;
       parts.push(next);
     }
     return cleanMerchantCandidate(parts.join(" "));
   }
 
-  // Last-resort bank-slip heuristic: the merchant is usually the last readable
-  // Thai/English name immediately before the reference/amount section.
   const endIndex = lines.findIndex(line => /^(?:เลขที่รายการ|เลขอ้างอิง|reference|จำนวน|ค่าธรรมเนียม)/i.test(line));
   if (endIndex > 0) {
     for (let i = endIndex - 1; i >= Math.max(0, endIndex - 4); i -= 1) {
@@ -245,19 +238,19 @@ function extractReference(text: string) {
 
 function detectDocumentType(text: string): ImageProposal["documentType"] {
   if (/(โอนเงิน|โอนสำเร็จ|โอนเงินสำเร็จ|ชำระเงินสำเร็จ|พร้อมเพย์|promptpay|k\+|กสิกรไทย|ธ\.|ธนาคาร|bank transfer|transfer success(?:ful)?)/i.test(text)) return "bank_slip";
-  if (/(ใบเสร็จ|ใบกำกับ|receipt|ยอดสุทธิ|ยอดรวม|total)/i.test(text)) return "receipt";
+  if (/(ใบเสร็จ|ใบกำกับ|receipt|ยอดสุทธิ|ยอดรวม|total|ค่าสินค้า\s*\/\s*บริการ|จำนวนเงินที่ชำระ)/i.test(text)) return "receipt";
   if (/(นัด|appointment|วันนัด)/i.test(text)) return "appointment";
   return "unknown";
 }
 
 function guessCategory(text: string) {
-  if (/(กาแฟ|คาเฟ่|อเมซอน|amazon|coffee|cafe|อาหาร|restaurant|ข้าว|ชา|เครื่องดื่ม|food)/i.test(text)) return "อาหาร";
+  if (/(กาแฟ|คาเฟ่|อเมซอน|amazon|coffee|cafe|อาหาร|restaurant|ข้าว|ชา|เครื่องดื่ม|food|กระเพรา|กะเพรา)/i.test(text)) return "อาหาร";
   if (/(น้ำมัน|fuel|gas station|แท็กซี่|taxi|grab|รถไฟ|bts|mrt|ทางด่วน)/i.test(text)) return "เดินทาง";
   if (/(ไฟฟ้า|ประปา|อินเทอร์เน็ต|internet|โทรศัพท์|ค่าไฟ|ค่าน้ำ)/i.test(text)) return "ค่าสาธารณูปโภค";
   if (/(โรงพยาบาล|clinic|คลินิก|ยา|pharmacy|medical)/i.test(text)) return "สุขภาพ";
   if (/(โรงเรียน|ค่าเรียน|tuition|course|หนังสือ|book)/i.test(text)) return "การศึกษา";
   if (/(movie|cinema|เกม|game|netflix|spotify|บันเทิง)/i.test(text)) return "บันเทิง";
-  if (/(shop|store|ห้าง|shopping|ช้อป|สินค้า)/i.test(text)) return "ช้อปปิ้ง";
+  if (/(shop|store|ห้าง|shopping|ช้อป|สินค้า|\bcj\b)/i.test(text)) return "ช้อปปิ้ง";
   if (/(hotel|โรงแรม|flight|เที่ยวบิน|travel|ท่องเที่ยว)/i.test(text)) return "ท่องเที่ยว";
   return "ทั่วไป";
 }
@@ -313,6 +306,7 @@ export async function analyzeImageWithOcr(dataUrl: string): Promise<ImageAnalysi
     .grayscale()
     .normalize()
     .sharpen({ sigma: 1.05 });
+
   const meta = await sharp(input).rotate().metadata();
   const imageHeight = meta.height || 0;
   const topCropHeight = imageHeight > 0 ? Math.max(1, Math.floor(imageHeight * 0.58)) : 0;
@@ -321,11 +315,20 @@ export async function analyzeImageWithOcr(dataUrl: string): Promise<ImageAnalysi
       .resize({ width: 2400, fit: "inside", withoutEnlargement: false, kernel: sharp.kernel.lanczos3 })
       .grayscale().normalize().sharpen({ sigma: 1.15 })
     : undefined;
-  const variants: Array<{ label: string; bytes: Buffer }> = [
-    { label: "normalized-upscaled", bytes: await base.clone().png().toBuffer() },
-    ...(topFocus ? [{ label: "top-focus", bytes: await topFocus.clone().png().toBuffer() }] : []),
-    { label: "medium-contrast", bytes: await base.clone().linear(1.25, -20).png().toBuffer() },
-    { label: "threshold-175", bytes: await base.clone().threshold(175).png().toBuffer() },
+
+  const trimmed = await sharp(input).rotate().trim({ threshold: 12 }).png().toBuffer({ resolveWithObject: true });
+  const trimmedHeaderHeight = Math.max(1, Math.floor(trimmed.info.height * 0.38));
+  const trimmedHeader = sharp(trimmed.data)
+    .extract({ left: 0, top: 0, width: trimmed.info.width, height: trimmedHeaderHeight })
+    .resize({ width: 3200, fit: "inside", withoutEnlargement: false, kernel: sharp.kernel.lanczos3 })
+    .grayscale().normalize().sharpen({ sigma: 1.2 });
+
+  const variants: Array<{ label: string; bytes: Buffer; psm: "6" | "11" }> = [
+    { label: "normalized-upscaled", bytes: await base.clone().png().toBuffer(), psm: "6" },
+    { label: "trimmed-header-sparse", bytes: await trimmedHeader.clone().linear(1.18, -12).png().toBuffer(), psm: "11" },
+    { label: "trimmed-header-threshold", bytes: await trimmedHeader.clone().threshold(170).png().toBuffer(), psm: "11" },
+    ...(topFocus ? [{ label: "top-focus", bytes: await topFocus.clone().png().toBuffer(), psm: "6" as const }] : []),
+    { label: "medium-contrast", bytes: await base.clone().linear(1.25, -20).png().toBuffer(), psm: "6" },
   ];
 
   const workerPath = requireOcr.resolve("tesseract.js/src/worker-script/node/index.js");
@@ -342,22 +345,33 @@ export async function analyzeImageWithOcr(dataUrl: string): Promise<ImageAnalysi
     return worker;
   });
   const worker = await withOcrDeadline(initializing, "initialization").catch(error => { expired = true; throw error; });
+
   try {
-    await worker.setParameters({ preserve_interword_spaces: "1", tessedit_pageseg_mode: "6" } as never);
+    await worker.setParameters({ preserve_interword_spaces: "1" } as never);
     const texts: string[] = [];
     let best: ImageAnalysis | undefined;
     let bestScore = -Infinity;
+
     for (const variant of variants) {
+      await worker.setParameters({ tessedit_pageseg_mode: variant.psm } as never);
       const result = await withOcrDeadline(worker.recognize(variant.bytes), "recognition");
       const raw = result.data.text || "";
       texts.push(raw);
       const analysis = analyzeOcrText(texts.join("\n"));
       const score = scoreAnalysis(analysis);
-      console.info("[Milo OCR] pass", { label: variant.label, chars: raw.length, confidence: analysis.confidence, documentType: analysis.proposals[0]?.documentType, amount: analysis.proposals[0]?.amount, dateText: analysis.proposals[0]?.dateText });
+      console.info("[Milo OCR] pass", {
+        label: variant.label,
+        chars: raw.length,
+        confidence: analysis.confidence,
+        documentType: analysis.proposals[0]?.documentType,
+        amount: analysis.proposals[0]?.amount,
+        dateText: analysis.proposals[0]?.dateText,
+      });
       if (score > bestScore) { best = analysis; bestScore = score; }
       const p = analysis.proposals[0];
       if (actionable(analysis) && p?.dateText) return analysis;
     }
+
     if (!best) throw new Error("OCR returned no text");
     return best;
   } finally {
