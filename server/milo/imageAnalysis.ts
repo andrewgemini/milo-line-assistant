@@ -1,6 +1,6 @@
 import { invokeLLM } from "../_core/llm";
 import { ENV } from "../_core/env";
-import { analyzeImageWithOcr, ocrAssetsReady } from "./ocrImageAnalysis";
+import { analyzeImageWithOcr, buildReceiptHeaderDataUrl, ocrAssetsReady } from "./ocrImageAnalysis";
 import { normalizeThaiMerchantName } from "./thaiReceiptParser";
 
 export type ImageProposal = {
@@ -270,7 +270,22 @@ export async function analyzeImage(dataUrl: string, options: { gatewayToken?: st
 
   try {
     const ocrAnalysis = await analyzeImageWithOcr(dataUrl);
-    if (!providerAnalysis) return ocrAnalysis;
+    if (!providerAnalysis) {
+      let selected = ocrAnalysis;
+      const proposal = selected.proposals[0];
+      if (gatewayKey && proposal?.kind === "expense" && !proposal.dateText && proposal.timeText) {
+        try {
+          const headerDataUrl = await buildReceiptHeaderDataUrl(dataUrl).catch(() => dataUrl);
+          const repair = await analyzeImageWithGatewayKey(headerDataUrl, gatewayKey, RECEIPT_REPAIR_PROMPT);
+          selected = mergeFocusedDateRepair(selected, repair);
+        } catch (repairError) {
+          console.warn("[Milo Image] OCR-only focused receipt date repair failed", {
+            error: repairError instanceof Error ? repairError.message : "unknown",
+          });
+        }
+      }
+      return selected;
+    }
 
     const score = (analysis: ImageAnalysis) => analysis.proposals.reduce((total, item) => total
       + (item.kind === "expense" && item.amount > 0 ? 6 : 0)
@@ -287,7 +302,8 @@ export async function analyzeImage(dataUrl: string, options: { gatewayToken?: st
     const selectedProposal = selected.proposals[0];
     if (gatewayKey && selectedProposal?.kind === "expense" && !selectedProposal.dateText && selectedProposal.timeText) {
       try {
-        const repair = await analyzeImageWithGatewayKey(dataUrl, gatewayKey, RECEIPT_REPAIR_PROMPT);
+        const headerDataUrl = await buildReceiptHeaderDataUrl(dataUrl).catch(() => dataUrl);
+        const repair = await analyzeImageWithGatewayKey(headerDataUrl, gatewayKey, RECEIPT_REPAIR_PROMPT);
         selected = mergeFocusedDateRepair(selected, repair);
       } catch (repairError) {
         console.warn("[Milo Image] focused receipt date repair failed", {

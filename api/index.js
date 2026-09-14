@@ -4144,6 +4144,13 @@ function decodeDataUrl(dataUrl) {
   if (!bytes.length) throw new Error("OCR received an empty image");
   return bytes;
 }
+async function buildReceiptHeaderDataUrl(dataUrl) {
+  const input = decodeDataUrl(dataUrl);
+  const trimmed = await sharp3(input).rotate().trim({ threshold: 10 }).png().toBuffer({ resolveWithObject: true });
+  const headerHeight = Math.max(1, Math.floor(trimmed.info.height * 0.58));
+  const header = await sharp3(trimmed.data).extract({ left: 0, top: 0, width: trimmed.info.width, height: headerHeight }).resize({ width: 2800, fit: "inside", withoutEnlargement: false, kernel: sharp3.kernel.lanczos3 }).sharpen({ sigma: 1.1 }).png().toBuffer();
+  return `data:image/png;base64,${header.toString("base64")}`;
+}
 function normalizeDigits(text2) {
   return text2.replace(/[๐-๙]/g, (digit) => thaiDigitMap[digit] || digit);
 }
@@ -4640,14 +4647,30 @@ async function analyzeImage(dataUrl, options = {}) {
   }
   try {
     const ocrAnalysis = await analyzeImageWithOcr(dataUrl);
-    if (!providerAnalysis) return ocrAnalysis;
+    if (!providerAnalysis) {
+      let selected2 = ocrAnalysis;
+      const proposal = selected2.proposals[0];
+      if (gatewayKey && proposal?.kind === "expense" && !proposal.dateText && proposal.timeText) {
+        try {
+          const headerDataUrl = await buildReceiptHeaderDataUrl(dataUrl).catch(() => dataUrl);
+          const repair = await analyzeImageWithGatewayKey(headerDataUrl, gatewayKey, RECEIPT_REPAIR_PROMPT);
+          selected2 = mergeFocusedDateRepair(selected2, repair);
+        } catch (repairError) {
+          console.warn("[Milo Image] OCR-only focused receipt date repair failed", {
+            error: repairError instanceof Error ? repairError.message : "unknown"
+          });
+        }
+      }
+      return selected2;
+    }
     const score = (analysis) => analysis.proposals.reduce((total, item) => total + (item.kind === "expense" && item.amount > 0 ? 6 : 0) + (item.kind === "reminder" && item.dateText ? 5 : 0) + (item.documentType !== "unknown" ? 1 : 0) + (item.dateText ? 1 : 0) + (item.merchant ? 0.5 : 0), analysis.confidence);
     let merged = mergeImageAnalyses(providerAnalysis, ocrAnalysis);
     let selected = score(merged) >= Math.max(score(ocrAnalysis), score(providerAnalysis)) ? merged : score(ocrAnalysis) > score(providerAnalysis) ? ocrAnalysis : providerAnalysis;
     const selectedProposal = selected.proposals[0];
     if (gatewayKey && selectedProposal?.kind === "expense" && !selectedProposal.dateText && selectedProposal.timeText) {
       try {
-        const repair = await analyzeImageWithGatewayKey(dataUrl, gatewayKey, RECEIPT_REPAIR_PROMPT);
+        const headerDataUrl = await buildReceiptHeaderDataUrl(dataUrl).catch(() => dataUrl);
+        const repair = await analyzeImageWithGatewayKey(headerDataUrl, gatewayKey, RECEIPT_REPAIR_PROMPT);
         selected = mergeFocusedDateRepair(selected, repair);
       } catch (repairError) {
         console.warn("[Milo Image] focused receipt date repair failed", {
@@ -6413,7 +6436,7 @@ var healthHandler = async (req, res) => {
   res.status(200).json({
     status: "ok",
     service: "milo",
-    release: "media-v13-receipt-date-cj-2026-09-14",
+    release: "media-v14-header-vision-date-2026-09-14",
     visionConfigured: runtime.authenticated,
     imageAnalysisMode: mode,
     visionModel: mode === "ocr-fallback" ? "tesseract-tha+eng" : process.env.MILO_VISION_MODEL || (mode.startsWith("vercel-ai-gateway") ? "google/gemini-2.5-flash" : mode.startsWith("forge-vision") ? "gemini-3-flash-preview" : "unconfigured"),

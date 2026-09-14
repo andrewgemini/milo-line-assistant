@@ -42,6 +42,19 @@ function decodeDataUrl(dataUrl: string) {
   return bytes;
 }
 
+export async function buildReceiptHeaderDataUrl(dataUrl: string) {
+  const input = decodeDataUrl(dataUrl);
+  const trimmed = await sharp(input).rotate().trim({ threshold: 10 }).png().toBuffer({ resolveWithObject: true });
+  const headerHeight = Math.max(1, Math.floor(trimmed.info.height * 0.58));
+  const header = await sharp(trimmed.data)
+    .extract({ left: 0, top: 0, width: trimmed.info.width, height: headerHeight })
+    .resize({ width: 2800, fit: "inside", withoutEnlargement: false, kernel: sharp.kernel.lanczos3 })
+    .sharpen({ sigma: 1.1 })
+    .png()
+    .toBuffer();
+  return `data:image/png;base64,${header.toString("base64")}`;
+}
+
 function normalizeDigits(text: string) {
   return text.replace(/[๐-๙]/g, digit => thaiDigitMap[digit] || digit);
 }
