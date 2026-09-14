@@ -4035,11 +4035,11 @@ async function transcribeWithGateway(audioBuffer, options) {
 async function transcribeAudio(options) {
   try {
     const groqKey = (process.env.GROQ_API_KEY || "").trim();
-    const forgeConfigured = Boolean(ENV.forgeApiUrl && ENV.forgeApiKey);
+    const forgeConfigured2 = Boolean(ENV.forgeApiUrl && ENV.forgeApiKey);
     const openAIKey = (process.env.OPENAI_API_KEY || "").trim();
     const gatewayConfigured = gatewayAuthAvailable(process.env, options.gatewayToken);
     const localConfigured = localVoiceRuntimeStatus().enabled;
-    if (!groqKey && !localConfigured && !forgeConfigured && !openAIKey && !gatewayConfigured) {
+    if (!groqKey && !localConfigured && !forgeConfigured2 && !openAIKey && !gatewayConfigured) {
       return {
         error: "Voice transcription service is not configured",
         code: "SERVICE_ERROR",
@@ -4092,7 +4092,7 @@ async function transcribeAudio(options) {
         console.warn("[Milo Voice] AI Gateway transcription failed; trying fallback", { error: message });
       }
     }
-    if (forgeConfigured) {
+    if (forgeConfigured2) {
       const baseUrl = ENV.forgeApiUrl.endsWith("/") ? ENV.forgeApiUrl : `${ENV.forgeApiUrl}/`;
       const fullUrl = new URL("v1/audio/transcriptions", baseUrl).toString();
       try {
@@ -4148,16 +4148,9 @@ async function transcribeAudio(options) {
 }
 
 // server/storage.ts
-function getForgeConfig() {
-  const forgeUrl = ENV.forgeApiUrl;
-  const forgeKey = ENV.forgeApiKey;
-  if (!forgeUrl || !forgeKey) {
-    throw new Error(
-      "Storage config missing: set BUILT_IN_FORGE_API_URL and BUILT_IN_FORGE_API_KEY"
-    );
-  }
-  return { forgeUrl: forgeUrl.replace(/\/+$/, ""), forgeKey };
-}
+import { GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+import { SignJWT as SignJWT2, importPKCS8 } from "jose";
 function normalizeKey(relKey) {
   return relKey.replace(/^\/+/, "");
 }
@@ -4167,30 +4160,155 @@ function appendHashSuffix(relKey) {
   if (lastDot === -1) return `${relKey}_${hash}`;
   return `${relKey.slice(0, lastDot)}_${hash}${relKey.slice(lastDot)}`;
 }
-async function storagePut(relKey, data, contentType = "application/octet-stream") {
-  const { forgeUrl, forgeKey } = getForgeConfig();
-  const key = appendHashSuffix(normalizeKey(relKey));
+function forgeConfigured() {
+  return Boolean(ENV.forgeApiUrl && ENV.forgeApiKey);
+}
+function s3Configured() {
+  return Boolean(process.env.MILO_S3_BUCKET?.trim() && process.env.MILO_S3_ACCESS_KEY_ID?.trim() && process.env.MILO_S3_SECRET_ACCESS_KEY?.trim());
+}
+function googleDriveConfigured() {
+  return Boolean(process.env.MILO_GOOGLE_DRIVE_FOLDER_ID?.trim() && process.env.MILO_GOOGLE_DRIVE_SERVICE_ACCOUNT_EMAIL?.trim() && process.env.MILO_GOOGLE_DRIVE_PRIVATE_KEY?.trim());
+}
+function storageRuntimeStatus() {
+  const configuredProviders = [];
+  if (forgeConfigured()) configuredProviders.push("forge");
+  if (s3Configured()) configuredProviders.push("s3");
+  if (googleDriveConfigured()) configuredProviders.push("google-drive");
+  const requested = (process.env.MILO_STORAGE_PROVIDER || "auto").trim().toLowerCase();
+  const activeProvider = requested === "auto" ? configuredProviders[0] ?? null : configuredProviders.includes(requested) ? requested : null;
+  return { requested, activeProvider, configuredProviders, configured: Boolean(activeProvider) };
+}
+function selectedProvider() {
+  const status = storageRuntimeStatus();
+  if (status.activeProvider) return status.activeProvider;
+  throw new Error(`Durable storage is not configured for provider ${status.requested}`);
+}
+async function forgePut(relKey, data, contentType) {
+  const forgeUrl = ENV.forgeApiUrl.replace(/\/+$/, "");
+  const forgeKey = ENV.forgeApiKey;
+  const objectKey = appendHashSuffix(normalizeKey(relKey));
   const presignUrl = new URL("v1/storage/presign/put", forgeUrl + "/");
-  presignUrl.searchParams.set("path", key);
-  const presignResp = await fetch(presignUrl, {
-    headers: { Authorization: `Bearer ${forgeKey}` }
+  presignUrl.searchParams.set("path", objectKey);
+  const presignResp = await fetch(presignUrl, { headers: { Authorization: `Bearer ${forgeKey}` } });
+  if (!presignResp.ok) throw new Error(`Forge storage presign failed (${presignResp.status})`);
+  const { url: putUrl } = await presignResp.json();
+  if (!putUrl) throw new Error("Forge returned empty upload URL");
+  const body = typeof data === "string" ? new TextEncoder().encode(data) : data;
+  const upload = await fetch(putUrl, { method: "PUT", headers: { "Content-Type": contentType }, body });
+  if (!upload.ok) throw new Error(`Forge storage upload failed (${upload.status})`);
+  const key = `forge:${objectKey}`;
+  return { key, url: `/api/milo/storage/${encodeURIComponent(key)}`, provider: "forge" };
+}
+function s3Client() {
+  return new S3Client({
+    region: process.env.MILO_S3_REGION?.trim() || "auto",
+    endpoint: process.env.MILO_S3_ENDPOINT?.trim() || void 0,
+    forcePathStyle: /^(1|true|yes)$/i.test(process.env.MILO_S3_FORCE_PATH_STYLE || ""),
+    credentials: {
+      accessKeyId: process.env.MILO_S3_ACCESS_KEY_ID.trim(),
+      secretAccessKey: process.env.MILO_S3_SECRET_ACCESS_KEY.trim()
+    }
   });
-  if (!presignResp.ok) {
-    const msg = await presignResp.text().catch(() => presignResp.statusText);
-    throw new Error(`Storage presign failed (${presignResp.status}): ${msg}`);
-  }
-  const { url: s3Url } = await presignResp.json();
-  if (!s3Url) throw new Error("Forge returned empty presign URL");
-  const blob = typeof data === "string" ? new Blob([data], { type: contentType }) : new Blob([data], { type: contentType });
-  const uploadResp = await fetch(s3Url, {
-    method: "PUT",
-    headers: { "Content-Type": contentType },
-    body: blob
+}
+async function s3Put(relKey, data, contentType) {
+  const objectKey = appendHashSuffix(normalizeKey(relKey));
+  const body = typeof data === "string" ? Buffer.from(data) : Buffer.from(data);
+  await s3Client().send(new PutObjectCommand({ Bucket: process.env.MILO_S3_BUCKET.trim(), Key: objectKey, Body: body, ContentType: contentType }));
+  const key = `s3:${objectKey}`;
+  return { key, url: `/api/milo/storage/${encodeURIComponent(key)}`, provider: "s3" };
+}
+var googleTokenCache;
+function googlePrivateKey() {
+  return process.env.MILO_GOOGLE_DRIVE_PRIVATE_KEY.replace(/\\n/g, "\n").trim();
+}
+async function googleDriveAccessToken() {
+  if (googleTokenCache && googleTokenCache.expiresAt > Date.now() + 6e4) return googleTokenCache.token;
+  const email = process.env.MILO_GOOGLE_DRIVE_SERVICE_ACCOUNT_EMAIL.trim();
+  const privateKey = await importPKCS8(googlePrivateKey(), "RS256");
+  const now = Math.floor(Date.now() / 1e3);
+  const assertion = await new SignJWT2({ scope: "https://www.googleapis.com/auth/drive.file" }).setProtectedHeader({ alg: "RS256", typ: "JWT" }).setIssuer(email).setSubject(email).setAudience("https://oauth2.googleapis.com/token").setIssuedAt(now).setExpirationTime(now + 3600).sign(privateKey);
+  const response = await fetch("https://oauth2.googleapis.com/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer", assertion })
   });
-  if (!uploadResp.ok) {
-    throw new Error(`Storage upload to S3 failed (${uploadResp.status})`);
+  if (!response.ok) throw new Error(`Google Drive OAuth failed (${response.status})`);
+  const json = await response.json();
+  if (!json.access_token) throw new Error("Google Drive OAuth returned no access token");
+  googleTokenCache = { token: json.access_token, expiresAt: Date.now() + (json.expires_in ?? 3600) * 1e3 };
+  return json.access_token;
+}
+async function googleDrivePut(relKey, data, contentType) {
+  const token = await googleDriveAccessToken();
+  const filename = appendHashSuffix(normalizeKey(relKey)).replace(/[\\/]+/g, "__").slice(-220);
+  const metadata = {
+    name: filename,
+    parents: [process.env.MILO_GOOGLE_DRIVE_FOLDER_ID.trim()],
+    appProperties: { miloPath: normalizeKey(relKey).slice(0, 120) }
+  };
+  const boundary = `milo_${crypto.randomUUID().replace(/-/g, "")}`;
+  const raw = typeof data === "string" ? Buffer.from(data) : Buffer.from(data);
+  const multipart = Buffer.concat([
+    Buffer.from(`--${boundary}\r
+Content-Type: application/json; charset=UTF-8\r
+\r
+${JSON.stringify(metadata)}\r
+`),
+    Buffer.from(`--${boundary}\r
+Content-Type: ${contentType}\r
+\r
+`),
+    raw,
+    Buffer.from(`\r
+--${boundary}--`)
+  ]);
+  const response = await fetch("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": `multipart/related; boundary=${boundary}` },
+    body: multipart
+  });
+  if (!response.ok) throw new Error(`Google Drive upload failed (${response.status})`);
+  const json = await response.json();
+  if (!json.id) throw new Error("Google Drive upload returned no file id");
+  const key = `gdrive:${json.id}`;
+  return { key, url: `/api/milo/storage/${encodeURIComponent(key)}`, provider: "google-drive" };
+}
+async function storagePut(relKey, data, contentType = "application/octet-stream") {
+  const provider = selectedProvider();
+  if (provider === "forge") return forgePut(relKey, data, contentType);
+  if (provider === "s3") return s3Put(relKey, data, contentType);
+  return googleDrivePut(relKey, data, contentType);
+}
+function parseStoredKey(value) {
+  if (value.startsWith("forge:")) return { provider: "forge", objectKey: value.slice(6) };
+  if (value.startsWith("s3:")) return { provider: "s3", objectKey: value.slice(3) };
+  if (value.startsWith("gdrive:")) return { provider: "google-drive", objectKey: value.slice(7) };
+  return { provider: "forge", objectKey: normalizeKey(value) };
+}
+async function storageGetSignedUrl(relKey) {
+  const { provider, objectKey } = parseStoredKey(relKey);
+  if (provider === "forge") {
+    if (!forgeConfigured()) throw new Error("Forge storage is not configured");
+    const getUrl = new URL("v1/storage/presign/get", ENV.forgeApiUrl.replace(/\/+$/, "") + "/");
+    getUrl.searchParams.set("path", objectKey);
+    const resp = await fetch(getUrl, { headers: { Authorization: `Bearer ${ENV.forgeApiKey}` } });
+    if (!resp.ok) throw new Error(`Forge signed URL failed (${resp.status})`);
+    const { url } = await resp.json();
+    if (!url) throw new Error("Forge returned empty download URL");
+    return url;
   }
-  return { key, url: `/manus-storage/${key}` };
+  if (provider === "s3") {
+    if (!s3Configured()) throw new Error("S3 storage is not configured");
+    return getSignedUrl(s3Client(), new GetObjectCommand({ Bucket: process.env.MILO_S3_BUCKET.trim(), Key: objectKey }), { expiresIn: 900 });
+  }
+  throw new Error("Google Drive objects are downloaded through the Milo storage proxy");
+}
+async function storageGetGoogleDriveResponse(relKey) {
+  const { provider, objectKey } = parseStoredKey(relKey);
+  if (provider !== "google-drive") return void 0;
+  if (!googleDriveConfigured()) throw new Error("Google Drive storage is not configured");
+  const token = await googleDriveAccessToken();
+  return fetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(objectKey)}?alt=media`, { headers: { Authorization: `Bearer ${token}` } });
 }
 
 // server/milo/ocrImageAnalysis.ts
@@ -6864,6 +6982,40 @@ function registerSaveResultImageRoute(app2) {
   });
 }
 
+// server/milo/storageRoute.ts
+function decodeStorageKey(raw) {
+  try {
+    return decodeURIComponent(raw);
+  } catch {
+    return raw;
+  }
+}
+function registerMiloStorageRoute(app2) {
+  app2.get("/api/milo/storage/:key", async (req, res) => {
+    const key = decodeStorageKey(req.params.key);
+    if (!key) return res.status(400).type("text/plain").send("missing storage key");
+    try {
+      if (key.startsWith("gdrive:")) {
+        const upstream = await storageGetGoogleDriveResponse(key);
+        if (!upstream) return res.status(404).type("text/plain").send("storage object not found");
+        if (!upstream.ok) return res.status(upstream.status).type("text/plain").send("storage download failed");
+        const contentType = upstream.headers.get("content-type");
+        const contentLength = upstream.headers.get("content-length");
+        if (contentType) res.setHeader("Content-Type", contentType);
+        if (contentLength) res.setHeader("Content-Length", contentLength);
+        res.setHeader("Cache-Control", "private, no-store");
+        return res.status(200).send(Buffer.from(await upstream.arrayBuffer()));
+      }
+      const url = await storageGetSignedUrl(key);
+      res.setHeader("Cache-Control", "private, no-store");
+      return res.redirect(307, url);
+    } catch (error) {
+      console.error("[Milo Storage] download failed", { error: error instanceof Error ? error.message : "unknown" });
+      return res.status(503).type("text/plain").send("storage unavailable");
+    }
+  });
+}
+
 // server/api.ts
 var app = express2();
 app.set("trust proxy", 1);
@@ -6880,6 +7032,7 @@ registerFinanceReportImageRoute(app);
 registerRichMenuDataImageRoute(app);
 registerFinanceExportRoute(app);
 registerCalendarExportRoute(app);
+registerMiloStorageRoute(app);
 registerLineWebhook(app);
 app.use(express2.json({ limit: "10mb" }));
 app.use(express2.urlencoded({ limit: "10mb", extended: true }));
@@ -6890,11 +7043,11 @@ var healthHandler = async (req, res) => {
   const runtime = await imageAnalysisRuntimeStatus(gatewayToken);
   const mode = runtime.mode;
   const voice = voiceTranscriptionRuntimeStatus(gatewayToken);
-  const durableStorageConfigured = Boolean((process.env.BUILT_IN_FORGE_API_URL || process.env.FORGE_API_URL || process.env.OPENAI_BASE_URL) && (process.env.BUILT_IN_FORGE_API_KEY || process.env.FORGE_API_KEY || process.env.OPENAI_API_KEY));
+  const storage = storageRuntimeStatus();
   res.status(200).json({
     status: runtime.authenticated && voice.configured && Boolean(process.env.LINE_CHANNEL_SECRET?.trim()) && Boolean(process.env.LINE_CHANNEL_ACCESS_TOKEN?.trim()) && Boolean(process.env.DATABASE_URL?.trim()) ? "ok" : "degraded",
     service: "milo",
-    release: "chat-first-core-v20-2026-09-14",
+    release: "multi-storage-core-v21-2026-09-14",
     visionConfigured: runtime.authenticated,
     imageAnalysisMode: mode,
     visionModel: mode === "ocr-fallback" ? "tesseract-tha+eng" : process.env.MILO_VISION_MODEL || (mode.startsWith("vercel-ai-gateway") ? "google/gemini-2.5-flash" : mode.startsWith("forge-vision") ? "gemini-3-flash-preview" : "unconfigured"),
@@ -6903,6 +7056,11 @@ var healthHandler = async (req, res) => {
     voiceTranscriptionMode: voice.mode,
     voiceLocalBundled: voice.local?.bundled ?? false,
     voiceLocalModel: voice.local?.model ?? null,
+    storage: {
+      requestedProvider: storage.requested,
+      activeProvider: storage.activeProvider,
+      configuredProviders: storage.configuredProviders
+    },
     readiness: {
       lineConfigured: Boolean(process.env.LINE_CHANNEL_SECRET?.trim()) && Boolean(process.env.LINE_CHANNEL_ACCESS_TOKEN?.trim()),
       databaseConfigured: Boolean(process.env.DATABASE_URL?.trim()),
@@ -6912,7 +7070,10 @@ var healthHandler = async (req, res) => {
       undoSupported: true,
       webhookSignatureVerification: true,
       calendarSupported: true,
-      durableVaultStorageConfigured: durableStorageConfigured,
+      durableVaultStorageConfigured: storage.configured,
+      storageProviderChoiceSupported: true,
+      googleDriveStorageSupported: true,
+      s3CompatibleStorageSupported: true,
       groupSharedVaultSearch: true
     },
     timestamp: (/* @__PURE__ */ new Date()).toISOString()

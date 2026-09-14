@@ -1,21 +1,10 @@
-// Preconfigured storage helpers for Manus WebDev templates
-// Uploads via Forge Server presigned URL to S3 (PUT direct).
-// Downloads return /manus-storage/{key} paths served via 307 redirect.
-
+import { GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
+import { SignJWT, importPKCS8 } from "jose";
 import { ENV } from "./_core/env";
 
-function getForgeConfig() {
-  const forgeUrl = ENV.forgeApiUrl;
-  const forgeKey = ENV.forgeApiKey;
-
-  if (!forgeUrl || !forgeKey) {
-    throw new Error(
-      "Storage config missing: set BUILT_IN_FORGE_API_URL and BUILT_IN_FORGE_API_KEY",
-    );
-  }
-
-  return { forgeUrl: forgeUrl.replace(/\/+$/, ""), forgeKey };
-}
+export type StorageProvider = "forge" | "s3" | "google-drive";
+export type StorageObject = { key: string; url: string; provider: StorageProvider };
 
 function normalizeKey(relKey: string): string {
   return relKey.replace(/^\/+/, "");
@@ -28,70 +17,173 @@ function appendHashSuffix(relKey: string): string {
   return `${relKey.slice(0, lastDot)}_${hash}${relKey.slice(lastDot)}`;
 }
 
-export async function storagePut(
-  relKey: string,
-  data: Buffer | Uint8Array | string,
-  contentType = "application/octet-stream",
-): Promise<{ key: string; url: string }> {
-  const { forgeUrl, forgeKey } = getForgeConfig();
-  const key = appendHashSuffix(normalizeKey(relKey));
-
-  // 1. Get presigned PUT URL from Forge
-  const presignUrl = new URL("v1/storage/presign/put", forgeUrl + "/");
-  presignUrl.searchParams.set("path", key);
-
-  const presignResp = await fetch(presignUrl, {
-    headers: { Authorization: `Bearer ${forgeKey}` },
-  });
-
-  if (!presignResp.ok) {
-    const msg = await presignResp.text().catch(() => presignResp.statusText);
-    throw new Error(`Storage presign failed (${presignResp.status}): ${msg}`);
-  }
-
-  const { url: s3Url } = (await presignResp.json()) as { url: string };
-  if (!s3Url) throw new Error("Forge returned empty presign URL");
-
-  // 2. PUT file directly to S3
-  const blob =
-    typeof data === "string"
-      ? new Blob([data], { type: contentType })
-      : new Blob([data as any], { type: contentType });
-
-  const uploadResp = await fetch(s3Url, {
-    method: "PUT",
-    headers: { "Content-Type": contentType },
-    body: blob,
-  });
-
-  if (!uploadResp.ok) {
-    throw new Error(`Storage upload to S3 failed (${uploadResp.status})`);
-  }
-
-  return { key, url: `/manus-storage/${key}` };
+function forgeConfigured() {
+  return Boolean(ENV.forgeApiUrl && ENV.forgeApiKey);
 }
 
-export async function storageGet(relKey: string): Promise<{ key: string; url: string }> {
-  const key = normalizeKey(relKey);
-  return { key, url: `/manus-storage/${key}` };
+function s3Configured() {
+  return Boolean(process.env.MILO_S3_BUCKET?.trim() && process.env.MILO_S3_ACCESS_KEY_ID?.trim() && process.env.MILO_S3_SECRET_ACCESS_KEY?.trim());
+}
+
+function googleDriveConfigured() {
+  return Boolean(process.env.MILO_GOOGLE_DRIVE_FOLDER_ID?.trim() && process.env.MILO_GOOGLE_DRIVE_SERVICE_ACCOUNT_EMAIL?.trim() && process.env.MILO_GOOGLE_DRIVE_PRIVATE_KEY?.trim());
+}
+
+export function storageRuntimeStatus() {
+  const configuredProviders: StorageProvider[] = [];
+  if (forgeConfigured()) configuredProviders.push("forge");
+  if (s3Configured()) configuredProviders.push("s3");
+  if (googleDriveConfigured()) configuredProviders.push("google-drive");
+  const requested = (process.env.MILO_STORAGE_PROVIDER || "auto").trim().toLowerCase();
+  const activeProvider = requested === "auto"
+    ? configuredProviders[0] ?? null
+    : configuredProviders.includes(requested as StorageProvider) ? requested as StorageProvider : null;
+  return { requested, activeProvider, configuredProviders, configured: Boolean(activeProvider) };
+}
+
+function selectedProvider(): StorageProvider {
+  const status = storageRuntimeStatus();
+  if (status.activeProvider) return status.activeProvider;
+  throw new Error(`Durable storage is not configured for provider ${status.requested}`);
+}
+
+async function forgePut(relKey: string, data: Buffer | Uint8Array | string, contentType: string): Promise<StorageObject> {
+  const forgeUrl = ENV.forgeApiUrl.replace(/\/+$/, "");
+  const forgeKey = ENV.forgeApiKey;
+  const objectKey = appendHashSuffix(normalizeKey(relKey));
+  const presignUrl = new URL("v1/storage/presign/put", forgeUrl + "/");
+  presignUrl.searchParams.set("path", objectKey);
+  const presignResp = await fetch(presignUrl, { headers: { Authorization: `Bearer ${forgeKey}` } });
+  if (!presignResp.ok) throw new Error(`Forge storage presign failed (${presignResp.status})`);
+  const { url: putUrl } = (await presignResp.json()) as { url?: string };
+  if (!putUrl) throw new Error("Forge returned empty upload URL");
+  const body = typeof data === "string" ? new TextEncoder().encode(data) : data;
+  const upload = await fetch(putUrl, { method: "PUT", headers: { "Content-Type": contentType }, body: body as BodyInit });
+  if (!upload.ok) throw new Error(`Forge storage upload failed (${upload.status})`);
+  const key = `forge:${objectKey}`;
+  return { key, url: `/api/milo/storage/${encodeURIComponent(key)}`, provider: "forge" };
+}
+
+function s3Client() {
+  return new S3Client({
+    region: process.env.MILO_S3_REGION?.trim() || "auto",
+    endpoint: process.env.MILO_S3_ENDPOINT?.trim() || undefined,
+    forcePathStyle: /^(1|true|yes)$/i.test(process.env.MILO_S3_FORCE_PATH_STYLE || ""),
+    credentials: {
+      accessKeyId: process.env.MILO_S3_ACCESS_KEY_ID!.trim(),
+      secretAccessKey: process.env.MILO_S3_SECRET_ACCESS_KEY!.trim(),
+    },
+  });
+}
+
+async function s3Put(relKey: string, data: Buffer | Uint8Array | string, contentType: string): Promise<StorageObject> {
+  const objectKey = appendHashSuffix(normalizeKey(relKey));
+  const body = typeof data === "string" ? Buffer.from(data) : Buffer.from(data);
+  await s3Client().send(new PutObjectCommand({ Bucket: process.env.MILO_S3_BUCKET!.trim(), Key: objectKey, Body: body, ContentType: contentType }));
+  const key = `s3:${objectKey}`;
+  return { key, url: `/api/milo/storage/${encodeURIComponent(key)}`, provider: "s3" };
+}
+
+let googleTokenCache: { token: string; expiresAt: number } | undefined;
+
+function googlePrivateKey() {
+  return process.env.MILO_GOOGLE_DRIVE_PRIVATE_KEY!.replace(/\\n/g, "\n").trim();
+}
+
+async function googleDriveAccessToken() {
+  if (googleTokenCache && googleTokenCache.expiresAt > Date.now() + 60_000) return googleTokenCache.token;
+  const email = process.env.MILO_GOOGLE_DRIVE_SERVICE_ACCOUNT_EMAIL!.trim();
+  const privateKey = await importPKCS8(googlePrivateKey(), "RS256");
+  const now = Math.floor(Date.now() / 1000);
+  const assertion = await new SignJWT({ scope: "https://www.googleapis.com/auth/drive.file" })
+    .setProtectedHeader({ alg: "RS256", typ: "JWT" })
+    .setIssuer(email)
+    .setSubject(email)
+    .setAudience("https://oauth2.googleapis.com/token")
+    .setIssuedAt(now)
+    .setExpirationTime(now + 3600)
+    .sign(privateKey);
+  const response = await fetch("https://oauth2.googleapis.com/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer", assertion }),
+  });
+  if (!response.ok) throw new Error(`Google Drive OAuth failed (${response.status})`);
+  const json = await response.json() as { access_token?: string; expires_in?: number };
+  if (!json.access_token) throw new Error("Google Drive OAuth returned no access token");
+  googleTokenCache = { token: json.access_token, expiresAt: Date.now() + (json.expires_in ?? 3600) * 1000 };
+  return json.access_token;
+}
+
+async function googleDrivePut(relKey: string, data: Buffer | Uint8Array | string, contentType: string): Promise<StorageObject> {
+  const token = await googleDriveAccessToken();
+  const filename = appendHashSuffix(normalizeKey(relKey)).replace(/[\\/]+/g, "__").slice(-220);
+  const metadata = {
+    name: filename,
+    parents: [process.env.MILO_GOOGLE_DRIVE_FOLDER_ID!.trim()],
+    appProperties: { miloPath: normalizeKey(relKey).slice(0, 120) },
+  };
+  const boundary = `milo_${crypto.randomUUID().replace(/-/g, "")}`;
+  const raw = typeof data === "string" ? Buffer.from(data) : Buffer.from(data);
+  const multipart = Buffer.concat([
+    Buffer.from(`--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(metadata)}\r\n`),
+    Buffer.from(`--${boundary}\r\nContent-Type: ${contentType}\r\n\r\n`),
+    raw,
+    Buffer.from(`\r\n--${boundary}--`),
+  ]);
+  const response = await fetch("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}`, "Content-Type": `multipart/related; boundary=${boundary}` },
+    body: multipart,
+  });
+  if (!response.ok) throw new Error(`Google Drive upload failed (${response.status})`);
+  const json = await response.json() as { id?: string };
+  if (!json.id) throw new Error("Google Drive upload returned no file id");
+  const key = `gdrive:${json.id}`;
+  return { key, url: `/api/milo/storage/${encodeURIComponent(key)}`, provider: "google-drive" };
+}
+
+export async function storagePut(relKey: string, data: Buffer | Uint8Array | string, contentType = "application/octet-stream"): Promise<StorageObject> {
+  const provider = selectedProvider();
+  if (provider === "forge") return forgePut(relKey, data, contentType);
+  if (provider === "s3") return s3Put(relKey, data, contentType);
+  return googleDrivePut(relKey, data, contentType);
+}
+
+function parseStoredKey(value: string): { provider: StorageProvider; objectKey: string } {
+  if (value.startsWith("forge:")) return { provider: "forge", objectKey: value.slice(6) };
+  if (value.startsWith("s3:")) return { provider: "s3", objectKey: value.slice(3) };
+  if (value.startsWith("gdrive:")) return { provider: "google-drive", objectKey: value.slice(7) };
+  return { provider: "forge", objectKey: normalizeKey(value) };
 }
 
 export async function storageGetSignedUrl(relKey: string): Promise<string> {
-  const { forgeUrl, forgeKey } = getForgeConfig();
-  const key = normalizeKey(relKey);
-
-  const getUrl = new URL("v1/storage/presign/get", forgeUrl + "/");
-  getUrl.searchParams.set("path", key);
-
-  const resp = await fetch(getUrl, {
-    headers: { Authorization: `Bearer ${forgeKey}` },
-  });
-
-  if (!resp.ok) {
-    const msg = await resp.text().catch(() => resp.statusText);
-    throw new Error(`Storage signed URL failed (${resp.status}): ${msg}`);
+  const { provider, objectKey } = parseStoredKey(relKey);
+  if (provider === "forge") {
+    if (!forgeConfigured()) throw new Error("Forge storage is not configured");
+    const getUrl = new URL("v1/storage/presign/get", ENV.forgeApiUrl.replace(/\/+$/, "") + "/");
+    getUrl.searchParams.set("path", objectKey);
+    const resp = await fetch(getUrl, { headers: { Authorization: `Bearer ${ENV.forgeApiKey}` } });
+    if (!resp.ok) throw new Error(`Forge signed URL failed (${resp.status})`);
+    const { url } = await resp.json() as { url?: string };
+    if (!url) throw new Error("Forge returned empty download URL");
+    return url;
   }
+  if (provider === "s3") {
+    if (!s3Configured()) throw new Error("S3 storage is not configured");
+    return getSignedUrl(s3Client(), new GetObjectCommand({ Bucket: process.env.MILO_S3_BUCKET!.trim(), Key: objectKey }), { expiresIn: 900 });
+  }
+  throw new Error("Google Drive objects are downloaded through the Milo storage proxy");
+}
 
-  const { url } = (await resp.json()) as { url: string };
-  return url;
+export async function storageGetGoogleDriveResponse(relKey: string) {
+  const { provider, objectKey } = parseStoredKey(relKey);
+  if (provider !== "google-drive") return undefined;
+  if (!googleDriveConfigured()) throw new Error("Google Drive storage is not configured");
+  const token = await googleDriveAccessToken();
+  return fetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(objectKey)}?alt=media`, { headers: { Authorization: `Bearer ${token}` } });
+}
+
+export async function storageGet(relKey: string): Promise<{ key: string; url: string }> {
+  return { key: relKey, url: `/api/milo/storage/${encodeURIComponent(relKey)}` };
 }

@@ -10,7 +10,9 @@ import { registerFinanceReportImageRoute } from "./milo/financeReportImage";
 import { registerRichMenuDataImageRoute } from "./milo/richMenuDataImage";
 import { registerFinanceExportRoute } from "./milo/financeExport";
 import { registerCalendarExportRoute } from "./milo/calendar";
-import { analyzeImage, imageAnalysisRuntimeStatus } from "./milo/imageAnalysis";
+import { registerMiloStorageRoute } from "./milo/storageRoute";
+import { storageRuntimeStatus } from "./storage";
+import { imageAnalysisRuntimeStatus } from "./milo/imageAnalysis";
 import { voiceTranscriptionRuntimeStatus } from "./_core/voiceTranscription";
 import { sdk } from "./_core/sdk";
 import { getSessionCookieOptions } from "./_core/cookies";
@@ -31,18 +33,18 @@ app.use((_req, res, next) => {
   next();
 });
 
-// Webhook routes verify their own payload/signature and therefore must be
-// registered before the generic JSON parser.
 registerSaveResultImageRoute(app);
 registerFinanceReportImageRoute(app);
 registerRichMenuDataImageRoute(app);
 registerFinanceExportRoute(app);
 registerCalendarExportRoute(app);
+registerMiloStorageRoute(app);
 registerLineWebhook(app);
 
 app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ limit: "10mb", extended: true }));
 
+// Legacy Forge storage URLs remain supported for files stored before v1.2.
 registerStorageProxy(app);
 registerOAuthRoutes(app);
 
@@ -51,11 +53,11 @@ const healthHandler = async (req: express.Request, res: express.Response) => {
   const runtime = await imageAnalysisRuntimeStatus(gatewayToken);
   const mode = runtime.mode;
   const voice = voiceTranscriptionRuntimeStatus(gatewayToken);
-  const durableStorageConfigured = Boolean((process.env.BUILT_IN_FORGE_API_URL || process.env.FORGE_API_URL || process.env.OPENAI_BASE_URL) && (process.env.BUILT_IN_FORGE_API_KEY || process.env.FORGE_API_KEY || process.env.OPENAI_API_KEY));
+  const storage = storageRuntimeStatus();
   res.status(200).json({
     status: runtime.authenticated && voice.configured && Boolean(process.env.LINE_CHANNEL_SECRET?.trim()) && Boolean(process.env.LINE_CHANNEL_ACCESS_TOKEN?.trim()) && Boolean(process.env.DATABASE_URL?.trim()) ? "ok" : "degraded",
     service: "milo",
-    release: "chat-first-core-v20-2026-09-14",
+    release: "multi-storage-core-v21-2026-09-14",
     visionConfigured: runtime.authenticated,
     imageAnalysisMode: mode,
     visionModel: mode === "ocr-fallback" ? "tesseract-tha+eng" : process.env.MILO_VISION_MODEL || (mode.startsWith("vercel-ai-gateway") ? "google/gemini-2.5-flash" : mode.startsWith("forge-vision") ? "gemini-3-flash-preview" : "unconfigured"),
@@ -64,6 +66,11 @@ const healthHandler = async (req: express.Request, res: express.Response) => {
     voiceTranscriptionMode: voice.mode,
     voiceLocalBundled: voice.local?.bundled ?? false,
     voiceLocalModel: voice.local?.model ?? null,
+    storage: {
+      requestedProvider: storage.requested,
+      activeProvider: storage.activeProvider,
+      configuredProviders: storage.configuredProviders,
+    },
     readiness: {
       lineConfigured: Boolean(process.env.LINE_CHANNEL_SECRET?.trim()) && Boolean(process.env.LINE_CHANNEL_ACCESS_TOKEN?.trim()),
       databaseConfigured: Boolean(process.env.DATABASE_URL?.trim()),
@@ -73,7 +80,10 @@ const healthHandler = async (req: express.Request, res: express.Response) => {
       undoSupported: true,
       webhookSignatureVerification: true,
       calendarSupported: true,
-      durableVaultStorageConfigured: durableStorageConfigured,
+      durableVaultStorageConfigured: storage.configured,
+      storageProviderChoiceSupported: true,
+      googleDriveStorageSupported: true,
+      s3CompatibleStorageSupported: true,
       groupSharedVaultSearch: true,
     },
     timestamp: new Date().toISOString(),
