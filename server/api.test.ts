@@ -16,7 +16,7 @@ describe("production API entrypoint", () => {
       expect(await (await fetch(base + "/api/health", { headers: { "x-vercel-oidc-token": "request-oidc-token" } })).json()).toMatchObject({
         imageAnalysisMode: expect.stringContaining("vercel-ai-gateway-oidc"),
         voiceConfigured: true,
-        voiceTranscriptionMode: "vercel-ai-gateway-stt+local-fallback",
+        voiceTranscriptionMode: "vercel-ai-gateway-stt",
         voiceLocalBundled: true,
         voiceLocalModel: "onnx-community/whisper-tiny",
       });

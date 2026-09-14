@@ -4069,14 +4069,51 @@ function extractDateTime(text2) {
   if (time) timeText = `${String(Number(time[1])).padStart(2, "0")}:${time[2]}`;
   return { dateText, timeText };
 }
+function cleanMerchantCandidate(raw) {
+  let value = raw.replace(/^(?:ผู้รับ|ผู้รับเงิน|ไปยัง|ชื่อผู้รับ|recipient|merchant|to)\s*[:：-]?\s*/i, "").replace(/(?:^|\s)(?:เลขที่รายการ|เลขอ้างอิง|หมายเลขอ้างอิง|reference(?:\s*(?:no|number))?|transaction\s*id)\s*[:：#-]?[\s\S]*$/i, "").replace(/(?:^|\s)(?:จำนวน(?:เงิน)?|ยอด(?:โอน|ชำระ|สุทธิ|รวม)|ค่าธรรมเนียม|fee)\s*[:：=\-]?[\s\S]*$/i, "").replace(/\s+(?:[A-Z0-9]{16,}|\d{12,})\s*$/i, "").replace(/^[^A-Za-z\u0E00-\u0E7F]+/, "").trim();
+  if (/[\u0E00-\u0E7F]/.test(value)) {
+    value = value.replace(/^[A-Za-z0-9]{1,4}[\s|:;._-]+(?=[\u0E00-\u0E7F])/, "");
+  }
+  return value.replace(/คาเฟ[่]?\s*อเมซอน/gi, "\u0E04\u0E32\u0E40\u0E1F\u0E48 \u0E2D\u0E40\u0E21\u0E0B\u0E2D\u0E19").replace(/cafe\s*amazon/gi, "Cafe Amazon").replace(/([ก-๙])\s+(เฮ้าส์)/g, "$1$2").replace(/[ \t]+/g, " ").replace(/^[|:;._-]+|[|:;._-]+$/g, "").trim().slice(0, 160);
+}
+function merchantBoundary(line) {
+  const value = line.trim();
+  if (!value) return true;
+  if (/^(?:ชำระเงินสำเร็จ|โอนเงินสำเร็จ|โอนสำเร็จ|นาย\s|นาง\s|น\.ส\.|ธ\.|ธนาคาร|bank|xxx|x{3,}|k\+|เลขที่รายการ|เลขอ้างอิง|reference|จำนวน|ยอด|ค่าธรรมเนียม|fee|บันทึกช่วยจำ|หมายเหตุ|สแกน|scan)/i.test(value)) return true;
+  if (/^\d{1,2}\s*(?:ม\.ค\.|ก\.พ\.|มี\.ค\.|เม\.ย\.|พ\.ค\.|มิ\.ย\.|ก\.ค\.|ส\.ค\.|ก\.ย\.|ต\.ค\.|พ\.ย\.|ธ\.ค\.)/i.test(value)) return true;
+  if (/^(?:[A-Z0-9-]{14,}|\d{10,})$/i.test(value.replace(/\s+/g, ""))) return true;
+  return false;
+}
 function extractMerchant(text2) {
   const lines = text2.split(/\n+/).map((line) => line.trim()).filter(Boolean);
   const direct = lines.find((line) => /^(?:ผู้รับ|ผู้รับเงิน|ไปยัง|ชื่อผู้รับ|recipient|merchant|to)\s*[:：-]?\s*.+/i.test(line));
-  if (direct) return direct.replace(/^(?:ผู้รับ|ผู้รับเงิน|ไปยัง|ชื่อผู้รับ|recipient|merchant|to)\s*[:：-]?\s*/i, "").trim().slice(0, 120);
+  if (direct) return cleanMerchantCandidate(direct);
   const markerIndex = lines.findIndex((line) => /^(?:ผู้รับ|ผู้รับเงิน|ไปยัง|ชื่อผู้รับ|recipient|merchant|to)\s*[:：-]?$/i.test(line));
-  if (markerIndex >= 0 && lines[markerIndex + 1]) return lines[markerIndex + 1].slice(0, 120);
-  const merchantLike = lines.find((line) => /(?:คาเฟ่|กาแฟ|coffee|cafe|amazon|อเมซอน|ร้าน|บริษัท|จำกัด|co\.?\s*ltd|company)/i.test(line) && !/(ผู้โอน|จากบัญชี|ธ\.|ธนาคาร|bank)/i.test(line));
-  return merchantLike?.slice(0, 120) ?? "";
+  if (markerIndex >= 0 && lines[markerIndex + 1]) return cleanMerchantCandidate(lines[markerIndex + 1]);
+  const merchantIndex = lines.findIndex((line) => /(?:คาเฟ่|คาเฟอเมซอน|กาแฟ|coffee|cafe|amazon|อเมซอน|ร้าน|บริษัท|จำกัด|บจก\.?|หจก\.?|co\.?\s*ltd|company)/i.test(line) && !/(ผู้โอน|จากบัญชี|ธ\.|ธนาคาร|bank|เลขที่รายการ|ค่าธรรมเนียม)/i.test(line));
+  if (merchantIndex >= 0) {
+    const parts = [cleanMerchantCandidate(lines[merchantIndex])].filter(Boolean);
+    for (let i = merchantIndex + 1; i < Math.min(lines.length, merchantIndex + 4); i += 1) {
+      if (merchantBoundary(lines[i])) break;
+      const next = cleanMerchantCandidate(lines[i]);
+      if (!next || !/[A-Za-z\u0E00-\u0E7F]/.test(next)) break;
+      const compact2 = (value) => value.toLowerCase().replace(/[^a-z0-9\u0E00-\u0E7F]/g, "");
+      const existing = compact2(parts.join(" "));
+      const candidate = compact2(next);
+      if (candidate.length >= 5 && existing.includes(candidate)) continue;
+      parts.push(next);
+    }
+    return cleanMerchantCandidate(parts.join(" "));
+  }
+  const endIndex = lines.findIndex((line) => /^(?:เลขที่รายการ|เลขอ้างอิง|reference|จำนวน|ค่าธรรมเนียม)/i.test(line));
+  if (endIndex > 0) {
+    for (let i = endIndex - 1; i >= Math.max(0, endIndex - 4); i -= 1) {
+      if (merchantBoundary(lines[i])) continue;
+      const candidate = cleanMerchantCandidate(lines[i]);
+      if (candidate && /[A-Za-z\u0E00-\u0E7F]/.test(candidate)) return candidate;
+    }
+  }
+  return "";
 }
 function extractReference(text2) {
   const match = text2.match(/(?:เลขที่รายการ|เลขอ้างอิง|หมายเลขอ้างอิง|reference(?:\s*(?:no|number))?|transaction\s*id)\s*[:：#-]?\s*([A-Z0-9-]{6,50})/i);
@@ -6075,7 +6112,7 @@ var healthHandler = async (req, res) => {
   res.status(200).json({
     status: "ok",
     service: "milo",
-    release: "media-v8-groq-stt-2026-09-14",
+    release: "media-v9-kplus-merchant-ocr-2026-09-14",
     visionConfigured: runtime.authenticated,
     imageAnalysisMode: mode,
     visionModel: mode === "ocr-fallback" ? "tesseract-tha+eng" : process.env.MILO_VISION_MODEL || (mode.startsWith("vercel-ai-gateway") ? "google/gemini-2.5-flash" : mode.startsWith("forge-vision") ? "gemini-3-flash-preview" : "unconfigured"),

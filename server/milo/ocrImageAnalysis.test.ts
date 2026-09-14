@@ -17,6 +17,7 @@ describe("OCR slip parser", () => {
     expect(analyzeOcrText("ใบเสร็จ\nยอดรวม 12.50 บาท\nค่าธรรมเนียม 0.00 บาท").proposals[0].timeText).toBe("");
     expect(analyzeOcrText("ใบเสร็จ\nเวลา 12.50 น.\nยอดรวม 40 บาท").proposals[0].timeText).toBe("12:50");
   });
+
   it("normalizes Thai digits and parses a Thai bank slip", () => {
     const result = analyzeOcrText(`
 โอนเงินสำเร็จ
@@ -57,6 +58,32 @@ Fee 15.00 THB
 `);
     expect(result.proposals[0]).toMatchObject({ kind: "expense", documentType: "bank_slip", amount: 140, dateText: "2026-09-13", timeText: "15:07", category: "อาหาร", receiptNumber: "016256150715DQR03239" });
     expect(result.proposals[0].merchant).toContain("คาเฟ่");
+  });
+
+  it("cleans K+ OCR noise from the merchant and keeps branch text without absorbing references", () => {
+    const result = analyzeOcrText(`
+ชำระเงินสำเร็จ K+
+13 ก.ย. 69 15:07 น.
+นาย จตุพล เ
+ธ.กสิกรไทย
+xxx-x-x3512-x
+ys คาเฟอเมซอน สน.ปตท.บจก.โรสท์บีน
+เฮ้าส์
+บจก. โรสท์บีนเฮ้าส์
+202609131789574
+เลขที่รายการ
+016256150715DQR03239
+จำนวน
+140.00 บาท
+ค่าธรรมเนียม
+0.00 บาท
+บันทึกช่วยจำ: กาแฟ
+`);
+    const proposal = result.proposals[0];
+    expect(proposal).toMatchObject({ amount: 140, dateText: "2026-09-13", timeText: "15:07", receiptNumber: "016256150715DQR03239", title: "กาแฟ", category: "อาหาร" });
+    expect(proposal.merchant).toBe("คาเฟ่ อเมซอน สน.ปตท.บจก.โรสท์บีนเฮ้าส์");
+    expect(proposal.merchant).not.toMatch(/^ys\b/i);
+    expect(proposal.merchant).not.toContain("202609131789574");
   });
 
   it("recovers a K+ amount when LINE OCR splits the จำนวน label and baht value across lines", () => {
