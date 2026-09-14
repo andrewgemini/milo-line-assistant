@@ -3922,6 +3922,149 @@ import path3 from "node:path";
 import { createRequire } from "node:module";
 import sharp3 from "sharp";
 import { createWorker } from "tesseract.js";
+
+// server/milo/thaiReceiptParser.ts
+var monthNumbers = {
+  "\u0E21.\u0E04.": 1,
+  "\u0E01.\u0E1E.": 2,
+  "\u0E21\u0E35.\u0E04.": 3,
+  "\u0E40\u0E21.\u0E22.": 4,
+  "\u0E1E.\u0E04.": 5,
+  "\u0E21\u0E34.\u0E22.": 6,
+  "\u0E01.\u0E04.": 7,
+  "\u0E2A.\u0E04.": 8,
+  "\u0E01.\u0E22.": 9,
+  "\u0E15.\u0E04.": 10,
+  "\u0E1E.\u0E22.": 11,
+  "\u0E18.\u0E04.": 12
+};
+function compact(value) {
+  return value.replace(/[\t ]+/g, " ").trim();
+}
+function normalizeYear(value) {
+  if (value >= 2400) return value - 543;
+  if (value >= 1e3) return value;
+  return value >= 50 ? value + 2500 - 543 : value + 2e3;
+}
+function isoDate(year, month, day) {
+  const date = new Date(Date.UTC(year, month - 1, day));
+  if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day) return "";
+  return `${String(year).padStart(4, "0")}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+}
+function valueNearLabel(lines, pattern) {
+  for (let i = 0; i < lines.length; i += 1) {
+    if (!pattern.test(lines[i])) continue;
+    const window = [lines[i], lines[i + 1]].filter(Boolean).join(" ");
+    const matches = Array.from(window.matchAll(/-?\s*([0-9]{1,3}(?:,[0-9]{3})*(?:\.\d{1,2})|[0-9]+(?:\.\d{1,2})?)/g));
+    if (!matches.length) continue;
+    const raw = matches[matches.length - 1][1].replace(/,/g, "");
+    const amount = Number(raw);
+    if (Number.isFinite(amount) && amount > 0) return amount;
+  }
+  return 0;
+}
+function extractThaiPayableAmount(text2) {
+  const lines = text2.split(/\n+/).map(compact).filter(Boolean);
+  const rules = [
+    /จำนวนเงินที่ชำระ|จำนวนเงินชำระ|ยอดที่ชำระ|ยอดชำระสุทธิ|ยอดสุทธิ|รวมสุทธิ/i,
+    /^ยอดชำระ\b/i,
+    /^ยอดรวม\b|^total\b/i,
+    /ค่าสินค้า\s*\/\s*บริการ/i
+  ];
+  for (const rule of rules) {
+    const amount = valueNearLabel(lines, rule);
+    if (amount > 0) return amount;
+  }
+  return 0;
+}
+function extractThaiSlipDateTime(text2) {
+  const flat = compact(text2.replace(/\r?\n/g, " "));
+  let dateText = "";
+  for (const [name, month] of Object.entries(monthNumbers)) {
+    const escaped = name.replace(/\./g, "\\.?").replace(/\s+/g, "\\s*");
+    const match = flat.match(new RegExp(`(?:^|\\s)([0-3]?\\d)\\s*${escaped}\\s*(\\d{2,4})(?=\\s|$)`));
+    if (match) {
+      dateText = isoDate(normalizeYear(Number(match[2])), month, Number(match[1]));
+      break;
+    }
+  }
+  if (!dateText) {
+    const numeric = flat.match(/\b([0-3]?\d)[\/-]([01]?\d)[\/-](\d{2,4})\b/);
+    if (numeric) dateText = isoDate(normalizeYear(Number(numeric[3])), Number(numeric[2]), Number(numeric[1]));
+  }
+  const time = flat.match(/\b([01]?\d|2[0-3]):([0-5]\d)\b/) || flat.match(/(?:เวลา\s*)\b([01]?\d|2[0-3])\.([0-5]\d)\s*(?:น\.)?/) || flat.match(/\b([01]?\d|2[0-3])\.([0-5]\d)\s*น\./);
+  return { dateText, timeText: time ? `${String(Number(time[1])).padStart(2, "0")}:${time[2]}` : "" };
+}
+function isKbankNoise(line) {
+  const value = compact(line);
+  if (!value) return true;
+  if (/^(?:ชำระเงินสำเร็จ|โอนเงินสำเร็จ|นาย\s|นาง\s|น\.ส\.|ธ\.?กสิกรไทย|ธนาคาร|k\+|xxx|x{3,}|เลขที่รายการ|เลขอ้างอิง|จำนวน|ค่าธรรมเนียม|บันทึกช่วยจำ|หมายเหตุ|สแกน)/i.test(value)) return true;
+  if (/^\d{1,2}\s*(?:ม\.ค\.|ก\.พ\.|มี\.ค\.|เม\.ย\.|พ\.ค\.|มิ\.ย\.|ก\.ค\.|ส\.ค\.|ก\.ย\.|ต\.ค\.|พ\.ย\.|ธ\.ค\.)/i.test(value)) return true;
+  const compactValue = value.replace(/\s+/g, "");
+  if (/^(?:[A-Z0-9-]{14,}|\d{10,})$/i.test(compactValue)) return true;
+  if (/^(?:จำนวน|ค่าธรรมเนียม|ยอด).*(?:บาท|\d)/i.test(value)) return true;
+  return false;
+}
+function cleanMerchant(value) {
+  return compact(value).replace(/^[A-Za-z0-9]{1,4}[\s|:;._-]+(?=[ก-๙])/, "").replace(/คาเฟ[่]?\s*อเมซอน/gi, "\u0E04\u0E32\u0E40\u0E1F\u0E48 \u0E2D\u0E40\u0E21\u0E0B\u0E2D\u0E19").replace(/([ก-๙])\s+(เฮ้าส์)/g, "$1$2").replace(/\s+(?:[A-Z0-9]{14,}|\d{10,})\s*$/i, "").trim();
+}
+function extractKbankMerchant(text2) {
+  const lines = text2.split(/\n+/).map(compact).filter(Boolean);
+  const refIndex = lines.findIndex((line) => /^(?:เลขที่รายการ|เลขอ้างอิง|จำนวน|ค่าธรรมเนียม|บันทึกช่วยจำ)/i.test(line));
+  const end = refIndex >= 0 ? refIndex : lines.length;
+  const accountIndex = lines.findIndex((line) => /(?:xxx|x{3,})[-x\d]*|ธ\.?กสิกรไทย/i.test(line));
+  const start = accountIndex >= 0 ? accountIndex + 1 : Math.max(0, end - 5);
+  const candidates = [];
+  for (let i = start; i < end && candidates.length < 3; i += 1) {
+    const line = lines[i];
+    if (isKbankNoise(line)) continue;
+    const cleaned = cleanMerchant(line);
+    if (!cleaned || !/[A-Za-zก-๙]/.test(cleaned)) continue;
+    const fingerprint = cleaned.toLowerCase().replace(/[^a-z0-9ก-๙]/g, "");
+    const combined = candidates.join("").toLowerCase().replace(/[^a-z0-9ก-๙]/g, "");
+    if (fingerprint.length >= 5 && combined.includes(fingerprint)) continue;
+    candidates.push(cleaned);
+  }
+  return cleanMerchant(candidates.join(" ")).slice(0, 180);
+}
+function extractReceiptMerchant(text2) {
+  const lines = text2.split(/\n+/).map(compact).filter(Boolean);
+  const candidate = lines.find((line) => /^(?:ร้าน|บจก\.?|หจก\.?|บริษัท|cj\b|cafe\b)/i.test(line) && !/(ค่าสินค้า|ยอด|จำนวนเงิน|ส่วนลด|สิทธิ|บาท|ค่าธรรมเนียม)/i.test(line));
+  if (!candidate) return "";
+  return cleanMerchant(candidate).replace(/\s+(?:ถุง|อาหาร|ของหวาน|เครื่องดื่ม)\b.*$/i, "").trim().slice(0, 180);
+}
+function extractReceiptLineItems(text2) {
+  const lines = text2.split(/\n+/).map(compact).filter(Boolean);
+  const labels = /ค่าสินค้า\s*\/\s*บริการ|สิทธิ.*(?:พลัส|ช่วย)|ส่วนลด|จำนวนเงินที่ชำระ|ยอดที่ชำระ|ยอดสุทธิ/i;
+  const out = [];
+  for (let i = 0; i < lines.length; i += 1) {
+    if (!labels.test(lines[i])) continue;
+    const joined = /\d/.test(lines[i]) ? lines[i] : [lines[i], lines[i + 1]].filter(Boolean).join(" ");
+    const cleaned = compact(joined);
+    if (cleaned && !out.includes(cleaned)) out.push(cleaned);
+  }
+  return out.slice(0, 6);
+}
+function enrichThaiReceiptProposal(text2, proposal) {
+  const kbank = /(?:k\+|กสิกรไทย|ธ\.?กสิกรไทย)/i.test(text2);
+  const receiptLike = /ใบเสร็จ|ค่าสินค้า\s*\/\s*บริการ|จำนวนเงินที่ชำระ|ยอดสุทธิ|สิทธิ.*(?:พลัส|ช่วย)/i.test(text2);
+  const dateTime = extractThaiSlipDateTime(text2);
+  const payable = extractThaiPayableAmount(text2);
+  const merchant = kbank ? extractKbankMerchant(text2) : receiptLike ? extractReceiptMerchant(text2) : "";
+  const lineItems = receiptLike ? extractReceiptLineItems(text2) : [];
+  const documentType = proposal.documentType === "unknown" && receiptLike ? "receipt" : proposal.documentType;
+  return {
+    ...proposal,
+    documentType,
+    amount: payable > 0 ? payable : proposal.amount,
+    merchant: merchant || proposal.merchant,
+    dateText: proposal.dateText || dateTime.dateText,
+    timeText: proposal.timeText || dateTime.timeText,
+    lineItems: lineItems.length ? Array.from(/* @__PURE__ */ new Set([...proposal.lineItems || [], ...lineItems])) : proposal.lineItems
+  };
+}
+
+// server/milo/ocrImageAnalysis.ts
 var DATA_DIR = path3.join(process.cwd(), "api", "tessdata");
 var CACHE_DIR = path3.join(os.tmpdir(), "milo-tesscache");
 var requireOcr = createRequire(import.meta.url);
@@ -4031,7 +4174,7 @@ function extractAmount(text2) {
   candidates.sort((a, b) => b.score - a.score || b.amount - a.amount);
   return candidates[0]?.amount ?? 0;
 }
-function normalizeYear(raw) {
+function normalizeYear2(raw) {
   if (raw >= 2400) return raw - 543;
   if (raw >= 1e3) return raw;
   if (raw >= 50) return raw + 2500 - 543;
@@ -4053,14 +4196,14 @@ function extractDateTime(text2) {
   if (iso2) dateText = formatIsoDate(Number(iso2[1]), Number(iso2[2]), Number(iso2[3]));
   if (!dateText) {
     const numeric = normalized.match(/\b([0-3]?\d)[\/-]([01]?\d)[\/-](\d{2,4})\b/);
-    if (numeric) dateText = formatIsoDate(normalizeYear(Number(numeric[3])), Number(numeric[2]), Number(numeric[1]));
+    if (numeric) dateText = formatIsoDate(normalizeYear2(Number(numeric[3])), Number(numeric[2]), Number(numeric[1]));
   }
   if (!dateText) {
     for (const [monthName, month] of Object.entries(thaiMonths)) {
       const escaped = monthName.split("").map((char) => char === "." ? "\\.?" : char.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("\\s*");
       const match = normalized.match(new RegExp(`(?:^|\\s)([0-3]?\\d)\\s*${escaped}\\s*(\\d{2,4})(?=\\s|$)`));
       if (match) {
-        dateText = formatIsoDate(normalizeYear(Number(match[2])), month, Number(match[1]));
+        dateText = formatIsoDate(normalizeYear2(Number(match[2])), month, Number(match[1]));
         break;
       }
     }
@@ -4097,9 +4240,9 @@ function extractMerchant(text2) {
       if (merchantBoundary(lines[i])) break;
       const next = cleanMerchantCandidate(lines[i]);
       if (!next || !/[A-Za-z\u0E00-\u0E7F]/.test(next)) break;
-      const compact2 = (value) => value.toLowerCase().replace(/[^a-z0-9\u0E00-\u0E7F]/g, "");
-      const existing = compact2(parts.join(" "));
-      const candidate = compact2(next);
+      const compact3 = (value) => value.toLowerCase().replace(/[^a-z0-9\u0E00-\u0E7F]/g, "");
+      const existing = compact3(parts.join(" "));
+      const candidate = compact3(next);
       if (candidate.length >= 5 && existing.includes(candidate)) continue;
       parts.push(next);
     }
@@ -4149,7 +4292,7 @@ function analyzeOcrText(rawText) {
   const confidence = Math.min(0.97, 0.28 + (amount > 0 ? 0.34 : 0) + (dateTime.dateText ? 0.14 : 0) + (dateTime.timeText ? 0.05 : 0) + (merchant ? 0.08 : 0) + (documentType !== "unknown" ? 0.07 : 0));
   const memo = text2.match(/(?:บันทึกช่วยจำ|หมายเหตุ|memo)\s*[:：]\s*([^\n]+)/i)?.[1]?.trim();
   const title = memo || (documentType === "bank_slip" ? "\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E42\u0E2D\u0E19\u0E40\u0E07\u0E34\u0E19" : documentType === "receipt" ? "\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E08\u0E32\u0E01\u0E43\u0E1A\u0E40\u0E2A\u0E23\u0E47\u0E08" : documentType === "appointment" ? "\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E19\u0E31\u0E14\u0E2B\u0E21\u0E32\u0E22" : "\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E08\u0E32\u0E01\u0E23\u0E39\u0E1B");
-  const proposal = {
+  const proposal = enrichThaiReceiptProposal(text2, {
     kind,
     documentType,
     title,
@@ -4163,8 +4306,9 @@ function analyzeOcrText(rawText) {
     receiptNumber,
     lineItems: [],
     note: memo || ""
-  };
-  const summary = kind === "expense" ? `OCR \u0E2D\u0E48\u0E32\u0E19${documentType === "bank_slip" ? "\u0E2A\u0E25\u0E34\u0E1B" : "\u0E43\u0E1A\u0E40\u0E2A\u0E23\u0E47\u0E08"}\u0E44\u0E14\u0E49 \u0E22\u0E2D\u0E14 ${amount.toLocaleString("th-TH")} \u0E1A\u0E32\u0E17${dateTime.dateText ? ` \u0E27\u0E31\u0E19\u0E17\u0E35\u0E48 ${dateTime.dateText}` : " \u0E41\u0E15\u0E48\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E0A\u0E31\u0E14"}` : kind === "reminder" ? `OCR \u0E2D\u0E48\u0E32\u0E19\u0E27\u0E31\u0E19\u0E19\u0E31\u0E14\u0E44\u0E14\u0E49 ${dateTime.dateText}${dateTime.timeText ? ` ${dateTime.timeText}` : ""}` : "OCR \u0E2D\u0E48\u0E32\u0E19\u0E02\u0E49\u0E2D\u0E04\u0E27\u0E32\u0E21\u0E08\u0E32\u0E01\u0E23\u0E39\u0E1B\u0E44\u0E14\u0E49 \u0E41\u0E15\u0E48\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E1E\u0E1A\u0E22\u0E2D\u0E14\u0E2B\u0E23\u0E37\u0E2D\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E17\u0E35\u0E48\u0E21\u0E31\u0E48\u0E19\u0E43\u0E08\u0E1E\u0E2D\u0E2A\u0E33\u0E2B\u0E23\u0E31\u0E1A\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01";
+  });
+  if (proposal.amount > 0) proposal.kind = "expense";
+  const summary = proposal.kind === "expense" ? `OCR \u0E2D\u0E48\u0E32\u0E19${proposal.documentType === "bank_slip" ? "\u0E2A\u0E25\u0E34\u0E1B" : "\u0E43\u0E1A\u0E40\u0E2A\u0E23\u0E47\u0E08"}\u0E44\u0E14\u0E49 \u0E22\u0E2D\u0E14 ${proposal.amount.toLocaleString("th-TH")} \u0E1A\u0E32\u0E17${proposal.dateText ? ` \u0E27\u0E31\u0E19\u0E17\u0E35\u0E48 ${proposal.dateText}` : " \u0E41\u0E15\u0E48\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E0A\u0E31\u0E14"}` : proposal.kind === "reminder" ? `OCR \u0E2D\u0E48\u0E32\u0E19\u0E27\u0E31\u0E19\u0E19\u0E31\u0E14\u0E44\u0E14\u0E49 ${proposal.dateText}${proposal.timeText ? ` ${proposal.timeText}` : ""}` : "OCR \u0E2D\u0E48\u0E32\u0E19\u0E02\u0E49\u0E2D\u0E04\u0E27\u0E32\u0E21\u0E08\u0E32\u0E01\u0E23\u0E39\u0E1B\u0E44\u0E14\u0E49 \u0E41\u0E15\u0E48\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E1E\u0E1A\u0E22\u0E2D\u0E14\u0E2B\u0E23\u0E37\u0E2D\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E17\u0E35\u0E48\u0E21\u0E31\u0E48\u0E19\u0E43\u0E08\u0E1E\u0E2D\u0E2A\u0E33\u0E2B\u0E23\u0E31\u0E1A\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01";
   return { summary, confidence, proposals: [proposal] };
 }
 function actionable(analysis) {
@@ -4265,7 +4409,7 @@ var schema2 = {
   required: ["summary", "confidence", "proposals"],
   additionalProperties: false
 };
-var SYSTEM_PROMPT = "\u0E04\u0E38\u0E13\u0E04\u0E37\u0E2D\u0E44\u0E21\u0E42\u0E25 \u0E1C\u0E39\u0E49\u0E0A\u0E48\u0E27\u0E22\u0E20\u0E32\u0E29\u0E32\u0E44\u0E17\u0E22 \u0E2D\u0E48\u0E32\u0E19\u0E20\u0E32\u0E1E\u0E43\u0E1A\u0E19\u0E31\u0E14 \u0E15\u0E32\u0E23\u0E32\u0E07 \u0E2A\u0E25\u0E34\u0E1B\u0E42\u0E2D\u0E19\u0E40\u0E07\u0E34\u0E19 \u0E41\u0E25\u0E30\u0E43\u0E1A\u0E40\u0E2A\u0E23\u0E47\u0E08\u0E2D\u0E22\u0E48\u0E32\u0E07\u0E23\u0E30\u0E21\u0E31\u0E14\u0E23\u0E30\u0E27\u0E31\u0E07 \u0E04\u0E37\u0E19 JSON \u0E15\u0E32\u0E21 schema \u0E40\u0E17\u0E48\u0E32\u0E19\u0E31\u0E49\u0E19 \u0E2B\u0E49\u0E32\u0E21\u0E40\u0E14\u0E32\u0E2B\u0E23\u0E37\u0E2D\u0E41\u0E15\u0E48\u0E07\u0E02\u0E49\u0E2D\u0E04\u0E27\u0E32\u0E21/\u0E15\u0E31\u0E27\u0E40\u0E25\u0E02\u0E17\u0E35\u0E48\u0E2D\u0E48\u0E32\u0E19\u0E44\u0E21\u0E48\u0E0A\u0E31\u0E14 \u0E2A\u0E33\u0E2B\u0E23\u0E31\u0E1A\u0E2A\u0E25\u0E34\u0E1B\u0E43\u0E2B\u0E49\u0E43\u0E0A\u0E49\u0E22\u0E2D\u0E14\u0E42\u0E2D\u0E19\u0E08\u0E23\u0E34\u0E07 \u0E44\u0E21\u0E48\u0E43\u0E0A\u0E49\u0E22\u0E2D\u0E14\u0E04\u0E07\u0E40\u0E2B\u0E25\u0E37\u0E2D\u0E2B\u0E23\u0E37\u0E2D\u0E04\u0E48\u0E32\u0E18\u0E23\u0E23\u0E21\u0E40\u0E19\u0E35\u0E22\u0E21 \u0E2A\u0E33\u0E2B\u0E23\u0E31\u0E1A\u0E43\u0E1A\u0E40\u0E2A\u0E23\u0E47\u0E08\u0E43\u0E2B\u0E49\u0E43\u0E0A\u0E49\u0E22\u0E2D\u0E14\u0E23\u0E27\u0E21\u0E2A\u0E38\u0E17\u0E18\u0E34\u0E17\u0E35\u0E48\u0E0A\u0E33\u0E23\u0E30\u0E41\u0E25\u0E49\u0E27 \u0E2B\u0E32\u0E01\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48\u0E2D\u0E48\u0E32\u0E19\u0E44\u0E14\u0E49\u0E41\u0E19\u0E48\u0E0A\u0E31\u0E14\u0E43\u0E2B\u0E49\u0E2A\u0E48\u0E07 dateText \u0E23\u0E39\u0E1B\u0E41\u0E1A\u0E1A YYYY-MM-DD \u0E21\u0E34\u0E09\u0E30\u0E19\u0E31\u0E49\u0E19\u0E40\u0E1B\u0E47\u0E19\u0E2A\u0E15\u0E23\u0E34\u0E07\u0E27\u0E48\u0E32\u0E07 \u0E2A\u0E33\u0E2B\u0E23\u0E31\u0E1A\u0E04\u0E48\u0E32\u0E43\u0E0A\u0E49\u0E08\u0E48\u0E32\u0E22\u0E43\u0E2B\u0E49\u0E41\u0E22\u0E01 merchant, paymentMethod, receiptNumber, \u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E2A\u0E33\u0E04\u0E31\u0E0D \u0E41\u0E25\u0E30\u0E40\u0E25\u0E37\u0E2D\u0E01 category \u0E20\u0E32\u0E29\u0E32\u0E44\u0E17\u0E22\u0E08\u0E32\u0E01 \u0E2D\u0E32\u0E2B\u0E32\u0E23, \u0E40\u0E14\u0E34\u0E19\u0E17\u0E32\u0E07, \u0E04\u0E48\u0E32\u0E2A\u0E32\u0E18\u0E32\u0E23\u0E13\u0E39\u0E1B\u0E42\u0E20\u0E04, \u0E2A\u0E38\u0E02\u0E20\u0E32\u0E1E, \u0E01\u0E32\u0E23\u0E28\u0E36\u0E01\u0E29\u0E32, \u0E1A\u0E31\u0E19\u0E40\u0E17\u0E34\u0E07, \u0E0A\u0E49\u0E2D\u0E1B\u0E1B\u0E34\u0E49\u0E07, \u0E17\u0E48\u0E2D\u0E07\u0E40\u0E17\u0E35\u0E48\u0E22\u0E27, \u0E17\u0E31\u0E48\u0E27\u0E44\u0E1B \u0E2B\u0E32\u0E01\u0E44\u0E21\u0E48\u0E1E\u0E1A\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E17\u0E35\u0E48\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E44\u0E14\u0E49\u0E43\u0E2B\u0E49\u0E43\u0E0A\u0E49 kind=unknown \u0E41\u0E25\u0E30 amount=0";
+var SYSTEM_PROMPT = "\u0E04\u0E38\u0E13\u0E04\u0E37\u0E2D\u0E44\u0E21\u0E42\u0E25 \u0E1C\u0E39\u0E49\u0E0A\u0E48\u0E27\u0E22\u0E20\u0E32\u0E29\u0E32\u0E44\u0E17\u0E22 \u0E2D\u0E48\u0E32\u0E19\u0E20\u0E32\u0E1E\u0E43\u0E1A\u0E19\u0E31\u0E14 \u0E15\u0E32\u0E23\u0E32\u0E07 \u0E2A\u0E25\u0E34\u0E1B\u0E42\u0E2D\u0E19\u0E40\u0E07\u0E34\u0E19 \u0E41\u0E25\u0E30\u0E43\u0E1A\u0E40\u0E2A\u0E23\u0E47\u0E08\u0E2D\u0E22\u0E48\u0E32\u0E07\u0E23\u0E30\u0E21\u0E31\u0E14\u0E23\u0E30\u0E27\u0E31\u0E07 \u0E04\u0E37\u0E19 JSON \u0E15\u0E32\u0E21 schema \u0E40\u0E17\u0E48\u0E32\u0E19\u0E31\u0E49\u0E19 \u0E2B\u0E49\u0E32\u0E21\u0E40\u0E14\u0E32\u0E2B\u0E23\u0E37\u0E2D\u0E41\u0E15\u0E48\u0E07\u0E02\u0E49\u0E2D\u0E04\u0E27\u0E32\u0E21/\u0E15\u0E31\u0E27\u0E40\u0E25\u0E02\u0E17\u0E35\u0E48\u0E2D\u0E48\u0E32\u0E19\u0E44\u0E21\u0E48\u0E0A\u0E31\u0E14 \u0E2A\u0E33\u0E2B\u0E23\u0E31\u0E1A\u0E2A\u0E25\u0E34\u0E1B\u0E43\u0E2B\u0E49\u0E43\u0E0A\u0E49\u0E22\u0E2D\u0E14\u0E42\u0E2D\u0E19\u0E08\u0E23\u0E34\u0E07 \u0E44\u0E21\u0E48\u0E43\u0E0A\u0E49\u0E22\u0E2D\u0E14\u0E04\u0E07\u0E40\u0E2B\u0E25\u0E37\u0E2D\u0E2B\u0E23\u0E37\u0E2D\u0E04\u0E48\u0E32\u0E18\u0E23\u0E23\u0E21\u0E40\u0E19\u0E35\u0E22\u0E21 \u0E2A\u0E33\u0E2B\u0E23\u0E31\u0E1A\u0E43\u0E1A\u0E40\u0E2A\u0E23\u0E47\u0E08\u0E43\u0E2B\u0E49\u0E43\u0E0A\u0E49\u0E22\u0E2D\u0E14\u0E17\u0E35\u0E48\u0E08\u0E48\u0E32\u0E22\u0E08\u0E23\u0E34\u0E07\u0E2B\u0E25\u0E31\u0E07\u0E2A\u0E48\u0E27\u0E19\u0E25\u0E14\u0E2B\u0E23\u0E37\u0E2D\u0E2A\u0E34\u0E17\u0E18\u0E34\u0E0A\u0E48\u0E27\u0E22\u0E40\u0E2B\u0E25\u0E37\u0E2D \u0E42\u0E14\u0E22\u0E43\u0E2B\u0E49\u0E04\u0E27\u0E32\u0E21\u0E2A\u0E33\u0E04\u0E31\u0E0D\u0E01\u0E31\u0E1A\u0E0A\u0E48\u0E2D\u0E07 \u0E08\u0E33\u0E19\u0E27\u0E19\u0E40\u0E07\u0E34\u0E19\u0E17\u0E35\u0E48\u0E0A\u0E33\u0E23\u0E30, \u0E22\u0E2D\u0E14\u0E17\u0E35\u0E48\u0E0A\u0E33\u0E23\u0E30, \u0E22\u0E2D\u0E14\u0E2A\u0E38\u0E17\u0E18\u0E34 \u0E21\u0E32\u0E01\u0E01\u0E27\u0E48\u0E32\u0E04\u0E48\u0E32\u0E2A\u0E34\u0E19\u0E04\u0E49\u0E32/\u0E1A\u0E23\u0E34\u0E01\u0E32\u0E23\u0E01\u0E48\u0E2D\u0E19\u0E2A\u0E48\u0E27\u0E19\u0E25\u0E14 \u0E2B\u0E32\u0E01\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48\u0E2D\u0E48\u0E32\u0E19\u0E44\u0E14\u0E49\u0E41\u0E19\u0E48\u0E0A\u0E31\u0E14\u0E43\u0E2B\u0E49\u0E2A\u0E48\u0E07 dateText \u0E23\u0E39\u0E1B\u0E41\u0E1A\u0E1A YYYY-MM-DD \u0E21\u0E34\u0E09\u0E30\u0E19\u0E31\u0E49\u0E19\u0E40\u0E1B\u0E47\u0E19\u0E2A\u0E15\u0E23\u0E34\u0E07\u0E27\u0E48\u0E32\u0E07 \u0E2A\u0E33\u0E2B\u0E23\u0E31\u0E1A\u0E04\u0E48\u0E32\u0E43\u0E0A\u0E49\u0E08\u0E48\u0E32\u0E22\u0E43\u0E2B\u0E49\u0E41\u0E22\u0E01 merchant \u0E41\u0E1A\u0E1A\u0E0A\u0E37\u0E48\u0E2D\u0E23\u0E49\u0E32\u0E19\u0E08\u0E23\u0E34\u0E07\u0E40\u0E17\u0E48\u0E32\u0E19\u0E31\u0E49\u0E19 \u0E44\u0E21\u0E48\u0E23\u0E27\u0E21\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E2A\u0E34\u0E19\u0E04\u0E49\u0E32/\u0E2A\u0E48\u0E27\u0E19\u0E25\u0E14/\u0E22\u0E2D\u0E14\u0E40\u0E07\u0E34\u0E19, paymentMethod, receiptNumber, lineItems \u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E2A\u0E33\u0E04\u0E31\u0E0D \u0E41\u0E25\u0E30\u0E40\u0E25\u0E37\u0E2D\u0E01 category \u0E20\u0E32\u0E29\u0E32\u0E44\u0E17\u0E22\u0E08\u0E32\u0E01 \u0E2D\u0E32\u0E2B\u0E32\u0E23, \u0E40\u0E14\u0E34\u0E19\u0E17\u0E32\u0E07, \u0E04\u0E48\u0E32\u0E2A\u0E32\u0E18\u0E32\u0E23\u0E13\u0E39\u0E1B\u0E42\u0E20\u0E04, \u0E2A\u0E38\u0E02\u0E20\u0E32\u0E1E, \u0E01\u0E32\u0E23\u0E28\u0E36\u0E01\u0E29\u0E32, \u0E1A\u0E31\u0E19\u0E40\u0E17\u0E34\u0E07, \u0E0A\u0E49\u0E2D\u0E1B\u0E1B\u0E34\u0E49\u0E07, \u0E17\u0E48\u0E2D\u0E07\u0E40\u0E17\u0E35\u0E48\u0E22\u0E27, \u0E17\u0E31\u0E48\u0E27\u0E44\u0E1B \u0E2B\u0E32\u0E01\u0E44\u0E21\u0E48\u0E1E\u0E1A\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E17\u0E35\u0E48\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E44\u0E14\u0E49\u0E43\u0E2B\u0E49\u0E43\u0E0A\u0E49 kind=unknown \u0E41\u0E25\u0E30 amount=0";
 var USER_PROMPT = "\u0E27\u0E34\u0E40\u0E04\u0E23\u0E32\u0E30\u0E2B\u0E4C\u0E20\u0E32\u0E1E\u0E40\u0E1E\u0E37\u0E48\u0E2D\u0E2B\u0E32\u0E43\u0E1A\u0E19\u0E31\u0E14\u0E2B\u0E23\u0E37\u0E2D\u0E18\u0E38\u0E23\u0E01\u0E23\u0E23\u0E21\u0E04\u0E48\u0E32\u0E43\u0E0A\u0E49\u0E08\u0E48\u0E32\u0E22\u0E08\u0E32\u0E01\u0E2A\u0E25\u0E34\u0E1B/\u0E43\u0E1A\u0E40\u0E2A\u0E23\u0E47\u0E08 \u0E42\u0E14\u0E22\u0E40\u0E2A\u0E19\u0E2D\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E40\u0E1E\u0E37\u0E48\u0E2D\u0E43\u0E2B\u0E49\u0E1C\u0E39\u0E49\u0E43\u0E0A\u0E49\u0E22\u0E37\u0E19\u0E22\u0E31\u0E19\u0E01\u0E48\u0E2D\u0E19\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E40\u0E17\u0E48\u0E32\u0E19\u0E31\u0E49\u0E19";
 function parseAnalysisContent(content) {
   if (typeof content !== "string" || !content.trim()) throw new Error("Image model did not return JSON");
@@ -4361,13 +4505,49 @@ async function imageAnalysisRuntimeStatus(requestToken) {
     ocrAssetsReady: ocrAssetsReady()
   };
 }
+function merchantQuality(value) {
+  const candidate = value.trim();
+  if (!candidate) return -100;
+  let score = Math.min(candidate.length, 80);
+  if (/(ค่าสินค้า|บริการ|จำนวนเงิน|ยอด|ส่วนลด|สิทธิ|บาท|ค่าธรรมเนียม)/i.test(candidate)) score -= 80;
+  if (/ร้าน|บจก|บริษัท|หจก|cj\b|cafe|amazon|อเมซอน/i.test(candidate)) score += 20;
+  return score;
+}
+function mergeImageAnalyses(primary, ocr) {
+  const p = primary.proposals[0];
+  const o = ocr.proposals[0];
+  if (!p) return ocr;
+  if (!o) return primary;
+  const documentType = p.documentType !== "unknown" ? p.documentType : o.documentType;
+  const preferOcrAmount = o.amount > 0 && (p.amount <= 0 || documentType === "receipt" && o.amount !== p.amount);
+  const amount = preferOcrAmount ? o.amount : p.amount || o.amount;
+  const merchant = merchantQuality(o.merchant) > merchantQuality(p.merchant) ? o.merchant : p.merchant;
+  const merged = {
+    ...p,
+    kind: (p.kind === "expense" || o.kind === "expense") && amount > 0 ? "expense" : p.kind,
+    documentType,
+    merchant,
+    dateText: p.dateText || o.dateText,
+    timeText: p.timeText || o.timeText,
+    amount,
+    currency: p.currency || o.currency || "\u0E1A\u0E32\u0E17",
+    category: p.category && p.category !== "\u0E17\u0E31\u0E48\u0E27\u0E44\u0E1B" ? p.category : o.category,
+    paymentMethod: p.paymentMethod || o.paymentMethod,
+    receiptNumber: p.receiptNumber || o.receiptNumber,
+    lineItems: Array.from(/* @__PURE__ */ new Set([...p.lineItems || [], ...o.lineItems || []])).slice(0, 10),
+    note: p.note || o.note,
+    title: p.title && p.title !== "\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E08\u0E32\u0E01\u0E23\u0E39\u0E1B" ? p.title : o.title || p.title
+  };
+  const summary = merged.kind === "expense" ? `\u0E2D\u0E48\u0E32\u0E19${merged.documentType === "bank_slip" ? "\u0E2A\u0E25\u0E34\u0E1B" : "\u0E43\u0E1A\u0E40\u0E2A\u0E23\u0E47\u0E08"}\u0E44\u0E14\u0E49 \u0E22\u0E2D\u0E14 ${merged.amount.toLocaleString("th-TH")} \u0E1A\u0E32\u0E17${merged.dateText ? ` \u0E27\u0E31\u0E19\u0E17\u0E35\u0E48 ${merged.dateText}` : " \u0E41\u0E15\u0E48\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E0A\u0E31\u0E14"}` : primary.summary || ocr.summary;
+  return { summary, confidence: Math.max(primary.confidence, ocr.confidence), proposals: [merged, ...primary.proposals.slice(1)] };
+}
 async function analyzeImage(dataUrl, options = {}) {
   let providerError;
   let providerAnalysis;
   if (ENV.forgeApiKey) {
     try {
       const analysis = await analyzeImageWithForge(dataUrl);
-      if (analysis.proposals.some((item) => item.kind === "expense" && item.amount > 0 || item.kind === "reminder" && Boolean(item.dateText))) return analysis;
+      if (analysis.proposals.some((item) => item.kind === "reminder" && Boolean(item.dateText))) return analysis;
       providerAnalysis = analysis;
       console.warn("[Milo Image] primary vision provider returned no actionable proposal; trying OCR enrichment");
     } catch (error) {
@@ -4381,7 +4561,7 @@ async function analyzeImage(dataUrl, options = {}) {
   if (gatewayKey) {
     try {
       const analysis = await analyzeImageWithGatewayKey(dataUrl, gatewayKey);
-      if (analysis.proposals.some((item) => item.kind === "expense" && item.amount > 0 || item.kind === "reminder" && Boolean(item.dateText))) return analysis;
+      if (analysis.proposals.some((item) => item.kind === "reminder" && Boolean(item.dateText))) return analysis;
       providerAnalysis = analysis;
       console.warn("[Milo Image] AI Gateway returned no actionable proposal; trying OCR enrichment");
     } catch (error) {
@@ -4395,7 +4575,8 @@ async function analyzeImage(dataUrl, options = {}) {
     const ocrAnalysis = await analyzeImageWithOcr(dataUrl);
     if (!providerAnalysis) return ocrAnalysis;
     const score = (analysis) => analysis.proposals.reduce((total, item) => total + (item.kind === "expense" && item.amount > 0 ? 6 : 0) + (item.kind === "reminder" && item.dateText ? 5 : 0) + (item.documentType !== "unknown" ? 1 : 0) + (item.dateText ? 1 : 0) + (item.merchant ? 0.5 : 0), analysis.confidence);
-    return score(ocrAnalysis) > score(providerAnalysis) ? ocrAnalysis : providerAnalysis;
+    const merged = mergeImageAnalyses(providerAnalysis, ocrAnalysis);
+    return score(merged) >= Math.max(score(ocrAnalysis), score(providerAnalysis)) ? merged : score(ocrAnalysis) > score(providerAnalysis) ? ocrAnalysis : providerAnalysis;
   } catch (ocrError) {
     console.error("[Milo Image] OCR fallback failed", { error: ocrError instanceof Error ? ocrError.message : "unknown" });
     if (providerAnalysis) return providerAnalysis;
@@ -5029,6 +5210,7 @@ function formatImageProposal(proposal) {
     if (proposal.receiptNumber?.trim()) rows.push(`\u0E40\u0E25\u0E02\u0E17\u0E35\u0E48\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23 ${proposal.receiptNumber.trim()}`);
     if (proposal.paymentMethod?.trim()) rows.push(`\u0E0A\u0E33\u0E23\u0E30 ${proposal.paymentMethod.trim()}`);
     if (proposal.title?.trim()) rows.push(`\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23 ${proposal.title.trim()}`);
+    if (proposal.lineItems?.length) rows.push(...proposal.lineItems.slice(0, 4).map((item) => `\u2022 ${item}`));
     return rows.join("\n");
   }
   return proposal.title || proposal.note || "\u0E44\u0E21\u0E48\u0E1E\u0E1A\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E17\u0E35\u0E48\u0E22\u0E37\u0E19\u0E22\u0E31\u0E19\u0E44\u0E14\u0E49";
@@ -5955,7 +6137,7 @@ function parseDate(value) {
   return Number.isNaN(date.getTime()) ? /* @__PURE__ */ new Date() : date;
 }
 var renderSegmenter = new Intl.Segmenter("th", { granularity: "grapheme" });
-function compact(value, maxLength) {
+function compact2(value, maxLength) {
   const normalized = normalizeRenderText(value).replace(/\s+/g, " ").trim();
   const graphemes = Array.from(renderSegmenter.segment(normalized)).map((part) => part.segment);
   return graphemes.length > maxLength ? `${graphemes.slice(0, Math.max(1, maxLength - 3)).join("")}...` : normalized;
@@ -5995,8 +6177,8 @@ function displayCategory(category, transactionType) {
 function buildSaveResultSvg(input) {
   const { transactionType, amount, occurredAt, budgetSpent, budgetLimit } = input;
   const display = saveResultDisplayText(input.item);
-  const item = compact(display.primary, 60) || "\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23";
-  const category = compact(input.category, 24) || "\u0E17\u0E31\u0E48\u0E27\u0E44\u0E1B";
+  const item = compact2(display.primary, 60) || "\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23";
+  const category = compact2(input.category, 24) || "\u0E17\u0E31\u0E48\u0E27\u0E44\u0E1B";
   const categoryLabel = displayCategory(category, transactionType);
   const isExpense = transactionType === "expense";
   const metrics = getBudgetMetrics(budgetSpent, budgetLimit);
@@ -6064,7 +6246,7 @@ function buildThaiTextLayers(input) {
   const display = saveResultDisplayText(input.item);
   const item = display.primary || "\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23";
   const itemLines = display.primaryLines.length ? display.primaryLines : [item];
-  const category = compact(input.category, 24) || "\u0E17\u0E31\u0E48\u0E27\u0E44\u0E1B";
+  const category = compact2(input.category, 24) || "\u0E17\u0E31\u0E48\u0E27\u0E44\u0E1B";
   const categoryLabel = displayCategory(category, input.transactionType);
   const metrics = getBudgetMetrics(input.budgetSpent, input.budgetLimit);
   const accent = input.transactionType === "expense" ? "#F51D72" : "#139A68";
@@ -6152,7 +6334,7 @@ var healthHandler = async (req, res) => {
   res.status(200).json({
     status: "ok",
     service: "milo",
-    release: "media-v10-complete-slip-details-2026-09-14",
+    release: "media-v11-multislip-netpay-2026-09-14",
     visionConfigured: runtime.authenticated,
     imageAnalysisMode: mode,
     visionModel: mode === "ocr-fallback" ? "tesseract-tha+eng" : process.env.MILO_VISION_MODEL || (mode.startsWith("vercel-ai-gateway") ? "google/gemini-2.5-flash" : mode.startsWith("forge-vision") ? "gemini-3-flash-preview" : "unconfigured"),

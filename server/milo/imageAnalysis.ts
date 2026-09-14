@@ -57,7 +57,7 @@ const schema = {
   additionalProperties: false,
 } as const;
 
-const SYSTEM_PROMPT = "คุณคือไมโล ผู้ช่วยภาษาไทย อ่านภาพใบนัด ตาราง สลิปโอนเงิน และใบเสร็จอย่างระมัดระวัง คืน JSON ตาม schema เท่านั้น ห้ามเดาหรือแต่งข้อความ/ตัวเลขที่อ่านไม่ชัด สำหรับสลิปให้ใช้ยอดโอนจริง ไม่ใช้ยอดคงเหลือหรือค่าธรรมเนียม สำหรับใบเสร็จให้ใช้ยอดรวมสุทธิที่ชำระแล้ว หากวันที่อ่านได้แน่ชัดให้ส่ง dateText รูปแบบ YYYY-MM-DD มิฉะนั้นเป็นสตริงว่าง สำหรับค่าใช้จ่ายให้แยก merchant, paymentMethod, receiptNumber, รายการสำคัญ และเลือก category ภาษาไทยจาก อาหาร, เดินทาง, ค่าสาธารณูปโภค, สุขภาพ, การศึกษา, บันเทิง, ช้อปปิ้ง, ท่องเที่ยว, ทั่วไป หากไม่พบข้อมูลที่บันทึกได้ให้ใช้ kind=unknown และ amount=0";
+const SYSTEM_PROMPT = "คุณคือไมโล ผู้ช่วยภาษาไทย อ่านภาพใบนัด ตาราง สลิปโอนเงิน และใบเสร็จอย่างระมัดระวัง คืน JSON ตาม schema เท่านั้น ห้ามเดาหรือแต่งข้อความ/ตัวเลขที่อ่านไม่ชัด สำหรับสลิปให้ใช้ยอดโอนจริง ไม่ใช้ยอดคงเหลือหรือค่าธรรมเนียม สำหรับใบเสร็จให้ใช้ยอดที่จ่ายจริงหลังส่วนลดหรือสิทธิช่วยเหลือ โดยให้ความสำคัญกับช่อง จำนวนเงินที่ชำระ, ยอดที่ชำระ, ยอดสุทธิ มากกว่าค่าสินค้า/บริการก่อนส่วนลด หากวันที่อ่านได้แน่ชัดให้ส่ง dateText รูปแบบ YYYY-MM-DD มิฉะนั้นเป็นสตริงว่าง สำหรับค่าใช้จ่ายให้แยก merchant แบบชื่อร้านจริงเท่านั้น ไม่รวมรายการสินค้า/ส่วนลด/ยอดเงิน, paymentMethod, receiptNumber, lineItems รายการสำคัญ และเลือก category ภาษาไทยจาก อาหาร, เดินทาง, ค่าสาธารณูปโภค, สุขภาพ, การศึกษา, บันเทิง, ช้อปปิ้ง, ท่องเที่ยว, ทั่วไป หากไม่พบข้อมูลที่บันทึกได้ให้ใช้ kind=unknown และ amount=0";
 const USER_PROMPT = "วิเคราะห์ภาพเพื่อหาใบนัดหรือธุรกรรมค่าใช้จ่ายจากสลิป/ใบเสร็จ โดยเสนอข้อมูลเพื่อให้ผู้ใช้ยืนยันก่อนบันทึกเท่านั้น";
 
 function parseAnalysisContent(content: unknown): ImageAnalysis {
@@ -168,13 +168,58 @@ export async function imageAnalysisRuntimeStatus(requestToken?: string) {
   };
 }
 
+function expenseComplete(analysis: ImageAnalysis) {
+  const proposal = analysis.proposals.find(item => item.kind === "expense" && item.amount > 0);
+  return Boolean(proposal?.dateText && proposal?.merchant);
+}
+
+function merchantQuality(value: string) {
+  const candidate = value.trim();
+  if (!candidate) return -100;
+  let score = Math.min(candidate.length, 80);
+  if (/(ค่าสินค้า|บริการ|จำนวนเงิน|ยอด|ส่วนลด|สิทธิ|บาท|ค่าธรรมเนียม)/i.test(candidate)) score -= 80;
+  if (/ร้าน|บจก|บริษัท|หจก|cj\b|cafe|amazon|อเมซอน/i.test(candidate)) score += 20;
+  return score;
+}
+
+export function mergeImageAnalyses(primary: ImageAnalysis, ocr: ImageAnalysis): ImageAnalysis {
+  const p = primary.proposals[0];
+  const o = ocr.proposals[0];
+  if (!p) return ocr;
+  if (!o) return primary;
+  const documentType = p.documentType !== "unknown" ? p.documentType : o.documentType;
+  const preferOcrAmount = o.amount > 0 && (p.amount <= 0 || (documentType === "receipt" && o.amount !== p.amount));
+  const amount = preferOcrAmount ? o.amount : (p.amount || o.amount);
+  const merchant = merchantQuality(o.merchant) > merchantQuality(p.merchant) ? o.merchant : p.merchant;
+  const merged: ImageProposal = {
+    ...p,
+    kind: (p.kind === "expense" || o.kind === "expense") && amount > 0 ? "expense" : p.kind,
+    documentType,
+    merchant,
+    dateText: p.dateText || o.dateText,
+    timeText: p.timeText || o.timeText,
+    amount,
+    currency: p.currency || o.currency || "บาท",
+    category: p.category && p.category !== "ทั่วไป" ? p.category : o.category,
+    paymentMethod: p.paymentMethod || o.paymentMethod,
+    receiptNumber: p.receiptNumber || o.receiptNumber,
+    lineItems: Array.from(new Set([...(p.lineItems || []), ...(o.lineItems || [])])).slice(0, 10),
+    note: p.note || o.note,
+    title: p.title && p.title !== "ข้อมูลจากรูป" ? p.title : (o.title || p.title),
+  };
+  const summary = merged.kind === "expense"
+    ? `อ่าน${merged.documentType === "bank_slip" ? "สลิป" : "ใบเสร็จ"}ได้ ยอด ${merged.amount.toLocaleString("th-TH")} บาท${merged.dateText ? ` วันที่ ${merged.dateText}` : " แต่วันที่ยังไม่ชัด"}`
+    : primary.summary || ocr.summary;
+  return { summary, confidence: Math.max(primary.confidence, ocr.confidence), proposals: [merged, ...primary.proposals.slice(1)] };
+}
+
 export async function analyzeImage(dataUrl: string, options: { gatewayToken?: string } = {}): Promise<ImageAnalysis> {
   let providerError: unknown;
   let providerAnalysis: ImageAnalysis | undefined;
   if (ENV.forgeApiKey) {
     try {
       const analysis = await analyzeImageWithForge(dataUrl);
-      if (analysis.proposals.some(item => (item.kind === "expense" && item.amount > 0) || (item.kind === "reminder" && Boolean(item.dateText)))) return analysis;
+      if (analysis.proposals.some(item => item.kind === "reminder" && Boolean(item.dateText))) return analysis;
       providerAnalysis = analysis;
       console.warn("[Milo Image] primary vision provider returned no actionable proposal; trying OCR enrichment");
     } catch (error) {
@@ -189,7 +234,7 @@ export async function analyzeImage(dataUrl: string, options: { gatewayToken?: st
   if (gatewayKey) {
     try {
       const analysis = await analyzeImageWithGatewayKey(dataUrl, gatewayKey);
-      if (analysis.proposals.some(item => (item.kind === "expense" && item.amount > 0) || (item.kind === "reminder" && Boolean(item.dateText)))) return analysis;
+      if (analysis.proposals.some(item => item.kind === "reminder" && Boolean(item.dateText))) return analysis;
       providerAnalysis = analysis;
       console.warn("[Milo Image] AI Gateway returned no actionable proposal; trying OCR enrichment");
     } catch (error) {
@@ -209,7 +254,8 @@ export async function analyzeImage(dataUrl: string, options: { gatewayToken?: st
       + (item.documentType !== "unknown" ? 1 : 0)
       + (item.dateText ? 1 : 0)
       + (item.merchant ? 0.5 : 0), analysis.confidence);
-    return score(ocrAnalysis) > score(providerAnalysis) ? ocrAnalysis : providerAnalysis;
+    const merged = mergeImageAnalyses(providerAnalysis, ocrAnalysis);
+    return score(merged) >= Math.max(score(ocrAnalysis), score(providerAnalysis)) ? merged : (score(ocrAnalysis) > score(providerAnalysis) ? ocrAnalysis : providerAnalysis);
   } catch (ocrError) {
     console.error("[Milo Image] OCR fallback failed", { error: ocrError instanceof Error ? ocrError.message : "unknown" });
     if (providerAnalysis) return providerAnalysis;

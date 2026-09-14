@@ -75,6 +75,7 @@ export function formatImageProposal(proposal: ProposalLike) {
     if (proposal.receiptNumber?.trim()) rows.push(`เลขที่รายการ ${proposal.receiptNumber.trim()}`);
     if (proposal.paymentMethod?.trim()) rows.push(`ชำระ ${proposal.paymentMethod.trim()}`);
     if (proposal.title?.trim()) rows.push(`รายการ ${proposal.title.trim()}`);
+    if (proposal.lineItems?.length) rows.push(...proposal.lineItems.slice(0, 4).map(item => `• ${item}`));
     return rows.join("\n");
   }
   return proposal.title || proposal.note || "ไม่พบข้อมูลที่ยืนยันได้";

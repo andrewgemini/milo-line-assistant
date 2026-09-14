@@ -5,6 +5,7 @@ import { createRequire } from "node:module";
 import sharp from "sharp";
 import { createWorker } from "tesseract.js";
 import type { ImageAnalysis, ImageProposal } from "./imageAnalysis";
+import { enrichThaiReceiptProposal } from "./thaiReceiptParser";
 
 const DATA_DIR = path.join(process.cwd(), "api", "tessdata");
 const CACHE_DIR = path.join(os.tmpdir(), "milo-tesscache");
@@ -274,18 +275,19 @@ export function analyzeOcrText(rawText: string): ImageAnalysis {
   const confidence = Math.min(0.97, 0.28 + (amount > 0 ? 0.34 : 0) + (dateTime.dateText ? 0.14 : 0) + (dateTime.timeText ? 0.05 : 0) + (merchant ? 0.08 : 0) + (documentType !== "unknown" ? 0.07 : 0));
   const memo = text.match(/(?:บันทึกช่วยจำ|หมายเหตุ|memo)\s*[:：]\s*([^\n]+)/i)?.[1]?.trim();
   const title = memo || (documentType === "bank_slip" ? "รายการโอนเงิน" : documentType === "receipt" ? "รายการจากใบเสร็จ" : documentType === "appointment" ? "รายการนัดหมาย" : "ข้อมูลจากรูป");
-  const proposal: ImageProposal = {
+  const proposal = enrichThaiReceiptProposal(text, {
     kind, documentType, title, merchant,
     dateText: dateTime.dateText, timeText: dateTime.timeText, amount,
     currency: amount > 0 ? "บาท" : "",
     category: kind === "expense" ? guessCategory(text) : "ทั่วไป",
     paymentMethod: documentType === "bank_slip" ? "โอนเงิน" : "",
     receiptNumber, lineItems: [], note: memo || "",
-  };
-  const summary = kind === "expense"
-    ? `OCR อ่าน${documentType === "bank_slip" ? "สลิป" : "ใบเสร็จ"}ได้ ยอด ${amount.toLocaleString("th-TH")} บาท${dateTime.dateText ? ` วันที่ ${dateTime.dateText}` : " แต่วันที่ยังไม่ชัด"}`
-    : kind === "reminder"
-      ? `OCR อ่านวันนัดได้ ${dateTime.dateText}${dateTime.timeText ? ` ${dateTime.timeText}` : ""}`
+  });
+  if (proposal.amount > 0) proposal.kind = "expense";
+  const summary = proposal.kind === "expense"
+    ? `OCR อ่าน${proposal.documentType === "bank_slip" ? "สลิป" : "ใบเสร็จ"}ได้ ยอด ${proposal.amount.toLocaleString("th-TH")} บาท${proposal.dateText ? ` วันที่ ${proposal.dateText}` : " แต่วันที่ยังไม่ชัด"}`
+    : proposal.kind === "reminder"
+      ? `OCR อ่านวันนัดได้ ${proposal.dateText}${proposal.timeText ? ` ${proposal.timeText}` : ""}`
       : "OCR อ่านข้อความจากรูปได้ แต่ยังไม่พบยอดหรือข้อมูลที่มั่นใจพอสำหรับบันทึก";
   return { summary, confidence, proposals: [proposal] };
 }
