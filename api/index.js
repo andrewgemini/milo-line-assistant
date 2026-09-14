@@ -3907,10 +3907,22 @@ async function storagePut(relKey, data, contentType = "application/octet-stream"
 import fs2 from "node:fs";
 import os from "node:os";
 import path3 from "node:path";
+import { createRequire } from "node:module";
 import sharp3 from "sharp";
 import { createWorker } from "tesseract.js";
 var DATA_DIR = path3.join(process.cwd(), "api", "tessdata");
 var CACHE_DIR = path3.join(os.tmpdir(), "milo-tesscache");
+var requireOcr = createRequire(import.meta.url);
+async function withOcrDeadline(work, stage, timeoutMs = 3e4) {
+  let timer;
+  try {
+    return await Promise.race([work, new Promise((_, reject) => {
+      timer = setTimeout(() => reject(new Error(`OCR ${stage} timed out after ${timeoutMs}ms`)), timeoutMs);
+    })]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
 var thaiDigitMap = {
   "\u0E50": "0",
   "\u0E51": "1",
@@ -3951,7 +3963,11 @@ function normalizeDigits(text2) {
   return text2.replace(/[๐-๙]/g, (digit) => thaiDigitMap[digit] || digit);
 }
 function normalizeOcrText(text2) {
-  return normalizeDigits(text2).replace(/\u00a0/g, " ").replace(/[|¦]/g, "I").replace(/[ \t]+/g, " ").replace(/\r/g, "").trim();
+  return normalizeDigits(text2).replace(/\u00a0/g, " ").replace(/[|¦]/g, "I").replace(/[ \t]+/g, " ").replace(/\r/g, "").split("\n").map((line) => {
+    const tokens = line.trim().split(/[ \t]+/).filter((token) => /^[\u0E00-\u0E7F]+$/.test(token));
+    if (tokens.length < 3 || tokens.filter((token) => token.length <= 2).length / tokens.length < 0.6) return line;
+    return line.replace(/([\u0E00-\u0E7F])[ \t]+(?=[\u0E00-\u0E7F])/g, "$1");
+  }).join("\n").replace(/ํา/g, "\u0E33").trim();
 }
 function parseMoney(raw) {
   const cleaned = raw.replace(/,/g, "").replace(/[^0-9.]/g, "");
@@ -4037,7 +4053,7 @@ function extractDateTime(text2) {
       }
     }
   }
-  const time = normalized.match(/\b([01]?\d|2[0-3])[:.]([0-5]\d)\s*(?:น\.)?/);
+  const time = normalized.match(/\b([01]?\d|2[0-3]):([0-5]\d)\b/) || normalized.match(/\b([01]?\d|2[0-3])\.([0-5]\d)\s*น\./);
   if (time) timeText = `${String(Number(time[1])).padStart(2, "0")}:${time[2]}`;
   return { dateText, timeText };
 }
@@ -4082,7 +4098,8 @@ function analyzeOcrText(rawText) {
   if (amount > 0) kind = "expense";
   else if (documentType === "appointment" && dateTime.dateText) kind = "reminder";
   const confidence = Math.min(0.97, 0.28 + (amount > 0 ? 0.34 : 0) + (dateTime.dateText ? 0.14 : 0) + (dateTime.timeText ? 0.05 : 0) + (merchant ? 0.08 : 0) + (documentType !== "unknown" ? 0.07 : 0));
-  const title = documentType === "bank_slip" ? "\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E42\u0E2D\u0E19\u0E40\u0E07\u0E34\u0E19" : documentType === "receipt" ? "\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E08\u0E32\u0E01\u0E43\u0E1A\u0E40\u0E2A\u0E23\u0E47\u0E08" : documentType === "appointment" ? "\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E19\u0E31\u0E14\u0E2B\u0E21\u0E32\u0E22" : "\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E08\u0E32\u0E01\u0E23\u0E39\u0E1B";
+  const memo = text2.match(/(?:บันทึกช่วยจำ|หมายเหตุ|memo)\s*[:：]\s*([^\n]+)/i)?.[1]?.trim();
+  const title = memo || (documentType === "bank_slip" ? "\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E42\u0E2D\u0E19\u0E40\u0E07\u0E34\u0E19" : documentType === "receipt" ? "\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E08\u0E32\u0E01\u0E43\u0E1A\u0E40\u0E2A\u0E23\u0E47\u0E08" : documentType === "appointment" ? "\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E19\u0E31\u0E14\u0E2B\u0E21\u0E32\u0E22" : "\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E08\u0E32\u0E01\u0E23\u0E39\u0E1B");
   const proposal = {
     kind,
     documentType,
@@ -4096,7 +4113,7 @@ function analyzeOcrText(rawText) {
     paymentMethod: documentType === "bank_slip" ? "\u0E42\u0E2D\u0E19\u0E40\u0E07\u0E34\u0E19" : "",
     receiptNumber,
     lineItems: [],
-    note: `OCR fallback${merchant ? ` \u2022 ${merchant}` : ""}`
+    note: memo || ""
   };
   const summary = kind === "expense" ? `OCR \u0E2D\u0E48\u0E32\u0E19${documentType === "bank_slip" ? "\u0E2A\u0E25\u0E34\u0E1B" : "\u0E43\u0E1A\u0E40\u0E2A\u0E23\u0E47\u0E08"}\u0E44\u0E14\u0E49 \u0E22\u0E2D\u0E14 ${amount.toLocaleString("th-TH")} \u0E1A\u0E32\u0E17${dateTime.dateText ? ` \u0E27\u0E31\u0E19\u0E17\u0E35\u0E48 ${dateTime.dateText}` : " \u0E41\u0E15\u0E48\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E0A\u0E31\u0E14"}` : kind === "reminder" ? `OCR \u0E2D\u0E48\u0E32\u0E19\u0E27\u0E31\u0E19\u0E19\u0E31\u0E14\u0E44\u0E14\u0E49 ${dateTime.dateText}${dateTime.timeText ? ` ${dateTime.timeText}` : ""}` : "OCR \u0E2D\u0E48\u0E32\u0E19\u0E02\u0E49\u0E2D\u0E04\u0E27\u0E32\u0E21\u0E08\u0E32\u0E01\u0E23\u0E39\u0E1B\u0E44\u0E14\u0E49 \u0E41\u0E15\u0E48\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E1E\u0E1A\u0E22\u0E2D\u0E14\u0E2B\u0E23\u0E37\u0E2D\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E17\u0E35\u0E48\u0E21\u0E31\u0E48\u0E19\u0E43\u0E08\u0E1E\u0E2D\u0E2A\u0E33\u0E2B\u0E23\u0E31\u0E1A\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01";
   return { summary, confidence, proposals: [proposal] };
@@ -4120,11 +4137,25 @@ async function analyzeImageWithOcr(dataUrl) {
     { label: "medium-contrast", bytes: await base.clone().linear(1.25, -20).png().toBuffer() },
     { label: "threshold-175", bytes: await base.clone().threshold(175).png().toBuffer() }
   ];
-  const worker = await createWorker(["tha", "eng"], void 0, {
+  const workerPath = requireOcr.resolve("tesseract.js/src/worker-script/node/index.js");
+  if (!fs2.existsSync(workerPath)) throw new Error("OCR worker is missing from deployment");
+  let expired = false;
+  const initializing = createWorker(["tha", "eng"], void 0, {
+    workerPath,
     langPath: DATA_DIR,
     cachePath: CACHE_DIR,
     gzip: true,
     logger: () => void 0
+  }).then(async (worker2) => {
+    if (expired) {
+      await worker2.terminate();
+      throw new Error("OCR initialization expired");
+    }
+    return worker2;
+  });
+  const worker = await withOcrDeadline(initializing, "initialization").catch((error) => {
+    expired = true;
+    throw error;
   });
   try {
     await worker.setParameters({ preserve_interword_spaces: "1", tessedit_pageseg_mode: "6" });
@@ -4132,7 +4163,7 @@ async function analyzeImageWithOcr(dataUrl) {
     let best;
     let bestScore = -Infinity;
     for (const variant of variants) {
-      const result = await worker.recognize(variant.bytes);
+      const result = await withOcrDeadline(worker.recognize(variant.bytes), "recognition");
       const raw = result.data.text || "";
       texts.push(raw);
       const analysis = analyzeOcrText(texts.join("\n"));
@@ -6057,7 +6088,7 @@ var healthHandler = async (req, res) => {
   res.status(200).json({
     status: "ok",
     service: "milo",
-    release: "media-v5-remote-stt-upscaled-ocr-2026-09-14",
+    release: "media-v6-bounded-ocr-worker-2026-09-14",
     visionConfigured: runtime.authenticated,
     imageAnalysisMode: mode,
     visionModel: mode === "ocr-fallback" ? "tesseract-tha+eng" : process.env.MILO_VISION_MODEL || (mode.startsWith("vercel-ai-gateway") ? "google/gemini-2.5-flash" : mode.startsWith("forge-vision") ? "gemini-3-flash-preview" : "unconfigured"),

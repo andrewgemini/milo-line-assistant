@@ -1,7 +1,22 @@
 import { describe, expect, it } from "vitest";
-import { analyzeOcrText, normalizeOcrText } from "./ocrImageAnalysis";
+import { analyzeOcrText, normalizeOcrText, withOcrDeadline } from "./ocrImageAnalysis";
 
 describe("OCR slip parser", () => {
+  it("bounds an OCR stage that never responds", async () => {
+    await expect(withOcrDeadline(new Promise(() => {}), "initialization", 10)).rejects.toThrow("OCR initialization timed out");
+    await expect(withOcrDeadline(Promise.resolve("ready"), "initialization", 100)).resolves.toBe("ready");
+  });
+
+  it("recovers spaced Thai glyphs and uses the slip memo as its title", () => {
+    const result = analyzeOcrText("ชำระเงินสำเร็จ\nจ ำ น ว น\n140.00 บาท\nบันทึกช่วยจำ: กาแฟ\nเลขที่รายการ 202609131789574");
+    expect(result.proposals[0]).toMatchObject({ amount: 140, title: "กาแฟ", note: "กาแฟ", category: "อาหาร", dateText: "", timeText: "" });
+    expect(normalizeOcrText("ผู้รับ: ร้านกาแฟ มีสุข")).toBe("ผู้รับ: ร้านกาแฟ มีสุข");
+  });
+
+  it("does not mistake decimal prices for a transaction time", () => {
+    expect(analyzeOcrText("ใบเสร็จ\nยอดรวม 12.50 บาท\nค่าธรรมเนียม 0.00 บาท").proposals[0].timeText).toBe("");
+    expect(analyzeOcrText("ใบเสร็จ\nเวลา 12.50 น.\nยอดรวม 40 บาท").proposals[0].timeText).toBe("12:50");
+  });
   it("normalizes Thai digits and parses a Thai bank slip", () => {
     const result = analyzeOcrText(`
 โอนเงินสำเร็จ

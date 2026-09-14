@@ -1,12 +1,23 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { createRequire } from "node:module";
 import sharp from "sharp";
 import { createWorker } from "tesseract.js";
 import type { ImageAnalysis, ImageProposal } from "./imageAnalysis";
 
 const DATA_DIR = path.join(process.cwd(), "api", "tessdata");
 const CACHE_DIR = path.join(os.tmpdir(), "milo-tesscache");
+const requireOcr = createRequire(import.meta.url);
+
+export async function withOcrDeadline<T>(work: Promise<T>, stage: string, timeoutMs = 30_000): Promise<T> {
+  let timer: ReturnType<typeof setTimeout>;
+  try {
+    return await Promise.race([work, new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error(`OCR ${stage} timed out after ${timeoutMs}ms`)), timeoutMs);
+    })]);
+  } finally { clearTimeout(timer!); }
+}
 
 const thaiDigitMap: Record<string, string> = {
   "๐": "0", "๑": "1", "๒": "2", "๓": "3", "๔": "4",
@@ -40,6 +51,12 @@ export function normalizeOcrText(text: string) {
     .replace(/[|¦]/g, "I")
     .replace(/[ \t]+/g, " ")
     .replace(/\r/g, "")
+    .split("\n").map(line => {
+      const tokens = line.trim().split(/[ \t]+/).filter(token => /^[\u0E00-\u0E7F]+$/.test(token));
+      if (tokens.length < 3 || tokens.filter(token => token.length <= 2).length / tokens.length < 0.6) return line;
+      return line.replace(/([\u0E00-\u0E7F])[ \t]+(?=[\u0E00-\u0E7F])/g, "$1");
+    }).join("\n")
+    .replace(/ํา/g, "ำ")
     .trim();
 }
 
@@ -139,7 +156,7 @@ function extractDateTime(text: string) {
       }
     }
   }
-  const time = normalized.match(/\b([01]?\d|2[0-3])[:.]([0-5]\d)\s*(?:น\.)?/);
+  const time = normalized.match(/\b([01]?\d|2[0-3]):([0-5]\d)\b/) || normalized.match(/\b([01]?\d|2[0-3])\.([0-5]\d)\s*น\./);
   if (time) timeText = `${String(Number(time[1])).padStart(2, "0")}:${time[2]}`;
   return { dateText, timeText };
 }
@@ -189,14 +206,15 @@ export function analyzeOcrText(rawText: string): ImageAnalysis {
   if (amount > 0) kind = "expense";
   else if (documentType === "appointment" && dateTime.dateText) kind = "reminder";
   const confidence = Math.min(0.97, 0.28 + (amount > 0 ? 0.34 : 0) + (dateTime.dateText ? 0.14 : 0) + (dateTime.timeText ? 0.05 : 0) + (merchant ? 0.08 : 0) + (documentType !== "unknown" ? 0.07 : 0));
-  const title = documentType === "bank_slip" ? "รายการโอนเงิน" : documentType === "receipt" ? "รายการจากใบเสร็จ" : documentType === "appointment" ? "รายการนัดหมาย" : "ข้อมูลจากรูป";
+  const memo = text.match(/(?:บันทึกช่วยจำ|หมายเหตุ|memo)\s*[:：]\s*([^\n]+)/i)?.[1]?.trim();
+  const title = memo || (documentType === "bank_slip" ? "รายการโอนเงิน" : documentType === "receipt" ? "รายการจากใบเสร็จ" : documentType === "appointment" ? "รายการนัดหมาย" : "ข้อมูลจากรูป");
   const proposal: ImageProposal = {
     kind, documentType, title, merchant,
     dateText: dateTime.dateText, timeText: dateTime.timeText, amount,
     currency: amount > 0 ? "บาท" : "",
     category: kind === "expense" ? guessCategory(text) : "ทั่วไป",
     paymentMethod: documentType === "bank_slip" ? "โอนเงิน" : "",
-    receiptNumber, lineItems: [], note: `OCR fallback${merchant ? ` • ${merchant}` : ""}`,
+    receiptNumber, lineItems: [], note: memo || "",
   };
   const summary = kind === "expense"
     ? `OCR อ่าน${documentType === "bank_slip" ? "สลิป" : "ใบเสร็จ"}ได้ ยอด ${amount.toLocaleString("th-TH")} บาท${dateTime.dateText ? ` วันที่ ${dateTime.dateText}` : " แต่วันที่ยังไม่ชัด"}`
@@ -233,19 +251,27 @@ export async function analyzeImageWithOcr(dataUrl: string): Promise<ImageAnalysi
     { label: "threshold-175", bytes: await base.clone().threshold(175).png().toBuffer() },
   ];
 
-  const worker = await createWorker(["tha", "eng"], undefined, {
+  const workerPath = requireOcr.resolve("tesseract.js/src/worker-script/node/index.js");
+  if (!fs.existsSync(workerPath)) throw new Error("OCR worker is missing from deployment");
+  let expired = false;
+  const initializing = createWorker(["tha", "eng"], undefined, {
+    workerPath,
     langPath: DATA_DIR,
     cachePath: CACHE_DIR,
     gzip: true,
     logger: () => undefined,
+  }).then(async worker => {
+    if (expired) { await worker.terminate(); throw new Error("OCR initialization expired"); }
+    return worker;
   });
+  const worker = await withOcrDeadline(initializing, "initialization").catch(error => { expired = true; throw error; });
   try {
     await worker.setParameters({ preserve_interword_spaces: "1", tessedit_pageseg_mode: "6" } as never);
     const texts: string[] = [];
     let best: ImageAnalysis | undefined;
     let bestScore = -Infinity;
     for (const variant of variants) {
-      const result = await worker.recognize(variant.bytes);
+      const result = await withOcrDeadline(worker.recognize(variant.bytes), "recognition");
       const raw = result.data.text || "";
       texts.push(raw);
       const analysis = analyzeOcrText(texts.join("\n"));

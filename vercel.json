@@ -20,7 +20,7 @@
   "functions": {
     "api/index.js": {
       "maxDuration": 300,
-      "includeFiles": "{api/tessdata/**,client/public/richmenu/**,client/public/milo-richmenu/**,models/transformers-cache/**}",
+      "includeFiles": "{api/tessdata/**,client/public/richmenu/**,client/public/milo-richmenu/**,models/transformers-cache/**,node_modules/.pnpm/tesseract.js*/**,node_modules/.pnpm/wasm-feature-detect*/**,node_modules/.pnpm/zlibjs*/**,node_modules/.pnpm/bmp-js*/**}",
       "excludeFiles": "{node_modules/**/onnxruntime-node/bin/**/darwin/**,node_modules/**/onnxruntime-node/bin/**/win32/**,node_modules/**/onnxruntime-node/bin/**/linux/arm64/**}"
     }
   }
