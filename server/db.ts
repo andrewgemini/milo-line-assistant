@@ -24,6 +24,7 @@ import {
   transactions,
   users,
   vaultItems,
+  vaultBlobs,
   voiceTranscriptions,
   webhookEvents,
   type InsertUser,
@@ -422,6 +423,23 @@ export async function updateVaultMetadata(id: number, lineUserId: string, input:
   const db = await requireDb();
   await db.update(vaultItems).set({ tagsText: input.tagsText ?? null, sourceUrl: input.sourceUrl ?? null })
     .where(and(eq(vaultItems.id, id), eq(vaultItems.createdByLineUserId, lineUserId)));
+}
+
+export async function saveVaultBlob(input: { storageKey: string; mimeType: string; content: Buffer }) {
+  const db = await requireDb();
+  await db.insert(vaultBlobs).values({ storageKey: input.storageKey, mimeType: input.mimeType, sizeBytes: input.content.byteLength, content: input.content })
+    .onDuplicateKeyUpdate({ set: { mimeType: input.mimeType, sizeBytes: input.content.byteLength, content: input.content } });
+}
+
+export async function getVaultBlob(storageKey: string) {
+  const db = await requireDb();
+  return (await db.select().from(vaultBlobs).where(eq(vaultBlobs.storageKey, storageKey)).limit(1))[0];
+}
+
+export async function deleteVaultBlob(storageKey: string) {
+  const db = await requireDb();
+  const result = await db.delete(vaultBlobs).where(eq(vaultBlobs.storageKey, storageKey));
+  return result[0].affectedRows > 0;
 }
 
 export async function createNote(lineChatId: string, lineUserId: string, title: string, content: string) {

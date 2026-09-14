@@ -1,12 +1,37 @@
-# Milo v1.2.0 — Durable Vault Storage Providers
+# Milo v1.2.x — Durable Vault Storage Providers
 
 Milo can store LINE images, audio and files in more than one durable-storage backend. The application keeps one provider active at a time while preserving download compatibility for objects stored by older providers.
 
+## Current default: Database Vault
+
+Until an external provider is configured, Milo now stores new media blobs in the primary database.
+
+No extra environment variable is required as long as `DATABASE_URL` is configured. The effective default is:
+
+```env
+MILO_STORAGE_PROVIDER=database
+```
+
+Database-backed objects use keys beginning with `db:` and are downloaded through Milo's `/api/milo/storage/:key` proxy. The default maximum size per object is 15 MiB and can be changed with:
+
+```env
+MILO_DATABASE_STORAGE_MAX_BYTES=15728640
+```
+
+This is intended as the current safe default so LINE files do not disappear while Google Drive/S3 is being prepared. For larger long-term archives, switch to Google Drive or S3-compatible storage later; existing `db:` objects remain readable.
+
 ## Supported providers
 
-### 1. Google Drive
+### 1. Database
 
-Set:
+```env
+MILO_STORAGE_PROVIDER=database
+DATABASE_URL=<existing-milo-database-url>
+```
+
+No separate credentials are required beyond Milo's existing database connection.
+
+### 2. Google Drive
 
 ```env
 MILO_STORAGE_PROVIDER=google-drive
@@ -18,15 +43,13 @@ MILO_GOOGLE_DRIVE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVAT
 Recommended setup:
 
 1. Create a Google Cloud service account.
-2. Enable the Google Drive API in that Google Cloud project.
-3. Create or choose a dedicated Drive folder such as `Milo Vault`.
+2. Enable the Google Drive API.
+3. Create a dedicated folder such as `Milo Vault`.
 4. Share that folder with the service-account email as Editor.
-5. Put the folder ID and service-account credentials into the deployment environment variables.
+5. Add the credentials to Production environment variables.
 6. Redeploy and verify `/api/health` reports `activeProvider: "google-drive"`.
 
-Milo uses the `drive.file` scope and writes only files that the service account creates in the configured folder. Files are downloaded through Milo's authenticated server-side provider proxy; Drive bearer tokens are not exposed to LINE users.
-
-### 2. S3-compatible storage
+### 3. S3-compatible storage
 
 Works with AWS S3 and compatible services such as Cloudflare R2 or MinIO.
 
@@ -40,11 +63,7 @@ MILO_S3_ENDPOINT=<optional-for-R2-or-MinIO>
 MILO_S3_FORCE_PATH_STYLE=false
 ```
 
-For Cloudflare R2 use its S3-compatible endpoint and usually region `auto`.
-
-### 3. Existing Forge/S3 storage
-
-Existing Milo installations can continue to use the built-in Forge storage variables:
+### 4. Existing Forge/S3 storage
 
 ```env
 MILO_STORAGE_PROVIDER=forge
@@ -54,7 +73,7 @@ BUILT_IN_FORGE_API_KEY=<forge-key>
 
 Legacy `/manus-storage/...` links remain supported.
 
-### 4. Automatic selection
+### 5. Automatic selection
 
 ```env
 MILO_STORAGE_PROVIDER=auto
@@ -62,25 +81,27 @@ MILO_STORAGE_PROVIDER=auto
 
 Selection order is:
 
-1. Forge
-2. S3-compatible
-3. Google Drive
+1. Database
+2. Forge
+3. S3-compatible
+4. Google Drive
 
-For predictable production behavior, explicitly set the provider rather than relying on `auto`.
+For predictable production behavior, explicitly set a provider when switching away from the database.
 
 ## Health check
 
-`GET /api/health` reports only configuration state, never credentials:
+`GET /api/health` reports configuration state only, never credentials. With the current database-first configuration it should show approximately:
 
 ```json
 {
   "storage": {
-    "requestedProvider": "google-drive",
-    "activeProvider": "google-drive",
-    "configuredProviders": ["google-drive"]
+    "requestedProvider": "database",
+    "activeProvider": "database",
+    "configuredProviders": ["database"]
   },
   "readiness": {
     "durableVaultStorageConfigured": true,
+    "databaseVaultStorageSupported": true,
     "storageProviderChoiceSupported": true,
     "googleDriveStorageSupported": true,
     "s3CompatibleStorageSupported": true
@@ -90,12 +111,11 @@ For predictable production behavior, explicitly set the provider rather than rel
 
 ## Compatibility
 
-New storage keys contain a provider prefix (`forge:`, `s3:`, `gdrive:`). Existing unprefixed keys are treated as legacy Forge objects, so upgrading does not invalidate old Vault records.
+New storage keys contain a provider prefix (`db:`, `forge:`, `s3:`, `gdrive:`). Existing unprefixed keys are treated as legacy Forge objects, so changing provider does not invalidate old Vault records.
 
 ## Security notes
 
-- Never commit service-account private keys or S3 secrets to Git.
+- Never commit database URLs, service-account private keys, or S3 secrets to Git.
 - Keep credentials in Vercel/production environment variables.
-- Use a dedicated Google Drive folder for Milo.
-- Use a dedicated service account rather than a personal Google account password.
+- Use a dedicated Google Drive folder and service account when enabling Google Drive.
 - Milo's health endpoint exposes provider names only, not secrets.

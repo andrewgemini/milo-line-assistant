@@ -1,5 +1,5 @@
 import type { Express, Request, Response } from "express";
-import { storageGetGoogleDriveResponse, storageGetSignedUrl } from "../storage";
+import { storageGetDatabaseObject, storageGetGoogleDriveResponse, storageGetSignedUrl } from "../storage";
 
 function decodeStorageKey(raw: string) {
   try { return decodeURIComponent(raw); } catch { return raw; }
@@ -10,6 +10,14 @@ export function registerMiloStorageRoute(app: Express) {
     const key = decodeStorageKey(req.params.key);
     if (!key) return res.status(400).type("text/plain").send("missing storage key");
     try {
+      if (key.startsWith("db:")) {
+        const object = await storageGetDatabaseObject(key);
+        if (!object) return res.status(404).type("text/plain").send("storage object not found");
+        res.setHeader("Content-Type", object.mimeType || "application/octet-stream");
+        res.setHeader("Content-Length", String(object.sizeBytes));
+        res.setHeader("Cache-Control", "private, no-store");
+        return res.status(200).send(object.data);
+      }
       if (key.startsWith("gdrive:")) {
         const upstream = await storageGetGoogleDriveResponse(key);
         if (!upstream) return res.status(404).type("text/plain").send("storage object not found");

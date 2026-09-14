@@ -1,4 +1,10 @@
-import { boolean, decimal, index, int, mysqlEnum, mysqlTable, text, timestamp, unique, varchar } from "drizzle-orm/mysql-core";
+import { boolean, customType, decimal, index, int, mysqlEnum, mysqlTable, text, timestamp, unique, varchar } from "drizzle-orm/mysql-core";
+
+const longblob = customType<{ data: Buffer; driverData: Buffer }>({
+  dataType() { return "longblob"; },
+  toDriver(value) { return value; },
+  fromDriver(value) { return Buffer.from(value); },
+});
 
 export const users = mysqlTable("users", {
   id: int("id").autoincrement().primaryKey(),
@@ -152,6 +158,15 @@ export const vaultItems = mysqlTable("vault_items", {
   capturedAt: timestamp("capturedAt").defaultNow().notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 }, table => [index("vault_items_user_idx").on(table.createdByLineUserId, table.createdAt), index("vault_items_chat_idx").on(table.lineChatId, table.itemType)]);
+
+export const vaultBlobs = mysqlTable("vault_blobs", {
+  id: int("id").autoincrement().primaryKey(),
+  storageKey: varchar("storageKey", { length: 512 }).notNull().unique(),
+  mimeType: varchar("mimeType", { length: 128 }).notNull(),
+  sizeBytes: int("sizeBytes").notNull(),
+  content: longblob("content").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+}, table => [index("vault_blobs_created_idx").on(table.createdAt)]);
 
 export const notes = mysqlTable("notes", {
   id: int("id").autoincrement().primaryKey(),

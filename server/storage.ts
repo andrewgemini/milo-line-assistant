@@ -2,8 +2,9 @@ import { GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { SignJWT, importPKCS8 } from "jose";
 import { ENV } from "./_core/env";
+import * as db from "./db";
 
-export type StorageProvider = "forge" | "s3" | "google-drive";
+export type StorageProvider = "database" | "forge" | "s3" | "google-drive";
 export type StorageObject = { key: string; url: string; provider: StorageProvider };
 
 function normalizeKey(relKey: string): string {
@@ -15,6 +16,10 @@ function appendHashSuffix(relKey: string): string {
   const lastDot = relKey.lastIndexOf(".");
   if (lastDot === -1) return `${relKey}_${hash}`;
   return `${relKey.slice(0, lastDot)}_${hash}${relKey.slice(lastDot)}`;
+}
+
+function databaseConfigured() {
+  return Boolean(process.env.DATABASE_URL?.trim());
 }
 
 function forgeConfigured() {
@@ -31,10 +36,11 @@ function googleDriveConfigured() {
 
 export function storageRuntimeStatus() {
   const configuredProviders: StorageProvider[] = [];
+  if (databaseConfigured()) configuredProviders.push("database");
   if (forgeConfigured()) configuredProviders.push("forge");
   if (s3Configured()) configuredProviders.push("s3");
   if (googleDriveConfigured()) configuredProviders.push("google-drive");
-  const requested = (process.env.MILO_STORAGE_PROVIDER || "auto").trim().toLowerCase();
+  const requested = (process.env.MILO_STORAGE_PROVIDER || "database").trim().toLowerCase();
   const activeProvider = requested === "auto"
     ? configuredProviders[0] ?? null
     : configuredProviders.includes(requested as StorageProvider) ? requested as StorageProvider : null;
@@ -45,6 +51,18 @@ function selectedProvider(): StorageProvider {
   const status = storageRuntimeStatus();
   if (status.activeProvider) return status.activeProvider;
   throw new Error(`Durable storage is not configured for provider ${status.requested}`);
+}
+
+async function databasePut(relKey: string, data: Buffer | Uint8Array | string, contentType: string): Promise<StorageObject> {
+  if (!databaseConfigured()) throw new Error("Database storage is not configured");
+  const objectKey = appendHashSuffix(normalizeKey(relKey));
+  const raw = typeof data === "string" ? Buffer.from(data) : Buffer.from(data);
+  const limit = Number(process.env.MILO_DATABASE_STORAGE_MAX_BYTES || 15 * 1024 * 1024);
+  if (!Number.isFinite(limit) || limit < 1) throw new Error("Invalid MILO_DATABASE_STORAGE_MAX_BYTES");
+  if (raw.byteLength > limit) throw new Error(`Database storage object exceeds ${limit} bytes`);
+  const key = `db:${objectKey}`;
+  await db.saveVaultBlob({ storageKey: key, mimeType: contentType, content: raw });
+  return { key, url: `/api/milo/storage/${encodeURIComponent(key)}`, provider: "database" };
 }
 
 async function forgePut(relKey: string, data: Buffer | Uint8Array | string, contentType: string): Promise<StorageObject> {
@@ -145,12 +163,14 @@ async function googleDrivePut(relKey: string, data: Buffer | Uint8Array | string
 
 export async function storagePut(relKey: string, data: Buffer | Uint8Array | string, contentType = "application/octet-stream"): Promise<StorageObject> {
   const provider = selectedProvider();
+  if (provider === "database") return databasePut(relKey, data, contentType);
   if (provider === "forge") return forgePut(relKey, data, contentType);
   if (provider === "s3") return s3Put(relKey, data, contentType);
   return googleDrivePut(relKey, data, contentType);
 }
 
 function parseStoredKey(value: string): { provider: StorageProvider; objectKey: string } {
+  if (value.startsWith("db:")) return { provider: "database", objectKey: value.slice(3) };
   if (value.startsWith("forge:")) return { provider: "forge", objectKey: value.slice(6) };
   if (value.startsWith("s3:")) return { provider: "s3", objectKey: value.slice(3) };
   if (value.startsWith("gdrive:")) return { provider: "google-drive", objectKey: value.slice(7) };
@@ -159,6 +179,7 @@ function parseStoredKey(value: string): { provider: StorageProvider; objectKey: 
 
 export async function storageGetSignedUrl(relKey: string): Promise<string> {
   const { provider, objectKey } = parseStoredKey(relKey);
+  if (provider === "database") throw new Error("Database objects are downloaded through the Milo storage proxy");
   if (provider === "forge") {
     if (!forgeConfigured()) throw new Error("Forge storage is not configured");
     const getUrl = new URL("v1/storage/presign/get", ENV.forgeApiUrl.replace(/\/+$/, "") + "/");
@@ -174,6 +195,15 @@ export async function storageGetSignedUrl(relKey: string): Promise<string> {
     return getSignedUrl(s3Client(), new GetObjectCommand({ Bucket: process.env.MILO_S3_BUCKET!.trim(), Key: objectKey }), { expiresIn: 900 });
   }
   throw new Error("Google Drive objects are downloaded through the Milo storage proxy");
+}
+
+export async function storageGetDatabaseObject(relKey: string) {
+  const { provider, objectKey } = parseStoredKey(relKey);
+  if (provider !== "database") return undefined;
+  if (!databaseConfigured()) throw new Error("Database storage is not configured");
+  const row = await db.getVaultBlob(`db:${objectKey}`);
+  if (!row) return undefined;
+  return { data: Buffer.from(row.content), mimeType: row.mimeType, sizeBytes: row.sizeBytes };
 }
 
 export async function storageGetGoogleDriveResponse(relKey: string) {

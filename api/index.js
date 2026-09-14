@@ -48,7 +48,18 @@ import { and, desc, eq, gte, inArray, like, lte, ne, or } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 
 // drizzle/schema.ts
-import { boolean, decimal, index, int, mysqlEnum, mysqlTable, text, timestamp, unique, varchar } from "drizzle-orm/mysql-core";
+import { boolean, customType, decimal, index, int, mysqlEnum, mysqlTable, text, timestamp, unique, varchar } from "drizzle-orm/mysql-core";
+var longblob = customType({
+  dataType() {
+    return "longblob";
+  },
+  toDriver(value) {
+    return value;
+  },
+  fromDriver(value) {
+    return Buffer.from(value);
+  }
+});
 var users = mysqlTable("users", {
   id: int("id").autoincrement().primaryKey(),
   openId: varchar("openId", { length: 64 }).notNull().unique(),
@@ -191,6 +202,14 @@ var vaultItems = mysqlTable("vault_items", {
   capturedAt: timestamp("capturedAt").defaultNow().notNull(),
   createdAt: timestamp("createdAt").defaultNow().notNull()
 }, (table) => [index("vault_items_user_idx").on(table.createdByLineUserId, table.createdAt), index("vault_items_chat_idx").on(table.lineChatId, table.itemType)]);
+var vaultBlobs = mysqlTable("vault_blobs", {
+  id: int("id").autoincrement().primaryKey(),
+  storageKey: varchar("storageKey", { length: 512 }).notNull().unique(),
+  mimeType: varchar("mimeType", { length: 128 }).notNull(),
+  sizeBytes: int("sizeBytes").notNull(),
+  content: longblob("content").notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull()
+}, (table) => [index("vault_blobs_created_idx").on(table.createdAt)]);
 var notes = mysqlTable("notes", {
   id: int("id").autoincrement().primaryKey(),
   lineChatId: varchar("lineChatId", { length: 128 }).notNull(),
@@ -792,6 +811,14 @@ async function vaultStorageStatus(lineUserId, lineChatId, scope) {
 async function updateVaultMetadata(id, lineUserId, input) {
   const db = await requireDb();
   await db.update(vaultItems).set({ tagsText: input.tagsText ?? null, sourceUrl: input.sourceUrl ?? null }).where(and(eq(vaultItems.id, id), eq(vaultItems.createdByLineUserId, lineUserId)));
+}
+async function saveVaultBlob(input) {
+  const db = await requireDb();
+  await db.insert(vaultBlobs).values({ storageKey: input.storageKey, mimeType: input.mimeType, sizeBytes: input.content.byteLength, content: input.content }).onDuplicateKeyUpdate({ set: { mimeType: input.mimeType, sizeBytes: input.content.byteLength, content: input.content } });
+}
+async function getVaultBlob(storageKey) {
+  const db = await requireDb();
+  return (await db.select().from(vaultBlobs).where(eq(vaultBlobs.storageKey, storageKey)).limit(1))[0];
 }
 async function createNote(lineChatId, lineUserId, title, content) {
   const db = await requireDb();
@@ -4160,6 +4187,9 @@ function appendHashSuffix(relKey) {
   if (lastDot === -1) return `${relKey}_${hash}`;
   return `${relKey.slice(0, lastDot)}_${hash}${relKey.slice(lastDot)}`;
 }
+function databaseConfigured() {
+  return Boolean(process.env.DATABASE_URL?.trim());
+}
 function forgeConfigured() {
   return Boolean(ENV.forgeApiUrl && ENV.forgeApiKey);
 }
@@ -4171,10 +4201,11 @@ function googleDriveConfigured() {
 }
 function storageRuntimeStatus() {
   const configuredProviders = [];
+  if (databaseConfigured()) configuredProviders.push("database");
   if (forgeConfigured()) configuredProviders.push("forge");
   if (s3Configured()) configuredProviders.push("s3");
   if (googleDriveConfigured()) configuredProviders.push("google-drive");
-  const requested = (process.env.MILO_STORAGE_PROVIDER || "auto").trim().toLowerCase();
+  const requested = (process.env.MILO_STORAGE_PROVIDER || "database").trim().toLowerCase();
   const activeProvider = requested === "auto" ? configuredProviders[0] ?? null : configuredProviders.includes(requested) ? requested : null;
   return { requested, activeProvider, configuredProviders, configured: Boolean(activeProvider) };
 }
@@ -4182,6 +4213,17 @@ function selectedProvider() {
   const status = storageRuntimeStatus();
   if (status.activeProvider) return status.activeProvider;
   throw new Error(`Durable storage is not configured for provider ${status.requested}`);
+}
+async function databasePut(relKey, data, contentType) {
+  if (!databaseConfigured()) throw new Error("Database storage is not configured");
+  const objectKey = appendHashSuffix(normalizeKey(relKey));
+  const raw = typeof data === "string" ? Buffer.from(data) : Buffer.from(data);
+  const limit = Number(process.env.MILO_DATABASE_STORAGE_MAX_BYTES || 15 * 1024 * 1024);
+  if (!Number.isFinite(limit) || limit < 1) throw new Error("Invalid MILO_DATABASE_STORAGE_MAX_BYTES");
+  if (raw.byteLength > limit) throw new Error(`Database storage object exceeds ${limit} bytes`);
+  const key = `db:${objectKey}`;
+  await saveVaultBlob({ storageKey: key, mimeType: contentType, content: raw });
+  return { key, url: `/api/milo/storage/${encodeURIComponent(key)}`, provider: "database" };
 }
 async function forgePut(relKey, data, contentType) {
   const forgeUrl = ENV.forgeApiUrl.replace(/\/+$/, "");
@@ -4275,11 +4317,13 @@ Content-Type: ${contentType}\r
 }
 async function storagePut(relKey, data, contentType = "application/octet-stream") {
   const provider = selectedProvider();
+  if (provider === "database") return databasePut(relKey, data, contentType);
   if (provider === "forge") return forgePut(relKey, data, contentType);
   if (provider === "s3") return s3Put(relKey, data, contentType);
   return googleDrivePut(relKey, data, contentType);
 }
 function parseStoredKey(value) {
+  if (value.startsWith("db:")) return { provider: "database", objectKey: value.slice(3) };
   if (value.startsWith("forge:")) return { provider: "forge", objectKey: value.slice(6) };
   if (value.startsWith("s3:")) return { provider: "s3", objectKey: value.slice(3) };
   if (value.startsWith("gdrive:")) return { provider: "google-drive", objectKey: value.slice(7) };
@@ -4287,6 +4331,7 @@ function parseStoredKey(value) {
 }
 async function storageGetSignedUrl(relKey) {
   const { provider, objectKey } = parseStoredKey(relKey);
+  if (provider === "database") throw new Error("Database objects are downloaded through the Milo storage proxy");
   if (provider === "forge") {
     if (!forgeConfigured()) throw new Error("Forge storage is not configured");
     const getUrl = new URL("v1/storage/presign/get", ENV.forgeApiUrl.replace(/\/+$/, "") + "/");
@@ -4302,6 +4347,14 @@ async function storageGetSignedUrl(relKey) {
     return getSignedUrl(s3Client(), new GetObjectCommand({ Bucket: process.env.MILO_S3_BUCKET.trim(), Key: objectKey }), { expiresIn: 900 });
   }
   throw new Error("Google Drive objects are downloaded through the Milo storage proxy");
+}
+async function storageGetDatabaseObject(relKey) {
+  const { provider, objectKey } = parseStoredKey(relKey);
+  if (provider !== "database") return void 0;
+  if (!databaseConfigured()) throw new Error("Database storage is not configured");
+  const row = await getVaultBlob(`db:${objectKey}`);
+  if (!row) return void 0;
+  return { data: Buffer.from(row.content), mimeType: row.mimeType, sizeBytes: row.sizeBytes };
 }
 async function storageGetGoogleDriveResponse(relKey) {
   const { provider, objectKey } = parseStoredKey(relKey);
@@ -6995,6 +7048,14 @@ function registerMiloStorageRoute(app2) {
     const key = decodeStorageKey(req.params.key);
     if (!key) return res.status(400).type("text/plain").send("missing storage key");
     try {
+      if (key.startsWith("db:")) {
+        const object = await storageGetDatabaseObject(key);
+        if (!object) return res.status(404).type("text/plain").send("storage object not found");
+        res.setHeader("Content-Type", object.mimeType || "application/octet-stream");
+        res.setHeader("Content-Length", String(object.sizeBytes));
+        res.setHeader("Cache-Control", "private, no-store");
+        return res.status(200).send(object.data);
+      }
       if (key.startsWith("gdrive:")) {
         const upstream = await storageGetGoogleDriveResponse(key);
         if (!upstream) return res.status(404).type("text/plain").send("storage object not found");
@@ -7047,7 +7108,7 @@ var healthHandler = async (req, res) => {
   res.status(200).json({
     status: runtime.authenticated && voice.configured && Boolean(process.env.LINE_CHANNEL_SECRET?.trim()) && Boolean(process.env.LINE_CHANNEL_ACCESS_TOKEN?.trim()) && Boolean(process.env.DATABASE_URL?.trim()) ? "ok" : "degraded",
     service: "milo",
-    release: "multi-storage-core-v21-2026-09-14",
+    release: "database-vault-v22-2026-09-15",
     visionConfigured: runtime.authenticated,
     imageAnalysisMode: mode,
     visionModel: mode === "ocr-fallback" ? "tesseract-tha+eng" : process.env.MILO_VISION_MODEL || (mode.startsWith("vercel-ai-gateway") ? "google/gemini-2.5-flash" : mode.startsWith("forge-vision") ? "gemini-3-flash-preview" : "unconfigured"),
@@ -7071,6 +7132,7 @@ var healthHandler = async (req, res) => {
       webhookSignatureVerification: true,
       calendarSupported: true,
       durableVaultStorageConfigured: storage.configured,
+      databaseVaultStorageSupported: true,
       storageProviderChoiceSupported: true,
       googleDriveStorageSupported: true,
       s3CompatibleStorageSupported: true,
