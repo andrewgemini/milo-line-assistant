@@ -81,13 +81,26 @@ function isKbankNoise(line: string) {
   return false;
 }
 
-function cleanMerchant(value: string) {
-  return compact(value)
+export function normalizeThaiMerchantName(value: string) {
+  let cleaned = compact(value)
+    .replace(/^[=•·|:;._\-–—>]+\s*/, "")
     .replace(/^[A-Za-z0-9]{1,4}[\s|:;._-]+(?=[ก-๙])/, "")
     .replace(/คาเฟ[่]?\s*อเมซอน/gi, "คาเฟ่ อเมซอน")
+    .replace(/cafe\s*amazon/gi, "Cafe Amazon")
     .replace(/([ก-๙])\s+(เฮ้าส์)/g, "$1$2")
+    .replace(/เพชรเกษม\s*(\d)\s+(\d{2})(?=\b|\s)/gi, "เพชรเกษม$1$2")
+    .replace(/เอกซ์เพรส/g, "เอ็กซ์เพรส")
     .replace(/\s+(?:[A-Z0-9]{14,}|\d{10,})\s*$/i, "")
     .trim();
+
+  // Common OCR noise after a legal/company suffix, e.g. "กรุ๊ป 2รอ".
+  // Only remove a short mixed digit token so legitimate branch names remain.
+  cleaned = cleaned.replace(/((?:กรุ๊ป|จำกัด|ลิมิเต็ด))\s+[0-9][A-Za-zก-๙]{1,3}\s*$/i, "$1");
+  return compact(cleaned);
+}
+
+function cleanMerchant(value: string) {
+  return normalizeThaiMerchantName(value);
 }
 
 export function extractKbankMerchant(text: string) {

@@ -1,6 +1,7 @@
 import { invokeLLM } from "../_core/llm";
 import { ENV } from "../_core/env";
 import { analyzeImageWithOcr, ocrAssetsReady } from "./ocrImageAnalysis";
+import { normalizeThaiMerchantName } from "./thaiReceiptParser";
 
 export type ImageProposal = {
   kind: "reminder" | "expense" | "unknown";
@@ -174,7 +175,7 @@ function expenseComplete(analysis: ImageAnalysis) {
 }
 
 function merchantQuality(value: string) {
-  const candidate = value.trim();
+  const candidate = normalizeThaiMerchantName(value);
   if (!candidate) return -100;
   let score = Math.min(candidate.length, 80);
   if (/(ค่าสินค้า|บริการ|จำนวนเงิน|ยอด|ส่วนลด|สิทธิ|บาท|ค่าธรรมเนียม)/i.test(candidate)) score -= 80;
@@ -190,7 +191,9 @@ export function mergeImageAnalyses(primary: ImageAnalysis, ocr: ImageAnalysis): 
   const documentType = p.documentType !== "unknown" ? p.documentType : o.documentType;
   const preferOcrAmount = o.amount > 0 && (p.amount <= 0 || (documentType === "receipt" && o.amount !== p.amount));
   const amount = preferOcrAmount ? o.amount : (p.amount || o.amount);
-  const merchant = merchantQuality(o.merchant) > merchantQuality(p.merchant) ? o.merchant : p.merchant;
+  const primaryMerchant = normalizeThaiMerchantName(p.merchant);
+  const ocrMerchant = normalizeThaiMerchantName(o.merchant);
+  const merchant = merchantQuality(ocrMerchant) >= merchantQuality(primaryMerchant) ? ocrMerchant : primaryMerchant;
   const merged: ImageProposal = {
     ...p,
     kind: (p.kind === "expense" || o.kind === "expense") && amount > 0 ? "expense" : p.kind,
@@ -205,7 +208,7 @@ export function mergeImageAnalyses(primary: ImageAnalysis, ocr: ImageAnalysis): 
     receiptNumber: p.receiptNumber || o.receiptNumber,
     lineItems: Array.from(new Set([...(p.lineItems || []), ...(o.lineItems || [])])).slice(0, 10),
     note: p.note || o.note,
-    title: p.title && p.title !== "ข้อมูลจากรูป" ? p.title : (o.title || p.title),
+    title: documentType === "bank_slip" && o.title === "รายการโอนเงิน" && !o.note ? o.title : (p.title && p.title !== "ข้อมูลจากรูป" ? p.title : (o.title || p.title)),
   };
   const summary = merged.kind === "expense"
     ? `อ่าน${merged.documentType === "bank_slip" ? "สลิป" : "ใบเสร็จ"}ได้ ยอด ${merged.amount.toLocaleString("th-TH")} บาท${merged.dateText ? ` วันที่ ${merged.dateText}` : " แต่วันที่ยังไม่ชัด"}`

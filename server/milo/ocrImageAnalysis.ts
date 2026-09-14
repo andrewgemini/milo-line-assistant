@@ -313,8 +313,17 @@ export async function analyzeImageWithOcr(dataUrl: string): Promise<ImageAnalysi
     .grayscale()
     .normalize()
     .sharpen({ sigma: 1.05 });
+  const meta = await sharp(input).rotate().metadata();
+  const imageHeight = meta.height || 0;
+  const topCropHeight = imageHeight > 0 ? Math.max(1, Math.floor(imageHeight * 0.58)) : 0;
+  const topFocus = topCropHeight > 0
+    ? sharp(input).rotate().extract({ left: 0, top: 0, width: meta.width || 1, height: topCropHeight })
+      .resize({ width: 2400, fit: "inside", withoutEnlargement: false, kernel: sharp.kernel.lanczos3 })
+      .grayscale().normalize().sharpen({ sigma: 1.15 })
+    : undefined;
   const variants: Array<{ label: string; bytes: Buffer }> = [
     { label: "normalized-upscaled", bytes: await base.clone().png().toBuffer() },
+    ...(topFocus ? [{ label: "top-focus", bytes: await topFocus.clone().png().toBuffer() }] : []),
     { label: "medium-contrast", bytes: await base.clone().linear(1.25, -20).png().toBuffer() },
     { label: "threshold-175", bytes: await base.clone().threshold(175).png().toBuffer() },
   ];

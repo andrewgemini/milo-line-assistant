@@ -4005,8 +4005,13 @@ function isKbankNoise(line) {
   if (/^(?:จำนวน|ค่าธรรมเนียม|ยอด).*(?:บาท|\d)/i.test(value)) return true;
   return false;
 }
+function normalizeThaiMerchantName(value) {
+  let cleaned = compact(value).replace(/^[=•·|:;._\-–—>]+\s*/, "").replace(/^[A-Za-z0-9]{1,4}[\s|:;._-]+(?=[ก-๙])/, "").replace(/คาเฟ[่]?\s*อเมซอน/gi, "\u0E04\u0E32\u0E40\u0E1F\u0E48 \u0E2D\u0E40\u0E21\u0E0B\u0E2D\u0E19").replace(/cafe\s*amazon/gi, "Cafe Amazon").replace(/([ก-๙])\s+(เฮ้าส์)/g, "$1$2").replace(/เพชรเกษม\s*(\d)\s+(\d{2})(?=\b|\s)/gi, "\u0E40\u0E1E\u0E0A\u0E23\u0E40\u0E01\u0E29\u0E21$1$2").replace(/เอกซ์เพรส/g, "\u0E40\u0E2D\u0E47\u0E01\u0E0B\u0E4C\u0E40\u0E1E\u0E23\u0E2A").replace(/\s+(?:[A-Z0-9]{14,}|\d{10,})\s*$/i, "").trim();
+  cleaned = cleaned.replace(/((?:กรุ๊ป|จำกัด|ลิมิเต็ด))\s+[0-9][A-Za-zก-๙]{1,3}\s*$/i, "$1");
+  return compact(cleaned);
+}
 function cleanMerchant(value) {
-  return compact(value).replace(/^[A-Za-z0-9]{1,4}[\s|:;._-]+(?=[ก-๙])/, "").replace(/คาเฟ[่]?\s*อเมซอน/gi, "\u0E04\u0E32\u0E40\u0E1F\u0E48 \u0E2D\u0E40\u0E21\u0E0B\u0E2D\u0E19").replace(/([ก-๙])\s+(เฮ้าส์)/g, "$1$2").replace(/\s+(?:[A-Z0-9]{14,}|\d{10,})\s*$/i, "").trim();
+  return normalizeThaiMerchantName(value);
 }
 function extractKbankMerchant(text2) {
   const lines = text2.split(/\n+/).map(compact).filter(Boolean);
@@ -4325,8 +4330,13 @@ async function analyzeImageWithOcr(dataUrl) {
   fs2.mkdirSync(CACHE_DIR, { recursive: true });
   const input = decodeDataUrl(dataUrl);
   const base = sharp3(input).rotate().resize({ width: 2e3, fit: "inside", withoutEnlargement: false, kernel: sharp3.kernel.lanczos3 }).grayscale().normalize().sharpen({ sigma: 1.05 });
+  const meta = await sharp3(input).rotate().metadata();
+  const imageHeight = meta.height || 0;
+  const topCropHeight = imageHeight > 0 ? Math.max(1, Math.floor(imageHeight * 0.58)) : 0;
+  const topFocus = topCropHeight > 0 ? sharp3(input).rotate().extract({ left: 0, top: 0, width: meta.width || 1, height: topCropHeight }).resize({ width: 2400, fit: "inside", withoutEnlargement: false, kernel: sharp3.kernel.lanczos3 }).grayscale().normalize().sharpen({ sigma: 1.15 }) : void 0;
   const variants = [
     { label: "normalized-upscaled", bytes: await base.clone().png().toBuffer() },
+    ...topFocus ? [{ label: "top-focus", bytes: await topFocus.clone().png().toBuffer() }] : [],
     { label: "medium-contrast", bytes: await base.clone().linear(1.25, -20).png().toBuffer() },
     { label: "threshold-175", bytes: await base.clone().threshold(175).png().toBuffer() }
   ];
@@ -4506,7 +4516,7 @@ async function imageAnalysisRuntimeStatus(requestToken) {
   };
 }
 function merchantQuality(value) {
-  const candidate = value.trim();
+  const candidate = normalizeThaiMerchantName(value);
   if (!candidate) return -100;
   let score = Math.min(candidate.length, 80);
   if (/(ค่าสินค้า|บริการ|จำนวนเงิน|ยอด|ส่วนลด|สิทธิ|บาท|ค่าธรรมเนียม)/i.test(candidate)) score -= 80;
@@ -4521,7 +4531,9 @@ function mergeImageAnalyses(primary, ocr) {
   const documentType = p.documentType !== "unknown" ? p.documentType : o.documentType;
   const preferOcrAmount = o.amount > 0 && (p.amount <= 0 || documentType === "receipt" && o.amount !== p.amount);
   const amount = preferOcrAmount ? o.amount : p.amount || o.amount;
-  const merchant = merchantQuality(o.merchant) > merchantQuality(p.merchant) ? o.merchant : p.merchant;
+  const primaryMerchant = normalizeThaiMerchantName(p.merchant);
+  const ocrMerchant = normalizeThaiMerchantName(o.merchant);
+  const merchant = merchantQuality(ocrMerchant) >= merchantQuality(primaryMerchant) ? ocrMerchant : primaryMerchant;
   const merged = {
     ...p,
     kind: (p.kind === "expense" || o.kind === "expense") && amount > 0 ? "expense" : p.kind,
@@ -4536,7 +4548,7 @@ function mergeImageAnalyses(primary, ocr) {
     receiptNumber: p.receiptNumber || o.receiptNumber,
     lineItems: Array.from(/* @__PURE__ */ new Set([...p.lineItems || [], ...o.lineItems || []])).slice(0, 10),
     note: p.note || o.note,
-    title: p.title && p.title !== "\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E08\u0E32\u0E01\u0E23\u0E39\u0E1B" ? p.title : o.title || p.title
+    title: documentType === "bank_slip" && o.title === "\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E42\u0E2D\u0E19\u0E40\u0E07\u0E34\u0E19" && !o.note ? o.title : p.title && p.title !== "\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E08\u0E32\u0E01\u0E23\u0E39\u0E1B" ? p.title : o.title || p.title
   };
   const summary = merged.kind === "expense" ? `\u0E2D\u0E48\u0E32\u0E19${merged.documentType === "bank_slip" ? "\u0E2A\u0E25\u0E34\u0E1B" : "\u0E43\u0E1A\u0E40\u0E2A\u0E23\u0E47\u0E08"}\u0E44\u0E14\u0E49 \u0E22\u0E2D\u0E14 ${merged.amount.toLocaleString("th-TH")} \u0E1A\u0E32\u0E17${merged.dateText ? ` \u0E27\u0E31\u0E19\u0E17\u0E35\u0E48 ${merged.dateText}` : " \u0E41\u0E15\u0E48\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E0A\u0E31\u0E14"}` : primary.summary || ocr.summary;
   return { summary, confidence: Math.max(primary.confidence, ocr.confidence), proposals: [merged, ...primary.proposals.slice(1)] };
@@ -6334,7 +6346,7 @@ var healthHandler = async (req, res) => {
   res.status(200).json({
     status: "ok",
     service: "milo",
-    release: "media-v11-multislip-netpay-2026-09-14",
+    release: "media-v12-ocr-focus-cleanup-2026-09-14",
     visionConfigured: runtime.authenticated,
     imageAnalysisMode: mode,
     visionModel: mode === "ocr-fallback" ? "tesseract-tha+eng" : process.env.MILO_VISION_MODEL || (mode.startsWith("vercel-ai-gateway") ? "google/gemini-2.5-flash" : mode.startsWith("forge-vision") ? "gemini-3-flash-preview" : "unconfigured"),

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { enrichThaiReceiptProposal, extractKbankMerchant, extractReceiptLineItems, extractThaiPayableAmount, extractThaiSlipDateTime } from "./thaiReceiptParser";
+import { enrichThaiReceiptProposal, extractKbankMerchant, extractReceiptLineItems, extractThaiPayableAmount, extractThaiSlipDateTime, normalizeThaiMerchantName } from "./thaiReceiptParser";
 import type { ImageProposal } from "./imageAnalysis";
 
 const baseProposal: ImageProposal = {
@@ -39,6 +39,11 @@ CJ 1685 เพชรเกษม106
     expect(extractKbankMerchant(text)).toBe("CJ 1685 เพชรเกษม106 บจก. ซี.เจ. เอ็กซ์เพรส กรุ๊ป");
     const enriched = enrichThaiReceiptProposal(text, { ...baseProposal, documentType: "bank_slip", amount: 40, paymentMethod: "โอนเงิน" });
     expect(enriched).toMatchObject({ merchant: "CJ 1685 เพชรเกษม106 บจก. ซี.เจ. เอ็กซ์เพรส กรุ๊ป", amount: 40, dateText: "2026-09-14", timeText: "11:02" });
+  });
+
+  it("cleans punctuation and trailing OCR garbage from a CJ merchant", () => {
+    expect(normalizeThaiMerchantName("= CJ 1685 เพชรเกษม1 06 บจก. ซี.เจ. เอกซ์เพรส กรุ๊ป 2รอ"))
+      .toBe("CJ 1685 เพชรเกษม106 บจก. ซี.เจ. เอ็กซ์เพรส กรุ๊ป");
   });
 
   it("uses the actual paid amount after a welfare subsidy instead of the gross service amount", () => {
