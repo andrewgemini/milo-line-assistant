@@ -104,6 +104,25 @@ export const reminders = mysqlTable("reminders", {
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 }, table => [index("reminders_due_idx").on(table.status, table.nextRunAt), index("reminders_user_idx").on(table.createdByLineUserId)]);
 
+export const calendarEvents = mysqlTable("calendar_events", {
+  id: int("id").autoincrement().primaryKey(),
+  lineChatId: varchar("lineChatId", { length: 128 }).notNull(),
+  createdByLineUserId: varchar("createdByLineUserId", { length: 128 }).notNull(),
+  title: varchar("title", { length: 255 }).notNull(),
+  detail: text("detail"),
+  startsAt: timestamp("startsAt").notNull(),
+  endsAt: timestamp("endsAt").notNull(),
+  timezone: varchar("timezone", { length: 64 }).default("Asia/Bangkok").notNull(),
+  status: mysqlEnum("status", ["active", "cancelled", "completed"]).default("active").notNull(),
+  sourceMessageId: varchar("sourceMessageId", { length: 128 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, table => [
+  index("calendar_events_chat_start_idx").on(table.lineChatId, table.status, table.startsAt),
+  index("calendar_events_user_start_idx").on(table.createdByLineUserId, table.status, table.startsAt),
+  index("calendar_events_source_idx").on(table.sourceMessageId),
+]);
+
 export const reminderDeliveryAttempts = mysqlTable("reminder_delivery_attempts", {
   id: int("id").autoincrement().primaryKey(),
   reminderId: int("reminderId").notNull(),

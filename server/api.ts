@@ -9,6 +9,7 @@ import { registerSaveResultImageRoute } from "./milo/saveResultImage";
 import { registerFinanceReportImageRoute } from "./milo/financeReportImage";
 import { registerRichMenuDataImageRoute } from "./milo/richMenuDataImage";
 import { registerFinanceExportRoute } from "./milo/financeExport";
+import { registerCalendarExportRoute } from "./milo/calendar";
 import { analyzeImage, imageAnalysisRuntimeStatus } from "./milo/imageAnalysis";
 import { voiceTranscriptionRuntimeStatus } from "./_core/voiceTranscription";
 import { sdk } from "./_core/sdk";
@@ -36,6 +37,7 @@ registerSaveResultImageRoute(app);
 registerFinanceReportImageRoute(app);
 registerRichMenuDataImageRoute(app);
 registerFinanceExportRoute(app);
+registerCalendarExportRoute(app);
 registerLineWebhook(app);
 
 app.use(express.json({ limit: "10mb" }));
@@ -49,10 +51,11 @@ const healthHandler = async (req: express.Request, res: express.Response) => {
   const runtime = await imageAnalysisRuntimeStatus(gatewayToken);
   const mode = runtime.mode;
   const voice = voiceTranscriptionRuntimeStatus(gatewayToken);
+  const durableStorageConfigured = Boolean((process.env.BUILT_IN_FORGE_API_URL || process.env.FORGE_API_URL || process.env.OPENAI_BASE_URL) && (process.env.BUILT_IN_FORGE_API_KEY || process.env.FORGE_API_KEY || process.env.OPENAI_API_KEY));
   res.status(200).json({
     status: runtime.authenticated && voice.configured && Boolean(process.env.LINE_CHANNEL_SECRET?.trim()) && Boolean(process.env.LINE_CHANNEL_ACCESS_TOKEN?.trim()) && Boolean(process.env.DATABASE_URL?.trim()) ? "ok" : "degraded",
     service: "milo",
-    release: "production-hardening-v19-2026-09-14",
+    release: "chat-first-core-v20-2026-09-14",
     visionConfigured: runtime.authenticated,
     imageAnalysisMode: mode,
     visionModel: mode === "ocr-fallback" ? "tesseract-tha+eng" : process.env.MILO_VISION_MODEL || (mode.startsWith("vercel-ai-gateway") ? "google/gemini-2.5-flash" : mode.startsWith("forge-vision") ? "gemini-3-flash-preview" : "unconfigured"),
@@ -69,6 +72,9 @@ const healthHandler = async (req: express.Request, res: express.Response) => {
       duplicateProtection: true,
       undoSupported: true,
       webhookSignatureVerification: true,
+      calendarSupported: true,
+      durableVaultStorageConfigured: durableStorageConfigured,
+      groupSharedVaultSearch: true,
     },
     timestamp: new Date().toISOString(),
   });

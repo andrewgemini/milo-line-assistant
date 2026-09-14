@@ -1,4 +1,5 @@
 import { suggestStandardCategory } from "./financeCategories";
+import { parseCalendarIntent, type CalendarDraft } from "./calendar";
 
 export type ReminderDraft = {
   title: string; recurrenceType: "once" | "minute" | "day" | "week" | "month"; recurrenceInterval: number;
@@ -7,9 +8,18 @@ export type ReminderDraft = {
 
 export type MiloCommand =
   | { type: "reminder"; data: ReminderDraft }
+  | { type: "reminderList" }
+  | { type: "reminderCancel"; id: number }
+  | { type: "calendarCreate"; data: CalendarDraft }
+  | { type: "calendarList" }
+  | { type: "calendarCancel"; id: number }
+  | { type: "groupGuide" }
+  | { type: "vaultStatus" }
   | { type: "expense" | "income"; amount: number; category: string; note: string }
   | { type: "note"; title: string; content: string }
   | { type: "todo"; title: string }
+  | { type: "todoList" }
+  | { type: "todoComplete"; id: number }
   | { type: "vault"; title: string; content: string; itemType: "text" | "link"; tagsText?: string; sourceUrl?: string }
   | { type: "search"; query: string }
   | { type: "mention"; message: string; memberName: string }
@@ -111,6 +121,18 @@ function reminderFrom(text: string, now: Date): ReminderDraft | undefined {
 export function parseMiloCommand(text: string, now = new Date()): MiloCommand {
   const reminder = reminderFrom(text, now); if (reminder) return { type: "reminder", data: reminder };
   const value = text.trim().replace(/^@?ไมโล\s*/i, "");
+  const reminderCancel = value.match(/^(?:ยกเลิก|ลบ)เตือน\s*#?(\d+)$/i);
+  if (reminderCancel) return { type: "reminderCancel", id: Number(reminderCancel[1]) };
+  if (/^(?:ดูเตือน|รายการเตือน|ดูรายการเตือน)$/i.test(value)) return { type: "reminderList" };
+  const todoComplete = value.match(/^(?:เสร็จงาน|ปิดงาน)\s*#?(\d+)$/i) ?? value.match(/^ทำงาน\s*#?(\d+)\s*เสร็จ$/i);
+  if (todoComplete) return { type: "todoComplete", id: Number(todoComplete[1]) };
+  if (/^(?:ดูงาน|รายการงาน|งานทั้งหมด|todo\s*list)$/i.test(value)) return { type: "todoList" };
+  const calendar = parseCalendarIntent(value, now);
+  if (calendar?.type === "create") return { type: "calendarCreate", data: calendar.data };
+  if (calendar?.type === "list") return { type: "calendarList" };
+  if (calendar?.type === "cancel") return { type: "calendarCancel", id: calendar.id };
+  if (/^(?:ผู้ช่วยกลุ่ม|กลุ่ม\s*LINE|กลุ่มช่วยอะไร|วิธีใช้กลุ่ม)$/i.test(value)) return { type: "groupGuide" };
+  if (/^(?:สถานะคลัง|คลังไฟล์|คลังถาวร)$/i.test(value)) return { type: "vaultStatus" };
   const recurring = recurringFrom(value, now); if (recurring) return recurring;
   if (/^(?:ดู)?(?:รายการประจำ|จดอัตโนมัติ)$/i.test(value)) return { type: "recurringList" };
   const recurringStatus = value.match(/^(เปิด|พัก|หยุด|ยกเลิก)(?:รายการประจำ|จดอัตโนมัติ)\s*#?(\d+)$/i);

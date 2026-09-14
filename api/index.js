@@ -145,6 +145,24 @@ var reminders = mysqlTable("reminders", {
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull()
 }, (table) => [index("reminders_due_idx").on(table.status, table.nextRunAt), index("reminders_user_idx").on(table.createdByLineUserId)]);
+var calendarEvents = mysqlTable("calendar_events", {
+  id: int("id").autoincrement().primaryKey(),
+  lineChatId: varchar("lineChatId", { length: 128 }).notNull(),
+  createdByLineUserId: varchar("createdByLineUserId", { length: 128 }).notNull(),
+  title: varchar("title", { length: 255 }).notNull(),
+  detail: text("detail"),
+  startsAt: timestamp("startsAt").notNull(),
+  endsAt: timestamp("endsAt").notNull(),
+  timezone: varchar("timezone", { length: 64 }).default("Asia/Bangkok").notNull(),
+  status: mysqlEnum("status", ["active", "cancelled", "completed"]).default("active").notNull(),
+  sourceMessageId: varchar("sourceMessageId", { length: 128 }),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull()
+}, (table) => [
+  index("calendar_events_chat_start_idx").on(table.lineChatId, table.status, table.startsAt),
+  index("calendar_events_user_start_idx").on(table.createdByLineUserId, table.status, table.startsAt),
+  index("calendar_events_source_idx").on(table.sourceMessageId)
+]);
 var reminderDeliveryAttempts = mysqlTable("reminder_delivery_attempts", {
   id: int("id").autoincrement().primaryKey(),
   reminderId: int("reminderId").notNull(),
@@ -649,6 +667,19 @@ async function listReminders(lineUserId) {
   const db = await requireDb();
   return db.select().from(reminders).where(and(eq(reminders.createdByLineUserId, lineUserId), or(eq(reminders.status, "active"), eq(reminders.status, "paused")))).orderBy(reminders.nextRunAt);
 }
+async function listRemindersForChat(lineUserId, lineChatId, scope) {
+  const db = await requireDb();
+  const chatScope = scope === "user" ? and(eq(reminders.createdByLineUserId, lineUserId), eq(reminders.lineChatId, lineChatId)) : eq(reminders.lineChatId, lineChatId);
+  return db.select().from(reminders).where(and(chatScope, or(eq(reminders.status, "active"), eq(reminders.status, "paused")))).orderBy(reminders.nextRunAt).limit(50);
+}
+async function cancelReminderForChat(id, lineUserId, lineChatId) {
+  const db = await requireDb();
+  const current = (await db.select().from(reminders).where(and(eq(reminders.id, id), eq(reminders.lineChatId, lineChatId), eq(reminders.createdByLineUserId, lineUserId), or(eq(reminders.status, "active"), eq(reminders.status, "paused")))).limit(1))[0];
+  if (!current) return false;
+  await db.update(reminders).set({ status: "cancelled" }).where(eq(reminders.id, id));
+  await writeAuditLog({ action: "reminder.cancel", entityType: "reminder", entityId: id, actorLineUserId: lineUserId, lineChatId, details: { title: current.title } });
+  return true;
+}
 async function deleteReminder(id, lineUserId) {
   const db = await requireDb();
   await db.delete(reminders).where(and(eq(reminders.id, id), eq(reminders.createdByLineUserId, lineUserId)));
@@ -689,6 +720,33 @@ async function finishReminderDeliveryAttempt(id, status, errorMessage) {
   const db = await requireDb();
   await db.update(reminderDeliveryAttempts).set({ status, errorMessage: errorMessage ?? null, finishedAt: /* @__PURE__ */ new Date() }).where(eq(reminderDeliveryAttempts.id, id));
 }
+async function createCalendarEvent(input) {
+  const db = await requireDb();
+  if (input.sourceMessageId) {
+    const existing = (await db.select().from(calendarEvents).where(and(eq(calendarEvents.lineChatId, input.lineChatId), eq(calendarEvents.sourceMessageId, input.sourceMessageId))).limit(1))[0];
+    if (existing) return existing.id;
+  }
+  const result = await db.insert(calendarEvents).values({ ...input, detail: input.detail ?? null, sourceMessageId: input.sourceMessageId ?? null });
+  const id = Number(result[0].insertId);
+  await writeAuditLog({ action: "calendar.create", entityType: "calendar_event", entityId: id, actorLineUserId: input.createdByLineUserId, lineChatId: input.lineChatId, details: { title: input.title, startsAt: input.startsAt.toISOString(), endsAt: input.endsAt.toISOString() } });
+  return id;
+}
+async function getCalendarEventById(id) {
+  const db = await requireDb();
+  return (await db.select().from(calendarEvents).where(eq(calendarEvents.id, id)).limit(1))[0];
+}
+async function listCalendarEvents(lineUserId, lineChatId, from = /* @__PURE__ */ new Date(), limit = 20) {
+  const db = await requireDb();
+  return db.select().from(calendarEvents).where(and(eq(calendarEvents.lineChatId, lineChatId), eq(calendarEvents.status, "active"), gte(calendarEvents.endsAt, from))).orderBy(calendarEvents.startsAt).limit(Math.min(Math.max(limit, 1), 50));
+}
+async function cancelCalendarEvent(id, lineUserId, lineChatId) {
+  const db = await requireDb();
+  const current = (await db.select().from(calendarEvents).where(and(eq(calendarEvents.id, id), eq(calendarEvents.lineChatId, lineChatId), eq(calendarEvents.createdByLineUserId, lineUserId), eq(calendarEvents.status, "active"))).limit(1))[0];
+  if (!current) return false;
+  await db.update(calendarEvents).set({ status: "cancelled" }).where(eq(calendarEvents.id, id));
+  await writeAuditLog({ action: "calendar.cancel", entityType: "calendar_event", entityId: id, actorLineUserId: lineUserId, lineChatId, details: { title: current.title } });
+  return true;
+}
 async function createVaultItem(input) {
   const db = await requireDb();
   const result = await db.insert(vaultItems).values({
@@ -719,6 +777,18 @@ async function searchVault(lineUserId, term = "") {
   const where = term.trim() ? and(base, or(like(vaultItems.title, `%${term}%`), like(vaultItems.searchableText, `%${term}%`), like(vaultItems.tagsText, `%${term}%`))) : base;
   return db.select().from(vaultItems).where(where).orderBy(desc(vaultItems.createdAt)).limit(100);
 }
+async function searchVaultForChat(lineUserId, lineChatId, scope, term = "") {
+  const db = await requireDb();
+  const base = scope === "user" ? and(eq(vaultItems.createdByLineUserId, lineUserId), eq(vaultItems.lineChatId, lineChatId), eq(vaultItems.status, "active")) : and(eq(vaultItems.lineChatId, lineChatId), eq(vaultItems.status, "active"));
+  const where = term.trim() ? and(base, or(like(vaultItems.title, `%${term}%`), like(vaultItems.searchableText, `%${term}%`), like(vaultItems.tagsText, `%${term}%`))) : base;
+  return db.select().from(vaultItems).where(where).orderBy(desc(vaultItems.createdAt)).limit(100);
+}
+async function vaultStorageStatus(lineUserId, lineChatId, scope) {
+  const rows = await searchVaultForChat(lineUserId, lineChatId, scope, "");
+  const durable = rows.filter((item) => item.itemType === "text" || item.itemType === "link" || Boolean(item.storageKey)).length;
+  const mediaMissing = rows.filter((item) => (item.itemType === "image" || item.itemType === "file") && !item.storageKey).length;
+  return { total: rows.length, durable, mediaMissing };
+}
 async function updateVaultMetadata(id, lineUserId, input) {
   const db = await requireDb();
   await db.update(vaultItems).set({ tagsText: input.tagsText ?? null, sourceUrl: input.sourceUrl ?? null }).where(and(eq(vaultItems.id, id), eq(vaultItems.createdByLineUserId, lineUserId)));
@@ -738,6 +808,20 @@ async function createTodo(lineChatId, lineUserId, title, dueAt) {
 async function listTodos(lineUserId) {
   const db = await requireDb();
   return db.select().from(todoItems).where(and(eq(todoItems.createdByLineUserId, lineUserId), eq(todoItems.status, "todo"))).orderBy(todoItems.dueAt).limit(100);
+}
+async function listTodosForChat(lineUserId, lineChatId, scope) {
+  const db = await requireDb();
+  const chatScope = scope === "user" ? and(eq(todoItems.createdByLineUserId, lineUserId), eq(todoItems.lineChatId, lineChatId)) : eq(todoItems.lineChatId, lineChatId);
+  return db.select().from(todoItems).where(and(chatScope, eq(todoItems.status, "todo"))).orderBy(todoItems.dueAt, todoItems.createdAt).limit(100);
+}
+async function completeTodoForChat(id, lineUserId, lineChatId, scope) {
+  const db = await requireDb();
+  const chatScope = scope === "user" ? and(eq(todoItems.createdByLineUserId, lineUserId), eq(todoItems.lineChatId, lineChatId)) : eq(todoItems.lineChatId, lineChatId);
+  const current = (await db.select().from(todoItems).where(and(eq(todoItems.id, id), chatScope, eq(todoItems.status, "todo"))).limit(1))[0];
+  if (!current) return false;
+  await db.update(todoItems).set({ status: "done", completedAt: /* @__PURE__ */ new Date() }).where(eq(todoItems.id, id));
+  await writeAuditLog({ action: "todo.complete", entityType: "todo", entityId: id, actorLineUserId: lineUserId, lineChatId, details: { title: current.title } });
+  return true;
 }
 async function completeTodo(id, lineUserId) {
   const db = await requireDb();
@@ -3445,6 +3529,156 @@ function registerStorageProxy(app2) {
   });
 }
 
+// server/milo/calendar.ts
+import crypto6 from "node:crypto";
+var BANGKOK_OFFSET_MS2 = 7 * 60 * 60 * 1e3;
+function bangkokParts2(date) {
+  const shifted = new Date(date.getTime() + BANGKOK_OFFSET_MS2);
+  return { year: shifted.getUTCFullYear(), month: shifted.getUTCMonth() + 1, day: shifted.getUTCDate() };
+}
+function atBangkok(year, month, day, hour, minute) {
+  return new Date(Date.UTC(year, month - 1, day, hour - 7, minute));
+}
+function addBangkokDays(parts, days) {
+  const calendar = new Date(Date.UTC(parts.year, parts.month - 1, parts.day + days));
+  return { year: calendar.getUTCFullYear(), month: calendar.getUTCMonth() + 1, day: calendar.getUTCDate() };
+}
+function normalizeYear(raw, fallback) {
+  if (!Number.isFinite(raw)) return fallback;
+  if (raw > 2400) return raw - 543;
+  if (raw < 100) return 2e3 + raw;
+  return raw;
+}
+function parseStart(value, now) {
+  const current = bangkokParts2(now);
+  const clock2 = value.match(/(?:เวลา\s*)?(\d{1,2})(?::|\.)(\d{2})/i);
+  const hour = Math.min(Math.max(Number(clock2?.[1] ?? 9), 0), 23);
+  const minute = Math.min(Math.max(Number(clock2?.[2] ?? 0), 0), 59);
+  const iso2 = value.match(/(\d{4})-(\d{1,2})-(\d{1,2})/);
+  const thai = value.match(/(?:วันที่\s*)?(\d{1,2})[\/-](\d{1,2})(?:[\/-](\d{2,4}))?/);
+  let target = { ...current };
+  if (/พรุ่งนี้/i.test(value)) target = addBangkokDays(current, 1);
+  else if (/วันนี้/i.test(value)) target = current;
+  else if (iso2) target = { year: Number(iso2[1]), month: Number(iso2[2]), day: Number(iso2[3]) };
+  else if (thai) {
+    const year = normalizeYear(thai[3] ? Number(thai[3]) : current.year, current.year);
+    target = { year, month: Number(thai[2]), day: Number(thai[1]) };
+  }
+  let startsAt = atBangkok(target.year, target.month, target.day, hour, minute);
+  if (!/วันนี้|พรุ่งนี้|\d{4}-\d{1,2}-\d{1,2}|\d{1,2}[\/-]\d{1,2}/i.test(value) && startsAt <= now) {
+    const tomorrow = addBangkokDays(current, 1);
+    startsAt = atBangkok(tomorrow.year, tomorrow.month, tomorrow.day, hour, minute);
+  }
+  return startsAt;
+}
+function eventTitle(value) {
+  return value.replace(/(?:วันนี้|พรุ่งนี้)/gi, " ").replace(/(?:วันที่\s*)?\d{1,2}[\/-]\d{1,2}(?:[\/-]\d{2,4})?/g, " ").replace(/\d{4}-\d{1,2}-\d{1,2}/g, " ").replace(/ถึง\s*\d{1,2}(?::|\.)\d{2}/gi, " ").replace(/(?:เวลา\s*)?\d{1,2}(?::|\.)\d{2}/gi, " ").replace(/(?:นาน\s*)?\d+(?:\.\d+)?\s*(?:ชั่วโมง|ชม\.?|นาที)/gi, " ").replace(/\s+/g, " ").trim();
+}
+function eventEnd(value, startsAt) {
+  const until = value.match(/ถึง\s*(\d{1,2})(?::|\.)(\d{2})/i);
+  if (until) {
+    const local = bangkokParts2(startsAt);
+    let endsAt = atBangkok(local.year, local.month, local.day, Number(until[1]), Number(until[2]));
+    if (endsAt <= startsAt) endsAt = new Date(endsAt.getTime() + 24 * 60 * 60 * 1e3);
+    return endsAt;
+  }
+  const duration = value.match(/(?:นาน\s*)?(\d+(?:\.\d+)?)\s*(ชั่วโมง|ชม\.?|นาที)/i);
+  if (duration) {
+    const multiplier = /นาที/i.test(duration[2]) ? 6e4 : 36e5;
+    return new Date(startsAt.getTime() + Number(duration[1]) * multiplier);
+  }
+  return new Date(startsAt.getTime() + 60 * 60 * 1e3);
+}
+function parseCalendarIntent(text2, now = /* @__PURE__ */ new Date()) {
+  const value = text2.trim().replace(/^@?ไมโล\s*/i, "").trim();
+  if (/^(?:ดู\s*)?(?:ปฏิทิน|ตารางนัด|นัดหมาย|calendar)$/i.test(value)) return { type: "list" };
+  const cancel = value.match(/^(?:ยกเลิก|ลบ)(?:นัด|นัดหมาย|ปฏิทิน)\s*#?(\d+)$/i);
+  if (cancel) return { type: "cancel", id: Number(cancel[1]) };
+  const create2 = value.match(/^(?:ลงปฏิทิน|เพิ่มปฏิทิน|สร้างนัด|นัดหมาย|นัด)\s*(.+)$/i);
+  if (!create2) return void 0;
+  const body = create2[1].trim();
+  if (!body) return void 0;
+  const startsAt = parseStart(body, now);
+  const title = eventTitle(body) || "\u0E19\u0E31\u0E14\u0E2B\u0E21\u0E32\u0E22";
+  return { type: "create", data: { title: title.slice(0, 255), startsAt, endsAt: eventEnd(body, startsAt) } };
+}
+function compactUtc(date) {
+  return date.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z");
+}
+function buildGoogleCalendarUrl(event) {
+  const url = new URL("https://calendar.google.com/calendar/render");
+  url.searchParams.set("action", "TEMPLATE");
+  url.searchParams.set("text", event.title);
+  url.searchParams.set("dates", `${compactUtc(event.startsAt)}/${compactUtc(event.endsAt)}`);
+  url.searchParams.set("ctz", "Asia/Bangkok");
+  if (event.detail) url.searchParams.set("details", event.detail);
+  return url.toString();
+}
+function signingSecret() {
+  const value = process.env.LINE_CHANNEL_SECRET?.trim() || process.env.CRON_SECRET?.trim() || process.env.SESSION_SECRET?.trim();
+  if (!value) throw new Error("Calendar signing secret is not configured");
+  return value;
+}
+function calendarSignature(id, expires) {
+  return crypto6.createHmac("sha256", signingSecret()).update(`${id}:${expires}`).digest("hex");
+}
+function safeEqual(left, right) {
+  if (!left || !right) return false;
+  const a = Buffer.from(left);
+  const b = Buffer.from(right);
+  return a.length === b.length && crypto6.timingSafeEqual(a, b);
+}
+function buildCalendarIcsUrl(id, ttlSeconds = 7 * 24 * 60 * 60) {
+  const base = process.env.MILO_PUBLIC_URL?.trim() || "https://milo-line-app.vercel.app";
+  const expires = Math.floor(Date.now() / 1e3) + ttlSeconds;
+  const sig = calendarSignature(id, expires);
+  const url = new URL(`/api/milo/calendar/${id}.ics`, base);
+  url.searchParams.set("expires", String(expires));
+  url.searchParams.set("sig", sig);
+  return url.toString();
+}
+function escapeIcs(value) {
+  return value.replace(/\\/g, "\\\\").replace(/\n/g, "\\n").replace(/,/g, "\\,").replace(/;/g, "\\;");
+}
+function calendarEventToIcs(event) {
+  return [
+    "BEGIN:VCALENDAR",
+    "VERSION:2.0",
+    "PRODID:-//Milo LINE Assistant//Calendar//TH",
+    "CALSCALE:GREGORIAN",
+    "BEGIN:VEVENT",
+    `UID:milo-${event.id}@milo-line-app.vercel.app`,
+    `DTSTAMP:${compactUtc(event.createdAt)}`,
+    `DTSTART:${compactUtc(event.startsAt)}`,
+    `DTEND:${compactUtc(event.endsAt)}`,
+    `SUMMARY:${escapeIcs(event.title)}`,
+    ...event.detail ? [`DESCRIPTION:${escapeIcs(event.detail)}`] : [],
+    "END:VEVENT",
+    "END:VCALENDAR",
+    ""
+  ].join("\r\n");
+}
+function registerCalendarExportRoute(app2) {
+  app2.get("/api/milo/calendar/:id.ics", async (req, res) => {
+    const id = Number(req.params.id);
+    const expires = Number(req.query.expires);
+    const supplied = typeof req.query.sig === "string" ? req.query.sig : "";
+    if (!Number.isInteger(id) || id <= 0 || !Number.isFinite(expires) || expires < Math.floor(Date.now() / 1e3)) return res.status(401).type("text/plain").send("calendar link expired");
+    let expected = "";
+    try {
+      expected = calendarSignature(id, expires);
+    } catch {
+      return res.status(503).type("text/plain").send("calendar signing unavailable");
+    }
+    if (!safeEqual(supplied, expected)) return res.status(401).type("text/plain").send("invalid calendar signature");
+    const event = await getCalendarEventById(id);
+    if (!event || event.status !== "active") return res.status(404).type("text/plain").send("calendar event not found");
+    res.setHeader("Content-Type", "text/calendar; charset=utf-8");
+    res.setHeader("Content-Disposition", `attachment; filename="milo-calendar-${id}.ics"`);
+    return res.status(200).send(calendarEventToIcs(event));
+  });
+}
+
 // server/milo/routes.ts
 import express from "express";
 
@@ -4009,7 +4243,7 @@ var thaiDigits = {
 function compact(value) {
   return value.replace(/[๐-๙]/g, (digit) => thaiDigits[digit] || digit).replace(/[\t ]+/g, " ").trim();
 }
-function normalizeYear(value) {
+function normalizeYear2(value) {
   if (value >= 2400) return value - 543;
   if (value >= 1e3) return value;
   return value >= 50 ? value + 2500 - 543 : value + 2e3;
@@ -4066,7 +4300,7 @@ function extractThaiSlipDateTime(text2) {
       const day = Number(match[1].replace(/\s+/g, ""));
       const month = Number(match[2].replace(/\s+/g, ""));
       const year = Number(match[3].replace(/\s+/g, ""));
-      dateText = isoDate(normalizeYear(year), month, day);
+      dateText = isoDate(normalizeYear2(year), month, day);
       if (dateText) break;
     }
   }
@@ -4078,7 +4312,7 @@ function extractThaiSlipDateTime(text2) {
       if (!match) continue;
       const day = Number(match[1].replace(/\s+/g, ""));
       const year = Number(match[2].replace(/\s+/g, ""));
-      dateText = isoDate(normalizeYear(year), month, day);
+      dateText = isoDate(normalizeYear2(year), month, day);
       if (dateText) break;
     }
   }
@@ -4854,7 +5088,7 @@ ${text2}` }
 }
 
 // server/milo/financeExport.ts
-import crypto6 from "node:crypto";
+import crypto7 from "node:crypto";
 import * as XLSX from "xlsx";
 function exportSecret() {
   const value = process.env.LINE_CHANNEL_SECRET?.trim() || process.env.CRON_SECRET?.trim() || process.env.SESSION_SECRET?.trim();
@@ -4865,12 +5099,12 @@ function signaturePayload(lineUserId, financeAccountId, format, expires) {
   return `${lineUserId}|${financeAccountId}|${format}|${expires}`;
 }
 function sign3(lineUserId, financeAccountId, format, expires) {
-  return crypto6.createHmac("sha256", exportSecret()).update(signaturePayload(lineUserId, financeAccountId, format, expires)).digest("hex");
+  return crypto7.createHmac("sha256", exportSecret()).update(signaturePayload(lineUserId, financeAccountId, format, expires)).digest("hex");
 }
-function safeEqual(a, b) {
+function safeEqual2(a, b) {
   const aa = Buffer.from(a);
   const bb = Buffer.from(b);
-  return aa.length === bb.length && crypto6.timingSafeEqual(aa, bb);
+  return aa.length === bb.length && crypto7.timingSafeEqual(aa, bb);
 }
 function buildFinanceExportUrl(input) {
   const expires = Math.floor(Date.now() / 1e3) + Math.min(Math.max(input.ttlSeconds ?? 600, 60), 3600);
@@ -4911,7 +5145,7 @@ function registerFinanceExportRoute(app2) {
       const supplied = String(req.query.sig ?? "");
       if (!lineUserId || !Number.isInteger(financeAccountId) || financeAccountId <= 0 || !Number.isInteger(expires) || expires < Math.floor(Date.now() / 1e3) || !supplied) return res.status(401).type("text/plain").send("Export link expired or invalid");
       const expected = sign3(lineUserId, financeAccountId, format, expires);
-      if (!safeEqual(supplied, expected)) return res.status(401).type("text/plain").send("Export link expired or invalid");
+      if (!safeEqual2(supplied, expected)) return res.status(401).type("text/plain").send("Export link expired or invalid");
       const access = await getFinanceAccountAccess(financeAccountId, lineUserId);
       if (!access) return res.status(403).type("text/plain").send("No access to this finance account");
       const rows = exportRows(await listTransactionsForExport(lineUserId, financeAccountId));
@@ -4983,7 +5217,7 @@ function suggestStandardCategory(transactionType, note) {
 }
 
 // server/milo/commandParser.ts
-var BANGKOK_OFFSET_MS2 = 7 * 60 * 60 * 1e3;
+var BANGKOK_OFFSET_MS3 = 7 * 60 * 60 * 1e3;
 function titleWithoutSchedule(text2) {
   return text2.replace(/(?:ทุก\s*\d+\s*นาที|ทุกวัน|ทุกสัปดาห์(?:วัน)?(?:อาทิตย์|จันทร์|อังคาร|พุธ|พฤหัส|ศุกร์|เสาร์)?|ทุกเดือน(?:วันที่)?\s*\d+|พรุ่งนี้|วันนี้|วันที่\s*\d+\/\d+(?:\/\d+)?|\d{4}-\d{1,2}-\d{1,2}|(?:เวลา\s*)?\d{1,2}(?::|\.)?\d{0,2}\s*น?\.?)/gi, "").replace(/\s+/g, " ").trim() || "\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E40\u0E15\u0E37\u0E2D\u0E19";
 }
@@ -4991,14 +5225,14 @@ function clock(text2) {
   const match = text2.match(/เวลา\s*(\d{1,2})(?:(?::|\.)(\d{2}))?/) ?? text2.match(/(?:^|\s)(\d{1,2})(?::|\.)(\d{2})(?:\s|น|$)/);
   return { hour: Math.min(Math.max(Number(match?.[1] ?? 9), 0), 23), minute: Math.min(Math.max(Number(match?.[2] ?? 0), 0), 59) };
 }
-function bangkokParts2(date) {
-  const shifted = new Date(date.getTime() + BANGKOK_OFFSET_MS2);
+function bangkokParts3(date) {
+  const shifted = new Date(date.getTime() + BANGKOK_OFFSET_MS3);
   return { year: shifted.getUTCFullYear(), month: shifted.getUTCMonth() + 1, day: shifted.getUTCDate(), weekday: shifted.getUTCDay() };
 }
-function atBangkok(year, month, day, hour, minute) {
+function atBangkok2(year, month, day, hour, minute) {
   return new Date(Date.UTC(year, month - 1, day, hour - 7, minute));
 }
-function addBangkokDays(parts, days) {
+function addBangkokDays2(parts, days) {
   const calendar = new Date(Date.UTC(parts.year, parts.month - 1, parts.day + days));
   return { year: calendar.getUTCFullYear(), month: calendar.getUTCMonth() + 1, day: calendar.getUTCDate() };
 }
@@ -5018,12 +5252,12 @@ function recurringFrom(value, now) {
   const schedule = scheduleMatch[1];
   const hour = Math.min(Math.max(Number(scheduleMatch[2] ?? 9), 0), 23);
   const minute = Math.min(Math.max(Number(scheduleMatch[3] ?? 0), 0), 59);
-  const parts = bangkokParts2(now);
+  const parts = bangkokParts3(now);
   if (/ทุกวัน/i.test(schedule)) {
-    let nextRunAt = atBangkok(parts.year, parts.month, parts.day, hour, minute);
+    let nextRunAt = atBangkok2(parts.year, parts.month, parts.day, hour, minute);
     if (nextRunAt <= now) {
-      const next = addBangkokDays(parts, 1);
-      nextRunAt = atBangkok(next.year, next.month, next.day, hour, minute);
+      const next = addBangkokDays2(parts, 1);
+      nextRunAt = atBangkok2(next.year, next.month, next.day, hour, minute);
     }
     return { type: "recurringCreate", transactionType, amount, category: suggestStandardCategory(transactionType, note), note, recurrenceType: "day", recurrenceInterval: 1, nextRunAt };
   }
@@ -5032,20 +5266,20 @@ function recurringFrom(value, now) {
     const map = { "\u0E2D\u0E32\u0E17\u0E34\u0E15\u0E22\u0E4C": 0, "\u0E08\u0E31\u0E19\u0E17\u0E23\u0E4C": 1, "\u0E2D\u0E31\u0E07\u0E04\u0E32\u0E23": 2, "\u0E1E\u0E38\u0E18": 3, "\u0E1E\u0E24\u0E2B\u0E31\u0E2A": 4, "\u0E28\u0E38\u0E01\u0E23\u0E4C": 5, "\u0E40\u0E2A\u0E32\u0E23\u0E4C": 6 };
     const recurrenceWeekday = map[weekly[1] ?? "\u0E08\u0E31\u0E19\u0E17\u0E23\u0E4C"];
     let days = (recurrenceWeekday - parts.weekday + 7) % 7;
-    let date = addBangkokDays(parts, days);
-    let nextRunAt = atBangkok(date.year, date.month, date.day, hour, minute);
+    let date = addBangkokDays2(parts, days);
+    let nextRunAt = atBangkok2(date.year, date.month, date.day, hour, minute);
     if (nextRunAt <= now) {
       days += 7;
-      date = addBangkokDays(parts, days);
-      nextRunAt = atBangkok(date.year, date.month, date.day, hour, minute);
+      date = addBangkokDays2(parts, days);
+      nextRunAt = atBangkok2(date.year, date.month, date.day, hour, minute);
     }
     return { type: "recurringCreate", transactionType, amount, category: suggestStandardCategory(transactionType, note), note, recurrenceType: "week", recurrenceInterval: 1, recurrenceWeekday, nextRunAt };
   }
   const monthly = schedule.match(/ทุกเดือน(?:วันที่)?\s*(\d{1,2})/i);
   if (monthly) {
     const recurrenceDayOfMonth = Math.min(Math.max(Number(monthly[1]), 1), 28);
-    let nextRunAt = atBangkok(parts.year, parts.month, recurrenceDayOfMonth, hour, minute);
-    if (nextRunAt <= now) nextRunAt = atBangkok(parts.year, parts.month + 1, recurrenceDayOfMonth, hour, minute);
+    let nextRunAt = atBangkok2(parts.year, parts.month, recurrenceDayOfMonth, hour, minute);
+    if (nextRunAt <= now) nextRunAt = atBangkok2(parts.year, parts.month + 1, recurrenceDayOfMonth, hour, minute);
     return { type: "recurringCreate", transactionType, amount, category: suggestStandardCategory(transactionType, note), note, recurrenceType: "month", recurrenceInterval: 1, recurrenceDayOfMonth, nextRunAt };
   }
   return void 0;
@@ -5056,8 +5290,8 @@ function reminderFrom(text2, now) {
   const time = clock(body);
   const title = titleWithoutSchedule(body);
   const setTime = (date) => {
-    const parts2 = bangkokParts2(date);
-    return atBangkok(parts2.year, parts2.month, parts2.day, time.hour, time.minute);
+    const parts2 = bangkokParts3(date);
+    return atBangkok2(parts2.year, parts2.month, parts2.day, time.hour, time.minute);
   };
   const minutes = body.match(/ทุก\s*(\d+)\s*นาที/i);
   if (minutes) {
@@ -5068,8 +5302,8 @@ function reminderFrom(text2, now) {
   if (/ทุกวัน/i.test(body)) {
     let run2 = setTime(now);
     if (run2 <= now) {
-      const next = addBangkokDays(bangkokParts2(now), 1);
-      run2 = atBangkok(next.year, next.month, next.day, time.hour, time.minute);
+      const next = addBangkokDays2(bangkokParts3(now), 1);
+      run2 = atBangkok2(next.year, next.month, next.day, time.hour, time.minute);
     }
     return { title, recurrenceType: "day", recurrenceInterval: 1, dueAt: run2, nextRunAt: run2 };
   }
@@ -5077,38 +5311,38 @@ function reminderFrom(text2, now) {
   if (weekly) {
     const map = { "\u0E2D\u0E32\u0E17\u0E34\u0E15\u0E22\u0E4C": 0, "\u0E08\u0E31\u0E19\u0E17\u0E23\u0E4C": 1, "\u0E2D\u0E31\u0E07\u0E04\u0E32\u0E23": 2, "\u0E1E\u0E38\u0E18": 3, "\u0E1E\u0E24\u0E2B\u0E31\u0E2A": 4, "\u0E28\u0E38\u0E01\u0E23\u0E4C": 5, "\u0E40\u0E2A\u0E32\u0E23\u0E4C": 6 };
     const weekday = map[weekly[1] ?? "\u0E08\u0E31\u0E19\u0E17\u0E23\u0E4C"];
-    const parts2 = bangkokParts2(now);
+    const parts2 = bangkokParts3(now);
     const days = (weekday - parts2.weekday + 7) % 7 || 7;
-    const date = addBangkokDays(parts2, days);
-    const run2 = atBangkok(date.year, date.month, date.day, time.hour, time.minute);
+    const date = addBangkokDays2(parts2, days);
+    const run2 = atBangkok2(date.year, date.month, date.day, time.hour, time.minute);
     return { title, recurrenceType: "week", recurrenceInterval: 1, recurrenceWeekdays: String(weekday), dueAt: run2, nextRunAt: run2 };
   }
   const monthly = body.match(/ทุกเดือน(?:วันที่)?\s*(\d{1,2})?/i);
   if (monthly) {
-    const parts2 = bangkokParts2(now);
+    const parts2 = bangkokParts3(now);
     const day = Math.min(Math.max(Number(monthly[1] ?? parts2.day), 1), 28);
-    let run2 = atBangkok(parts2.year, parts2.month, day, time.hour, time.minute);
-    if (run2 <= now) run2 = atBangkok(parts2.year, parts2.month + 1, day, time.hour, time.minute);
+    let run2 = atBangkok2(parts2.year, parts2.month, day, time.hour, time.minute);
+    if (run2 <= now) run2 = atBangkok2(parts2.year, parts2.month + 1, day, time.hour, time.minute);
     return { title, recurrenceType: "month", recurrenceInterval: 1, recurrenceDayOfMonth: day, dueAt: run2, nextRunAt: run2 };
   }
-  const parts = bangkokParts2(now);
-  let run = atBangkok(parts.year, parts.month, parts.day, time.hour, time.minute);
+  const parts = bangkokParts3(now);
+  let run = atBangkok2(parts.year, parts.month, parts.day, time.hour, time.minute);
   if (/พรุ่งนี้/i.test(body)) {
-    const tomorrow = addBangkokDays(parts, 1);
-    run = atBangkok(tomorrow.year, tomorrow.month, tomorrow.day, time.hour, time.minute);
+    const tomorrow = addBangkokDays2(parts, 1);
+    run = atBangkok2(tomorrow.year, tomorrow.month, tomorrow.day, time.hour, time.minute);
   }
   const iso2 = body.match(/(\d{4})-(\d{1,2})-(\d{1,2})/);
   const thai = body.match(/วันที่\s*(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?/);
-  if (iso2) run = atBangkok(Number(iso2[1]), Number(iso2[2]), Number(iso2[3]), time.hour, time.minute);
+  if (iso2) run = atBangkok2(Number(iso2[1]), Number(iso2[2]), Number(iso2[3]), time.hour, time.minute);
   if (thai) {
     const rawYear = thai[3] ? Number(thai[3]) : parts.year;
     const year = rawYear > 2400 ? rawYear - 543 : rawYear;
-    run = atBangkok(year, Number(thai[2]), Number(thai[1]), time.hour, time.minute);
-    if (!thai[3] && run <= now) run = atBangkok(year + 1, Number(thai[2]), Number(thai[1]), time.hour, time.minute);
+    run = atBangkok2(year, Number(thai[2]), Number(thai[1]), time.hour, time.minute);
+    if (!thai[3] && run <= now) run = atBangkok2(year + 1, Number(thai[2]), Number(thai[1]), time.hour, time.minute);
   }
   if (!/วันนี้|พรุ่งนี้|วันที่|\d{4}-/i.test(body) && run <= now) {
-    const tomorrow = addBangkokDays(parts, 1);
-    run = atBangkok(tomorrow.year, tomorrow.month, tomorrow.day, time.hour, time.minute);
+    const tomorrow = addBangkokDays2(parts, 1);
+    run = atBangkok2(tomorrow.year, tomorrow.month, tomorrow.day, time.hour, time.minute);
   }
   return { title, recurrenceType: "once", recurrenceInterval: 1, dueAt: run, nextRunAt: run };
 }
@@ -5116,6 +5350,18 @@ function parseMiloCommand(text2, now = /* @__PURE__ */ new Date()) {
   const reminder = reminderFrom(text2, now);
   if (reminder) return { type: "reminder", data: reminder };
   const value = text2.trim().replace(/^@?ไมโล\s*/i, "");
+  const reminderCancel = value.match(/^(?:ยกเลิก|ลบ)เตือน\s*#?(\d+)$/i);
+  if (reminderCancel) return { type: "reminderCancel", id: Number(reminderCancel[1]) };
+  if (/^(?:ดูเตือน|รายการเตือน|ดูรายการเตือน)$/i.test(value)) return { type: "reminderList" };
+  const todoComplete = value.match(/^(?:เสร็จงาน|ปิดงาน)\s*#?(\d+)$/i) ?? value.match(/^ทำงาน\s*#?(\d+)\s*เสร็จ$/i);
+  if (todoComplete) return { type: "todoComplete", id: Number(todoComplete[1]) };
+  if (/^(?:ดูงาน|รายการงาน|งานทั้งหมด|todo\s*list)$/i.test(value)) return { type: "todoList" };
+  const calendar = parseCalendarIntent(value, now);
+  if (calendar?.type === "create") return { type: "calendarCreate", data: calendar.data };
+  if (calendar?.type === "list") return { type: "calendarList" };
+  if (calendar?.type === "cancel") return { type: "calendarCancel", id: calendar.id };
+  if (/^(?:ผู้ช่วยกลุ่ม|กลุ่ม\s*LINE|กลุ่มช่วยอะไร|วิธีใช้กลุ่ม)$/i.test(value)) return { type: "groupGuide" };
+  if (/^(?:สถานะคลัง|คลังไฟล์|คลังถาวร)$/i.test(value)) return { type: "vaultStatus" };
   const recurring = recurringFrom(value, now);
   if (recurring) return recurring;
   if (/^(?:ดู)?(?:รายการประจำ|จดอัตโนมัติ)$/i.test(value)) return { type: "recurringList" };
@@ -5273,7 +5519,7 @@ async function deliverDueRecurringTransactions(now = /* @__PURE__ */ new Date())
 }
 
 // server/milo/financeDigest.ts
-function bangkokParts3(reference) {
+function bangkokParts4(reference) {
   const parts = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Bangkok", year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(reference);
   const value = (name) => Number(parts.find((part) => part.type === name)?.value);
   return { year: value("year"), month: value("month"), day: value("day") };
@@ -5292,7 +5538,7 @@ function thaiDate(date) {
   return new Intl.DateTimeFormat("th-TH", { dateStyle: "long", timeZone: "Asia/Bangkok" }).format(date);
 }
 function financeDigestWindow(type, reference = /* @__PURE__ */ new Date()) {
-  const today = bangkokParts3(reference);
+  const today = bangkokParts4(reference);
   const todayStart = bangkokMidnightUtc(today.year, today.month, today.day);
   if (type === "daily") {
     const yesterday = shiftBangkokDate(today, -1);
@@ -5479,7 +5725,7 @@ function applyImageExpenseEdit(analysis, edit) {
 
 // server/milo/routes.ts
 function helpText() {
-  return "\u0E44\u0E21\u0E42\u0E25\u0E0A\u0E48\u0E27\u0E22\u0E40\u0E23\u0E37\u0E48\u0E2D\u0E07\u0E40\u0E07\u0E34\u0E19\u0E44\u0E14\u0E49\u0E43\u0E19\u0E41\u0E0A\u0E17\u0E19\u0E35\u0E49\u0E04\u0E23\u0E31\u0E1A\n\u2022 \u0E08\u0E14: \u0E01\u0E34\u0E19\u0E01\u0E32\u0E41\u0E1F 80 / \u0E40\u0E07\u0E34\u0E19\u0E40\u0E14\u0E37\u0E2D\u0E19\u0E40\u0E02\u0E49\u0E32 35000\n\u2022 \u0E2A\u0E23\u0E38\u0E1B: \u0E2A\u0E23\u0E38\u0E1B\u0E27\u0E31\u0E19\u0E19\u0E35\u0E49 / \u0E2A\u0E23\u0E38\u0E1B\u0E40\u0E14\u0E37\u0E2D\u0E19\u0E19\u0E35\u0E49\n\u2022 \u0E27\u0E34\u0E40\u0E04\u0E23\u0E32\u0E30\u0E2B\u0E4C: \u0E27\u0E34\u0E40\u0E04\u0E23\u0E32\u0E30\u0E2B\u0E4C / \u0E27\u0E34\u0E40\u0E04\u0E23\u0E32\u0E30\u0E2B\u0E4C\u0E40\u0E14\u0E37\u0E2D\u0E19\u0E19\u0E35\u0E49\n\u2022 \u0E07\u0E1A: \u0E15\u0E31\u0E49\u0E07\u0E07\u0E1A \u0E2D\u0E32\u0E2B\u0E32\u0E23 5000\n\u2022 \u0E2B\u0E25\u0E31\u0E01\u0E10\u0E32\u0E19: \u0E2A\u0E48\u0E07\u0E2A\u0E25\u0E34\u0E1B/\u0E43\u0E1A\u0E40\u0E2A\u0E23\u0E47\u0E08 \u0E41\u0E25\u0E49\u0E27\u0E15\u0E23\u0E27\u0E08\u0E41\u0E25\u0E30\u0E22\u0E37\u0E19\u0E22\u0E31\u0E19\n\u2022 \u0E2D\u0E31\u0E15\u0E42\u0E19\u0E21\u0E31\u0E15\u0E34: \u0E15\u0E31\u0E49\u0E07\u0E08\u0E14\u0E2D\u0E31\u0E15\u0E42\u0E19\u0E21\u0E31\u0E15\u0E34 \u0E04\u0E48\u0E32\u0E40\u0E0A\u0E48\u0E32 5000 \u0E17\u0E38\u0E01\u0E40\u0E14\u0E37\u0E2D\u0E19\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48 1 09:00\n\n\u0E15\u0E49\u0E2D\u0E07\u0E01\u0E32\u0E23\u0E04\u0E33\u0E2A\u0E31\u0E48\u0E07\u0E40\u0E09\u0E1E\u0E32\u0E30\u0E40\u0E23\u0E37\u0E48\u0E2D\u0E07 \u0E1E\u0E34\u0E21\u0E1E\u0E4C\u0E0A\u0E37\u0E48\u0E2D\u0E40\u0E23\u0E37\u0E48\u0E2D\u0E07\u0E44\u0E14\u0E49\u0E40\u0E25\u0E22 \u0E40\u0E0A\u0E48\u0E19 \u201C\u0E07\u0E1A\u201D, \u201C\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u201D, \u201C\u0E2B\u0E21\u0E27\u0E14\u0E2B\u0E21\u0E39\u0E48\u201D";
+  return "Milo \u0E0A\u0E48\u0E27\u0E22\u0E04\u0E38\u0E13\u0E08\u0E1A\u0E07\u0E32\u0E19\u0E43\u0E19 LINE \u0E41\u0E0A\u0E17\u0E40\u0E14\u0E35\u0E22\u0E27\u0E04\u0E23\u0E31\u0E1A\n\u{1F514} \u0E40\u0E15\u0E37\u0E2D\u0E19: \u0E40\u0E15\u0E37\u0E2D\u0E19\u0E1B\u0E23\u0E30\u0E0A\u0E38\u0E21\u0E1E\u0E23\u0E38\u0E48\u0E07\u0E19\u0E35\u0E49 10:00 / \u0E40\u0E15\u0E37\u0E2D\u0E19\u0E14\u0E37\u0E48\u0E21\u0E19\u0E49\u0E33\u0E17\u0E38\u0E01 30 \u0E19\u0E32\u0E17\u0E35 / \u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E40\u0E15\u0E37\u0E2D\u0E19\n\u{1F5C2}\uFE0F \u0E40\u0E01\u0E47\u0E1A: \u0E40\u0E01\u0E47\u0E1A https://example.com #\u0E07\u0E32\u0E19 / \u0E04\u0E49\u0E19\u0E2B\u0E32 \u0E43\u0E1A\u0E40\u0E2A\u0E19\u0E2D\u0E23\u0E32\u0E04\u0E32 / \u0E2A\u0E16\u0E32\u0E19\u0E30\u0E04\u0E25\u0E31\u0E07\n\u{1F4C5} \u0E1B\u0E0F\u0E34\u0E17\u0E34\u0E19: \u0E25\u0E07\u0E1B\u0E0F\u0E34\u0E17\u0E34\u0E19 \u0E1B\u0E23\u0E30\u0E0A\u0E38\u0E21\u0E17\u0E35\u0E21\u0E1E\u0E23\u0E38\u0E48\u0E07\u0E19\u0E35\u0E49 10:00 / \u0E14\u0E39\u0E1B\u0E0F\u0E34\u0E17\u0E34\u0E19\n\u{1F465} \u0E01\u0E25\u0E38\u0E48\u0E21 LINE: @\u0E44\u0E21\u0E42\u0E25 \u0E1C\u0E39\u0E49\u0E0A\u0E48\u0E27\u0E22\u0E01\u0E25\u0E38\u0E48\u0E21 / @\u0E44\u0E21\u0E42\u0E25 \u0E41\u0E08\u0E49\u0E07\u0E2A\u0E48\u0E07\u0E07\u0E32\u0E19\u0E14\u0E49\u0E27\u0E22\u0E16\u0E36\u0E07 @\u0E2A\u0E21\u0E0A\u0E32\u0E22\n\u2705 \u0E07\u0E32\u0E19: \u0E07\u0E32\u0E19 \u0E2A\u0E48\u0E07\u0E2A\u0E23\u0E38\u0E1B\u0E23\u0E32\u0E22\u0E2A\u0E31\u0E1B\u0E14\u0E32\u0E2B\u0E4C / \u0E14\u0E39\u0E07\u0E32\u0E19 / \u0E40\u0E2A\u0E23\u0E47\u0E08\u0E07\u0E32\u0E19 #12 / \u0E42\u0E19\u0E49\u0E15 \u0E23\u0E2B\u0E31\u0E2A Wi-Fi\n\u{1F4B0} \u0E01\u0E32\u0E23\u0E40\u0E07\u0E34\u0E19: \u0E01\u0E34\u0E19\u0E01\u0E32\u0E41\u0E1F 80 / \u0E40\u0E07\u0E34\u0E19\u0E40\u0E14\u0E37\u0E2D\u0E19\u0E40\u0E02\u0E49\u0E32 35000 / \u0E15\u0E31\u0E49\u0E07\u0E07\u0E1A \u0E2D\u0E32\u0E2B\u0E32\u0E23 5000 / \u0E2A\u0E23\u0E38\u0E1B\u0E40\u0E14\u0E37\u0E2D\u0E19\u0E19\u0E35\u0E49\n\u{1F4F7}\u{1F399}\uFE0F \u0E2A\u0E48\u0E07\u0E23\u0E39\u0E1B\u0E43\u0E1A\u0E40\u0E2A\u0E23\u0E47\u0E08\u0E2B\u0E23\u0E37\u0E2D\u0E40\u0E2A\u0E35\u0E22\u0E07\u0E43\u0E2B\u0E49\u0E44\u0E21\u0E42\u0E25\u0E2D\u0E48\u0E32\u0E19 \u0E41\u0E25\u0E49\u0E27\u0E15\u0E23\u0E27\u0E08\u0E41\u0E25\u0E30\u0E22\u0E37\u0E19\u0E22\u0E31\u0E19\u0E01\u0E48\u0E2D\u0E19\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\n\n\u0E1E\u0E34\u0E21\u0E1E\u0E4C \u201C\u0E0A\u0E48\u0E27\u0E22\u201D \u0E44\u0E14\u0E49\u0E17\u0E38\u0E01\u0E40\u0E21\u0E37\u0E48\u0E2D\u0E04\u0E23\u0E31\u0E1A";
 }
 function contextualFallback(text2) {
   const value = text2.trim().replace(/^@?ไมโล\s*/i, "").slice(0, 80);
@@ -5629,7 +5875,52 @@ ${lineUserId}
     if (event.replyToken) await replyText(event.replyToken, financeAccessMessage(scope));
     return;
   }
-  if (command.type === "reminder") {
+  if (command.type === "reminderList") {
+    const items = await listRemindersForChat(lineUserId, lineChatId, scope);
+    message = items.length ? `\u{1F514} \u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E40\u0E15\u0E37\u0E2D\u0E19\u0E43\u0E19${scope === "user" ? "\u0E41\u0E0A\u0E17\u0E19\u0E35\u0E49" : "\u0E01\u0E25\u0E38\u0E48\u0E21\u0E19\u0E35\u0E49"}
+${items.slice(0, 20).map((item) => `#${item.id} \u2022 ${item.title} \u2022 ${item.nextRunAt ? formatDate(item.nextRunAt) : "\u0E23\u0E2D\u0E01\u0E33\u0E2B\u0E19\u0E14\u0E40\u0E27\u0E25\u0E32"}`).join("\n")}
+
+\u0E22\u0E01\u0E40\u0E25\u0E34\u0E01\u0E02\u0E2D\u0E07\u0E04\u0E38\u0E13: \u0E22\u0E01\u0E40\u0E25\u0E34\u0E01\u0E40\u0E15\u0E37\u0E2D\u0E19 #\u0E40\u0E25\u0E02\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23` : "\u{1F514} \u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E21\u0E35\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E40\u0E15\u0E37\u0E2D\u0E19\u0E17\u0E35\u0E48\u0E01\u0E33\u0E25\u0E31\u0E07\u0E43\u0E0A\u0E49\u0E07\u0E32\u0E19\u0E43\u0E19\u0E41\u0E0A\u0E17\u0E19\u0E35\u0E49\u0E04\u0E23\u0E31\u0E1A";
+  } else if (command.type === "reminderCancel") {
+    const cancelled = await cancelReminderForChat(command.id, lineUserId, lineChatId);
+    message = cancelled ? `\u0E22\u0E01\u0E40\u0E25\u0E34\u0E01\u0E40\u0E15\u0E37\u0E2D\u0E19 #${command.id} \u0E41\u0E25\u0E49\u0E27\u0E04\u0E23\u0E31\u0E1A` : `\u0E44\u0E21\u0E48\u0E1E\u0E1A\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E40\u0E15\u0E37\u0E2D\u0E19 #${command.id} \u0E17\u0E35\u0E48\u0E04\u0E38\u0E13\u0E22\u0E01\u0E40\u0E25\u0E34\u0E01\u0E44\u0E14\u0E49\u0E43\u0E19\u0E41\u0E0A\u0E17\u0E19\u0E35\u0E49`;
+  } else if (command.type === "todoList") {
+    const items = await listTodosForChat(lineUserId, lineChatId, scope);
+    message = items.length ? `\u2705 To-do \u0E43\u0E19${scope === "user" ? "\u0E41\u0E0A\u0E17\u0E19\u0E35\u0E49" : "\u0E01\u0E25\u0E38\u0E48\u0E21\u0E19\u0E35\u0E49"}
+${items.slice(0, 30).map((item) => `#${item.id} \u2022 ${item.title}${item.dueAt ? ` \u2022 ${formatDate(item.dueAt)}` : ""}`).join("\n")}
+
+\u0E1B\u0E34\u0E14\u0E07\u0E32\u0E19: \u0E40\u0E2A\u0E23\u0E47\u0E08\u0E07\u0E32\u0E19 #\u0E40\u0E25\u0E02\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23` : "\u2705 \u0E44\u0E21\u0E48\u0E21\u0E35 To-do \u0E17\u0E35\u0E48\u0E04\u0E49\u0E32\u0E07\u0E2D\u0E22\u0E39\u0E48\u0E43\u0E19\u0E41\u0E0A\u0E17\u0E19\u0E35\u0E49\u0E04\u0E23\u0E31\u0E1A";
+  } else if (command.type === "todoComplete") {
+    const completed = await completeTodoForChat(command.id, lineUserId, lineChatId, scope);
+    message = completed ? `\u0E17\u0E33\u0E07\u0E32\u0E19 #${command.id} \u0E40\u0E2A\u0E23\u0E47\u0E08\u0E41\u0E25\u0E49\u0E27 \u2705` : `\u0E44\u0E21\u0E48\u0E1E\u0E1A\u0E07\u0E32\u0E19 #${command.id} \u0E17\u0E35\u0E48\u0E1B\u0E34\u0E14\u0E44\u0E14\u0E49\u0E43\u0E19\u0E41\u0E0A\u0E17\u0E19\u0E35\u0E49`;
+  } else if (command.type === "calendarCreate") {
+    const id = await createCalendarEvent({ lineChatId, createdByLineUserId: lineUserId, ...command.data, sourceMessageId: event.message?.id });
+    const googleUrl = buildGoogleCalendarUrl({ ...command.data, detail: command.data.detail ?? null });
+    const icsUrl = buildCalendarIcsUrl(id);
+    message = `\u{1F4C5} \u0E40\u0E1E\u0E34\u0E48\u0E21\u0E19\u0E31\u0E14 #${id} \u0E43\u0E19\u0E1B\u0E0F\u0E34\u0E17\u0E34\u0E19 Milo \u0E41\u0E25\u0E49\u0E27
+${command.data.title}
+${formatDate(command.data.startsAt)} \u2013 ${formatDate(command.data.endsAt)}
+
+Google Calendar: ${googleUrl}
+Apple/Outlook (.ics): ${icsUrl}`;
+  } else if (command.type === "calendarList") {
+    const items = await listCalendarEvents(lineUserId, lineChatId, /* @__PURE__ */ new Date(), 20);
+    message = items.length ? `\u{1F4C5} \u0E19\u0E31\u0E14\u0E2B\u0E21\u0E32\u0E22\u0E17\u0E35\u0E48\u0E01\u0E33\u0E25\u0E31\u0E07\u0E08\u0E30\u0E16\u0E36\u0E07
+${items.map((item) => `#${item.id} \u2022 ${item.title} \u2022 ${formatDate(item.startsAt)}`).join("\n")}` : "\u{1F4C5} \u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E21\u0E35\u0E19\u0E31\u0E14\u0E2B\u0E21\u0E32\u0E22\u0E17\u0E35\u0E48\u0E01\u0E33\u0E25\u0E31\u0E07\u0E08\u0E30\u0E16\u0E36\u0E07\u0E43\u0E19\u0E41\u0E0A\u0E17\u0E19\u0E35\u0E49\u0E04\u0E23\u0E31\u0E1A";
+  } else if (command.type === "calendarCancel") {
+    const cancelled = await cancelCalendarEvent(command.id, lineUserId, lineChatId);
+    message = cancelled ? `\u0E22\u0E01\u0E40\u0E25\u0E34\u0E01\u0E19\u0E31\u0E14 #${command.id} \u0E41\u0E25\u0E49\u0E27\u0E04\u0E23\u0E31\u0E1A` : `\u0E44\u0E21\u0E48\u0E1E\u0E1A\u0E19\u0E31\u0E14 #${command.id} \u0E17\u0E35\u0E48\u0E04\u0E38\u0E13\u0E22\u0E01\u0E40\u0E25\u0E34\u0E01\u0E44\u0E14\u0E49\u0E43\u0E19\u0E41\u0E0A\u0E17\u0E19\u0E35\u0E49`;
+  } else if (command.type === "groupGuide") {
+    message = scope === "user" ? "\u{1F465} \u0E27\u0E34\u0E18\u0E35\u0E43\u0E0A\u0E49 Milo \u0E43\u0E19\u0E01\u0E25\u0E38\u0E48\u0E21 LINE\n1) \u0E40\u0E0A\u0E34\u0E0D Milo \u0E40\u0E02\u0E49\u0E32\u0E01\u0E25\u0E38\u0E48\u0E21\n2) \u0E40\u0E23\u0E35\u0E22\u0E01\u0E14\u0E49\u0E27\u0E22 @\u0E44\u0E21\u0E42\u0E25 \u0E01\u0E48\u0E2D\u0E19\u0E04\u0E33\u0E2A\u0E31\u0E48\u0E07\u0E02\u0E49\u0E2D\u0E04\u0E27\u0E32\u0E21\n3) \u0E43\u0E0A\u0E49\u0E40\u0E15\u0E37\u0E2D\u0E19 \u0E40\u0E01\u0E47\u0E1A/\u0E04\u0E49\u0E19\u0E2B\u0E32\u0E44\u0E1F\u0E25\u0E4C \u0E1B\u0E0F\u0E34\u0E17\u0E34\u0E19 To-do \u0E41\u0E25\u0E30\u0E41\u0E17\u0E47\u0E01\u0E2A\u0E21\u0E32\u0E0A\u0E34\u0E01\u0E44\u0E14\u0E49\n\u0E15\u0E31\u0E27\u0E2D\u0E22\u0E48\u0E32\u0E07: @\u0E44\u0E21\u0E42\u0E25 \u0E40\u0E15\u0E37\u0E2D\u0E19\u0E2A\u0E48\u0E07\u0E23\u0E32\u0E22\u0E07\u0E32\u0E19\u0E1E\u0E23\u0E38\u0E48\u0E07\u0E19\u0E35\u0E49 9:00 \u0E2B\u0E23\u0E37\u0E2D @\u0E44\u0E21\u0E42\u0E25 \u0E41\u0E08\u0E49\u0E07\u0E2A\u0E48\u0E07\u0E07\u0E32\u0E19\u0E14\u0E49\u0E27\u0E22\u0E16\u0E36\u0E07 @\u0E2A\u0E21\u0E0A\u0E32\u0E22" : "\u{1F465} Milo \u0E1E\u0E23\u0E49\u0E2D\u0E21\u0E0A\u0E48\u0E27\u0E22\u0E43\u0E19\u0E01\u0E25\u0E38\u0E48\u0E21\u0E19\u0E35\u0E49\u0E04\u0E23\u0E31\u0E1A\n\u2022 @\u0E44\u0E21\u0E42\u0E25 \u0E40\u0E15\u0E37\u0E2D\u0E19\u0E1B\u0E23\u0E30\u0E0A\u0E38\u0E21\u0E1E\u0E23\u0E38\u0E48\u0E07\u0E19\u0E35\u0E49 10:00\n\u2022 @\u0E44\u0E21\u0E42\u0E25 \u0E40\u0E01\u0E47\u0E1A https://example.com #\u0E07\u0E32\u0E19\n\u2022 @\u0E44\u0E21\u0E42\u0E25 \u0E04\u0E49\u0E19\u0E2B\u0E32 \u0E43\u0E1A\u0E40\u0E2A\u0E19\u0E2D\u0E23\u0E32\u0E04\u0E32\n\u2022 @\u0E44\u0E21\u0E42\u0E25 \u0E25\u0E07\u0E1B\u0E0F\u0E34\u0E17\u0E34\u0E19 \u0E1B\u0E23\u0E30\u0E0A\u0E38\u0E21\u0E17\u0E35\u0E21\u0E1E\u0E23\u0E38\u0E48\u0E07\u0E19\u0E35\u0E49 10:00\n\u2022 @\u0E44\u0E21\u0E42\u0E25 \u0E41\u0E08\u0E49\u0E07\u0E2A\u0E48\u0E07\u0E07\u0E32\u0E19\u0E14\u0E49\u0E27\u0E22\u0E16\u0E36\u0E07 @\u0E2A\u0E21\u0E0A\u0E32\u0E22\n\u2022 \u0E2A\u0E48\u0E07\u0E23\u0E39\u0E1B/\u0E44\u0E1F\u0E25\u0E4C\u0E43\u0E19\u0E01\u0E25\u0E38\u0E48\u0E21\u0E40\u0E1E\u0E37\u0E48\u0E2D\u0E40\u0E01\u0E47\u0E1A\u0E41\u0E25\u0E30\u0E1B\u0E23\u0E30\u0E21\u0E27\u0E25\u0E1C\u0E25\u0E44\u0E14\u0E49\u0E15\u0E32\u0E21\u0E2A\u0E34\u0E17\u0E18\u0E34\u0E4C";
+  } else if (command.type === "vaultStatus") {
+    const status = await vaultStorageStatus(lineUserId, lineChatId, scope);
+    message = `\u{1F5C2}\uFE0F \u0E2A\u0E16\u0E32\u0E19\u0E30\u0E04\u0E25\u0E31\u0E07\u0E43\u0E19\u0E41\u0E0A\u0E17\u0E19\u0E35\u0E49
+\u0E17\u0E31\u0E49\u0E07\u0E2B\u0E21\u0E14 ${status.total} \u0E23\u0E32\u0E22\u0E01\u0E32\u0E23
+\u0E40\u0E01\u0E47\u0E1A\u0E16\u0E32\u0E27\u0E23 ${status.durable} \u0E23\u0E32\u0E22\u0E01\u0E32\u0E23
+\u0E44\u0E1F\u0E25\u0E4C\u0E2A\u0E37\u0E48\u0E2D\u0E17\u0E35\u0E48\u0E15\u0E49\u0E2D\u0E07\u0E2D\u0E31\u0E1B\u0E42\u0E2B\u0E25\u0E14\u0E0B\u0E49\u0E33 ${status.mediaMissing} \u0E23\u0E32\u0E22\u0E01\u0E32\u0E23
+
+\u0E02\u0E49\u0E2D\u0E04\u0E27\u0E32\u0E21/\u0E25\u0E34\u0E07\u0E01\u0E4C\u0E40\u0E01\u0E47\u0E1A\u0E43\u0E19\u0E10\u0E32\u0E19\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25 \u0E41\u0E25\u0E30\u0E23\u0E39\u0E1B/\u0E44\u0E1F\u0E25\u0E4C\u0E17\u0E35\u0E48\u0E21\u0E35\u0E2A\u0E33\u0E40\u0E19\u0E32 storage \u0E08\u0E30\u0E40\u0E01\u0E47\u0E1A\u0E44\u0E27\u0E49\u0E08\u0E19\u0E01\u0E27\u0E48\u0E32\u0E04\u0E38\u0E13\u0E08\u0E30\u0E25\u0E1A\u0E04\u0E23\u0E31\u0E1A`;
+  } else if (command.type === "reminder") {
     const id = await createReminder({ lineChatId, createdByLineUserId: lineUserId, ...command.data, sourceMessageId: event.message?.id });
     message = `\u0E15\u0E31\u0E49\u0E07\u0E40\u0E15\u0E37\u0E2D\u0E19 #${id} \u0E40\u0E23\u0E35\u0E22\u0E1A\u0E23\u0E49\u0E2D\u0E22
 ${command.data.title}
@@ -5771,11 +6062,14 @@ ${results.map((item) => `#${item.id} \xB7 ${item.transactionType === "expense" ?
     message = `\u0E40\u0E1E\u0E34\u0E48\u0E21\u0E07\u0E32\u0E19 \u201C${command.title}\u201D \u0E41\u0E25\u0E49\u0E27`;
   } else if (command.type === "vault") {
     await createVaultItem({ lineChatId, createdByLineUserId: lineUserId, itemType: command.itemType, title: command.title, searchableText: command.content, tagsText: command.tagsText, sourceUrl: command.sourceUrl, lineMessageId: event.message?.id });
-    message = `\u0E40\u0E01\u0E47\u0E1A${command.itemType === "link" ? "\u0E25\u0E34\u0E07\u0E01\u0E4C" : "\u0E02\u0E49\u0E2D\u0E04\u0E27\u0E32\u0E21"}\u0E19\u0E35\u0E49\u0E44\u0E27\u0E49\u0E43\u0E19\u0E04\u0E25\u0E31\u0E07\u0E41\u0E25\u0E49\u0E27${command.tagsText ? ` \u0E1E\u0E23\u0E49\u0E2D\u0E21\u0E41\u0E17\u0E47\u0E01 ${command.tagsText}` : ""}`;
+    message = `\u0E40\u0E01\u0E47\u0E1A${command.itemType === "link" ? "\u0E25\u0E34\u0E07\u0E01\u0E4C" : "\u0E02\u0E49\u0E2D\u0E04\u0E27\u0E32\u0E21"}\u0E19\u0E35\u0E49\u0E44\u0E27\u0E49\u0E43\u0E19\u0E04\u0E25\u0E31\u0E07\u0E16\u0E32\u0E27\u0E23\u0E08\u0E19\u0E01\u0E27\u0E48\u0E32\u0E04\u0E38\u0E13\u0E08\u0E30\u0E25\u0E1A\u0E41\u0E25\u0E49\u0E27${command.tagsText ? ` \u0E1E\u0E23\u0E49\u0E2D\u0E21\u0E41\u0E17\u0E47\u0E01 ${command.tagsText}` : ""}`;
   } else if (command.type === "search") {
-    const results = await searchVault(lineUserId, command.query);
-    message = results.length ? `\u0E1E\u0E1A ${results.length} \u0E23\u0E32\u0E22\u0E01\u0E32\u0E23
-${results.slice(0, 5).map((item, index2) => `${index2 + 1}. ${item.title}`).join("\n")}` : `\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E1E\u0E1A\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23 \u201C${command.query}\u201D`;
+    const results = await searchVaultForChat(lineUserId, lineChatId, scope, command.query);
+    message = results.length ? `\u0E1E\u0E1A ${results.length} \u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E43\u0E19${scope === "user" ? "\u0E41\u0E0A\u0E17\u0E2A\u0E48\u0E27\u0E19\u0E15\u0E31\u0E27" : "\u0E01\u0E25\u0E38\u0E48\u0E21\u0E19\u0E35\u0E49"}
+${results.slice(0, 8).map((item, index2) => {
+      const durable = item.itemType === "text" || item.itemType === "link" || Boolean(item.storageKey);
+      return `${index2 + 1}. ${item.title} ${durable ? "\u2713 \u0E40\u0E01\u0E47\u0E1A\u0E16\u0E32\u0E27\u0E23" : "\u26A0\uFE0F \u0E15\u0E49\u0E2D\u0E07\u0E2D\u0E31\u0E1B\u0E42\u0E2B\u0E25\u0E14\u0E44\u0E1F\u0E25\u0E4C\u0E0B\u0E49\u0E33"}`;
+    }).join("\n")}` : `\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E1E\u0E1A\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23 \u201C${command.query}\u201D \u0E43\u0E19\u0E41\u0E0A\u0E17\u0E19\u0E35\u0E49`;
   } else if (command.type === "mention") {
     const member = await findLineMemberByName(lineChatId, command.memberName);
     if (member && event.replyToken) {
@@ -6146,10 +6440,11 @@ async function handleMedia(event, lineChatId, lineUserId, scope, runtime = {}) {
       const proposalLine = proposal.transactionType && proposal.amount ? `\u0E40\u0E2A\u0E19\u0E2D${proposal.transactionType === "expense" ? "\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22" : "\u0E23\u0E32\u0E22\u0E23\u0E31\u0E1A"} ${proposal.amount.toLocaleString("th-TH")} \u0E1A\u0E32\u0E17 \u2022 \u0E2B\u0E21\u0E27\u0E14${proposal.category ?? "\u0E17\u0E31\u0E48\u0E27\u0E44\u0E1B"}` : "\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E1E\u0E1A\u0E23\u0E39\u0E1B\u0E41\u0E1A\u0E1A\u0E23\u0E32\u0E22\u0E23\u0E31\u0E1A/\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22\u0E17\u0E35\u0E48\u0E41\u0E19\u0E48\u0E0A\u0E31\u0E14";
       const canConfirm = Boolean(proposal.transactionType && proposal.amount);
       const nextStep = canConfirm ? "\u0E15\u0E23\u0E27\u0E08\u0E23\u0E32\u0E22\u0E25\u0E30\u0E40\u0E2D\u0E35\u0E22\u0E14\u0E41\u0E25\u0E49\u0E27\u0E01\u0E14 \u201C\u0E22\u0E37\u0E19\u0E22\u0E31\u0E19\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u201D \u0E44\u0E14\u0E49\u0E40\u0E25\u0E22\u0E19\u0E48\u0E30\u0E08\u0E4A\u0E30" : "\u0E22\u0E31\u0E07\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E44\u0E21\u0E48\u0E44\u0E14\u0E49 \u0E01\u0E23\u0E38\u0E13\u0E32\u0E01\u0E14\u0E41\u0E01\u0E49\u0E44\u0E02\u0E02\u0E49\u0E2D\u0E04\u0E27\u0E32\u0E21\u0E43\u0E2B\u0E49\u0E21\u0E35\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E41\u0E25\u0E30\u0E08\u0E33\u0E19\u0E27\u0E19\u0E40\u0E07\u0E34\u0E19 \u0E40\u0E0A\u0E48\u0E19 \u201C\u0E04\u0E48\u0E32\u0E01\u0E32\u0E41\u0E1F 40 \u0E1A\u0E32\u0E17\u201D \u0E19\u0E48\u0E30\u0E08\u0E4A\u0E30";
+      const storageNote = stored?.key ? "" : "\n\u26A0\uFE0F \u0E44\u0E1F\u0E25\u0E4C\u0E40\u0E2A\u0E35\u0E22\u0E07\u0E15\u0E49\u0E19\u0E09\u0E1A\u0E31\u0E1A\u0E22\u0E31\u0E07\u0E2A\u0E33\u0E23\u0E2D\u0E07\u0E16\u0E32\u0E27\u0E23\u0E44\u0E21\u0E48\u0E2A\u0E33\u0E40\u0E23\u0E47\u0E08 \u0E01\u0E23\u0E38\u0E13\u0E32\u0E2A\u0E48\u0E07\u0E43\u0E2B\u0E21\u0E48\u0E2B\u0E32\u0E01\u0E15\u0E49\u0E2D\u0E07\u0E01\u0E32\u0E23\u0E40\u0E01\u0E47\u0E1A\u0E44\u0E1F\u0E25\u0E4C\u0E15\u0E49\u0E19\u0E09\u0E1A\u0E31\u0E1A";
       await pushTextWithQuickReplies(lineChatId, `\u0E16\u0E2D\u0E14\u0E40\u0E2A\u0E35\u0E22\u0E07\u0E44\u0E14\u0E49\u0E27\u0E48\u0E32
 \u201C${proposal.transcript.slice(0, 900)}\u201D
 ${proposalLine}
-${nextStep}`, [...canConfirm ? [{ label: "\u0E22\u0E37\u0E19\u0E22\u0E31\u0E19\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01", text: "\u0E22\u0E37\u0E19\u0E22\u0E31\u0E19\u0E40\u0E2A\u0E35\u0E22\u0E07" }] : [], { label: "\u0E41\u0E01\u0E49\u0E44\u0E02\u0E02\u0E49\u0E2D\u0E04\u0E27\u0E32\u0E21", text: "\u0E41\u0E01\u0E49\u0E44\u0E02\u0E02\u0E49\u0E2D\u0E04\u0E27\u0E32\u0E21\u0E40\u0E2A\u0E35\u0E22\u0E07" }]);
+${nextStep}${storageNote}`, [...canConfirm ? [{ label: "\u0E22\u0E37\u0E19\u0E22\u0E31\u0E19\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01", text: "\u0E22\u0E37\u0E19\u0E22\u0E31\u0E19\u0E40\u0E2A\u0E35\u0E22\u0E07" }] : [], { label: "\u0E41\u0E01\u0E49\u0E44\u0E02\u0E02\u0E49\u0E2D\u0E04\u0E27\u0E32\u0E21", text: "\u0E41\u0E01\u0E49\u0E44\u0E02\u0E02\u0E49\u0E2D\u0E04\u0E27\u0E32\u0E21\u0E40\u0E2A\u0E35\u0E22\u0E07" }]);
     } catch (error) {
       console.error("[Milo Voice] transcription failed", { messageId: message.id, error: error instanceof Error ? error.message : "unknown" });
       const runtimeMissing = error instanceof Error && /not configured|valid credit card|payment required|insufficient.*(?:credit|quota)|billing/i.test(error.message);
@@ -6172,9 +6467,10 @@ ${nextStep}`, [...canConfirm ? [{ label: "\u0E22\u0E37\u0E19\u0E22\u0E31\u0E19\u
       const preview = analysis.proposals.slice(0, 5).map((item) => `\u2022 ${formatImageProposal(item)}`).join("\n");
       const more = analysis.proposals.length > 5 ? `
 \u2026\u0E41\u0E25\u0E30\u0E2D\u0E35\u0E01 ${analysis.proposals.length - 5} \u0E23\u0E32\u0E22\u0E01\u0E32\u0E23` : "";
+      const storageNote = stored?.key ? "" : "\n\u26A0\uFE0F PDF \u0E15\u0E49\u0E19\u0E09\u0E1A\u0E31\u0E1A\u0E22\u0E31\u0E07\u0E2A\u0E33\u0E23\u0E2D\u0E07\u0E16\u0E32\u0E27\u0E23\u0E44\u0E21\u0E48\u0E2A\u0E33\u0E40\u0E23\u0E47\u0E08 \u0E01\u0E23\u0E38\u0E13\u0E32\u0E2A\u0E48\u0E07\u0E44\u0E1F\u0E25\u0E4C\u0E43\u0E2B\u0E21\u0E48\u0E2B\u0E32\u0E01\u0E15\u0E49\u0E2D\u0E07\u0E01\u0E32\u0E23\u0E40\u0E01\u0E47\u0E1A\u0E15\u0E49\u0E19\u0E09\u0E1A\u0E31\u0E1A";
       if (event.replyToken) await replyText(event.replyToken, `\u0E2D\u0E48\u0E32\u0E19 PDF \u0E41\u0E25\u0E49\u0E27 \u0E1E\u0E1A\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E17\u0E35\u0E48\u0E40\u0E2A\u0E19\u0E2D\u0E44\u0E14\u0E49 ${analysis.proposals.length} \u0E23\u0E32\u0E22\u0E01\u0E32\u0E23
 ${preview || "\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E1E\u0E1A\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22\u0E17\u0E35\u0E48\u0E2D\u0E48\u0E32\u0E19\u0E44\u0E14\u0E49\u0E0A\u0E31\u0E14"}${more}
-\u0E15\u0E23\u0E27\u0E08\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E01\u0E48\u0E2D\u0E19 \u0E41\u0E25\u0E49\u0E27\u0E1E\u0E34\u0E21\u0E1E\u0E4C \u201C\u0E22\u0E37\u0E19\u0E22\u0E31\u0E19 PDF\u201D \u0E40\u0E1E\u0E37\u0E48\u0E2D\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E40\u0E09\u0E1E\u0E32\u0E30\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E17\u0E35\u0E48\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48\u0E41\u0E25\u0E30\u0E22\u0E2D\u0E14\u0E0A\u0E31\u0E14\u0E40\u0E08\u0E19`);
+\u0E15\u0E23\u0E27\u0E08\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E01\u0E48\u0E2D\u0E19 \u0E41\u0E25\u0E49\u0E27\u0E1E\u0E34\u0E21\u0E1E\u0E4C \u201C\u0E22\u0E37\u0E19\u0E22\u0E31\u0E19 PDF\u201D \u0E40\u0E1E\u0E37\u0E48\u0E2D\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E40\u0E09\u0E1E\u0E32\u0E30\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E17\u0E35\u0E48\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48\u0E41\u0E25\u0E30\u0E22\u0E2D\u0E14\u0E0A\u0E31\u0E14\u0E40\u0E08\u0E19${storageNote}`);
     } catch (error) {
       console.error("[Milo PDF] analysis failed", { messageId: message.id, error: error instanceof Error ? error.message : "unknown" });
       const fallback = "\u0E40\u0E01\u0E47\u0E1A PDF \u0E44\u0E27\u0E49\u0E41\u0E25\u0E49\u0E27 \u0E41\u0E15\u0E48\u0E22\u0E31\u0E07\u0E2D\u0E48\u0E32\u0E19\u0E18\u0E38\u0E23\u0E01\u0E23\u0E23\u0E21\u0E08\u0E32\u0E01\u0E44\u0E1F\u0E25\u0E4C\u0E19\u0E35\u0E49\u0E44\u0E21\u0E48\u0E44\u0E14\u0E49 \u0E01\u0E23\u0E38\u0E13\u0E32\u0E25\u0E2D\u0E07\u0E44\u0E1F\u0E25\u0E4C\u0E17\u0E35\u0E48\u0E44\u0E21\u0E48\u0E25\u0E47\u0E2D\u0E01\u0E23\u0E2B\u0E31\u0E2A\u0E41\u0E25\u0E30\u0E21\u0E35\u0E02\u0E49\u0E2D\u0E04\u0E27\u0E32\u0E21\u0E2D\u0E48\u0E32\u0E19\u0E44\u0E14\u0E49\u0E04\u0E23\u0E31\u0E1A";
@@ -6202,7 +6498,7 @@ ${preview || "\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E1E\u0E1A\u0E23\u0E32\u0E22
     return;
   }
   if (!isImage) {
-    if (event.replyToken) await replyText(event.replyToken, "\u0E40\u0E01\u0E47\u0E1A\u0E44\u0E1F\u0E25\u0E4C\u0E19\u0E35\u0E49\u0E44\u0E27\u0E49\u0E43\u0E19\u0E04\u0E25\u0E31\u0E07\u0E16\u0E32\u0E27\u0E23\u0E41\u0E25\u0E49\u0E27");
+    if (event.replyToken) await replyText(event.replyToken, stored?.key ? "\u0E40\u0E01\u0E47\u0E1A\u0E44\u0E1F\u0E25\u0E4C\u0E19\u0E35\u0E49\u0E44\u0E27\u0E49\u0E43\u0E19\u0E04\u0E25\u0E31\u0E07\u0E16\u0E32\u0E27\u0E23\u0E08\u0E19\u0E01\u0E27\u0E48\u0E32\u0E04\u0E38\u0E13\u0E08\u0E30\u0E25\u0E1A\u0E41\u0E25\u0E49\u0E27" : "\u0E23\u0E31\u0E1A\u0E44\u0E1F\u0E25\u0E4C\u0E41\u0E25\u0E49\u0E27 \u0E41\u0E15\u0E48\u0E1E\u0E37\u0E49\u0E19\u0E17\u0E35\u0E48\u0E40\u0E01\u0E47\u0E1A\u0E16\u0E32\u0E27\u0E23\u0E22\u0E31\u0E07\u0E2A\u0E33\u0E23\u0E2D\u0E07\u0E44\u0E1F\u0E25\u0E4C\u0E15\u0E49\u0E19\u0E09\u0E1A\u0E31\u0E1A\u0E44\u0E21\u0E48\u0E2A\u0E33\u0E40\u0E23\u0E47\u0E08 \u0E01\u0E23\u0E38\u0E13\u0E32\u0E2A\u0E48\u0E07\u0E44\u0E1F\u0E25\u0E4C\u0E19\u0E35\u0E49\u0E43\u0E2B\u0E21\u0E48\u0E2D\u0E35\u0E01\u0E04\u0E23\u0E31\u0E49\u0E07\u0E04\u0E23\u0E31\u0E1A");
     return;
   }
   if (event.replyToken) {
@@ -6217,10 +6513,11 @@ ${preview || "\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E1E\u0E1A\u0E23\u0E32\u0E22
     await saveImageExtraction(vaultId, analysis.proposals.some((item) => item.kind === "expense") ? "expense" : "reminder", JSON.stringify(analysis), analysis.confidence);
     const proposals = analysis.proposals.slice(0, 2).map((item) => `\u2022 ${formatImageProposal(item)}`).join("\n");
     const hasExpense = analysis.proposals.some((item) => item.kind === "expense" && item.amount > 0);
+    const storageNote = stored?.key ? "" : "\n\u26A0\uFE0F \u0E23\u0E39\u0E1B\u0E15\u0E49\u0E19\u0E09\u0E1A\u0E31\u0E1A\u0E22\u0E31\u0E07\u0E2A\u0E33\u0E23\u0E2D\u0E07\u0E16\u0E32\u0E27\u0E23\u0E44\u0E21\u0E48\u0E2A\u0E33\u0E40\u0E23\u0E47\u0E08 \u0E01\u0E23\u0E38\u0E13\u0E32\u0E2A\u0E48\u0E07\u0E43\u0E2B\u0E21\u0E48\u0E2B\u0E32\u0E01\u0E15\u0E49\u0E2D\u0E07\u0E01\u0E32\u0E23\u0E40\u0E01\u0E47\u0E1A\u0E15\u0E49\u0E19\u0E09\u0E1A\u0E31\u0E1A";
     await pushTextWithQuickReplies(lineChatId, `\u0E2D\u0E48\u0E32\u0E19\u0E23\u0E39\u0E1B\u0E40\u0E23\u0E35\u0E22\u0E1A\u0E23\u0E49\u0E2D\u0E22\u0E41\u0E25\u0E49\u0E27
 ${analysis.summary}
 ${proposals || "\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E1E\u0E1A\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E17\u0E35\u0E48\u0E04\u0E27\u0E23\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E2D\u0E31\u0E15\u0E42\u0E19\u0E21\u0E31\u0E15\u0E34"}
-\u0E15\u0E23\u0E27\u0E08\u0E22\u0E2D\u0E14 \u0E2B\u0E21\u0E27\u0E14 \u0E41\u0E25\u0E30\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48\u0E43\u0E2B\u0E49\u0E16\u0E39\u0E01\u0E15\u0E49\u0E2D\u0E07 \u0E41\u0E25\u0E49\u0E27\u0E01\u0E14\u0E1B\u0E38\u0E48\u0E21\u0E22\u0E37\u0E19\u0E22\u0E31\u0E19\u0E44\u0E14\u0E49\u0E40\u0E25\u0E22\u0E04\u0E23\u0E31\u0E1A`, hasExpense ? [{ label: "\u0E22\u0E37\u0E19\u0E22\u0E31\u0E19\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01", text: "\u0E22\u0E37\u0E19\u0E22\u0E31\u0E19\u0E04\u0E48\u0E32\u0E43\u0E0A\u0E49\u0E08\u0E48\u0E32\u0E22" }, { label: "\u0E2A\u0E23\u0E38\u0E1B\u0E27\u0E31\u0E19\u0E19\u0E35\u0E49", text: "\u0E2A\u0E23\u0E38\u0E1B\u0E27\u0E31\u0E19\u0E19\u0E35\u0E49" }] : [{ label: "\u0E22\u0E37\u0E19\u0E22\u0E31\u0E19\u0E23\u0E39\u0E1B", text: "\u0E22\u0E37\u0E19\u0E22\u0E31\u0E19\u0E23\u0E39\u0E1B" }]);
+\u0E15\u0E23\u0E27\u0E08\u0E22\u0E2D\u0E14 \u0E2B\u0E21\u0E27\u0E14 \u0E41\u0E25\u0E30\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48\u0E43\u0E2B\u0E49\u0E16\u0E39\u0E01\u0E15\u0E49\u0E2D\u0E07 \u0E41\u0E25\u0E49\u0E27\u0E01\u0E14\u0E1B\u0E38\u0E48\u0E21\u0E22\u0E37\u0E19\u0E22\u0E31\u0E19\u0E44\u0E14\u0E49\u0E40\u0E25\u0E22\u0E04\u0E23\u0E31\u0E1A${storageNote}`, hasExpense ? [{ label: "\u0E22\u0E37\u0E19\u0E22\u0E31\u0E19\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01", text: "\u0E22\u0E37\u0E19\u0E22\u0E31\u0E19\u0E04\u0E48\u0E32\u0E43\u0E0A\u0E49\u0E08\u0E48\u0E32\u0E22" }, { label: "\u0E2A\u0E23\u0E38\u0E1B\u0E27\u0E31\u0E19\u0E19\u0E35\u0E49", text: "\u0E2A\u0E23\u0E38\u0E1B\u0E27\u0E31\u0E19\u0E19\u0E35\u0E49" }] : [{ label: "\u0E22\u0E37\u0E19\u0E22\u0E31\u0E19\u0E23\u0E39\u0E1B", text: "\u0E22\u0E37\u0E19\u0E22\u0E31\u0E19\u0E23\u0E39\u0E1B" }]);
   } catch (error) {
     console.error("[Milo Image] analysis failed", { messageId: message.id, error: error instanceof Error ? error.message : "unknown" });
     let userNotified = false;
@@ -6582,6 +6879,7 @@ registerSaveResultImageRoute(app);
 registerFinanceReportImageRoute(app);
 registerRichMenuDataImageRoute(app);
 registerFinanceExportRoute(app);
+registerCalendarExportRoute(app);
 registerLineWebhook(app);
 app.use(express2.json({ limit: "10mb" }));
 app.use(express2.urlencoded({ limit: "10mb", extended: true }));
@@ -6592,10 +6890,11 @@ var healthHandler = async (req, res) => {
   const runtime = await imageAnalysisRuntimeStatus(gatewayToken);
   const mode = runtime.mode;
   const voice = voiceTranscriptionRuntimeStatus(gatewayToken);
+  const durableStorageConfigured = Boolean((process.env.BUILT_IN_FORGE_API_URL || process.env.FORGE_API_URL || process.env.OPENAI_BASE_URL) && (process.env.BUILT_IN_FORGE_API_KEY || process.env.FORGE_API_KEY || process.env.OPENAI_API_KEY));
   res.status(200).json({
     status: runtime.authenticated && voice.configured && Boolean(process.env.LINE_CHANNEL_SECRET?.trim()) && Boolean(process.env.LINE_CHANNEL_ACCESS_TOKEN?.trim()) && Boolean(process.env.DATABASE_URL?.trim()) ? "ok" : "degraded",
     service: "milo",
-    release: "production-hardening-v19-2026-09-14",
+    release: "chat-first-core-v20-2026-09-14",
     visionConfigured: runtime.authenticated,
     imageAnalysisMode: mode,
     visionModel: mode === "ocr-fallback" ? "tesseract-tha+eng" : process.env.MILO_VISION_MODEL || (mode.startsWith("vercel-ai-gateway") ? "google/gemini-2.5-flash" : mode.startsWith("forge-vision") ? "gemini-3-flash-preview" : "unconfigured"),
@@ -6611,7 +6910,10 @@ var healthHandler = async (req, res) => {
       cronConfigured: Boolean(process.env.CRON_SECRET?.trim()),
       duplicateProtection: true,
       undoSupported: true,
-      webhookSignatureVerification: true
+      webhookSignatureVerification: true,
+      calendarSupported: true,
+      durableVaultStorageConfigured: durableStorageConfigured,
+      groupSharedVaultSearch: true
     },
     timestamp: (/* @__PURE__ */ new Date()).toISOString()
   });

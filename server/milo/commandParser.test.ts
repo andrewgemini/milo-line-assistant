@@ -54,6 +54,25 @@ describe("Milo command parser", () => {
     expect(parseMiloCommand("ส่งออก Excel", now)).toEqual({ type: "exportFinance", format: "xlsx" });
     expect(parseMiloCommand("ยืนยัน PDF", now)).toEqual({ type: "pdfConfirm" });
   });
+  it("recognizes reminder and todo management commands inside chat", () => {
+    expect(parseMiloCommand("รายการเตือน", now)).toEqual({ type: "reminderList" });
+    expect(parseMiloCommand("ยกเลิกเตือน 7", now)).toEqual({ type: "reminderCancel", id: 7 });
+    expect(parseMiloCommand("ดูงาน", now)).toEqual({ type: "todoList" });
+    expect(parseMiloCommand("งานทั้งหมด", now)).toEqual({ type: "todoList" });
+    expect(parseMiloCommand("เสร็จงาน #9", now)).toEqual({ type: "todoComplete", id: 9 });
+  });
+  it("recognizes calendar, group-guide and vault-status commands", () => {
+    const event = parseMiloCommand("ลงปฏิทิน ประชุมทีมพรุ่งนี้ 10:30", now);
+    expect(event.type).toBe("calendarCreate");
+    if (event.type === "calendarCreate") {
+      expect(event.data.title).toBe("ประชุมทีม");
+      expect(event.data.startsAt.toISOString()).toBe("2026-08-23T03:30:00.000Z");
+    }
+    expect(parseMiloCommand("ดูปฏิทิน", now)).toEqual({ type: "calendarList" });
+    expect(parseMiloCommand("ยกเลิกนัด 12", now)).toEqual({ type: "calendarCancel", id: 12 });
+    expect(parseMiloCommand("ผู้ช่วยกลุ่ม", now)).toEqual({ type: "groupGuide" });
+    expect(parseMiloCommand("สถานะคลัง", now)).toEqual({ type: "vaultStatus" });
+  });
   it("recognizes recurring transaction commands from LINE", () => {
     const monthly = parseMiloCommand("ตั้งจดอัตโนมัติ ค่าเช่า 5000 ทุกเดือนวันที่ 1 09:00", now);
     expect(monthly).toMatchObject({ type: "recurringCreate", transactionType: "expense", amount: 5000, recurrenceType: "month", recurrenceDayOfMonth: 1 });

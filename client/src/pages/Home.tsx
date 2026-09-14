@@ -12,31 +12,31 @@ import { Link } from "wouter";
 const lineUrl = "https://line.me/R/ti/p/%40684bxtsi";
 
 const featureCards = [
-  { icon: WalletCards, title: "จัดการออเดอร์", detail: "รับออเดอร์ ตรวจสอบสถานะ ได้แบบเรียลไทม์" },
-  { icon: UsersRound, title: "ดูแลลูกค้า", detail: "เก็บข้อมูลลูกค้า สร้างความสัมพันธ์ และเพิ่มยอดขาย" },
-  { icon: BarChart3, title: "วิเคราะห์ยอดขาย", detail: "รายงานสถิติ ช่วยให้คุณวางแผนธุรกิจได้ดีขึ้น" },
-  { icon: BellRing, title: "แจ้งเตือนอัตโนมัติ", detail: "ไม่พลาดทุกการสั่งซื้อ และข้อมูลสำคัญ" },
-  { icon: ShieldCheck, title: "ปลอดภัย มั่นคง", detail: "มาตรฐานความปลอดภัยระดับองค์กร รองรับการใช้งานจริง" },
+  { icon: BellRing, title: "ตั้งเตือนแบบคุยกับเพื่อน", detail: "ครั้งเดียว รายวัน สัปดาห์ เดือน ทุก N นาที และตั้งจากรูปได้" },
+  { icon: FileText, title: "คลังข้อความและไฟล์", detail: "เก็บข้อความ ลิงก์ รูป และไฟล์ไว้ค้นคืนในแชทเดิมได้ทุกเมื่อ" },
+  { icon: UsersRound, title: "ผู้ช่วยประจำกลุ่ม LINE", detail: "เตือน ค้นไฟล์ ทำงานร่วมกัน และแท็กสมาชิกในกลุ่มด้วย @ไมโล" },
+  { icon: CheckCircle2, title: "To-do · Calendar · Search", detail: "จดงาน นัดหมาย ปฏิทิน โน้ต และค้นข้อมูลได้โดยไม่ต้องสลับแอป" },
+  { icon: WalletCards, title: "จดรายรับรายจ่าย", detail: "พิมพ์ พูด หรือส่งใบเสร็จ พร้อมหมวด งบ และสรุปการเงิน" },
 ];
 
 const capabilities: Array<[LucideIcon, string, string, string]> = [
-  [MessageCircle, "ตอบคำถามอัจฉริยะ", "ตอบได้ทั้งข้อมูลทั่วไป และเรื่องเฉพาะทาง", "bg-emerald-50 text-emerald-600"],
-  [Sparkles, "ช่วยคิด ช่วยวางแผน", "ไอเดีย คำแนะนำ และแนวทางที่ใช้ได้จริง", "bg-sky-50 text-sky-600"],
-  [FileText, "ทำงานได้หลากหลาย", "สรุปข้อมูล แปลภาษา และจัดการงานต่างๆ", "bg-violet-50 text-violet-600"],
-  [BellRing, "พร้อมดูแล 24 ชั่วโมง", "ไม่ว่าเรื่องไหน ก็มีไมโลอยู่ข้างๆ เสมอ", "bg-orange-50 text-orange-500"],
+  [BellRing, "เตือน", "บอกไมโลเหมือนบอกเพื่อนว่าอยากให้เตือนอะไร เมื่อไหร่", "bg-emerald-50 text-emerald-600"],
+  [FileText, "เก็บ", "ส่งข้อความ ลิงก์ รูป หรือไฟล์มา แล้วค้นคืนในแชทได้", "bg-sky-50 text-sky-600"],
+  [UsersRound, "จัดการในกลุ่ม", "เรียก @ไมโล ให้ช่วยเตือน แท็ก เก็บ และค้นข้อมูลของกลุ่ม", "bg-violet-50 text-violet-600"],
+  [WalletCards, "จดเงิน", "พิมพ์ พูด หรือส่งใบเสร็จ แล้วไมโลช่วยจัดหมวดและสรุปให้", "bg-orange-50 text-orange-500"],
 ];
 
 const useCases: Array<[LucideIcon, string, string, string]> = [
-  [Search, "ค้นหาข้อมูล", "วันนี้มีข่าวอะไรบ้าง?", "bg-sky-50 text-sky-600"],
-  [ReceiptText, "ช่วยสรุป", "สรุปข่าววันนี้ให้หน่อย", "bg-rose-50 text-rose-500"],
-  [Sparkles, "แนะนำไอเดีย", "ไอเดียทำคอนเทนต์หน่อย", "bg-emerald-50 text-emerald-600"],
-  [FileText, "ช่วยวางแผน", "วางแผนการเดินทางให้หน่อย", "bg-emerald-50 text-emerald-600"],
-  [Globe2, "แปลภาษา", "แปลภาษาอังกฤษให้หน่อย", "bg-sky-50 text-sky-600"],
-  [UsersRound, "และอีกมากมาย", "ถามได้เลย... ไมโลอยู่เสมอ", "bg-amber-50 text-amber-500"],
+  [BellRing, "ตั้งเตือน", "เตือนส่งรายงานพรุ่งนี้ 9:00", "bg-sky-50 text-sky-600"],
+  [FileText, "เก็บและค้น", "เก็บลิงก์นี้ #งาน แล้วหาให้ทีหลัง", "bg-rose-50 text-rose-500"],
+  [CheckCircle2, "To-do", "งาน โทรหาลูกค้าพรุ่งนี้", "bg-emerald-50 text-emerald-600"],
+  [Search, "Quick Search", "ค้นหา ใบเสนอราคา", "bg-emerald-50 text-emerald-600"],
+  [ReceiptText, "จดรายรับรายจ่าย", "กินกาแฟ 80", "bg-sky-50 text-sky-600"],
+  [UsersRound, "ใช้ในกลุ่ม LINE", "@ไมโล แจ้งส่งงานด้วยถึง @สมชาย", "bg-amber-50 text-amber-500"],
 ];
 
 const faq = [
-  ["ไมโลคืออะไร?", "ไมโลคือผู้ช่วยอัจฉริยะบน LINE ที่พร้อมช่วยตอบคำถาม สรุปข้อมูล วางแผน และช่วยจัดการงานต่างๆ ในแชทเดียว"],
+  ["ไมโลคืออะไร?", "ไมโลคือผู้ช่วยบน LINE สำหรับเตือน เก็บไฟล์ ปฏิทิน To-do ค้นข้อมูล งานกลุ่ม และจดรายรับรายจ่ายในแชทเดียว"],
   ["เริ่มใช้งานไมโลอย่างไร?", "กดปุ่มเชิญใช้งานหรือสแกน QR Code เพื่อเพิ่มเพื่อน Milo บน LINE แล้วเริ่มแชทได้ทันที ไม่ต้องติดตั้งแอปเพิ่ม"],
   ["ไมโลใช้งานได้ตลอดเวลาหรือไม่?", "ใช้งานได้ตลอด 24 ชั่วโมงตามความพร้อมของระบบ และสามารถคุยกับไมโลได้เหมือนคุยกับผู้ช่วยส่วนตัว"],
   ["ข้อมูลของฉันปลอดภัยไหม?", "ไมโลออกแบบโดยคำนึงถึงความเป็นส่วนตัวและความปลอดภัยของข้อมูล พร้อมการเชื่อมต่อผ่านมาตรฐาน HTTPS/TLS"],
@@ -86,10 +86,10 @@ export default function Home() {
             <div className="relative z-10 py-5">
               <span className="inline-flex items-center gap-2 rounded-full border border-[#d8eee7] bg-white px-4 py-2 text-xs font-bold text-[#247f6b] shadow-sm"><span className="grid size-5 place-items-center rounded-full bg-[#0bb575] text-[8px] text-white">LINE</span> LINE Official Account</span>
               <h1 className="font-display mt-5 text-6xl font-black leading-[.95] tracking-tight text-[#075b4b] sm:text-7xl">Milo<span className="text-[#08b475]">✣</span><br /><span className="text-[#10ae78]">LINE Assistant</span></h1>
-              <h2 className="font-display mt-3 text-2xl font-black text-[#075b4b] sm:text-3xl">ผู้ช่วยอัจฉริยะสำหรับธุรกิจของคุณ</h2>
-              <p className="mt-3 max-w-xl text-base leading-7 text-[#3d6c64]">ช่วยบริหารจัดการร้านค้า และดูแลลูกค้าของคุณได้ง่ายขึ้น ผ่าน LINE อย่างชาญฉลาด</p>
+              <h2 className="font-display mt-3 text-2xl font-black text-[#075b4b] sm:text-3xl">ผู้ช่วยส่วนตัวที่จบทุกอย่างใน LINE แชทเดียว</h2>
+              <p className="mt-3 max-w-xl text-base leading-7 text-[#3d6c64]">เตือน · เก็บไฟล์ · จัดการงาน · ปฏิทิน · กลุ่ม LINE · รายรับรายจ่าย ทั้งแชทส่วนตัวและแชทกลุ่ม</p>
               <div className="mt-5 flex flex-wrap gap-2">
-                {["แจ้งเตือนอัตโนมัติ", "จัดการออเดอร์", "ดูแลลูกค้า", "วิเคราะห์ยอดขาย"].map((x, i) => <span key={x} className="inline-flex items-center gap-1.5 rounded-full border border-[#d9eee7] bg-white px-3 py-2 text-xs font-semibold text-[#387168] shadow-sm"><span className="text-[#0aae76]">{["♧", "▣", "●", "▥"][i]}</span>{x}</span>)}
+                {["ตั้งเตือน", "เก็บไฟล์", "ผู้ช่วยกลุ่ม LINE", "จดรายรับรายจ่าย"].map((x, i) => <span key={x} className="inline-flex items-center gap-1.5 rounded-full border border-[#d9eee7] bg-white px-3 py-2 text-xs font-semibold text-[#387168] shadow-sm"><span className="text-[#0aae76]">{["♧", "▣", "●", "▥"][i]}</span>{x}</span>)}
               </div>
             </div>
 
@@ -98,11 +98,11 @@ export default function Home() {
                 <div className="rounded-[20px] bg-[#f4faf8] p-3"><div className="mb-3 flex items-center gap-2 text-xs font-bold"><span className="size-5 rounded-full bg-[#12b77c]" /> Milo</div><div className="rounded-2xl bg-white p-3 text-[11px] leading-5 shadow-sm">สวัสดีครับ!<br />Milo พร้อมดูแลคุณ<br />จัดการร้านค้าได้แล้ว<br />วันนี้มีอะไรให้ช่วยบ้าง?</div><div className="mt-2 w-fit rounded-full bg-[#12b77c] px-3 py-1 text-[10px] font-bold text-white">เริ่มใช้งานเลย! ♥</div></div>
               </div>
               <div className="relative z-10 -mb-4 drop-shadow-2xl"><MiloMascot size="lg" /></div>
-              <div className="absolute right-[1%] top-7 rounded-[28px] bg-[#0b9e70] px-7 py-4 text-center text-lg font-black leading-tight text-white shadow-xl">จัดการร้าน<br />ได้ทุกที่ ทุกเวลา<br /><span className="text-2xl">กับ Milo ✣</span></div>
+              <div className="absolute right-[1%] top-7 rounded-[28px] bg-[#0b9e70] px-7 py-4 text-center text-lg font-black leading-tight text-white shadow-xl">ทุกอย่างจบ<br />ใน LINE แชทเดียว<br /><span className="text-2xl">กับ Milo ✣</span></div>
             </div>
 
             <div className="relative z-20 rounded-[24px] border border-[#dceee8] bg-white/95 p-6 shadow-xl shadow-[#2b9c7e]/10 backdrop-blur">
-              <div className="flex items-center gap-3"><span className="grid size-10 place-items-center rounded-full bg-[#e1f8ed] text-[#08a971]"><Check className="size-6" /></span><div><h3 className="font-display text-xl font-black text-[#11604f]">ระบบพร้อมใช้งาน</h3><p className="text-xs text-[#6a8e87]">Milo พร้อมดูแลธุรกิจของคุณแล้ว</p></div></div>
+              <div className="flex items-center gap-3"><span className="grid size-10 place-items-center rounded-full bg-[#e1f8ed] text-[#08a971]"><Check className="size-6" /></span><div><h3 className="font-display text-xl font-black text-[#11604f]">ระบบพร้อมใช้งาน</h3><p className="text-xs text-[#6a8e87]">Milo พร้อมช่วยจัดการชีวิต งาน และการเงินแล้ว</p></div></div>
               <a href={lineUrl} target="_blank" rel="noreferrer" className="mt-5 block"><Button className="h-14 w-full rounded-full bg-[#10b779] text-lg font-black text-white shadow-lg hover:bg-[#0a9f6a]">เชิญใช้งาน <ArrowRight className="ml-auto size-5" /></Button></a>
               <div className="mt-4 divide-y divide-[#e9f3f0]">
                 {[['ใช้งานได้ทันที', 'ไม่ต้องติดตั้ง พร้อมใช้งานผ่าน LINE'], ['ปลอดภัย มั่นคง', 'ข้อมูลของคุณถูกเก็บเป็นความลับ'], ['รองรับทุกธุรกิจ', 'ร้านค้าในทุกขนาด ใช้งานได้จริง']].map(([a,b]) => <div key={a} className="flex gap-3 py-3"><CheckCircle2 className="mt-0.5 size-5 shrink-0 text-[#0da974]" /><div><p className="text-sm font-bold text-[#24564e]">{a}</p><p className="text-[11px] text-[#71928c]">{b}</p></div></div>)}
@@ -119,7 +119,7 @@ export default function Home() {
         </section>
 
         <section className="mx-auto max-w-[1500px] px-5 py-5 lg:px-10">
-          <div className="relative overflow-hidden rounded-[25px] border border-[#dceee8] bg-white shadow-sm"><div className="grid items-center gap-5 p-5 sm:grid-cols-[1fr_1.1fr]"><div><p className="font-display text-xl font-black leading-8 text-[#14594c]">“Milo เป็นผู้ช่วยของคุณ<br />ธุรกิจเล็กก็ไปได้ไกล”</p><p className="mt-3 text-xs font-semibold text-[#70938b]">Milo LINE Assistant</p></div><div className="flex justify-end"><MiloMascot size="md" /></div></div></div>
+          <div className="relative overflow-hidden rounded-[25px] border border-[#dceee8] bg-white shadow-sm"><div className="grid items-center gap-5 p-5 sm:grid-cols-[1fr_1.1fr]"><div><p className="font-display text-xl font-black leading-8 text-[#14594c]">“พิมพ์บอก Milo เหมือนบอกเพื่อน<br />แล้วจัดการต่อได้ในแชทเดียว”</p><p className="mt-3 text-xs font-semibold text-[#70938b]">Milo LINE Assistant</p></div><div className="flex justify-end"><MiloMascot size="md" /></div></div></div>
         </section>
 
         <section id="news" className="border-y border-[#e1f1ec] bg-[#fbfffd] py-10">
@@ -130,7 +130,7 @@ export default function Home() {
         </section>
 
         <section id="business" className="border-b border-[#e1f1ec] bg-[#effaf6] py-12">
-          <div className="mx-auto max-w-[1500px] px-5 lg:px-10"><div className="mx-auto max-w-3xl text-center"><span className="inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-xs font-bold text-[#15936f] shadow-sm"><BriefcaseBusiness className="size-4" /> สำหรับธุรกิจ & ฟรีแลนซ์</span><h2 className="font-display mt-4 text-3xl font-black text-[#165448]">จัดการงานธุรกิจให้เป็นเรื่องง่าย</h2><p className="mt-2 text-sm leading-6 text-[#668c84]">สรุปข้อมูล ออกเอกสาร วิเคราะห์ และช่วยวางแผนผ่าน LINE โดยไม่ต้องสลับหลายแอป</p></div><div className="mt-8 grid gap-5 md:grid-cols-3"><div className="rounded-3xl bg-white p-6 shadow-sm"><ReceiptText className="size-8 text-[#0ca974]" /><h3 className="mt-4 font-bold">เอกสารและใบแจ้งหนี้</h3><p className="mt-2 text-sm leading-6 text-[#718e89]">ช่วยร่างเอกสาร สรุปยอด และเตรียมข้อมูลให้พร้อมส่งต่อ</p></div><div className="rounded-3xl bg-white p-6 shadow-sm"><BarChart3 className="size-8 text-[#278ac0]" /><h3 className="mt-4 font-bold">วิเคราะห์และวางแผน</h3><p className="mt-2 text-sm leading-6 text-[#718e89]">เปลี่ยนข้อมูลที่ซับซ้อนให้เป็นคำแนะนำที่เข้าใจง่าย</p></div><div className="rounded-3xl bg-white p-6 shadow-sm"><Zap className="size-8 text-[#e28d29]" /><h3 className="mt-4 font-bold">ทำงานได้เร็วขึ้น</h3><p className="mt-2 text-sm leading-6 text-[#718e89]">ลดงานซ้ำๆ และมีผู้ช่วยพร้อมตอบอยู่ใน LINE</p></div></div></div>
+          <div className="mx-auto max-w-[1500px] px-5 lg:px-10"><div className="mx-auto max-w-3xl text-center"><span className="inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-xs font-bold text-[#15936f] shadow-sm"><BriefcaseBusiness className="size-4" /> สำหรับธุรกิจ & ฟรีแลนซ์</span><h2 className="font-display mt-4 text-3xl font-black text-[#165448]">ชีวิต งาน และการเงิน — จัดการจาก LINE</h2><p className="mt-2 text-sm leading-6 text-[#668c84]">ตั้งเตือน เก็บไฟล์ นัดหมาย ทำ To-do ค้นข้อมูล และจดรายรับรายจ่าย โดยไม่ต้องออกจาก LINE</p></div><div className="mt-8 grid gap-5 md:grid-cols-3"><div className="rounded-3xl bg-white p-6 shadow-sm"><ReceiptText className="size-8 text-[#0ca974]" /><h3 className="mt-4 font-bold">เตือนและปฏิทิน</h3><p className="mt-2 text-sm leading-6 text-[#718e89]">พิมพ์นัดหรือสิ่งที่ต้องจำ แล้วให้ Milo เตือนและเก็บลงปฏิทินให้</p></div><div className="rounded-3xl bg-white p-6 shadow-sm"><BarChart3 className="size-8 text-[#278ac0]" /><h3 className="mt-4 font-bold">คลังและ Quick Search</h3><p className="mt-2 text-sm leading-6 text-[#718e89]">เก็บข้อความ ลิงก์ รูป และไฟล์ แล้วเรียกคืนจากแชทได้อย่างรวดเร็ว</p></div><div className="rounded-3xl bg-white p-6 shadow-sm"><Zap className="size-8 text-[#e28d29]" /><h3 className="mt-4 font-bold">การเงินแบบสนทนา</h3><p className="mt-2 text-sm leading-6 text-[#718e89]">จดเงินด้วยภาษาคน รูป หรือเสียง พร้อมหมวด งบ รายงาน และการวิเคราะห์</p></div></div></div>
         </section>
 
         <section id="faq" className="py-12"><div className="mx-auto grid max-w-5xl gap-8 px-5 lg:grid-cols-[.7fr_1.3fr] lg:px-10"><div><p className="text-sm font-bold text-[#0b9c70]">คำถามที่พบบ่อย</p><h2 className="font-display mt-2 text-3xl font-black text-[#184d43]">อยากรู้เรื่องไหน<br />ถามไมโลได้เลย</h2><div className="mt-5 rounded-2xl bg-[#effaf6] p-4 text-sm text-[#61877f]"><MousePointer2 className="mb-2 size-5 text-[#0ca974]" />กดคำถามเพื่อดูคำตอบ</div></div><Accordion type="single" collapsible className="rounded-3xl border border-[#dceee8] bg-white px-5 shadow-sm">{faq.map(([q,a],i) => <AccordionItem key={q} value={`q-${i}`}><AccordionTrigger className="text-left font-semibold text-[#2b5b52]">{q}</AccordionTrigger><AccordionContent className="text-sm leading-7 text-[#708d87]">{a}</AccordionContent></AccordionItem>)}</Accordion></div></section>
@@ -145,7 +145,7 @@ export default function Home() {
               </div>
               <div className="min-w-0">
                 <p className="font-display text-2xl font-black tracking-tight text-[#0d6554] sm:text-3xl">เริ่มใช้งานไมโลวันนี้ <span className="text-[#f2b632]">✦</span></p>
-                <p className="mt-1 max-w-xl text-sm font-medium leading-6 text-[#4e8277]">เข้าแชทบอทหลังบ้าน เชื่อมบัญชี LINE ของคุณ<br className="hidden sm:block" /> และเริ่มบริหารการเงินอย่างชาญฉลาดได้ทันที</p>
+                <p className="mt-1 max-w-xl text-sm font-medium leading-6 text-[#4e8277]">เพิ่มเพื่อน Milo แล้วเริ่มพิมพ์สิ่งที่อยากให้ช่วยได้ทันที<br className="hidden sm:block" /> ทั้งแชทส่วนตัวและกลุ่ม LINE โดยไม่ต้องติดตั้งแอปเพิ่ม</p>
               </div>
               <div className="hidden h-16 w-px bg-[#c4e8dc] lg:block" />
               <LineButton label="เพิ่มเพื่อน Milo" light />

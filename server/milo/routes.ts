@@ -1,4 +1,5 @@
 import { artworkForCommand } from "./richMenuArtwork";
+import { buildCalendarIcsUrl, buildGoogleCalendarUrl } from "./calendar";
 import { replyRichMenu } from "./line";
 import express, { type Express, type Request, type Response } from "express";
 import { sdk } from "../_core/sdk";
@@ -22,7 +23,7 @@ import { STANDARD_EXPENSE_CATEGORIES, STANDARD_INCOME_CATEGORIES } from "./finan
 import { financeReportCardText, getMessageContent, getProfile, lineCredentials, postSaveSummaryText, pushText, pushTextWithQuickReplies, replyFinanceReportCard, replyFinanceReportCardFallback, replyGreetingHome, replyMention, replyPostSaveSummary, replyPostSaveSummaryFallback, replyPostSaveSummaryImage, replyText, replyTextWithQuickReplies, replyVoiceCategoryChoices, replyVoiceProposal, replyVoiceProposalFallback, sourceIdentity, type LineEvent, type VoiceTransactionProposal, verifyLineSignature } from "./line";
 
 function helpText() {
-  return "ไมโลช่วยเรื่องเงินได้ในแชทนี้ครับ\n• จด: กินกาแฟ 80 / เงินเดือนเข้า 35000\n• สรุป: สรุปวันนี้ / สรุปเดือนนี้\n• วิเคราะห์: วิเคราะห์ / วิเคราะห์เดือนนี้\n• งบ: ตั้งงบ อาหาร 5000\n• หลักฐาน: ส่งสลิป/ใบเสร็จ แล้วตรวจและยืนยัน\n• อัตโนมัติ: ตั้งจดอัตโนมัติ ค่าเช่า 5000 ทุกเดือนวันที่ 1 09:00\n\nต้องการคำสั่งเฉพาะเรื่อง พิมพ์ชื่อเรื่องได้เลย เช่น “งบ”, “รายการ”, “หมวดหมู่”";
+  return "Milo ช่วยคุณจบงานใน LINE แชทเดียวครับ\n🔔 เตือน: เตือนประชุมพรุ่งนี้ 10:00 / เตือนดื่มน้ำทุก 30 นาที / รายการเตือน\n🗂️ เก็บ: เก็บ https://example.com #งาน / ค้นหา ใบเสนอราคา / สถานะคลัง\n📅 ปฏิทิน: ลงปฏิทิน ประชุมทีมพรุ่งนี้ 10:00 / ดูปฏิทิน\n👥 กลุ่ม LINE: @ไมโล ผู้ช่วยกลุ่ม / @ไมโล แจ้งส่งงานด้วยถึง @สมชาย\n✅ งาน: งาน ส่งสรุปรายสัปดาห์ / ดูงาน / เสร็จงาน #12 / โน้ต รหัส Wi-Fi\n💰 การเงิน: กินกาแฟ 80 / เงินเดือนเข้า 35000 / ตั้งงบ อาหาร 5000 / สรุปเดือนนี้\n📷🎙️ ส่งรูปใบเสร็จหรือเสียงให้ไมโลอ่าน แล้วตรวจและยืนยันก่อนบันทึก\n\nพิมพ์ “ช่วย” ได้ทุกเมื่อครับ";
 }
 
 function contextualFallback(text: string) {
@@ -160,7 +161,43 @@ async function handleText(event: LineEvent, lineChatId: string, lineUserId: stri
     if (event.replyToken) await replyText(event.replyToken, financeAccessMessage(scope));
     return;
   }
-  if (command.type === "reminder") {
+  if (command.type === "reminderList") {
+    const items = await db.listRemindersForChat(lineUserId, lineChatId, scope);
+    message = items.length
+      ? `🔔 รายการเตือนใน${scope === "user" ? "แชทนี้" : "กลุ่มนี้"}\n${items.slice(0, 20).map(item => `#${item.id} • ${item.title} • ${item.nextRunAt ? formatDate(item.nextRunAt) : "รอกำหนดเวลา"}`).join("\n")}\n\nยกเลิกของคุณ: ยกเลิกเตือน #เลขรายการ`
+      : "🔔 ยังไม่มีรายการเตือนที่กำลังใช้งานในแชทนี้ครับ";
+  } else if (command.type === "reminderCancel") {
+    const cancelled = await db.cancelReminderForChat(command.id, lineUserId, lineChatId);
+    message = cancelled ? `ยกเลิกเตือน #${command.id} แล้วครับ` : `ไม่พบรายการเตือน #${command.id} ที่คุณยกเลิกได้ในแชทนี้`;
+  } else if (command.type === "todoList") {
+    const items = await db.listTodosForChat(lineUserId, lineChatId, scope);
+    message = items.length
+      ? `✅ To-do ใน${scope === "user" ? "แชทนี้" : "กลุ่มนี้"}\n${items.slice(0, 30).map(item => `#${item.id} • ${item.title}${item.dueAt ? ` • ${formatDate(item.dueAt)}` : ""}`).join("\n")}\n\nปิดงาน: เสร็จงาน #เลขรายการ`
+      : "✅ ไม่มี To-do ที่ค้างอยู่ในแชทนี้ครับ";
+  } else if (command.type === "todoComplete") {
+    const completed = await db.completeTodoForChat(command.id, lineUserId, lineChatId, scope);
+    message = completed ? `ทำงาน #${command.id} เสร็จแล้ว ✅` : `ไม่พบงาน #${command.id} ที่ปิดได้ในแชทนี้`;
+  } else if (command.type === "calendarCreate") {
+    const id = await db.createCalendarEvent({ lineChatId, createdByLineUserId: lineUserId, ...command.data, sourceMessageId: event.message?.id });
+    const googleUrl = buildGoogleCalendarUrl({ ...command.data, detail: command.data.detail ?? null });
+    const icsUrl = buildCalendarIcsUrl(id);
+    message = `📅 เพิ่มนัด #${id} ในปฏิทิน Milo แล้ว\n${command.data.title}\n${formatDate(command.data.startsAt)} – ${formatDate(command.data.endsAt)}\n\nGoogle Calendar: ${googleUrl}\nApple/Outlook (.ics): ${icsUrl}`;
+  } else if (command.type === "calendarList") {
+    const items = await db.listCalendarEvents(lineUserId, lineChatId, new Date(), 20);
+    message = items.length
+      ? `📅 นัดหมายที่กำลังจะถึง\n${items.map(item => `#${item.id} • ${item.title} • ${formatDate(item.startsAt)}`).join("\n")}`
+      : "📅 ยังไม่มีนัดหมายที่กำลังจะถึงในแชทนี้ครับ";
+  } else if (command.type === "calendarCancel") {
+    const cancelled = await db.cancelCalendarEvent(command.id, lineUserId, lineChatId);
+    message = cancelled ? `ยกเลิกนัด #${command.id} แล้วครับ` : `ไม่พบนัด #${command.id} ที่คุณยกเลิกได้ในแชทนี้`;
+  } else if (command.type === "groupGuide") {
+    message = scope === "user"
+      ? "👥 วิธีใช้ Milo ในกลุ่ม LINE\n1) เชิญ Milo เข้ากลุ่ม\n2) เรียกด้วย @ไมโล ก่อนคำสั่งข้อความ\n3) ใช้เตือน เก็บ/ค้นหาไฟล์ ปฏิทิน To-do และแท็กสมาชิกได้\nตัวอย่าง: @ไมโล เตือนส่งรายงานพรุ่งนี้ 9:00 หรือ @ไมโล แจ้งส่งงานด้วยถึง @สมชาย"
+      : "👥 Milo พร้อมช่วยในกลุ่มนี้ครับ\n• @ไมโล เตือนประชุมพรุ่งนี้ 10:00\n• @ไมโล เก็บ https://example.com #งาน\n• @ไมโล ค้นหา ใบเสนอราคา\n• @ไมโล ลงปฏิทิน ประชุมทีมพรุ่งนี้ 10:00\n• @ไมโล แจ้งส่งงานด้วยถึง @สมชาย\n• ส่งรูป/ไฟล์ในกลุ่มเพื่อเก็บและประมวลผลได้ตามสิทธิ์";
+  } else if (command.type === "vaultStatus") {
+    const status = await db.vaultStorageStatus(lineUserId, lineChatId, scope);
+    message = `🗂️ สถานะคลังในแชทนี้\nทั้งหมด ${status.total} รายการ\nเก็บถาวร ${status.durable} รายการ\nไฟล์สื่อที่ต้องอัปโหลดซ้ำ ${status.mediaMissing} รายการ\n\nข้อความ/ลิงก์เก็บในฐานข้อมูล และรูป/ไฟล์ที่มีสำเนา storage จะเก็บไว้จนกว่าคุณจะลบครับ`;
+  } else if (command.type === "reminder") {
     const id = await db.createReminder({ lineChatId, createdByLineUserId: lineUserId, ...command.data, sourceMessageId: event.message?.id });
     message = `ตั้งเตือน #${id} เรียบร้อย\n${command.data.title}\nครั้งถัดไป: ${formatDate(command.data.nextRunAt)}`;
   } else if (command.type === "expense" || command.type === "income") {
@@ -258,10 +295,10 @@ async function handleText(event: LineEvent, lineChatId: string, lineUserId: stri
     message = `เพิ่มงาน “${command.title}” แล้ว`;
   } else if (command.type === "vault") {
     await db.createVaultItem({ lineChatId, createdByLineUserId: lineUserId, itemType: command.itemType, title: command.title, searchableText: command.content, tagsText: command.tagsText, sourceUrl: command.sourceUrl, lineMessageId: event.message?.id });
-    message = `เก็บ${command.itemType === "link" ? "ลิงก์" : "ข้อความ"}นี้ไว้ในคลังแล้ว${command.tagsText ? ` พร้อมแท็ก ${command.tagsText}` : ""}`;
+    message = `เก็บ${command.itemType === "link" ? "ลิงก์" : "ข้อความ"}นี้ไว้ในคลังถาวรจนกว่าคุณจะลบแล้ว${command.tagsText ? ` พร้อมแท็ก ${command.tagsText}` : ""}`;
   } else if (command.type === "search") {
-    const results = await db.searchVault(lineUserId, command.query);
-    message = results.length ? `พบ ${results.length} รายการ\n${results.slice(0, 5).map((item, index) => `${index + 1}. ${item.title}`).join("\n")}` : `ยังไม่พบรายการ “${command.query}”`;
+    const results = await db.searchVaultForChat(lineUserId, lineChatId, scope, command.query);
+    message = results.length ? `พบ ${results.length} รายการใน${scope === "user" ? "แชทส่วนตัว" : "กลุ่มนี้"}\n${results.slice(0, 8).map((item, index) => { const durable = item.itemType === "text" || item.itemType === "link" || Boolean(item.storageKey); return `${index + 1}. ${item.title} ${durable ? "✓ เก็บถาวร" : "⚠️ ต้องอัปโหลดไฟล์ซ้ำ"}`; }).join("\n")}` : `ยังไม่พบรายการ “${command.query}” ในแชทนี้`;
   } else if (command.type === "mention") {
     const member = await db.findLineMemberByName(lineChatId, command.memberName);
     if (member && event.replyToken) {
@@ -567,7 +604,8 @@ async function handleMedia(event: LineEvent, lineChatId: string, lineUserId: str
         : "ยังไม่พบรูปแบบรายรับ/รายจ่ายที่แน่ชัด";
       const canConfirm = Boolean(proposal.transactionType && proposal.amount);
       const nextStep = canConfirm ? "ตรวจรายละเอียดแล้วกด “ยืนยันบันทึก” ได้เลยน่ะจ๊ะ" : "ยังบันทึกไม่ได้ กรุณากดแก้ไขข้อความให้มีรายการและจำนวนเงิน เช่น “ค่ากาแฟ 40 บาท” น่ะจ๊ะ";
-      await pushTextWithQuickReplies(lineChatId, `ถอดเสียงได้ว่า\n“${proposal.transcript.slice(0, 900)}”\n${proposalLine}\n${nextStep}`, [...(canConfirm ? [{ label: "ยืนยันบันทึก", text: "ยืนยันเสียง" }] : []), { label: "แก้ไขข้อความ", text: "แก้ไขข้อความเสียง" }]);
+      const storageNote = stored?.key ? "" : "\n⚠️ ไฟล์เสียงต้นฉบับยังสำรองถาวรไม่สำเร็จ กรุณาส่งใหม่หากต้องการเก็บไฟล์ต้นฉบับ";
+      await pushTextWithQuickReplies(lineChatId, `ถอดเสียงได้ว่า\n“${proposal.transcript.slice(0, 900)}”\n${proposalLine}\n${nextStep}${storageNote}`, [...(canConfirm ? [{ label: "ยืนยันบันทึก", text: "ยืนยันเสียง" }] : []), { label: "แก้ไขข้อความ", text: "แก้ไขข้อความเสียง" }]);
     } catch (error) {
       console.error("[Milo Voice] transcription failed", { messageId: message.id, error: error instanceof Error ? error.message : "unknown" });
       const runtimeMissing = error instanceof Error && /not configured|valid credit card|payment required|insufficient.*(?:credit|quota)|billing/i.test(error.message);
@@ -587,7 +625,8 @@ async function handleMedia(event: LineEvent, lineChatId: string, lineUserId: str
       await db.saveImageExtraction(vaultId, "expense", JSON.stringify(analysis), analysis.confidence);
       const preview = analysis.proposals.slice(0, 5).map(item => `• ${formatImageProposal(item)}`).join("\n");
       const more = analysis.proposals.length > 5 ? `\n…และอีก ${analysis.proposals.length - 5} รายการ` : "";
-      if (event.replyToken) await replyText(event.replyToken, `อ่าน PDF แล้ว พบรายการที่เสนอได้ ${analysis.proposals.length} รายการ\n${preview || "ยังไม่พบรายจ่ายที่อ่านได้ชัด"}${more}\nตรวจข้อมูลก่อน แล้วพิมพ์ “ยืนยัน PDF” เพื่อบันทึกเฉพาะรายการที่วันที่และยอดชัดเจน`);
+      const storageNote = stored?.key ? "" : "\n⚠️ PDF ต้นฉบับยังสำรองถาวรไม่สำเร็จ กรุณาส่งไฟล์ใหม่หากต้องการเก็บต้นฉบับ";
+      if (event.replyToken) await replyText(event.replyToken, `อ่าน PDF แล้ว พบรายการที่เสนอได้ ${analysis.proposals.length} รายการ\n${preview || "ยังไม่พบรายจ่ายที่อ่านได้ชัด"}${more}\nตรวจข้อมูลก่อน แล้วพิมพ์ “ยืนยัน PDF” เพื่อบันทึกเฉพาะรายการที่วันที่และยอดชัดเจน${storageNote}`);
     } catch (error) {
       console.error("[Milo PDF] analysis failed", { messageId: message.id, error: error instanceof Error ? error.message : "unknown" });
       const fallback = "เก็บ PDF ไว้แล้ว แต่ยังอ่านธุรกรรมจากไฟล์นี้ไม่ได้ กรุณาลองไฟล์ที่ไม่ล็อกรหัสและมีข้อความอ่านได้ครับ";
@@ -603,7 +642,7 @@ async function handleMedia(event: LineEvent, lineChatId: string, lineUserId: str
     return;
   }
   if (!isImage) {
-    if (event.replyToken) await replyText(event.replyToken, "เก็บไฟล์นี้ไว้ในคลังถาวรแล้ว");
+    if (event.replyToken) await replyText(event.replyToken, stored?.key ? "เก็บไฟล์นี้ไว้ในคลังถาวรจนกว่าคุณจะลบแล้ว" : "รับไฟล์แล้ว แต่พื้นที่เก็บถาวรยังสำรองไฟล์ต้นฉบับไม่สำเร็จ กรุณาส่งไฟล์นี้ใหม่อีกครั้งครับ");
     return;
   }
   // Acknowledge immediately so the user is not blocked by a slow vision call and the LINE reply token is consumed safely.
@@ -616,7 +655,8 @@ async function handleMedia(event: LineEvent, lineChatId: string, lineUserId: str
     await db.saveImageExtraction(vaultId, analysis.proposals.some(item => item.kind === "expense") ? "expense" : "reminder", JSON.stringify(analysis), analysis.confidence);
     const proposals = analysis.proposals.slice(0, 2).map(item => `• ${formatImageProposal(item)}`).join("\n");
     const hasExpense = analysis.proposals.some(item => item.kind === "expense" && item.amount > 0);
-    await pushTextWithQuickReplies(lineChatId, `อ่านรูปเรียบร้อยแล้ว\n${analysis.summary}\n${proposals || "ยังไม่พบรายการที่ควรบันทึกอัตโนมัติ"}\nตรวจยอด หมวด และวันที่ให้ถูกต้อง แล้วกดปุ่มยืนยันได้เลยครับ`, hasExpense ? [{ label: "ยืนยันบันทึก", text: "ยืนยันค่าใช้จ่าย" }, { label: "สรุปวันนี้", text: "สรุปวันนี้" }] : [{ label: "ยืนยันรูป", text: "ยืนยันรูป" }]);
+    const storageNote = stored?.key ? "" : "\n⚠️ รูปต้นฉบับยังสำรองถาวรไม่สำเร็จ กรุณาส่งใหม่หากต้องการเก็บต้นฉบับ";
+    await pushTextWithQuickReplies(lineChatId, `อ่านรูปเรียบร้อยแล้ว\n${analysis.summary}\n${proposals || "ยังไม่พบรายการที่ควรบันทึกอัตโนมัติ"}\nตรวจยอด หมวด และวันที่ให้ถูกต้อง แล้วกดปุ่มยืนยันได้เลยครับ${storageNote}`, hasExpense ? [{ label: "ยืนยันบันทึก", text: "ยืนยันค่าใช้จ่าย" }, { label: "สรุปวันนี้", text: "สรุปวันนี้" }] : [{ label: "ยืนยันรูป", text: "ยืนยันรูป" }]);
   } catch (error) {
     console.error("[Milo Image] analysis failed", { messageId: message.id, error: error instanceof Error ? error.message : "unknown" });
     let userNotified = false;

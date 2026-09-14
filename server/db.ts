@@ -3,6 +3,7 @@ import { drizzle } from "drizzle-orm/mysql2";
 import {
   auditLogs,
   budgets,
+  calendarEvents,
   expenseCategories,
   financeAccountMembers,
   financeAccounts,
@@ -270,6 +271,26 @@ export async function listReminders(lineUserId: string) {
   return db.select().from(reminders).where(and(eq(reminders.createdByLineUserId, lineUserId), or(eq(reminders.status, "active"), eq(reminders.status, "paused")))).orderBy(reminders.nextRunAt);
 }
 
+export async function listRemindersForChat(lineUserId: string, lineChatId: string, scope: "user" | "group" | "room") {
+  const db = await requireDb();
+  const chatScope = scope === "user"
+    ? and(eq(reminders.createdByLineUserId, lineUserId), eq(reminders.lineChatId, lineChatId))
+    : eq(reminders.lineChatId, lineChatId);
+  return db.select().from(reminders)
+    .where(and(chatScope, or(eq(reminders.status, "active"), eq(reminders.status, "paused"))))
+    .orderBy(reminders.nextRunAt)
+    .limit(50);
+}
+
+export async function cancelReminderForChat(id: number, lineUserId: string, lineChatId: string) {
+  const db = await requireDb();
+  const current = (await db.select().from(reminders).where(and(eq(reminders.id, id), eq(reminders.lineChatId, lineChatId), eq(reminders.createdByLineUserId, lineUserId), or(eq(reminders.status, "active"), eq(reminders.status, "paused")))).limit(1))[0];
+  if (!current) return false;
+  await db.update(reminders).set({ status: "cancelled" }).where(eq(reminders.id, id));
+  await writeAuditLog({ action: "reminder.cancel", entityType: "reminder", entityId: id, actorLineUserId: lineUserId, lineChatId, details: { title: current.title } });
+  return true;
+}
+
 export async function deleteReminder(id: number, lineUserId: string) {
   const db = await requireDb();
   await db.delete(reminders).where(and(eq(reminders.id, id), eq(reminders.createdByLineUserId, lineUserId)));
@@ -313,6 +334,42 @@ export async function finishReminderDeliveryAttempt(id: number, status: "sent" |
   await db.update(reminderDeliveryAttempts).set({ status, errorMessage: errorMessage ?? null, finishedAt: new Date() }).where(eq(reminderDeliveryAttempts.id, id));
 }
 
+export async function createCalendarEvent(input: {
+  lineChatId: string; createdByLineUserId: string; title: string; detail?: string; startsAt: Date; endsAt: Date; sourceMessageId?: string;
+}) {
+  const db = await requireDb();
+  if (input.sourceMessageId) {
+    const existing = (await db.select().from(calendarEvents).where(and(eq(calendarEvents.lineChatId, input.lineChatId), eq(calendarEvents.sourceMessageId, input.sourceMessageId))).limit(1))[0];
+    if (existing) return existing.id;
+  }
+  const result = await db.insert(calendarEvents).values({ ...input, detail: input.detail ?? null, sourceMessageId: input.sourceMessageId ?? null });
+  const id = Number(result[0].insertId);
+  await writeAuditLog({ action: "calendar.create", entityType: "calendar_event", entityId: id, actorLineUserId: input.createdByLineUserId, lineChatId: input.lineChatId, details: { title: input.title, startsAt: input.startsAt.toISOString(), endsAt: input.endsAt.toISOString() } });
+  return id;
+}
+
+export async function getCalendarEventById(id: number) {
+  const db = await requireDb();
+  return (await db.select().from(calendarEvents).where(eq(calendarEvents.id, id)).limit(1))[0];
+}
+
+export async function listCalendarEvents(lineUserId: string, lineChatId: string, from = new Date(), limit = 20) {
+  const db = await requireDb();
+  return db.select().from(calendarEvents)
+    .where(and(eq(calendarEvents.lineChatId, lineChatId), eq(calendarEvents.status, "active"), gte(calendarEvents.endsAt, from)))
+    .orderBy(calendarEvents.startsAt)
+    .limit(Math.min(Math.max(limit, 1), 50));
+}
+
+export async function cancelCalendarEvent(id: number, lineUserId: string, lineChatId: string) {
+  const db = await requireDb();
+  const current = (await db.select().from(calendarEvents).where(and(eq(calendarEvents.id, id), eq(calendarEvents.lineChatId, lineChatId), eq(calendarEvents.createdByLineUserId, lineUserId), eq(calendarEvents.status, "active"))).limit(1))[0];
+  if (!current) return false;
+  await db.update(calendarEvents).set({ status: "cancelled" }).where(eq(calendarEvents.id, id));
+  await writeAuditLog({ action: "calendar.cancel", entityType: "calendar_event", entityId: id, actorLineUserId: lineUserId, lineChatId, details: { title: current.title } });
+  return true;
+}
+
 export async function createVaultItem(input: {
   lineChatId: string; createdByLineUserId: string; itemType: "text" | "link" | "image" | "file"; title: string;
   searchableText?: string; tagsText?: string; originalFilename?: string; mimeType?: string; sourceUrl?: string; storageKey?: string; storageUrl?: string; lineMessageId?: string;
@@ -345,6 +402,22 @@ export async function searchVault(lineUserId: string, term = "") {
   return db.select().from(vaultItems).where(where).orderBy(desc(vaultItems.createdAt)).limit(100);
 }
 
+export async function searchVaultForChat(lineUserId: string, lineChatId: string, scope: "user" | "group" | "room", term = "") {
+  const db = await requireDb();
+  const base = scope === "user"
+    ? and(eq(vaultItems.createdByLineUserId, lineUserId), eq(vaultItems.lineChatId, lineChatId), eq(vaultItems.status, "active"))
+    : and(eq(vaultItems.lineChatId, lineChatId), eq(vaultItems.status, "active"));
+  const where = term.trim() ? and(base, or(like(vaultItems.title, `%${term}%`), like(vaultItems.searchableText, `%${term}%`), like(vaultItems.tagsText, `%${term}%`))) : base;
+  return db.select().from(vaultItems).where(where).orderBy(desc(vaultItems.createdAt)).limit(100);
+}
+
+export async function vaultStorageStatus(lineUserId: string, lineChatId: string, scope: "user" | "group" | "room") {
+  const rows = await searchVaultForChat(lineUserId, lineChatId, scope, "");
+  const durable = rows.filter(item => item.itemType === "text" || item.itemType === "link" || Boolean(item.storageKey)).length;
+  const mediaMissing = rows.filter(item => (item.itemType === "image" || item.itemType === "file") && !item.storageKey).length;
+  return { total: rows.length, durable, mediaMissing };
+}
+
 export async function updateVaultMetadata(id: number, lineUserId: string, input: { tagsText?: string | null; sourceUrl?: string | null }) {
   const db = await requireDb();
   await db.update(vaultItems).set({ tagsText: input.tagsText ?? null, sourceUrl: input.sourceUrl ?? null })
@@ -369,6 +442,26 @@ export async function createTodo(lineChatId: string, lineUserId: string, title: 
 export async function listTodos(lineUserId: string) {
   const db = await requireDb();
   return db.select().from(todoItems).where(and(eq(todoItems.createdByLineUserId, lineUserId), eq(todoItems.status, "todo"))).orderBy(todoItems.dueAt).limit(100);
+}
+
+export async function listTodosForChat(lineUserId: string, lineChatId: string, scope: "user" | "group" | "room") {
+  const db = await requireDb();
+  const chatScope = scope === "user"
+    ? and(eq(todoItems.createdByLineUserId, lineUserId), eq(todoItems.lineChatId, lineChatId))
+    : eq(todoItems.lineChatId, lineChatId);
+  return db.select().from(todoItems).where(and(chatScope, eq(todoItems.status, "todo"))).orderBy(todoItems.dueAt, todoItems.createdAt).limit(100);
+}
+
+export async function completeTodoForChat(id: number, lineUserId: string, lineChatId: string, scope: "user" | "group" | "room") {
+  const db = await requireDb();
+  const chatScope = scope === "user"
+    ? and(eq(todoItems.createdByLineUserId, lineUserId), eq(todoItems.lineChatId, lineChatId))
+    : eq(todoItems.lineChatId, lineChatId);
+  const current = (await db.select().from(todoItems).where(and(eq(todoItems.id, id), chatScope, eq(todoItems.status, "todo"))).limit(1))[0];
+  if (!current) return false;
+  await db.update(todoItems).set({ status: "done", completedAt: new Date() }).where(eq(todoItems.id, id));
+  await writeAuditLog({ action: "todo.complete", entityType: "todo", entityId: id, actorLineUserId: lineUserId, lineChatId, details: { title: current.title } });
+  return true;
 }
 
 export async function completeTodo(id: number, lineUserId: string) {
