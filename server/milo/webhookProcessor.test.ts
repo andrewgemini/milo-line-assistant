@@ -10,6 +10,7 @@ vi.mock("../db", () => ({
   findLineMemberByName: vi.fn(),
   createReminder: vi.fn(),
   createTransaction: vi.fn(),
+  deleteLatestTransaction: vi.fn(),
   linkTransactionAttachment: vi.fn(),
   createNote: vi.fn(),
   createTodo: vi.fn(),
@@ -122,6 +123,17 @@ describe("LINE webhook processor", () => {
       { label: "วิเคราะห์", text: "วิเคราะห์" },
     ]);
   });
+  it("undoes the latest transaction with a soft-delete workflow", async () => {
+    vi.mocked(db.registerWebhookEvent).mockResolvedValue(true);
+    vi.mocked(getProfile).mockResolvedValue({ displayName: "ผู้ส่ง" });
+    vi.mocked(sourceIdentity).mockReturnValueOnce({ lineChatId: "U1", lineUserId: "U1", scope: "user" });
+    vi.mocked(db.deleteLatestTransaction).mockResolvedValue({ id: 77, amount: "30.00", category: "อาหาร", note: "ร้านกระเพรากลางซอย" } as never);
+    vi.mocked(replyText).mockResolvedValue(new Response());
+    await processEvent({ type: "message", webhookEventId: "evt-undo-latest", timestamp: Date.now(), replyToken: "token", source: { type: "user", userId: "U1" }, message: { id: "undo-1", type: "text", text: "ยกเลิกรายการล่าสุด" } }, "{}");
+    expect(db.deleteLatestTransaction).toHaveBeenCalledWith({ lineUserId: "U1", financeAccountId: 7 });
+    expect(replyText).toHaveBeenCalledWith("token", expect.stringContaining("#77"));
+  });
+
   it("returns a LINE User ID only to a private chat for dashboard linking", async () => {
     vi.mocked(db.registerWebhookEvent).mockResolvedValue(true);
     vi.mocked(getProfile).mockResolvedValue({ displayName: "ผู้ส่ง" });

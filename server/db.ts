@@ -387,9 +387,18 @@ export async function writeAuditLog(input: { action: string; entityType: string;
 
 export async function createTransaction(input: { lineChatId: string; lineUserId: string; financeAccountId?: number; transactionType: "income" | "expense"; amount: number; category: string; note?: string; occurredAt?: Date; source?: string; sourceMessageId?: string }) {
   const db = await requireDb();
+  // LINE can redeliver events with a new webhook envelope. A stable sourceMessageId
+  // makes transaction creation idempotent even if webhook-level dedupe is bypassed.
+  if (input.sourceMessageId) {
+    const sourceScope = input.financeAccountId === undefined
+      ? eq(transactions.lineUserId, input.lineUserId)
+      : eq(transactions.financeAccountId, input.financeAccountId);
+    const existing = (await db.select({ id: transactions.id }).from(transactions).where(and(sourceScope, eq(transactions.sourceMessageId, input.sourceMessageId))).orderBy(desc(transactions.id)).limit(1))[0];
+    if (existing) return existing.id;
+  }
   const result = await db.insert(transactions).values({ ...input, amount: String(input.amount), note: input.note ?? null, occurredAt: input.occurredAt ?? new Date(), source: input.source ?? "line_text", sourceMessageId: input.sourceMessageId ?? null });
   const id = Number(result[0].insertId);
-  await writeAuditLog({ action: "transaction.create", entityType: "transaction", entityId: id, actorLineUserId: input.lineUserId, lineChatId: input.lineChatId, details: { transactionType: input.transactionType, amount: input.amount, category: input.category, source: input.source ?? "line_text" } });
+  await writeAuditLog({ action: "transaction.create", entityType: "transaction", entityId: id, actorLineUserId: input.lineUserId, lineChatId: input.lineChatId, details: { transactionType: input.transactionType, amount: input.amount, category: input.category, source: input.source ?? "line_text", sourceMessageId: input.sourceMessageId ?? null } });
   return id;
 }
 
@@ -448,6 +457,16 @@ export async function updateTransaction(input: { id: number; lineUserId: string;
   await db.update(transactions).set(values).where(eq(transactions.id, input.id));
   await writeAuditLog({ action: "transaction.update", entityType: "transaction", entityId: input.id, actorLineUserId: input.lineUserId, dashboardUserId: input.actorDashboardUserId, lineChatId: current.lineChatId, details: { before: { amount: current.amount, category: current.category, note: current.note, transactionType: current.transactionType, occurredAt: current.occurredAt }, after: { amount: input.amount, category: input.category, note: input.note, transactionType: input.transactionType, occurredAt: input.occurredAt } } });
   return true;
+}
+
+export async function deleteLatestTransaction(input: { lineUserId: string; financeAccountId?: number }) {
+  const db = await requireDb();
+  const scope = input.financeAccountId === undefined ? eq(transactions.lineUserId, input.lineUserId) : eq(transactions.financeAccountId, input.financeAccountId);
+  const current = (await db.select().from(transactions).where(and(scope, eq(transactions.status, "active"))).orderBy(desc(transactions.createdAt), desc(transactions.id)).limit(1))[0];
+  if (!current) return undefined;
+  await db.update(transactions).set({ status: "deleted", deletedAt: new Date() }).where(eq(transactions.id, current.id));
+  await writeAuditLog({ action: "transaction.undo", entityType: "transaction", entityId: current.id, actorLineUserId: input.lineUserId, lineChatId: current.lineChatId, details: { amount: current.amount, category: current.category, note: current.note, transactionType: current.transactionType, source: current.source } });
+  return current;
 }
 
 export async function deleteTransaction(input: { id: number; lineUserId: string; financeAccountId?: number; actorDashboardUserId?: number }) {

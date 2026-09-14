@@ -29,6 +29,7 @@ export type MiloCommand =
   | { type: "categoryRemove"; name: string; transactionType: "income" | "expense" }
   | { type: "categoryList"; transactionType?: "income" | "expense" }
   | { type: "transactionSearch"; query: string }
+  | { type: "transactionUndo" }
   | { type: "transactionDelete"; id: number }
   | { type: "transactionUpdate"; id: number; amount: number }
   | { type: "financeReport"; period: "day" | "week" | "month" | "year" }
@@ -137,6 +138,7 @@ export function parseMiloCommand(text: string, now = new Date()): MiloCommand {
     }
   }
   const transactionSearch = value.match(/^(?:ค้นหา|หา)รายการ\s+(.+)$/i); if (transactionSearch) return { type: "transactionSearch", query: transactionSearch[1].trim() };
+  if (/^(?:ยกเลิก|ลบ)(?:รายการ)?ล่าสุด$/i.test(value) || /^undo$/i.test(value)) return { type: "transactionUndo" };
   const transactionDelete = value.match(/^ลบรายการ\s*#?(\d+)$/i); if (transactionDelete) return { type: "transactionDelete", id: Number(transactionDelete[1]) };
   const transactionUpdate = value.match(/^แก้รายการ\s*#?(\d+)\s*(?:เป็น|ยอด)\s*(\d[\d,]*(?:\.\d{1,2})?)\s*(?:บาท)?$/i); if (transactionUpdate) return { type: "transactionUpdate", id: Number(transactionUpdate[1]), amount: Number(transactionUpdate[2].replace(/,/g, "")) };
   const openingBalance = value.match(/^(?:ตั้ง)?ยอด(?:เงิน)?เริ่มต้น\s*(\d[\d,]*(?:\.\d{1,2})?)\s*(?:บาท)?$/i); if (openingBalance) return { type: "openingBalance", amount: Number(openingBalance[1].replace(/,/g, "")) };

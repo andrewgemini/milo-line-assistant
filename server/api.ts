@@ -21,6 +21,15 @@ const app = express();
 
 app.set("trust proxy", 1);
 
+app.use((_req, res, next) => {
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+  res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+  res.setHeader("X-Frame-Options", "SAMEORIGIN");
+  if (process.env.NODE_ENV === "production") res.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
+  next();
+});
+
 // Webhook routes verify their own payload/signature and therefore must be
 // registered before the generic JSON parser.
 registerSaveResultImageRoute(app);
@@ -29,8 +38,8 @@ registerRichMenuDataImageRoute(app);
 registerFinanceExportRoute(app);
 registerLineWebhook(app);
 
-app.use(express.json({ limit: "50mb" }));
-app.use(express.urlencoded({ limit: "50mb", extended: true }));
+app.use(express.json({ limit: "10mb" }));
+app.use(express.urlencoded({ limit: "10mb", extended: true }));
 
 registerStorageProxy(app);
 registerOAuthRoutes(app);
@@ -41,9 +50,9 @@ const healthHandler = async (req: express.Request, res: express.Response) => {
   const mode = runtime.mode;
   const voice = voiceTranscriptionRuntimeStatus(gatewayToken);
   res.status(200).json({
-    status: "ok",
+    status: runtime.authenticated && voice.configured && Boolean(process.env.LINE_CHANNEL_SECRET?.trim()) && Boolean(process.env.LINE_CHANNEL_ACCESS_TOKEN?.trim()) && Boolean(process.env.DATABASE_URL?.trim()) ? "ok" : "degraded",
     service: "milo",
-    release: "dashboard-media-v18-save-card-merchant-fit-2026-09-14",
+    release: "production-hardening-v19-2026-09-14",
     visionConfigured: runtime.authenticated,
     imageAnalysisMode: mode,
     visionModel: mode === "ocr-fallback" ? "tesseract-tha+eng" : process.env.MILO_VISION_MODEL || (mode.startsWith("vercel-ai-gateway") ? "google/gemini-2.5-flash" : mode.startsWith("forge-vision") ? "gemini-3-flash-preview" : "unconfigured"),
@@ -52,6 +61,15 @@ const healthHandler = async (req: express.Request, res: express.Response) => {
     voiceTranscriptionMode: voice.mode,
     voiceLocalBundled: voice.local?.bundled ?? false,
     voiceLocalModel: voice.local?.model ?? null,
+    readiness: {
+      lineConfigured: Boolean(process.env.LINE_CHANNEL_SECRET?.trim()) && Boolean(process.env.LINE_CHANNEL_ACCESS_TOKEN?.trim()),
+      databaseConfigured: Boolean(process.env.DATABASE_URL?.trim()),
+      exportSigningConfigured: Boolean(process.env.LINE_CHANNEL_SECRET?.trim() || process.env.CRON_SECRET?.trim() || process.env.SESSION_SECRET?.trim()),
+      cronConfigured: Boolean(process.env.CRON_SECRET?.trim()),
+      duplicateProtection: true,
+      undoSupported: true,
+      webhookSignatureVerification: true,
+    },
     timestamp: new Date().toISOString(),
   });
 };

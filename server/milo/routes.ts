@@ -150,7 +150,7 @@ async function handleText(event: LineEvent, lineChatId: string, lineUserId: stri
   const command = parseMiloCommand(text);
   const plan = resolveMiloPlan(lineUserId, process.env, await db.isAdminLinkedLineUser(lineUserId));
   let message = "";
-  const financeCommands = new Set(["expense", "income", "transactionSearch", "transactionDelete", "transactionUpdate", "openingBalance", "financeReport", "aiSummary", "budgetOverview", "transactionList", "voiceConfirm", "voiceEditPrompt", "voiceCategoryChange", "voiceEdit", "budget", "budgetCycleStart", "categoryAdd", "categoryRemove", "categoryList", "imageConfirm", "imageEdit", "pdfConfirm", "recurringCreate", "recurringList", "recurringStatus", "exportFinance"]);
+  const financeCommands = new Set(["expense", "income", "transactionSearch", "transactionUndo", "transactionDelete", "transactionUpdate", "openingBalance", "financeReport", "aiSummary", "budgetOverview", "transactionList", "voiceConfirm", "voiceEditPrompt", "voiceCategoryChange", "voiceEdit", "budget", "budgetCycleStart", "categoryAdd", "categoryRemove", "categoryList", "imageConfirm", "imageEdit", "pdfConfirm", "recurringCreate", "recurringList", "recurringStatus", "exportFinance"]);
   if (command.type === "reminder" && !hasMiloEntitlement(plan, "reminders")) { if (event.replyToken) await replyText(event.replyToken, entitlementMessage("reminders")); return; }
   if (command.type === "pdfConfirm" && !hasMiloEntitlement(plan, "pdf")) { if (event.replyToken) await replyText(event.replyToken, entitlementMessage("pdf")); return; }
   if (command.type === "budgetCycleStart" && !hasMiloEntitlement(plan, "customBudgetCycle")) { if (event.replyToken) await replyText(event.replyToken, entitlementMessage("customBudgetCycle")); return; }
@@ -180,6 +180,11 @@ async function handleText(event: LineEvent, lineChatId: string, lineUserId: stri
   } else if (command.type === "transactionSearch") {
     const results = await db.searchTransactions(lineUserId, command.query, 10, financeScope!.financeAccountId);
     message = results.length ? `พบ ${results.length} รายการ\n${results.map(item => `#${item.id} · ${item.transactionType === "expense" ? "จ่าย" : "รับ"} ${Number(item.amount).toLocaleString("th-TH")} บาท · ${item.category}${item.note ? ` · ${item.note}` : ""}`).join("\n")}` : `ยังไม่พบธุรกรรม “${command.query}”`;
+  } else if (command.type === "transactionUndo") {
+    if (!db.canManageFinanceTransactions(financeScope!.role)) { message = "สิทธิ์ของคุณยังยกเลิกรายการในสมุดบัญชีนี้ไม่ได้"; if (event.replyToken) await replyText(event.replyToken, message); return; }
+    const undone = await db.deleteLatestTransaction({ lineUserId, financeAccountId: financeScope!.financeAccountId });
+    message = undone ? `ยกเลิกรายการล่าสุด #${undone.id} แล้ว • ${Number(undone.amount).toLocaleString("th-TH")} บาท • ${undone.category}
+ข้อมูลยังอยู่ใน Audit log และไม่ถูกนำไปรวมยอด` : "ยังไม่มีรายการล่าสุดที่ยกเลิกได้ครับ";
   } else if (command.type === "transactionDelete") {
     if (!db.canManageFinanceTransactions(financeScope!.role)) { message = "สิทธิ์ของคุณยังลบรายการในสมุดบัญชีนี้ไม่ได้"; if (event.replyToken) await replyText(event.replyToken, message); return; }
     const deleted = await db.deleteTransaction({ id: command.id, lineUserId, financeAccountId: financeScope!.financeAccountId });
@@ -209,7 +214,7 @@ async function handleText(event: LineEvent, lineChatId: string, lineUserId: stri
       const proposed = proposalFromStoredTranscript(voice.transcript, voice.proposalJson);
       if (proposed.transactionType && proposed.amount && proposed.category) {
         const occurredAt = Number.isFinite(event.timestamp) ? new Date(event.timestamp) : new Date();
-        const transactionId = await db.createTransaction({ lineChatId, lineUserId, financeAccountId: financeScope!.financeAccountId, transactionType: proposed.transactionType, amount: proposed.amount, category: proposed.category, note: proposed.note, occurredAt, source: "line_audio" });
+        const transactionId = await db.createTransaction({ lineChatId, lineUserId, financeAccountId: financeScope!.financeAccountId, transactionType: proposed.transactionType, amount: proposed.amount, category: proposed.category, note: proposed.note, occurredAt, source: "line_audio", sourceMessageId: `voice:${voice.id}` });
         await db.linkTransactionAttachment({ transactionId, vaultItemId: voice.vaultItemId, lineUserId, label: "ไฟล์เสียงต้นฉบับ" });
         await db.updateVoiceTranscriptionStatus(voice.id, "accepted");
         if (event.replyToken) { await sendPostSaveSummary(event.replyToken, lineUserId, lineChatId, financeScope!.financeAccountId, { ...proposed, occurredAt }); return; }
@@ -352,13 +357,14 @@ async function handleText(event: LineEvent, lineChatId: string, lineUserId: stri
       const analysis = JSON.parse(latest.extraction.extractedJson) as { proposals?: Array<Record<string, unknown>> };
       const proposals = (analysis.proposals ?? []).filter(item => item.kind === "expense" && Number(item.amount ?? 0) > 0).slice(0, 100);
       let created = 0; let skipped = 0;
-      for (const raw of proposals) {
+      for (let proposalIndex = 0; proposalIndex < proposals.length; proposalIndex += 1) {
+        const raw = proposals[proposalIndex];
         const proposal = raw as any;
         const occurredAt = parseExtractedDate(String(proposal.dateText ?? ""), String(proposal.timeText ?? ""));
         if (!occurredAt) { skipped += 1; continue; }
         const amount = Number(proposal.amount);
         const category = normalizeExpenseCategory(String(proposal.category ?? ""), `${proposal.title ?? ""} ${proposal.merchant ?? ""} ${proposal.note ?? ""}`);
-        const transactionId = await db.createTransaction({ lineChatId, lineUserId, financeAccountId: financeScope!.financeAccountId, transactionType: "expense", amount, category, note: buildExpenseNote(proposal), occurredAt, source: "line_pdf" });
+        const transactionId = await db.createTransaction({ lineChatId, lineUserId, financeAccountId: financeScope!.financeAccountId, transactionType: "expense", amount, category, note: buildExpenseNote(proposal), occurredAt, source: "line_pdf", sourceMessageId: latest.vault.lineMessageId ? `${latest.vault.lineMessageId}:pdf:${proposalIndex}` : `pdf-extraction:${latest.extraction.id}:${proposalIndex}` });
         await db.linkTransactionAttachment({ transactionId, vaultItemId: latest.vault.id, lineUserId, label: "PDF ต้นฉบับ" });
         created += 1;
       }
@@ -391,7 +397,7 @@ async function handleText(event: LineEvent, lineChatId: string, lineUserId: stri
           const note = resolvedDate.source === "upload-date"
             ? [baseNote, "วันที่อ้างอิงจากวันที่ส่งรูป เนื่องจาก OCR อ่านวันที่บนเอกสารไม่ชัด"].filter(Boolean).join(" | ")
             : baseNote;
-          const transactionId = await db.createTransaction({ lineChatId, lineUserId, financeAccountId: financeScope!.financeAccountId, transactionType: "expense", amount, category, note, occurredAt, source: "line_image" });
+          const transactionId = await db.createTransaction({ lineChatId, lineUserId, financeAccountId: financeScope!.financeAccountId, transactionType: "expense", amount, category, note, occurredAt, source: "line_image", sourceMessageId: latest.vault.lineMessageId ?? `image-extraction:${latest.extraction.id}` });
           await db.linkTransactionAttachment({ transactionId, vaultItemId: latest.vault.id, lineUserId, label: proposal.documentType === "bank_slip" ? "สลิปต้นฉบับ" : "ใบเสร็จต้นฉบับ" });
           await db.setImageExtractionStatus(latest.extraction.id, "accepted");
           if (event.replyToken) { await sendPostSaveSummary(event.replyToken, lineUserId, lineChatId, financeScope!.financeAccountId, { transactionType: "expense", amount, category, note, occurredAt }); return; }
@@ -671,7 +677,7 @@ export async function processEvent(event: LineEvent, rawPayload: string, runtime
 }
 
 export function registerLineWebhook(app: Express) {
-  app.post("/api/line/webhook", express.raw({ type: "*/*", limit: "50mb" }), async (req: Request, res: Response) => {
+  app.post("/api/line/webhook", express.raw({ type: "*/*", limit: "2mb" }), async (req: Request, res: Response) => {
     const raw = req.body as Buffer;
     const credentials = lineCredentials();
     if (!verifyLineSignature(raw, req.header("x-line-signature"), credentials.channelSecret)) return res.status(401).json({ error: "invalid signature" });

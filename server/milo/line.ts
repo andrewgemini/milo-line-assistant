@@ -303,7 +303,15 @@ export async function replyPostSaveSummaryImage(replyToken: string, summary: Pos
   return callLine("/v2/bot/message/reply", credentials, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ replyToken, messages: [{ type: "image", originalContentUrl: imageUrl, previewImageUrl: imageUrl }] }),
+    body: JSON.stringify({ replyToken, messages: [{
+      type: "image",
+      originalContentUrl: imageUrl,
+      previewImageUrl: imageUrl,
+      quickReply: { items: [
+        { type: "action", action: { type: "message", label: "ยกเลิกรายการล่าสุด", text: "ยกเลิกรายการล่าสุด" } },
+        { type: "action", action: { type: "message", label: "สรุปวันนี้", text: "สรุปวันนี้" } },
+      ] },
+    }] }),
   });
 }
 

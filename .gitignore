@@ -112,3 +112,9 @@ temp/
 # Manus version file (auto-generated, not part of source)
 client/public/__manus__/version.json
 .project-config.json
+
+# Local release-hardening scratch files
+.tmp-*
+scripts/patch-*.mjs
+scripts/repro-*.ts
+scripts/diag-*.mjs

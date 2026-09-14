@@ -757,9 +757,14 @@ async function writeAuditLog(input) {
 }
 async function createTransaction(input) {
   const db = await requireDb();
+  if (input.sourceMessageId) {
+    const sourceScope = input.financeAccountId === void 0 ? eq(transactions.lineUserId, input.lineUserId) : eq(transactions.financeAccountId, input.financeAccountId);
+    const existing = (await db.select({ id: transactions.id }).from(transactions).where(and(sourceScope, eq(transactions.sourceMessageId, input.sourceMessageId))).orderBy(desc(transactions.id)).limit(1))[0];
+    if (existing) return existing.id;
+  }
   const result = await db.insert(transactions).values({ ...input, amount: String(input.amount), note: input.note ?? null, occurredAt: input.occurredAt ?? /* @__PURE__ */ new Date(), source: input.source ?? "line_text", sourceMessageId: input.sourceMessageId ?? null });
   const id = Number(result[0].insertId);
-  await writeAuditLog({ action: "transaction.create", entityType: "transaction", entityId: id, actorLineUserId: input.lineUserId, lineChatId: input.lineChatId, details: { transactionType: input.transactionType, amount: input.amount, category: input.category, source: input.source ?? "line_text" } });
+  await writeAuditLog({ action: "transaction.create", entityType: "transaction", entityId: id, actorLineUserId: input.lineUserId, lineChatId: input.lineChatId, details: { transactionType: input.transactionType, amount: input.amount, category: input.category, source: input.source ?? "line_text", sourceMessageId: input.sourceMessageId ?? null } });
   return id;
 }
 async function linkTransactionAttachment(input) {
@@ -807,6 +812,15 @@ async function updateTransaction(input) {
   await db.update(transactions).set(values).where(eq(transactions.id, input.id));
   await writeAuditLog({ action: "transaction.update", entityType: "transaction", entityId: input.id, actorLineUserId: input.lineUserId, dashboardUserId: input.actorDashboardUserId, lineChatId: current.lineChatId, details: { before: { amount: current.amount, category: current.category, note: current.note, transactionType: current.transactionType, occurredAt: current.occurredAt }, after: { amount: input.amount, category: input.category, note: input.note, transactionType: input.transactionType, occurredAt: input.occurredAt } } });
   return true;
+}
+async function deleteLatestTransaction(input) {
+  const db = await requireDb();
+  const scope = input.financeAccountId === void 0 ? eq(transactions.lineUserId, input.lineUserId) : eq(transactions.financeAccountId, input.financeAccountId);
+  const current = (await db.select().from(transactions).where(and(scope, eq(transactions.status, "active"))).orderBy(desc(transactions.createdAt), desc(transactions.id)).limit(1))[0];
+  if (!current) return void 0;
+  await db.update(transactions).set({ status: "deleted", deletedAt: /* @__PURE__ */ new Date() }).where(eq(transactions.id, current.id));
+  await writeAuditLog({ action: "transaction.undo", entityType: "transaction", entityId: current.id, actorLineUserId: input.lineUserId, lineChatId: current.lineChatId, details: { amount: current.amount, category: current.category, note: current.note, transactionType: current.transactionType, source: current.source } });
+  return current;
 }
 async function deleteTransaction(input) {
   const db = await requireDb();
@@ -2367,7 +2381,15 @@ async function replyPostSaveSummaryImage(replyToken, summary, credentials = line
   return callLine("/v2/bot/message/reply", credentials, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ replyToken, messages: [{ type: "image", originalContentUrl: imageUrl, previewImageUrl: imageUrl }] })
+    body: JSON.stringify({ replyToken, messages: [{
+      type: "image",
+      originalContentUrl: imageUrl,
+      previewImageUrl: imageUrl,
+      quickReply: { items: [
+        { type: "action", action: { type: "message", label: "\u0E22\u0E01\u0E40\u0E25\u0E34\u0E01\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E25\u0E48\u0E32\u0E2A\u0E38\u0E14", text: "\u0E22\u0E01\u0E40\u0E25\u0E34\u0E01\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E25\u0E48\u0E32\u0E2A\u0E38\u0E14" } },
+        { type: "action", action: { type: "message", label: "\u0E2A\u0E23\u0E38\u0E1B\u0E27\u0E31\u0E19\u0E19\u0E35\u0E49", text: "\u0E2A\u0E23\u0E38\u0E1B\u0E27\u0E31\u0E19\u0E19\u0E35\u0E49" } }
+      ] }
+    }] })
   });
 }
 async function replyVoiceCategoryChoices(replyToken, credentials = lineCredentials()) {
@@ -5133,6 +5155,7 @@ function parseMiloCommand(text2, now = /* @__PURE__ */ new Date()) {
   }
   const transactionSearch = value.match(/^(?:ค้นหา|หา)รายการ\s+(.+)$/i);
   if (transactionSearch) return { type: "transactionSearch", query: transactionSearch[1].trim() };
+  if (/^(?:ยกเลิก|ลบ)(?:รายการ)?ล่าสุด$/i.test(value) || /^undo$/i.test(value)) return { type: "transactionUndo" };
   const transactionDelete = value.match(/^ลบรายการ\s*#?(\d+)$/i);
   if (transactionDelete) return { type: "transactionDelete", id: Number(transactionDelete[1]) };
   const transactionUpdate = value.match(/^แก้รายการ\s*#?(\d+)\s*(?:เป็น|ยอด)\s*(\d[\d,]*(?:\.\d{1,2})?)\s*(?:บาท)?$/i);
@@ -5584,7 +5607,7 @@ ${lineUserId}
   const command = parseMiloCommand(text2);
   const plan = resolveMiloPlan(lineUserId, process.env, await isAdminLinkedLineUser(lineUserId));
   let message = "";
-  const financeCommands = /* @__PURE__ */ new Set(["expense", "income", "transactionSearch", "transactionDelete", "transactionUpdate", "openingBalance", "financeReport", "aiSummary", "budgetOverview", "transactionList", "voiceConfirm", "voiceEditPrompt", "voiceCategoryChange", "voiceEdit", "budget", "budgetCycleStart", "categoryAdd", "categoryRemove", "categoryList", "imageConfirm", "imageEdit", "pdfConfirm", "recurringCreate", "recurringList", "recurringStatus", "exportFinance"]);
+  const financeCommands = /* @__PURE__ */ new Set(["expense", "income", "transactionSearch", "transactionUndo", "transactionDelete", "transactionUpdate", "openingBalance", "financeReport", "aiSummary", "budgetOverview", "transactionList", "voiceConfirm", "voiceEditPrompt", "voiceCategoryChange", "voiceEdit", "budget", "budgetCycleStart", "categoryAdd", "categoryRemove", "categoryList", "imageConfirm", "imageEdit", "pdfConfirm", "recurringCreate", "recurringList", "recurringStatus", "exportFinance"]);
   if (command.type === "reminder" && !hasMiloEntitlement(plan, "reminders")) {
     if (event.replyToken) await replyText(event.replyToken, entitlementMessage("reminders"));
     return;
@@ -5637,6 +5660,15 @@ ${command.data.title}
     const results = await searchTransactions(lineUserId, command.query, 10, financeScope.financeAccountId);
     message = results.length ? `\u0E1E\u0E1A ${results.length} \u0E23\u0E32\u0E22\u0E01\u0E32\u0E23
 ${results.map((item) => `#${item.id} \xB7 ${item.transactionType === "expense" ? "\u0E08\u0E48\u0E32\u0E22" : "\u0E23\u0E31\u0E1A"} ${Number(item.amount).toLocaleString("th-TH")} \u0E1A\u0E32\u0E17 \xB7 ${item.category}${item.note ? ` \xB7 ${item.note}` : ""}`).join("\n")}` : `\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E1E\u0E1A\u0E18\u0E38\u0E23\u0E01\u0E23\u0E23\u0E21 \u201C${command.query}\u201D`;
+  } else if (command.type === "transactionUndo") {
+    if (!canManageFinanceTransactions(financeScope.role)) {
+      message = "\u0E2A\u0E34\u0E17\u0E18\u0E34\u0E4C\u0E02\u0E2D\u0E07\u0E04\u0E38\u0E13\u0E22\u0E31\u0E07\u0E22\u0E01\u0E40\u0E25\u0E34\u0E01\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E43\u0E19\u0E2A\u0E21\u0E38\u0E14\u0E1A\u0E31\u0E0D\u0E0A\u0E35\u0E19\u0E35\u0E49\u0E44\u0E21\u0E48\u0E44\u0E14\u0E49";
+      if (event.replyToken) await replyText(event.replyToken, message);
+      return;
+    }
+    const undone = await deleteLatestTransaction({ lineUserId, financeAccountId: financeScope.financeAccountId });
+    message = undone ? `\u0E22\u0E01\u0E40\u0E25\u0E34\u0E01\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E25\u0E48\u0E32\u0E2A\u0E38\u0E14 #${undone.id} \u0E41\u0E25\u0E49\u0E27 \u2022 ${Number(undone.amount).toLocaleString("th-TH")} \u0E1A\u0E32\u0E17 \u2022 ${undone.category}
+\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E22\u0E31\u0E07\u0E2D\u0E22\u0E39\u0E48\u0E43\u0E19 Audit log \u0E41\u0E25\u0E30\u0E44\u0E21\u0E48\u0E16\u0E39\u0E01\u0E19\u0E33\u0E44\u0E1B\u0E23\u0E27\u0E21\u0E22\u0E2D\u0E14` : "\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E21\u0E35\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E25\u0E48\u0E32\u0E2A\u0E38\u0E14\u0E17\u0E35\u0E48\u0E22\u0E01\u0E40\u0E25\u0E34\u0E01\u0E44\u0E14\u0E49\u0E04\u0E23\u0E31\u0E1A";
   } else if (command.type === "transactionDelete") {
     if (!canManageFinanceTransactions(financeScope.role)) {
       message = "\u0E2A\u0E34\u0E17\u0E18\u0E34\u0E4C\u0E02\u0E2D\u0E07\u0E04\u0E38\u0E13\u0E22\u0E31\u0E07\u0E25\u0E1A\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E43\u0E19\u0E2A\u0E21\u0E38\u0E14\u0E1A\u0E31\u0E0D\u0E0A\u0E35\u0E19\u0E35\u0E49\u0E44\u0E21\u0E48\u0E44\u0E14\u0E49";
@@ -5685,7 +5717,7 @@ ${results.map((item) => `#${item.id} \xB7 ${item.transactionType === "expense" ?
       const proposed = proposalFromStoredTranscript(voice.transcript, voice.proposalJson);
       if (proposed.transactionType && proposed.amount && proposed.category) {
         const occurredAt = Number.isFinite(event.timestamp) ? new Date(event.timestamp) : /* @__PURE__ */ new Date();
-        const transactionId = await createTransaction({ lineChatId, lineUserId, financeAccountId: financeScope.financeAccountId, transactionType: proposed.transactionType, amount: proposed.amount, category: proposed.category, note: proposed.note, occurredAt, source: "line_audio" });
+        const transactionId = await createTransaction({ lineChatId, lineUserId, financeAccountId: financeScope.financeAccountId, transactionType: proposed.transactionType, amount: proposed.amount, category: proposed.category, note: proposed.note, occurredAt, source: "line_audio", sourceMessageId: `voice:${voice.id}` });
         await linkTransactionAttachment({ transactionId, vaultItemId: voice.vaultItemId, lineUserId, label: "\u0E44\u0E1F\u0E25\u0E4C\u0E40\u0E2A\u0E35\u0E22\u0E07\u0E15\u0E49\u0E19\u0E09\u0E1A\u0E31\u0E1A" });
         await updateVoiceTranscriptionStatus(voice.id, "accepted");
         if (event.replyToken) {
@@ -5891,7 +5923,8 @@ ${incomeSection}
       const proposals = (analysis.proposals ?? []).filter((item) => item.kind === "expense" && Number(item.amount ?? 0) > 0).slice(0, 100);
       let created = 0;
       let skipped = 0;
-      for (const raw of proposals) {
+      for (let proposalIndex = 0; proposalIndex < proposals.length; proposalIndex += 1) {
+        const raw = proposals[proposalIndex];
         const proposal = raw;
         const occurredAt = parseExtractedDate(String(proposal.dateText ?? ""), String(proposal.timeText ?? ""));
         if (!occurredAt) {
@@ -5900,7 +5933,7 @@ ${incomeSection}
         }
         const amount = Number(proposal.amount);
         const category = normalizeExpenseCategory(String(proposal.category ?? ""), `${proposal.title ?? ""} ${proposal.merchant ?? ""} ${proposal.note ?? ""}`);
-        const transactionId = await createTransaction({ lineChatId, lineUserId, financeAccountId: financeScope.financeAccountId, transactionType: "expense", amount, category, note: buildExpenseNote(proposal), occurredAt, source: "line_pdf" });
+        const transactionId = await createTransaction({ lineChatId, lineUserId, financeAccountId: financeScope.financeAccountId, transactionType: "expense", amount, category, note: buildExpenseNote(proposal), occurredAt, source: "line_pdf", sourceMessageId: latest.vault.lineMessageId ? `${latest.vault.lineMessageId}:pdf:${proposalIndex}` : `pdf-extraction:${latest.extraction.id}:${proposalIndex}` });
         await linkTransactionAttachment({ transactionId, vaultItemId: latest.vault.id, lineUserId, label: "PDF \u0E15\u0E49\u0E19\u0E09\u0E1A\u0E31\u0E1A" });
         created += 1;
       }
@@ -5934,7 +5967,7 @@ ${incomeSection}
         } else {
           const baseNote = buildExpenseNote(proposal);
           const note = resolvedDate.source === "upload-date" ? [baseNote, "\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48\u0E2D\u0E49\u0E32\u0E07\u0E2D\u0E34\u0E07\u0E08\u0E32\u0E01\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48\u0E2A\u0E48\u0E07\u0E23\u0E39\u0E1B \u0E40\u0E19\u0E37\u0E48\u0E2D\u0E07\u0E08\u0E32\u0E01 OCR \u0E2D\u0E48\u0E32\u0E19\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48\u0E1A\u0E19\u0E40\u0E2D\u0E01\u0E2A\u0E32\u0E23\u0E44\u0E21\u0E48\u0E0A\u0E31\u0E14"].filter(Boolean).join(" | ") : baseNote;
-          const transactionId = await createTransaction({ lineChatId, lineUserId, financeAccountId: financeScope.financeAccountId, transactionType: "expense", amount, category, note, occurredAt, source: "line_image" });
+          const transactionId = await createTransaction({ lineChatId, lineUserId, financeAccountId: financeScope.financeAccountId, transactionType: "expense", amount, category, note, occurredAt, source: "line_image", sourceMessageId: latest.vault.lineMessageId ?? `image-extraction:${latest.extraction.id}` });
           await linkTransactionAttachment({ transactionId, vaultItemId: latest.vault.id, lineUserId, label: proposal.documentType === "bank_slip" ? "\u0E2A\u0E25\u0E34\u0E1B\u0E15\u0E49\u0E19\u0E09\u0E1A\u0E31\u0E1A" : "\u0E43\u0E1A\u0E40\u0E2A\u0E23\u0E47\u0E08\u0E15\u0E49\u0E19\u0E09\u0E1A\u0E31\u0E1A" });
           await setImageExtractionStatus(latest.extraction.id, "accepted");
           if (event.replyToken) {
@@ -6259,7 +6292,7 @@ async function processEvent(event, rawPayload, runtime = {}) {
   }
 }
 function registerLineWebhook(app2) {
-  app2.post("/api/line/webhook", express.raw({ type: "*/*", limit: "50mb" }), async (req, res) => {
+  app2.post("/api/line/webhook", express.raw({ type: "*/*", limit: "2mb" }), async (req, res) => {
     const raw = req.body;
     const credentials = lineCredentials();
     if (!verifyLineSignature(raw, req.header("x-line-signature"), credentials.channelSecret)) return res.status(401).json({ error: "invalid signature" });
@@ -6537,13 +6570,21 @@ function registerSaveResultImageRoute(app2) {
 // server/api.ts
 var app = express2();
 app.set("trust proxy", 1);
+app.use((_req, res, next) => {
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+  res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+  res.setHeader("X-Frame-Options", "SAMEORIGIN");
+  if (process.env.NODE_ENV === "production") res.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
+  next();
+});
 registerSaveResultImageRoute(app);
 registerFinanceReportImageRoute(app);
 registerRichMenuDataImageRoute(app);
 registerFinanceExportRoute(app);
 registerLineWebhook(app);
-app.use(express2.json({ limit: "50mb" }));
-app.use(express2.urlencoded({ limit: "50mb", extended: true }));
+app.use(express2.json({ limit: "10mb" }));
+app.use(express2.urlencoded({ limit: "10mb", extended: true }));
 registerStorageProxy(app);
 registerOAuthRoutes(app);
 var healthHandler = async (req, res) => {
@@ -6552,9 +6593,9 @@ var healthHandler = async (req, res) => {
   const mode = runtime.mode;
   const voice = voiceTranscriptionRuntimeStatus(gatewayToken);
   res.status(200).json({
-    status: "ok",
+    status: runtime.authenticated && voice.configured && Boolean(process.env.LINE_CHANNEL_SECRET?.trim()) && Boolean(process.env.LINE_CHANNEL_ACCESS_TOKEN?.trim()) && Boolean(process.env.DATABASE_URL?.trim()) ? "ok" : "degraded",
     service: "milo",
-    release: "dashboard-media-v18-save-card-merchant-fit-2026-09-14",
+    release: "production-hardening-v19-2026-09-14",
     visionConfigured: runtime.authenticated,
     imageAnalysisMode: mode,
     visionModel: mode === "ocr-fallback" ? "tesseract-tha+eng" : process.env.MILO_VISION_MODEL || (mode.startsWith("vercel-ai-gateway") ? "google/gemini-2.5-flash" : mode.startsWith("forge-vision") ? "gemini-3-flash-preview" : "unconfigured"),
@@ -6563,6 +6604,15 @@ var healthHandler = async (req, res) => {
     voiceTranscriptionMode: voice.mode,
     voiceLocalBundled: voice.local?.bundled ?? false,
     voiceLocalModel: voice.local?.model ?? null,
+    readiness: {
+      lineConfigured: Boolean(process.env.LINE_CHANNEL_SECRET?.trim()) && Boolean(process.env.LINE_CHANNEL_ACCESS_TOKEN?.trim()),
+      databaseConfigured: Boolean(process.env.DATABASE_URL?.trim()),
+      exportSigningConfigured: Boolean(process.env.LINE_CHANNEL_SECRET?.trim() || process.env.CRON_SECRET?.trim() || process.env.SESSION_SECRET?.trim()),
+      cronConfigured: Boolean(process.env.CRON_SECRET?.trim()),
+      duplicateProtection: true,
+      undoSupported: true,
+      webhookSignatureVerification: true
+    },
     timestamp: (/* @__PURE__ */ new Date()).toISOString()
   });
 };
