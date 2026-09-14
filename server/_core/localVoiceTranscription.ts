@@ -29,7 +29,9 @@ function bundledModelReady(cacheDir = cacheDirPath(), model = modelName()) {
 function enabledFlag() {
   const raw = (process.env.MILO_LOCAL_STT_ENABLED || "").trim();
   if (raw) return /^(1|true|yes|on)$/i.test(raw);
-  return bundledModelReady();
+  // Bundling a model does not establish Thai transcription accuracy. The tiny
+  // model produced incorrect text on real LINE clips; require explicit opt-in.
+  return false;
 }
 
 export function localVoiceRuntimeStatus() {

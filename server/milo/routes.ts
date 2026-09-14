@@ -551,13 +551,15 @@ async function handleMedia(event: LineEvent, lineChatId: string, lineUserId: str
       const proposalLine = proposal.transactionType && proposal.amount
         ? `เสนอ${proposal.transactionType === "expense" ? "รายจ่าย" : "รายรับ"} ${proposal.amount.toLocaleString("th-TH")} บาท • หมวด${proposal.category ?? "ทั่วไป"}`
         : "ยังไม่พบรูปแบบรายรับ/รายจ่ายที่แน่ชัด";
-      await pushTextWithQuickReplies(lineChatId, `ถอดเสียงเรียบร้อยแล้ว\n“${proposal.transcript.slice(0, 900)}”\n${proposalLine}\nตรวจรายละเอียดแล้วกด “ยืนยันบันทึก” ได้เลยครับ`, [{ label: "ยืนยันบันทึก", text: "ยืนยันเสียง" }, { label: "แก้ไขข้อความ", text: "แก้ไขข้อความเสียง" }]);
+      const canConfirm = Boolean(proposal.transactionType && proposal.amount);
+      const nextStep = canConfirm ? "ตรวจรายละเอียดแล้วกด “ยืนยันบันทึก” ได้เลยน่ะจ๊ะ" : "ยังบันทึกไม่ได้ กรุณากดแก้ไขข้อความให้มีรายการและจำนวนเงิน เช่น “ค่ากาแฟ 40 บาท” น่ะจ๊ะ";
+      await pushTextWithQuickReplies(lineChatId, `ถอดเสียงได้ว่า\n“${proposal.transcript.slice(0, 900)}”\n${proposalLine}\n${nextStep}`, [...(canConfirm ? [{ label: "ยืนยันบันทึก", text: "ยืนยันเสียง" }] : []), { label: "แก้ไขข้อความ", text: "แก้ไขข้อความเสียง" }]);
     } catch (error) {
       console.error("[Milo Voice] transcription failed", { messageId: message.id, error: error instanceof Error ? error.message : "unknown" });
-      const runtimeMissing = error instanceof Error && /not configured/i.test(error.message);
+      const runtimeMissing = error instanceof Error && /not configured|valid credit card|payment required|insufficient.*(?:credit|quota)|billing/i.test(error.message);
       const fallback = runtimeMissing
-        ? "รับและเก็บข้อความเสียงไว้แล้ว แต่ระบบถอดเสียงยังไม่ได้เชื่อมต่อผู้ให้บริการ STT ใน Production ตอนนี้ กรุณาพิมพ์รายการแทนชั่วคราว เช่น “กินกาแฟ 80” ครับ"
-        : "เก็บข้อความเสียงไว้แล้ว แต่ยังถอดเสียงไม่ได้ในครั้งนี้ กรุณาลองอัดใหม่ให้ชัดเจน ความยาวสั้น ๆ และขนาดไม่เกิน 16MB ครับ";
+        ? "รับข้อความเสียงแล้ว แต่บริการถอดเสียงยังไม่พร้อมใช้งาน ต้องแก้การตั้งค่าบริการก่อน ตอนนี้กรุณาพิมพ์รายการแทน เช่น “ค่ากาแฟ 40 บาท” น่ะจ๊ะ"
+        : "รับข้อความเสียงแล้ว แต่ยังถอดเสียงไม่ได้ในครั้งนี้ ยังไม่มีการบันทึกรายการ กรุณาพิมพ์รายการแทนชั่วคราวน่ะจ๊ะ";
       let userNotified = false;
       try { await pushText(lineChatId, fallback); userNotified = true; }
       catch (pushError) { console.error("[Milo Voice] failure notification failed", { messageId: message.id, error: pushError instanceof Error ? pushError.message : "unknown" }); }

@@ -22,6 +22,10 @@ afterEach(() => {
 });
 
 describe("local voice transcription runtime", () => {
+  it("does not enable an inaccurate fallback merely because model files exist", () => {
+    delete process.env.MILO_LOCAL_STT_ENABLED;
+    expect(localVoiceRuntimeStatus().enabled).toBe(false);
+  });
   it("reports bundled Whisper ONNX assets and ffmpeg when present", () => {
     const status = localVoiceRuntimeStatus();
     expect(status.bundled).toBe(true);

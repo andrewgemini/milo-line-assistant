@@ -1,6 +1,5 @@
 // server/api.ts
 import express2 from "express";
-import crypto7 from "node:crypto";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 
 // server/routers.ts
@@ -3435,7 +3434,7 @@ function bundledModelReady(cacheDir = cacheDirPath(), model = modelName()) {
 function enabledFlag() {
   const raw = (process.env.MILO_LOCAL_STT_ENABLED || "").trim();
   if (raw) return /^(1|true|yes|on)$/i.test(raw);
-  return bundledModelReady();
+  return false;
 }
 function localVoiceRuntimeStatus() {
   const cacheDir = cacheDirPath();
@@ -5661,14 +5660,16 @@ async function handleMedia(event, lineChatId, lineUserId, scope, runtime = {}) {
       const proposal = await buildVoiceProposal(transcript.text, lineUserId, financeScope?.financeAccountId);
       await saveVoiceTranscription({ vaultItemId: vaultId, lineChatId, lineUserId, transcript: transcript.text, language: transcript.language, durationSeconds: transcript.duration, proposalJson: JSON.stringify(proposal) });
       const proposalLine = proposal.transactionType && proposal.amount ? `\u0E40\u0E2A\u0E19\u0E2D${proposal.transactionType === "expense" ? "\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22" : "\u0E23\u0E32\u0E22\u0E23\u0E31\u0E1A"} ${proposal.amount.toLocaleString("th-TH")} \u0E1A\u0E32\u0E17 \u2022 \u0E2B\u0E21\u0E27\u0E14${proposal.category ?? "\u0E17\u0E31\u0E48\u0E27\u0E44\u0E1B"}` : "\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E1E\u0E1A\u0E23\u0E39\u0E1B\u0E41\u0E1A\u0E1A\u0E23\u0E32\u0E22\u0E23\u0E31\u0E1A/\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22\u0E17\u0E35\u0E48\u0E41\u0E19\u0E48\u0E0A\u0E31\u0E14";
-      await pushTextWithQuickReplies(lineChatId, `\u0E16\u0E2D\u0E14\u0E40\u0E2A\u0E35\u0E22\u0E07\u0E40\u0E23\u0E35\u0E22\u0E1A\u0E23\u0E49\u0E2D\u0E22\u0E41\u0E25\u0E49\u0E27
+      const canConfirm = Boolean(proposal.transactionType && proposal.amount);
+      const nextStep = canConfirm ? "\u0E15\u0E23\u0E27\u0E08\u0E23\u0E32\u0E22\u0E25\u0E30\u0E40\u0E2D\u0E35\u0E22\u0E14\u0E41\u0E25\u0E49\u0E27\u0E01\u0E14 \u201C\u0E22\u0E37\u0E19\u0E22\u0E31\u0E19\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u201D \u0E44\u0E14\u0E49\u0E40\u0E25\u0E22\u0E19\u0E48\u0E30\u0E08\u0E4A\u0E30" : "\u0E22\u0E31\u0E07\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E44\u0E21\u0E48\u0E44\u0E14\u0E49 \u0E01\u0E23\u0E38\u0E13\u0E32\u0E01\u0E14\u0E41\u0E01\u0E49\u0E44\u0E02\u0E02\u0E49\u0E2D\u0E04\u0E27\u0E32\u0E21\u0E43\u0E2B\u0E49\u0E21\u0E35\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E41\u0E25\u0E30\u0E08\u0E33\u0E19\u0E27\u0E19\u0E40\u0E07\u0E34\u0E19 \u0E40\u0E0A\u0E48\u0E19 \u201C\u0E04\u0E48\u0E32\u0E01\u0E32\u0E41\u0E1F 40 \u0E1A\u0E32\u0E17\u201D \u0E19\u0E48\u0E30\u0E08\u0E4A\u0E30";
+      await pushTextWithQuickReplies(lineChatId, `\u0E16\u0E2D\u0E14\u0E40\u0E2A\u0E35\u0E22\u0E07\u0E44\u0E14\u0E49\u0E27\u0E48\u0E32
 \u201C${proposal.transcript.slice(0, 900)}\u201D
 ${proposalLine}
-\u0E15\u0E23\u0E27\u0E08\u0E23\u0E32\u0E22\u0E25\u0E30\u0E40\u0E2D\u0E35\u0E22\u0E14\u0E41\u0E25\u0E49\u0E27\u0E01\u0E14 \u201C\u0E22\u0E37\u0E19\u0E22\u0E31\u0E19\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u201D \u0E44\u0E14\u0E49\u0E40\u0E25\u0E22\u0E04\u0E23\u0E31\u0E1A`, [{ label: "\u0E22\u0E37\u0E19\u0E22\u0E31\u0E19\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01", text: "\u0E22\u0E37\u0E19\u0E22\u0E31\u0E19\u0E40\u0E2A\u0E35\u0E22\u0E07" }, { label: "\u0E41\u0E01\u0E49\u0E44\u0E02\u0E02\u0E49\u0E2D\u0E04\u0E27\u0E32\u0E21", text: "\u0E41\u0E01\u0E49\u0E44\u0E02\u0E02\u0E49\u0E2D\u0E04\u0E27\u0E32\u0E21\u0E40\u0E2A\u0E35\u0E22\u0E07" }]);
+${nextStep}`, [...canConfirm ? [{ label: "\u0E22\u0E37\u0E19\u0E22\u0E31\u0E19\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01", text: "\u0E22\u0E37\u0E19\u0E22\u0E31\u0E19\u0E40\u0E2A\u0E35\u0E22\u0E07" }] : [], { label: "\u0E41\u0E01\u0E49\u0E44\u0E02\u0E02\u0E49\u0E2D\u0E04\u0E27\u0E32\u0E21", text: "\u0E41\u0E01\u0E49\u0E44\u0E02\u0E02\u0E49\u0E2D\u0E04\u0E27\u0E32\u0E21\u0E40\u0E2A\u0E35\u0E22\u0E07" }]);
     } catch (error) {
       console.error("[Milo Voice] transcription failed", { messageId: message.id, error: error instanceof Error ? error.message : "unknown" });
-      const runtimeMissing = error instanceof Error && /not configured/i.test(error.message);
-      const fallback = runtimeMissing ? "\u0E23\u0E31\u0E1A\u0E41\u0E25\u0E30\u0E40\u0E01\u0E47\u0E1A\u0E02\u0E49\u0E2D\u0E04\u0E27\u0E32\u0E21\u0E40\u0E2A\u0E35\u0E22\u0E07\u0E44\u0E27\u0E49\u0E41\u0E25\u0E49\u0E27 \u0E41\u0E15\u0E48\u0E23\u0E30\u0E1A\u0E1A\u0E16\u0E2D\u0E14\u0E40\u0E2A\u0E35\u0E22\u0E07\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E44\u0E14\u0E49\u0E40\u0E0A\u0E37\u0E48\u0E2D\u0E21\u0E15\u0E48\u0E2D\u0E1C\u0E39\u0E49\u0E43\u0E2B\u0E49\u0E1A\u0E23\u0E34\u0E01\u0E32\u0E23 STT \u0E43\u0E19 Production \u0E15\u0E2D\u0E19\u0E19\u0E35\u0E49 \u0E01\u0E23\u0E38\u0E13\u0E32\u0E1E\u0E34\u0E21\u0E1E\u0E4C\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E41\u0E17\u0E19\u0E0A\u0E31\u0E48\u0E27\u0E04\u0E23\u0E32\u0E27 \u0E40\u0E0A\u0E48\u0E19 \u201C\u0E01\u0E34\u0E19\u0E01\u0E32\u0E41\u0E1F 80\u201D \u0E04\u0E23\u0E31\u0E1A" : "\u0E40\u0E01\u0E47\u0E1A\u0E02\u0E49\u0E2D\u0E04\u0E27\u0E32\u0E21\u0E40\u0E2A\u0E35\u0E22\u0E07\u0E44\u0E27\u0E49\u0E41\u0E25\u0E49\u0E27 \u0E41\u0E15\u0E48\u0E22\u0E31\u0E07\u0E16\u0E2D\u0E14\u0E40\u0E2A\u0E35\u0E22\u0E07\u0E44\u0E21\u0E48\u0E44\u0E14\u0E49\u0E43\u0E19\u0E04\u0E23\u0E31\u0E49\u0E07\u0E19\u0E35\u0E49 \u0E01\u0E23\u0E38\u0E13\u0E32\u0E25\u0E2D\u0E07\u0E2D\u0E31\u0E14\u0E43\u0E2B\u0E21\u0E48\u0E43\u0E2B\u0E49\u0E0A\u0E31\u0E14\u0E40\u0E08\u0E19 \u0E04\u0E27\u0E32\u0E21\u0E22\u0E32\u0E27\u0E2A\u0E31\u0E49\u0E19 \u0E46 \u0E41\u0E25\u0E30\u0E02\u0E19\u0E32\u0E14\u0E44\u0E21\u0E48\u0E40\u0E01\u0E34\u0E19 16MB \u0E04\u0E23\u0E31\u0E1A";
+      const runtimeMissing = error instanceof Error && /not configured|valid credit card|payment required|insufficient.*(?:credit|quota)|billing/i.test(error.message);
+      const fallback = runtimeMissing ? "\u0E23\u0E31\u0E1A\u0E02\u0E49\u0E2D\u0E04\u0E27\u0E32\u0E21\u0E40\u0E2A\u0E35\u0E22\u0E07\u0E41\u0E25\u0E49\u0E27 \u0E41\u0E15\u0E48\u0E1A\u0E23\u0E34\u0E01\u0E32\u0E23\u0E16\u0E2D\u0E14\u0E40\u0E2A\u0E35\u0E22\u0E07\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E1E\u0E23\u0E49\u0E2D\u0E21\u0E43\u0E0A\u0E49\u0E07\u0E32\u0E19 \u0E15\u0E49\u0E2D\u0E07\u0E41\u0E01\u0E49\u0E01\u0E32\u0E23\u0E15\u0E31\u0E49\u0E07\u0E04\u0E48\u0E32\u0E1A\u0E23\u0E34\u0E01\u0E32\u0E23\u0E01\u0E48\u0E2D\u0E19 \u0E15\u0E2D\u0E19\u0E19\u0E35\u0E49\u0E01\u0E23\u0E38\u0E13\u0E32\u0E1E\u0E34\u0E21\u0E1E\u0E4C\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E41\u0E17\u0E19 \u0E40\u0E0A\u0E48\u0E19 \u201C\u0E04\u0E48\u0E32\u0E01\u0E32\u0E41\u0E1F 40 \u0E1A\u0E32\u0E17\u201D \u0E19\u0E48\u0E30\u0E08\u0E4A\u0E30" : "\u0E23\u0E31\u0E1A\u0E02\u0E49\u0E2D\u0E04\u0E27\u0E32\u0E21\u0E40\u0E2A\u0E35\u0E22\u0E07\u0E41\u0E25\u0E49\u0E27 \u0E41\u0E15\u0E48\u0E22\u0E31\u0E07\u0E16\u0E2D\u0E14\u0E40\u0E2A\u0E35\u0E22\u0E07\u0E44\u0E21\u0E48\u0E44\u0E14\u0E49\u0E43\u0E19\u0E04\u0E23\u0E31\u0E49\u0E07\u0E19\u0E35\u0E49 \u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E21\u0E35\u0E01\u0E32\u0E23\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23 \u0E01\u0E23\u0E38\u0E13\u0E32\u0E1E\u0E34\u0E21\u0E1E\u0E4C\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E41\u0E17\u0E19\u0E0A\u0E31\u0E48\u0E27\u0E04\u0E23\u0E32\u0E27\u0E19\u0E48\u0E30\u0E08\u0E4A\u0E30";
       let userNotified = false;
       try {
         await pushText(lineChatId, fallback);
@@ -6051,33 +6052,6 @@ registerFinanceExportRoute(app);
 registerLineWebhook(app);
 app.use(express2.json({ limit: "50mb" }));
 app.use(express2.urlencoded({ limit: "50mb", extended: true }));
-app.post("/api/internal/media-retry", async (req, res) => {
-  const timestamp2 = req.header("x-milo-diagnostic-timestamp") ?? "";
-  const supplied = req.header("x-milo-diagnostic-signature") ?? "";
-  const secret3 = process.env.LINE_CHANNEL_ACCESS_TOKEN ?? "";
-  const timestampMs = Number(timestamp2);
-  if (!secret3 || !Number.isFinite(timestampMs) || Math.abs(Date.now() - timestampMs) > 5 * 6e4) {
-    return res.status(401).json({ error: "unauthorized" });
-  }
-  const expected = crypto7.createHmac("sha256", secret3).update(`media-retry:${timestamp2}`).digest("hex");
-  const suppliedBuffer = Buffer.from(supplied, "utf8");
-  const expectedBuffer = Buffer.from(expected, "utf8");
-  if (suppliedBuffer.length !== expectedBuffer.length || !crypto7.timingSafeEqual(suppliedBuffer, expectedBuffer)) {
-    return res.status(401).json({ error: "unauthorized" });
-  }
-  const input = req.body?.event;
-  if (!input?.webhookEventId || input.type !== "message" || !input.message || !["image", "audio", "file"].includes(input.message.type)) {
-    return res.status(400).json({ error: "invalid media event" });
-  }
-  const retryEvent = {
-    ...input,
-    replyToken: void 0,
-    webhookEventId: `${input.webhookEventId}:retry:${timestamp2}`.slice(0, 128)
-  };
-  const gatewayToken = req.header("x-vercel-oidc-token")?.trim() || void 0;
-  await processEvent(retryEvent, JSON.stringify({ events: [retryEvent] }), { gatewayToken });
-  return res.status(200).json({ ok: true, retryWebhookEventId: retryEvent.webhookEventId });
-});
 registerStorageProxy(app);
 registerOAuthRoutes(app);
 var healthHandler = async (req, res) => {
@@ -6088,7 +6062,7 @@ var healthHandler = async (req, res) => {
   res.status(200).json({
     status: "ok",
     service: "milo",
-    release: "media-v6-bounded-ocr-worker-2026-09-14",
+    release: "media-v7-verified-slip-explicit-stt-2026-09-14",
     visionConfigured: runtime.authenticated,
     imageAnalysisMode: mode,
     visionModel: mode === "ocr-fallback" ? "tesseract-tha+eng" : process.env.MILO_VISION_MODEL || (mode.startsWith("vercel-ai-gateway") ? "google/gemini-2.5-flash" : mode.startsWith("forge-vision") ? "gemini-3-flash-preview" : "unconfigured"),

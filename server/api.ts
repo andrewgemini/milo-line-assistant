@@ -1,12 +1,10 @@
 import express from "express";
-import crypto from "node:crypto";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { appRouter } from "./routers";
 import { createContext } from "./_core/context";
 import { registerOAuthRoutes } from "./_core/oauth";
 import { registerStorageProxy } from "./_core/storageProxy";
-import { processEvent, registerLineWebhook, registerMiloCron } from "./milo/routes";
-import type { LineEvent } from "./milo/line";
+import { registerLineWebhook, registerMiloCron } from "./milo/routes";
 import { registerSaveResultImageRoute } from "./milo/saveResultImage";
 import { registerFinanceReportImageRoute } from "./milo/financeReportImage";
 import { registerRichMenuDataImageRoute } from "./milo/richMenuDataImage";
@@ -34,37 +32,6 @@ registerLineWebhook(app);
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ limit: "50mb", extended: true }));
 
-// Short-lived, signed production diagnostic used to replay an existing LINE
-// media event without exposing user content or a permanent administration key.
-app.post("/api/internal/media-retry", async (req, res) => {
-  const timestamp = req.header("x-milo-diagnostic-timestamp") ?? "";
-  const supplied = req.header("x-milo-diagnostic-signature") ?? "";
-  const secret = process.env.LINE_CHANNEL_ACCESS_TOKEN ?? "";
-  const timestampMs = Number(timestamp);
-  if (!secret || !Number.isFinite(timestampMs) || Math.abs(Date.now() - timestampMs) > 5 * 60_000) {
-    return res.status(401).json({ error: "unauthorized" });
-  }
-  const expected = crypto.createHmac("sha256", secret).update(`media-retry:${timestamp}`).digest("hex");
-  const suppliedBuffer = Buffer.from(supplied, "utf8");
-  const expectedBuffer = Buffer.from(expected, "utf8");
-  if (suppliedBuffer.length !== expectedBuffer.length || !crypto.timingSafeEqual(suppliedBuffer, expectedBuffer)) {
-    return res.status(401).json({ error: "unauthorized" });
-  }
-
-  const input = req.body?.event as LineEvent | undefined;
-  if (!input?.webhookEventId || input.type !== "message" || !input.message || !["image", "audio", "file"].includes(input.message.type)) {
-    return res.status(400).json({ error: "invalid media event" });
-  }
-  const retryEvent: LineEvent = {
-    ...input,
-    replyToken: undefined,
-    webhookEventId: `${input.webhookEventId}:retry:${timestamp}`.slice(0, 128),
-  };
-  const gatewayToken = req.header("x-vercel-oidc-token")?.trim() || undefined;
-  await processEvent(retryEvent, JSON.stringify({ events: [retryEvent] }), { gatewayToken });
-  return res.status(200).json({ ok: true, retryWebhookEventId: retryEvent.webhookEventId });
-});
-
 registerStorageProxy(app);
 registerOAuthRoutes(app);
 
@@ -76,7 +43,7 @@ const healthHandler = async (req: express.Request, res: express.Response) => {
   res.status(200).json({
     status: "ok",
     service: "milo",
-    release: "media-v6-bounded-ocr-worker-2026-09-14",
+    release: "media-v7-verified-slip-explicit-stt-2026-09-14",
     visionConfigured: runtime.authenticated,
     imageAnalysisMode: mode,
     visionModel: mode === "ocr-fallback" ? "tesseract-tha+eng" : process.env.MILO_VISION_MODEL || (mode.startsWith("vercel-ai-gateway") ? "google/gemini-2.5-flash" : mode.startsWith("forge-vision") ? "gemini-3-flash-preview" : "unconfigured"),

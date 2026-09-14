@@ -319,7 +319,7 @@ describe("LINE webhook processor", () => {
     expect(replyText).toHaveBeenCalledWith("token", expect.stringContaining("บันทึกรายจ่ายจาก PDF แล้ว 2 รายการ"));
   });
 
-  it("routes an audio message to transcription and replies with the transcript without creating a transaction", async () => {
+  it.each(["จ่ายค่าแท็กซี่ 120 บาท", "สวัสดีครับ"])("previews voice %s without saving and offers confirmation only for a transaction", async (text) => {
     vi.mocked(db.registerWebhookEvent).mockResolvedValue(true);
     vi.mocked(getProfile).mockResolvedValue({ displayName: "ผู้ส่ง" });
     vi.mocked(sourceIdentity).mockReturnValue({ lineChatId: "U1", lineUserId: "U1", scope: "user" });
@@ -327,7 +327,7 @@ describe("LINE webhook processor", () => {
     vi.mocked(storagePut).mockResolvedValue({ key: "milo/U1/audio-1", url: "https://storage.example/audio.m4a" });
     vi.mocked(storageGetSignedUrl).mockResolvedValue("https://signed.example/audio.m4a?signature=temporary");
     vi.mocked(db.createVaultItem).mockResolvedValue(12 as never);
-    vi.mocked(transcribeAudio).mockResolvedValue({ text: "จ่ายค่าแท็กซี่ 120 บาท", language: "th" } as never);
+    vi.mocked(transcribeAudio).mockResolvedValue({ text, language: "th" } as never);
     vi.mocked(suggestExpenseCategory).mockResolvedValue({ category: "เดินทาง", confidence: 0.94, reason: "แท็กซี่" });
     vi.mocked(replyVoiceProposal).mockResolvedValue(new Response());
 
@@ -335,14 +335,14 @@ describe("LINE webhook processor", () => {
 
     expect(storageGetSignedUrl).not.toHaveBeenCalled();
     expect(transcribeAudio).toHaveBeenCalledWith(expect.objectContaining({ audioBuffer: Buffer.from("voice-bytes"), mimeType: "audio/m4a", language: "th" }));
-    expect(db.saveVoiceTranscription).toHaveBeenCalledWith(expect.objectContaining({ vaultItemId: 12, transcript: "จ่ายค่าแท็กซี่ 120 บาท", proposalJson: expect.stringContaining("เดินทาง") }));
+    expect(db.saveVoiceTranscription).toHaveBeenCalledWith(expect.objectContaining({ vaultItemId: 12, transcript: text }));
     expect(db.createTransaction).not.toHaveBeenCalled();
     expect(replyText).toHaveBeenCalledWith("token", expect.stringContaining("รับข้อความเสียงแล้ว"));
     const line = await import("./line");
-    expect(line.pushTextWithQuickReplies).toHaveBeenCalledWith("U1", expect.stringContaining("จ่ายค่าแท็กซี่ 120 บาท"), expect.arrayContaining([{ label: "ยืนยันบันทึก", text: "ยืนยันเสียง" }]));
+    expect(line.pushTextWithQuickReplies).toHaveBeenCalledWith("U1", expect.stringContaining(text), text.includes("120") ? expect.arrayContaining([{ label: "ยืนยันบันทึก", text: "ยืนยันเสียง" }]) : [{ label: "แก้ไขข้อความ", text: "แก้ไขข้อความเสียง" }]);
   });
 
-  it("acknowledges voice immediately and pushes a clear fallback when STT is unavailable", async () => {
+  it.each(["Voice transcription service is not configured", "AI Gateway requires a valid credit card on file"])("explains provider failure without asking the user to re-record: %s", async (error) => {
     vi.mocked(db.registerWebhookEvent).mockResolvedValue(true);
     vi.mocked(getProfile).mockResolvedValue({ displayName: "ผู้ส่ง" });
     vi.mocked(sourceIdentity).mockReturnValue({ lineChatId: "U1", lineUserId: "U1", scope: "user" });
@@ -350,7 +350,7 @@ describe("LINE webhook processor", () => {
     vi.mocked(storagePut).mockResolvedValue({ key: "milo/U1/audio-no-stt", url: "https://storage.example/audio.m4a" });
     vi.mocked(storageGetSignedUrl).mockResolvedValue("https://signed.example/audio.m4a?signature=temporary");
     vi.mocked(db.createVaultItem).mockResolvedValue(120 as never);
-    vi.mocked(transcribeAudio).mockResolvedValue({ error: "Voice transcription service is not configured", code: "SERVICE_ERROR" } as never);
+    vi.mocked(transcribeAudio).mockResolvedValue({ error, code: "SERVICE_ERROR" } as never);
     vi.mocked(replyText).mockResolvedValue(new Response());
     const line = await import("./line");
     vi.mocked(line.pushText).mockResolvedValue(new Response());
@@ -358,8 +358,8 @@ describe("LINE webhook processor", () => {
     await processEvent({ type: "message", webhookEventId: "evt-audio-no-stt", timestamp: Date.now(), replyToken: "token", source: { type: "user", userId: "U1" }, message: { id: "audio-no-stt", type: "audio" } }, "{}");
 
     expect(replyText).toHaveBeenCalledWith("token", expect.stringContaining("กำลังถอดเสียง"));
-    expect(line.pushText).toHaveBeenCalledWith("U1", expect.stringContaining("ยังไม่ได้เชื่อมต่อผู้ให้บริการ STT"));
-    expect(db.finishWebhookEvent).toHaveBeenCalledWith("evt-audio-no-stt", "failed", "Voice transcription service is not configured");
+    expect(line.pushText).toHaveBeenCalledWith("U1", expect.stringContaining("ต้องแก้การตั้งค่าบริการก่อน"));
+    expect(db.finishWebhookEvent).toHaveBeenCalledWith("evt-audio-no-stt", "failed", error);
   });
 
   it("updates the pending voice transcript and returns a fresh proposal when the user chooses edit", async () => {
