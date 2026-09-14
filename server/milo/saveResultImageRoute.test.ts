@@ -3,9 +3,19 @@ import sharp from "sharp";
 import type { AddressInfo } from "node:net";
 import { describe, expect, it } from "vitest";
 import { findMissingGlyphs } from "./vectorText";
-import { registerSaveResultImageRoute } from "./saveResultImage";
+import { registerSaveResultImageRoute, saveResultDisplayText } from "./saveResultImage";
 
 describe("save-result vector image route UAT", () => {
+  it("wraps a long K+ merchant across two lines without losing the merchant name", () => {
+    const note = "ร้านค้า/คู่ค้า: คาเฟ่ อเมซอน สน.ปตท.บจก.โรสท์บีนเฮ้าส์ | รายการ: กาแฟ | เลขที่: 016256150715DQR03239";
+    const display = saveResultDisplayText(note);
+    expect(display.primaryLines.length).toBe(2);
+    expect(display.primaryLines.join("")).toBe("ร้านค้า/คู่ค้า: คาเฟ่ อเมซอน สน.ปตท.บจก.โรสท์บีนเฮ้าส์");
+    expect(display.primaryLines.join("")).not.toContain("...");
+    expect(display.secondary).toContain("รายการ: กาแฟ");
+    expect(display.secondary).toContain("เลขที่: 016256150715DQR03239");
+  });
+
   it("renders the exact กินกาแฟ 80 production case without missing Thai/number/symbol glyphs", async () => {
     const expectedText = [
       "รายจ่าย",

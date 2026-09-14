@@ -30,6 +30,35 @@ function compact(value: string, maxLength: number) {
   return graphemes.length > maxLength ? `${graphemes.slice(0, Math.max(1, maxLength - 3)).join("")}...` : normalized;
 }
 
+function wrapGraphemes(value: string, maxPerLine: number, maxLines: number) {
+  const normalized = normalizeRenderText(value).replace(/\s+/g, " ").trim();
+  if (!normalized) return [];
+  const graphemes = Array.from(renderSegmenter.segment(normalized)).map(part => part.segment);
+  const lines: string[] = [];
+  for (let offset = 0; offset < graphemes.length && lines.length < maxLines; offset += maxPerLine) {
+    lines.push(graphemes.slice(offset, offset + maxPerLine).join(""));
+  }
+  if (graphemes.length > maxPerLine * maxLines && lines.length) {
+    const last = Array.from(renderSegmenter.segment(lines[lines.length - 1])).map(part => part.segment);
+    lines[lines.length - 1] = `${last.slice(0, Math.max(1, maxPerLine - 3)).join("")}...`;
+  }
+  return lines;
+}
+
+export function saveResultDisplayText(value: string) {
+  const normalized = normalizeRenderText(value).replace(/\s+/g, " ").trim();
+  const segments = normalized.split(/\s*\|\s*/).map(part => part.trim()).filter(Boolean);
+  const merchantIndex = segments.findIndex(part => /^ร้านค้า\/คู่ค้า\s*:/i.test(part));
+  const primaryIndex = merchantIndex >= 0 ? merchantIndex : 0;
+  const primary = segments[primaryIndex] || normalized || "รายการ";
+  const secondary = segments.filter((_part, index) => index !== primaryIndex).slice(0, 3).join(" • ");
+  return {
+    primary,
+    primaryLines: wrapGraphemes(primary, 30, 2),
+    secondary,
+  };
+}
+
 function displayCategory(category: string, transactionType: "expense" | "income") {
   const normalized = normalizeRenderText(category).trim();
   if (transactionType === "expense" && normalized === "อาหาร") return "ค่าอาหาร";
@@ -46,7 +75,8 @@ export function buildSaveResultSvg(input: {
   budgetLimit: number;
 }) {
   const { transactionType, amount, occurredAt, budgetSpent, budgetLimit } = input;
-  const item = compact(input.item, 34) || "รายการ";
+  const display = saveResultDisplayText(input.item);
+  const item = compact(display.primary, 60) || "รายการ";
   const category = compact(input.category, 24) || "ทั่วไป";
   const categoryLabel = displayCategory(category, transactionType);
   const isExpense = transactionType === "expense";
@@ -133,7 +163,9 @@ function buildThaiTextLayers(input: {
   budgetSpent: number;
   budgetLimit: number;
 }) {
-  const item = compact(input.item, 34) || "รายการ";
+  const display = saveResultDisplayText(input.item);
+  const item = display.primary || "รายการ";
+  const itemLines = display.primaryLines.length ? display.primaryLines : [item];
   const category = compact(input.category, 24) || "ทั่วไป";
   const categoryLabel = displayCategory(category, input.transactionType);
   const metrics = getBudgetMetrics(input.budgetSpent, input.budgetLimit);
@@ -145,7 +177,9 @@ function buildThaiTextLayers(input: {
     vectorLayer(typeLabel, { left: 78, top: 351, width: 170, fontSize: 27, color: "#FFFFFF", bold: true, align: "center" }),
     vectorLayer(`• ${categoryLabel}`, { left: 273, top: 344, width: 560, fontSize: 34, color: "#183D3A", bold: true }),
     vectorLayer(thaiDateTime(input.occurredAt), { left: 80, top: 411, width: 760, fontSize: 24, color: "#4B6173", bold: true }),
-    vectorLayer(item, { left: 80, top: 457, width: 470, fontSize: 47, color: "#163D3C", bold: true }),
+    ...(itemLines.length > 1
+      ? itemLines.slice(0, 2).map((line, index) => vectorLayer(line, { left: 80, top: 452 + index * 34, width: 470, fontSize: 27, color: "#163D3C", bold: true }))
+      : [vectorLayer(item, { left: 80, top: 457, width: 470, fontSize: 47, color: "#163D3C", bold: true })]),
     vectorLayer(`฿${money(input.amount)}`, { left: 555, top: 453, width: 289, fontSize: 55, color: accent, bold: true, align: "right" }),
   ];
   if (input.budgetLimit > 0) {
@@ -166,9 +200,11 @@ function buildThaiTextLayers(input: {
       vectorLayer("รายการนี้ถูกบันทึกด้วยยอดและเวลาจริงเรียบร้อยแล้ว", { left: 100, top: 661, width: 730, fontSize: 22, color: "#526979" }),
     );
   }
+  const footerText = display.secondary || `${item} • ${categoryLabel} • ${money(input.amount)} บาท`;
+  const footerLines = wrapGraphemes(footerText, 48, 2);
   layers.push(
     vectorLayer("บันทึกให้แล้วน่ะจ๊ะ", { left: 108, top: 931, width: 650, fontSize: 27, color: "#3D5870", bold: true }),
-    vectorLayer(`${item} • ${categoryLabel} • ${money(input.amount)} บาท`, { left: 108, top: 976, width: 690, fontSize: 25, color: "#3D5870" }),
+    ...footerLines.map((line, index) => vectorLayer(line, { left: 108, top: 972 + index * 28, width: 690, fontSize: 21, color: "#3D5870" })),
   );
   return layers;
 }
@@ -177,7 +213,7 @@ export function registerSaveResultImageRoute(app: Express) {
   app.get("/api/milo/save-result.png", async (req: Request, res: Response) => {
     try {
       const transactionType = req.query.transactionType === "income" ? "income" : "expense";
-      const item = String(req.query.item ?? "รายการ").trim().slice(0, 80) || "รายการ";
+      const item = String(req.query.item ?? "รายการ").trim().slice(0, 300) || "รายการ";
       const category = String(req.query.category ?? "ทั่วไป").trim().slice(0, 50) || "ทั่วไป";
       const amount = Number(req.query.amount ?? 0);
       const budgetSpent = Number(req.query.budgetSpent ?? 0);

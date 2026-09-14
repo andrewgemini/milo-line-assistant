@@ -2135,7 +2135,7 @@ function miloSaveResultImageUrl(summary) {
   const appBaseUrl = (process.env.MILO_SAVE_RESULT_IMAGE_BASE_URL ?? "https://milo-line-app.vercel.app").replace(/\/+$/, "");
   const params = new URLSearchParams({
     transactionType: summary.transactionType,
-    item: (summary.note?.trim() || summary.category).slice(0, 80),
+    item: (summary.note?.trim() || summary.category).slice(0, 300),
     category: summary.category.slice(0, 50),
     amount: String(summary.amount),
     occurredAt: summary.occurredAt.toISOString(),
@@ -5020,8 +5020,16 @@ function formatImageProposal(proposal) {
   if (proposal.kind === "expense") {
     const source = proposal.documentType === "bank_slip" ? "\u0E2A\u0E25\u0E34\u0E1B" : "\u0E43\u0E1A\u0E40\u0E2A\u0E23\u0E47\u0E08";
     const merchant = proposal.merchant ? ` \xB7 ${proposal.merchant}` : "";
-    return `${source}${merchant}
-\u0E22\u0E2D\u0E14 ${Number(proposal.amount || 0).toLocaleString("th-TH")} ${proposal.currency || "\u0E1A\u0E32\u0E17"} \xB7 \u0E2B\u0E21\u0E27\u0E14${normalizeExpenseCategory(proposal.category, `${proposal.title ?? ""} ${proposal.merchant ?? ""}`)}`;
+    const rows = [
+      `${source}${merchant}`,
+      `\u0E22\u0E2D\u0E14 ${Number(proposal.amount || 0).toLocaleString("th-TH")} ${proposal.currency || "\u0E1A\u0E32\u0E17"} \xB7 \u0E2B\u0E21\u0E27\u0E14${normalizeExpenseCategory(proposal.category, `${proposal.title ?? ""} ${proposal.merchant ?? ""}`)}`
+    ];
+    const when = [proposal.dateText, proposal.timeText].map((value) => value?.trim()).filter(Boolean).join(" ");
+    if (when) rows.push(`\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48/\u0E40\u0E27\u0E25\u0E32 ${when}`);
+    if (proposal.receiptNumber?.trim()) rows.push(`\u0E40\u0E25\u0E02\u0E17\u0E35\u0E48\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23 ${proposal.receiptNumber.trim()}`);
+    if (proposal.paymentMethod?.trim()) rows.push(`\u0E0A\u0E33\u0E23\u0E30 ${proposal.paymentMethod.trim()}`);
+    if (proposal.title?.trim()) rows.push(`\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23 ${proposal.title.trim()}`);
+    return rows.join("\n");
   }
   return proposal.title || proposal.note || "\u0E44\u0E21\u0E48\u0E1E\u0E1A\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E17\u0E35\u0E48\u0E22\u0E37\u0E19\u0E22\u0E31\u0E19\u0E44\u0E14\u0E49";
 }
@@ -5952,6 +5960,33 @@ function compact(value, maxLength) {
   const graphemes = Array.from(renderSegmenter.segment(normalized)).map((part) => part.segment);
   return graphemes.length > maxLength ? `${graphemes.slice(0, Math.max(1, maxLength - 3)).join("")}...` : normalized;
 }
+function wrapGraphemes(value, maxPerLine, maxLines) {
+  const normalized = normalizeRenderText(value).replace(/\s+/g, " ").trim();
+  if (!normalized) return [];
+  const graphemes = Array.from(renderSegmenter.segment(normalized)).map((part) => part.segment);
+  const lines = [];
+  for (let offset = 0; offset < graphemes.length && lines.length < maxLines; offset += maxPerLine) {
+    lines.push(graphemes.slice(offset, offset + maxPerLine).join(""));
+  }
+  if (graphemes.length > maxPerLine * maxLines && lines.length) {
+    const last = Array.from(renderSegmenter.segment(lines[lines.length - 1])).map((part) => part.segment);
+    lines[lines.length - 1] = `${last.slice(0, Math.max(1, maxPerLine - 3)).join("")}...`;
+  }
+  return lines;
+}
+function saveResultDisplayText(value) {
+  const normalized = normalizeRenderText(value).replace(/\s+/g, " ").trim();
+  const segments = normalized.split(/\s*\|\s*/).map((part) => part.trim()).filter(Boolean);
+  const merchantIndex = segments.findIndex((part) => /^ร้านค้า\/คู่ค้า\s*:/i.test(part));
+  const primaryIndex = merchantIndex >= 0 ? merchantIndex : 0;
+  const primary = segments[primaryIndex] || normalized || "\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23";
+  const secondary = segments.filter((_part, index2) => index2 !== primaryIndex).slice(0, 3).join(" \u2022 ");
+  return {
+    primary,
+    primaryLines: wrapGraphemes(primary, 30, 2),
+    secondary
+  };
+}
 function displayCategory(category, transactionType) {
   const normalized = normalizeRenderText(category).trim();
   if (transactionType === "expense" && normalized === "\u0E2D\u0E32\u0E2B\u0E32\u0E23") return "\u0E04\u0E48\u0E32\u0E2D\u0E32\u0E2B\u0E32\u0E23";
@@ -5959,7 +5994,8 @@ function displayCategory(category, transactionType) {
 }
 function buildSaveResultSvg(input) {
   const { transactionType, amount, occurredAt, budgetSpent, budgetLimit } = input;
-  const item = compact(input.item, 34) || "\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23";
+  const display = saveResultDisplayText(input.item);
+  const item = compact(display.primary, 60) || "\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23";
   const category = compact(input.category, 24) || "\u0E17\u0E31\u0E48\u0E27\u0E44\u0E1B";
   const categoryLabel = displayCategory(category, transactionType);
   const isExpense = transactionType === "expense";
@@ -6025,7 +6061,9 @@ function vectorLayer(text2, options) {
   };
 }
 function buildThaiTextLayers(input) {
-  const item = compact(input.item, 34) || "\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23";
+  const display = saveResultDisplayText(input.item);
+  const item = display.primary || "\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23";
+  const itemLines = display.primaryLines.length ? display.primaryLines : [item];
   const category = compact(input.category, 24) || "\u0E17\u0E31\u0E48\u0E27\u0E44\u0E1B";
   const categoryLabel = displayCategory(category, input.transactionType);
   const metrics = getBudgetMetrics(input.budgetSpent, input.budgetLimit);
@@ -6037,7 +6075,7 @@ function buildThaiTextLayers(input) {
     vectorLayer(typeLabel, { left: 78, top: 351, width: 170, fontSize: 27, color: "#FFFFFF", bold: true, align: "center" }),
     vectorLayer(`\u2022 ${categoryLabel}`, { left: 273, top: 344, width: 560, fontSize: 34, color: "#183D3A", bold: true }),
     vectorLayer(thaiDateTime2(input.occurredAt), { left: 80, top: 411, width: 760, fontSize: 24, color: "#4B6173", bold: true }),
-    vectorLayer(item, { left: 80, top: 457, width: 470, fontSize: 47, color: "#163D3C", bold: true }),
+    ...itemLines.length > 1 ? itemLines.slice(0, 2).map((line, index2) => vectorLayer(line, { left: 80, top: 452 + index2 * 34, width: 470, fontSize: 27, color: "#163D3C", bold: true })) : [vectorLayer(item, { left: 80, top: 457, width: 470, fontSize: 47, color: "#163D3C", bold: true })],
     vectorLayer(`\u0E3F${money2(input.amount)}`, { left: 555, top: 453, width: 289, fontSize: 55, color: accent, bold: true, align: "right" })
   ];
   if (input.budgetLimit > 0) {
@@ -6058,9 +6096,11 @@ function buildThaiTextLayers(input) {
       vectorLayer("\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E19\u0E35\u0E49\u0E16\u0E39\u0E01\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E14\u0E49\u0E27\u0E22\u0E22\u0E2D\u0E14\u0E41\u0E25\u0E30\u0E40\u0E27\u0E25\u0E32\u0E08\u0E23\u0E34\u0E07\u0E40\u0E23\u0E35\u0E22\u0E1A\u0E23\u0E49\u0E2D\u0E22\u0E41\u0E25\u0E49\u0E27", { left: 100, top: 661, width: 730, fontSize: 22, color: "#526979" })
     );
   }
+  const footerText = display.secondary || `${item} \u2022 ${categoryLabel} \u2022 ${money2(input.amount)} \u0E1A\u0E32\u0E17`;
+  const footerLines = wrapGraphemes(footerText, 48, 2);
   layers.push(
     vectorLayer("\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E43\u0E2B\u0E49\u0E41\u0E25\u0E49\u0E27\u0E19\u0E48\u0E30\u0E08\u0E4A\u0E30", { left: 108, top: 931, width: 650, fontSize: 27, color: "#3D5870", bold: true }),
-    vectorLayer(`${item} \u2022 ${categoryLabel} \u2022 ${money2(input.amount)} \u0E1A\u0E32\u0E17`, { left: 108, top: 976, width: 690, fontSize: 25, color: "#3D5870" })
+    ...footerLines.map((line, index2) => vectorLayer(line, { left: 108, top: 972 + index2 * 28, width: 690, fontSize: 21, color: "#3D5870" }))
   );
   return layers;
 }
@@ -6068,7 +6108,7 @@ function registerSaveResultImageRoute(app2) {
   app2.get("/api/milo/save-result.png", async (req, res) => {
     try {
       const transactionType = req.query.transactionType === "income" ? "income" : "expense";
-      const item = String(req.query.item ?? "\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23").trim().slice(0, 80) || "\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23";
+      const item = String(req.query.item ?? "\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23").trim().slice(0, 300) || "\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23";
       const category = String(req.query.category ?? "\u0E17\u0E31\u0E48\u0E27\u0E44\u0E1B").trim().slice(0, 50) || "\u0E17\u0E31\u0E48\u0E27\u0E44\u0E1B";
       const amount = Number(req.query.amount ?? 0);
       const budgetSpent = Number(req.query.budgetSpent ?? 0);
@@ -6112,7 +6152,7 @@ var healthHandler = async (req, res) => {
   res.status(200).json({
     status: "ok",
     service: "milo",
-    release: "media-v9-kplus-merchant-ocr-2026-09-14",
+    release: "media-v10-complete-slip-details-2026-09-14",
     visionConfigured: runtime.authenticated,
     imageAnalysisMode: mode,
     visionModel: mode === "ocr-fallback" ? "tesseract-tha+eng" : process.env.MILO_VISION_MODEL || (mode.startsWith("vercel-ai-gateway") ? "google/gemini-2.5-flash" : mode.startsWith("forge-vision") ? "gemini-3-flash-preview" : "unconfigured"),

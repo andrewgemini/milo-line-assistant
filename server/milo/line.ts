@@ -48,7 +48,7 @@ export function miloSaveResultImageUrl(summary: PostSaveSummary) {
   const appBaseUrl = (process.env.MILO_SAVE_RESULT_IMAGE_BASE_URL ?? "https://milo-line-app.vercel.app").replace(/\/+$/, "");
   const params = new URLSearchParams({
     transactionType: summary.transactionType,
-    item: (summary.note?.trim() || summary.category).slice(0, 80),
+    item: (summary.note?.trim() || summary.category).slice(0, 300),
     category: summary.category.slice(0, 50),
     amount: String(summary.amount),
     occurredAt: summary.occurredAt.toISOString(),

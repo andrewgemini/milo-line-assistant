@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildExpenseNote, normalizeExpenseCategory, parseExtractedDate, selectImageProposal } from "./receiptUtils";
+import { buildExpenseNote, formatImageProposal, normalizeExpenseCategory, parseExtractedDate, selectImageProposal } from "./receiptUtils";
 
 describe("receipt utilities", () => {
   it("normalizes a receipt category from merchant and item context", () => {
@@ -23,6 +23,25 @@ describe("receipt utilities", () => {
 
   it("does not select an unreadable receipt without a reliable payable amount", () => {
     expect(selectImageProposal([{ kind: "expense", amount: 0, title: "ยอดไม่ชัด" }, { kind: "unknown" }])).toBeUndefined();
+  });
+
+  it("shows complete K+ slip details before confirmation", () => {
+    const text = formatImageProposal({
+      kind: "expense",
+      documentType: "bank_slip",
+      merchant: "คาเฟ่ อเมซอน สน.ปตท.บจก.โรสท์บีนเฮ้าส์",
+      amount: 140,
+      currency: "บาท",
+      category: "อาหาร",
+      dateText: "2026-09-13",
+      timeText: "15:07",
+      receiptNumber: "016256150715DQR03239",
+      title: "กาแฟ",
+    });
+    expect(text).toContain("คาเฟ่ อเมซอน สน.ปตท.บจก.โรสท์บีนเฮ้าส์");
+    expect(text).toContain("วันที่/เวลา 2026-09-13 15:07");
+    expect(text).toContain("เลขที่รายการ 016256150715DQR03239");
+    expect(text).toContain("รายการ กาแฟ");
   });
 
   it("keeps merchant, payment method, receipt number and items in the expense note", () => {

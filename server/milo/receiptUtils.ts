@@ -66,7 +66,16 @@ export function formatImageProposal(proposal: ProposalLike) {
   if (proposal.kind === "expense") {
     const source = proposal.documentType === "bank_slip" ? "สลิป" : "ใบเสร็จ";
     const merchant = proposal.merchant ? ` · ${proposal.merchant}` : "";
-    return `${source}${merchant}\nยอด ${Number(proposal.amount || 0).toLocaleString("th-TH")} ${proposal.currency || "บาท"} · หมวด${normalizeExpenseCategory(proposal.category, `${proposal.title ?? ""} ${proposal.merchant ?? ""}`)}`;
+    const rows = [
+      `${source}${merchant}`,
+      `ยอด ${Number(proposal.amount || 0).toLocaleString("th-TH")} ${proposal.currency || "บาท"} · หมวด${normalizeExpenseCategory(proposal.category, `${proposal.title ?? ""} ${proposal.merchant ?? ""}`)}`,
+    ];
+    const when = [proposal.dateText, proposal.timeText].map(value => value?.trim()).filter(Boolean).join(" ");
+    if (when) rows.push(`วันที่/เวลา ${when}`);
+    if (proposal.receiptNumber?.trim()) rows.push(`เลขที่รายการ ${proposal.receiptNumber.trim()}`);
+    if (proposal.paymentMethod?.trim()) rows.push(`ชำระ ${proposal.paymentMethod.trim()}`);
+    if (proposal.title?.trim()) rows.push(`รายการ ${proposal.title.trim()}`);
+    return rows.join("\n");
   }
   return proposal.title || proposal.note || "ไม่พบข้อมูลที่ยืนยันได้";
 }
