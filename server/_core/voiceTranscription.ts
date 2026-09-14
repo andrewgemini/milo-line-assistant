@@ -60,12 +60,13 @@ export function gatewayTranscriptionModel(env: NodeJS.ProcessEnv = process.env) 
 
 export function voiceTranscriptionRuntimeStatus(requestToken?: string) {
   const forge = Boolean(ENV.forgeApiUrl && ENV.forgeApiKey);
+  const groq = Boolean((process.env.GROQ_API_KEY || "").trim());
   const openai = Boolean((process.env.OPENAI_API_KEY || "").trim());
   const gatewayAvailable = gatewayAuthAvailable(process.env, requestToken);
   const local = localVoiceRuntimeStatus();
   return {
-    configured: local.enabled || forge || openai || gatewayAvailable,
-    mode: gatewayAvailable
+    configured: groq || local.enabled || forge || openai || gatewayAvailable,
+    mode: groq ? "groq-whisper-large-v3" : gatewayAvailable
       ? (local.enabled ? "vercel-ai-gateway-stt+local-fallback" : "vercel-ai-gateway-stt")
       : forge
         ? (local.enabled ? "forge-whisper+local-fallback" : "forge-whisper")
@@ -112,12 +113,12 @@ async function fetchWithTimeout(url: string, init: RequestInit, timeoutMs: numbe
   }
 }
 
-function makeFormData(audioBuffer: Buffer, mimeType: string, options: TranscribeOptions) {
+function makeFormData(audioBuffer: Buffer, mimeType: string, options: TranscribeOptions, model = "whisper-1") {
   const formData = new FormData();
   const filename = `audio.${getFileExtension(mimeType)}`;
   const audioBlob = new Blob([new Uint8Array(audioBuffer)], { type: mimeType });
   formData.append("file", audioBlob, filename);
-  formData.append("model", "whisper-1");
+  formData.append("model", model);
   formData.append("response_format", "verbose_json");
   if (options.language) formData.append("language", options.language);
   const prompt = options.prompt || (
@@ -219,12 +220,13 @@ async function transcribeWithGateway(
 
 export async function transcribeAudio(options: TranscribeOptions): Promise<TranscriptionResponse | TranscriptionError> {
   try {
+    const groqKey = (process.env.GROQ_API_KEY || "").trim();
     const forgeConfigured = Boolean(ENV.forgeApiUrl && ENV.forgeApiKey);
     const openAIKey = (process.env.OPENAI_API_KEY || "").trim();
     const gatewayConfigured = gatewayAuthAvailable(process.env, options.gatewayToken);
     const localConfigured = localVoiceRuntimeStatus().enabled;
 
-    if (!localConfigured && !forgeConfigured && !openAIKey && !gatewayConfigured) {
+    if (!groqKey && !localConfigured && !forgeConfigured && !openAIKey && !gatewayConfigured) {
       return {
         error: "Voice transcription service is not configured",
         code: "SERVICE_ERROR",
@@ -255,6 +257,18 @@ export async function transcribeAudio(options: TranscribeOptions): Promise<Trans
     const sizeMB = audioBuffer.length / (1024 * 1024);
     if (sizeMB > 16) {
       return { error: "Audio file exceeds maximum size limit", code: "FILE_TOO_LARGE", details: `File size is ${sizeMB.toFixed(2)}MB, maximum allowed is 16MB` };
+    }
+
+    // Use the explicitly configured Groq provider directly. Do not route a
+    // failed request to another provider with different billing or data handling.
+    if (groqKey) {
+      const form = makeFormData(audioBuffer, mimeType, options, "whisper-large-v3");
+      form.set("temperature", "0");
+      form.set("prompt", "รายการรายรับ รายจ่าย จำนวนเงิน บาท สตางค์");
+      const response = await fetchWithTimeout("https://api.groq.com/openai/v1/audio/transcriptions", {
+        method: "POST", headers: { authorization: `Bearer ${groqKey}` }, body: form,
+      }, 60_000);
+      return await parseProviderResponse(response, "groq");
     }
 
     const failures: string[] = [];

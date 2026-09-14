@@ -3613,12 +3613,13 @@ function gatewayTranscriptionModel(env = process.env) {
 }
 function voiceTranscriptionRuntimeStatus(requestToken) {
   const forge = Boolean(ENV.forgeApiUrl && ENV.forgeApiKey);
+  const groq = Boolean((process.env.GROQ_API_KEY || "").trim());
   const openai = Boolean((process.env.OPENAI_API_KEY || "").trim());
   const gatewayAvailable = gatewayAuthAvailable(process.env, requestToken);
   const local = localVoiceRuntimeStatus();
   return {
-    configured: local.enabled || forge || openai || gatewayAvailable,
-    mode: gatewayAvailable ? local.enabled ? "vercel-ai-gateway-stt+local-fallback" : "vercel-ai-gateway-stt" : forge ? local.enabled ? "forge-whisper+local-fallback" : "forge-whisper" : openai ? local.enabled ? "openai-whisper+local-fallback" : "openai-whisper" : local.enabled ? "local-whisper-onnx" : "unconfigured",
+    configured: groq || local.enabled || forge || openai || gatewayAvailable,
+    mode: groq ? "groq-whisper-large-v3" : gatewayAvailable ? local.enabled ? "vercel-ai-gateway-stt+local-fallback" : "vercel-ai-gateway-stt" : forge ? local.enabled ? "forge-whisper+local-fallback" : "forge-whisper" : openai ? local.enabled ? "openai-whisper+local-fallback" : "openai-whisper" : local.enabled ? "local-whisper-onnx" : "unconfigured",
     local
   };
 }
@@ -3669,12 +3670,12 @@ async function fetchWithTimeout(url, init, timeoutMs) {
     clearTimeout(timeout);
   }
 }
-function makeFormData(audioBuffer, mimeType, options) {
+function makeFormData(audioBuffer, mimeType, options, model = "whisper-1") {
   const formData = new FormData();
   const filename = `audio.${getFileExtension(mimeType)}`;
   const audioBlob = new Blob([new Uint8Array(audioBuffer)], { type: mimeType });
   formData.append("file", audioBlob, filename);
-  formData.append("model", "whisper-1");
+  formData.append("model", model);
   formData.append("response_format", "verbose_json");
   if (options.language) formData.append("language", options.language);
   const prompt = options.prompt || (options.language ? `Transcribe the user's voice to text, the user's working language is ${getLanguageName(options.language)}` : "Transcribe the user's voice to text");
@@ -3755,11 +3756,12 @@ async function transcribeWithGateway(audioBuffer, options) {
 }
 async function transcribeAudio(options) {
   try {
+    const groqKey = (process.env.GROQ_API_KEY || "").trim();
     const forgeConfigured = Boolean(ENV.forgeApiUrl && ENV.forgeApiKey);
     const openAIKey = (process.env.OPENAI_API_KEY || "").trim();
     const gatewayConfigured = gatewayAuthAvailable(process.env, options.gatewayToken);
     const localConfigured = localVoiceRuntimeStatus().enabled;
-    if (!localConfigured && !forgeConfigured && !openAIKey && !gatewayConfigured) {
+    if (!groqKey && !localConfigured && !forgeConfigured && !openAIKey && !gatewayConfigured) {
       return {
         error: "Voice transcription service is not configured",
         code: "SERVICE_ERROR",
@@ -3788,6 +3790,17 @@ async function transcribeAudio(options) {
     const sizeMB = audioBuffer.length / (1024 * 1024);
     if (sizeMB > 16) {
       return { error: "Audio file exceeds maximum size limit", code: "FILE_TOO_LARGE", details: `File size is ${sizeMB.toFixed(2)}MB, maximum allowed is 16MB` };
+    }
+    if (groqKey) {
+      const form = makeFormData(audioBuffer, mimeType, options, "whisper-large-v3");
+      form.set("temperature", "0");
+      form.set("prompt", "\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E23\u0E32\u0E22\u0E23\u0E31\u0E1A \u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22 \u0E08\u0E33\u0E19\u0E27\u0E19\u0E40\u0E07\u0E34\u0E19 \u0E1A\u0E32\u0E17 \u0E2A\u0E15\u0E32\u0E07\u0E04\u0E4C");
+      const response = await fetchWithTimeout("https://api.groq.com/openai/v1/audio/transcriptions", {
+        method: "POST",
+        headers: { authorization: `Bearer ${groqKey}` },
+        body: form
+      }, 6e4);
+      return await parseProviderResponse(response, "groq");
     }
     const failures = [];
     if (gatewayConfigured) {
@@ -6062,7 +6075,7 @@ var healthHandler = async (req, res) => {
   res.status(200).json({
     status: "ok",
     service: "milo",
-    release: "media-v7-verified-slip-explicit-stt-2026-09-14",
+    release: "media-v8-groq-stt-2026-09-14",
     visionConfigured: runtime.authenticated,
     imageAnalysisMode: mode,
     visionModel: mode === "ocr-fallback" ? "tesseract-tha+eng" : process.env.MILO_VISION_MODEL || (mode.startsWith("vercel-ai-gateway") ? "google/gemini-2.5-flash" : mode.startsWith("forge-vision") ? "gemini-3-flash-preview" : "unconfigured"),
