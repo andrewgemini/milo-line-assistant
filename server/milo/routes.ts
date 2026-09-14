@@ -16,7 +16,7 @@ import { deliverDueRecurringTransactions } from "./recurringTransactionDelivery"
 import { assertRecurringCapacity } from "./recurringLimit";
 import { entitlementMessage, hasMiloEntitlement, resolveMiloPlan } from "./entitlements";
 import { deliverFinanceDigest, type FinanceDigestType } from "./financeDigest";
-import { buildExpenseNote, formatImageProposal, normalizeExpenseCategory, parseExtractedDate, selectImageProposal } from "./receiptUtils";
+import { buildExpenseNote, formatImageProposal, normalizeExpenseCategory, parseExtractedDate, resolveReceiptOccurredAt, selectImageProposal } from "./receiptUtils";
 import { applyImageExpenseEdit } from "./imageProposalEdit";
 import { STANDARD_EXPENSE_CATEGORIES, STANDARD_INCOME_CATEGORIES } from "./financeCategories";
 import { financeReportCardText, getMessageContent, getProfile, lineCredentials, postSaveSummaryText, pushText, pushTextWithQuickReplies, replyFinanceReportCard, replyFinanceReportCardFallback, replyGreetingHome, replyMention, replyPostSaveSummary, replyPostSaveSummaryFallback, replyPostSaveSummaryImage, replyText, replyTextWithQuickReplies, replyVoiceCategoryChoices, replyVoiceProposal, replyVoiceProposalFallback, sourceIdentity, type LineEvent, type VoiceTransactionProposal, verifyLineSignature } from "./line";
@@ -379,14 +379,22 @@ async function handleText(event: LineEvent, lineChatId: string, lineUserId: stri
       } else if (proposal.kind === "expense" && Number(proposal.amount ?? 0) > 0) {
         const amount = Number(proposal.amount ?? 0);
         const category = normalizeExpenseCategory(proposal.category, `${proposal.title ?? ""} ${proposal.merchant ?? ""} ${proposal.note ?? ""}`);
-        const occurredAt = parseExtractedDate(command.dateText ?? proposal.dateText, proposal.timeText);
+        const referenceDate = latest.vault.createdAt
+          ? new Date(latest.vault.createdAt)
+          : (Number.isFinite(event.timestamp) ? new Date(event.timestamp) : undefined);
+        const resolvedDate = resolveReceiptOccurredAt(command.dateText ?? proposal.dateText, proposal.timeText, referenceDate);
+        const occurredAt = resolvedDate?.occurredAt;
         if (!occurredAt) {
-          message = `อ่านยอด ${amount.toLocaleString("th-TH")} บาทได้ แต่วันที่ใน${proposal.documentType === "bank_slip" ? "สลิป" : "ใบเสร็จ"}ไม่ชัด จึงยังไม่บันทึกเพื่อป้องกันข้อมูลผิดพลาด\nกรุณาพิมพ์ “ยืนยันค่าใช้จ่าย วันที่ 27/08/2569” โดยแทนวันที่จริง`;
+          message = `อ่านยอด ${amount.toLocaleString("th-TH")} บาทได้ แต่วันที่ใน${proposal.documentType === "bank_slip" ? "สลิป" : "ใบเสร็จ"}ไม่ชัด และไม่มีเวลาที่น่าเชื่อถือพอสำหรับอ้างอิงวันที่ส่งรูป จึงยังไม่บันทึก\nกรุณาพิมพ์ “ยืนยันค่าใช้จ่าย วันที่ 27/08/2569” โดยแทนวันที่จริง`;
         } else {
-          const transactionId = await db.createTransaction({ lineChatId, lineUserId, financeAccountId: financeScope!.financeAccountId, transactionType: "expense", amount, category, note: buildExpenseNote(proposal), occurredAt, source: "line_image" });
+          const baseNote = buildExpenseNote(proposal);
+          const note = resolvedDate.source === "upload-date"
+            ? [baseNote, "วันที่อ้างอิงจากวันที่ส่งรูป เนื่องจาก OCR อ่านวันที่บนเอกสารไม่ชัด"].filter(Boolean).join(" | ")
+            : baseNote;
+          const transactionId = await db.createTransaction({ lineChatId, lineUserId, financeAccountId: financeScope!.financeAccountId, transactionType: "expense", amount, category, note, occurredAt, source: "line_image" });
           await db.linkTransactionAttachment({ transactionId, vaultItemId: latest.vault.id, lineUserId, label: proposal.documentType === "bank_slip" ? "สลิปต้นฉบับ" : "ใบเสร็จต้นฉบับ" });
           await db.setImageExtractionStatus(latest.extraction.id, "accepted");
-          if (event.replyToken) { await sendPostSaveSummary(event.replyToken, lineUserId, lineChatId, financeScope!.financeAccountId, { transactionType: "expense", amount, category, note: buildExpenseNote(proposal), occurredAt }); return; }
+          if (event.replyToken) { await sendPostSaveSummary(event.replyToken, lineUserId, lineChatId, financeScope!.financeAccountId, { transactionType: "expense", amount, category, note, occurredAt }); return; }
           message = `บันทึกรายจ่ายจาก${proposal.documentType === "bank_slip" ? "สลิป" : "ใบเสร็จ"} ${amount.toLocaleString("th-TH")} บาท ในหมวด${category}แล้ว`;
         }
       } else {

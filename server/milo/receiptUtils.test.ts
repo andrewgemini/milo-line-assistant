@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildExpenseNote, formatImageProposal, normalizeExpenseCategory, parseExtractedDate, selectImageProposal } from "./receiptUtils";
+import { buildExpenseNote, formatImageProposal, normalizeExpenseCategory, parseExtractedDate, resolveReceiptOccurredAt, selectImageProposal } from "./receiptUtils";
 
 describe("receipt utilities", () => {
   it("normalizes a receipt category from merchant and item context", () => {
@@ -14,6 +14,13 @@ describe("receipt utilities", () => {
     expect(parseExtractedDate("2026-08-27", "23.45 น.")?.toISOString()).toBe("2026-08-27T16:45:00.000Z");
     expect(parseExtractedDate("31/02/2569")).toBeUndefined();
     expect(parseExtractedDate("27/08/2569", "25:00")).toBeUndefined();
+  });
+
+  it("uses the upload date when the receipt date is unreadable but a nearby receipt time is clear", () => {
+    const resolved = resolveReceiptOccurredAt("", "10:57", new Date("2026-09-14T06:37:00.000Z"));
+    expect(resolved?.source).toBe("upload-date");
+    expect(resolved?.occurredAt.toISOString()).toBe("2026-09-14T03:57:00.000Z");
+    expect(resolveReceiptOccurredAt("", "01:00", new Date("2026-09-14T13:00:00.000Z"))).toBeUndefined();
   });
 
   it("prioritizes a payable expense over other image proposals", () => {

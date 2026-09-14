@@ -45,6 +45,37 @@ export function parseExtractedDate(value?: string, timeText?: string) {
     : undefined;
 }
 
+export function resolveReceiptOccurredAt(value?: string, timeText?: string, referenceDate?: Date) {
+  const exact = parseExtractedDate(value, timeText);
+  if (exact) return { occurredAt: exact, source: "document" as const };
+
+  const reference = referenceDate instanceof Date && Number.isFinite(referenceDate.getTime()) ? referenceDate : undefined;
+  const time = timeText?.trim().match(/^(\d{1,2})[:.](\d{2})(?:\s*น\.?)?$/);
+  if (!reference || !time) return undefined;
+
+  const hour = Number(time[1]);
+  const minute = Number(time[2]);
+  if (hour > 23 || minute > 59) return undefined;
+
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Bangkok", year: "numeric", month: "2-digit", day: "2-digit",
+  }).formatToParts(reference);
+  const year = Number(parts.find(part => part.type === "year")?.value);
+  const month = Number(parts.find(part => part.type === "month")?.value);
+  const day = Number(parts.find(part => part.type === "day")?.value);
+  if (!year || !month || !day) return undefined;
+
+  let candidate = new Date(Date.UTC(year, month - 1, day, hour - 7, minute, 0, 0));
+  const futureToleranceMs = 2 * 60 * 60 * 1000;
+  if (candidate.getTime() > reference.getTime() + futureToleranceMs) {
+    candidate = new Date(candidate.getTime() - 24 * 60 * 60 * 1000);
+  }
+  const ageMs = reference.getTime() - candidate.getTime();
+  if (ageMs < -futureToleranceMs || ageMs > 18 * 60 * 60 * 1000) return undefined;
+
+  return { occurredAt: candidate, source: "upload-date" as const };
+}
+
 export function selectImageProposal(proposals: ProposalLike[] = []) {
   return proposals.find(item => item.kind === "expense" && Number(item.amount) > 0)
     ?? proposals.find(item => item.kind === "reminder");

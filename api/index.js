@@ -5362,6 +5362,34 @@ function parseExtractedDate(value, timeText) {
   const bangkok = new Date(result.getTime() + 7 * 60 * 60 * 1e3);
   return bangkok.getUTCFullYear() === year && bangkok.getUTCMonth() === month && bangkok.getUTCDate() === day ? result : void 0;
 }
+function resolveReceiptOccurredAt(value, timeText, referenceDate) {
+  const exact = parseExtractedDate(value, timeText);
+  if (exact) return { occurredAt: exact, source: "document" };
+  const reference = referenceDate instanceof Date && Number.isFinite(referenceDate.getTime()) ? referenceDate : void 0;
+  const time = timeText?.trim().match(/^(\d{1,2})[:.](\d{2})(?:\s*น\.?)?$/);
+  if (!reference || !time) return void 0;
+  const hour = Number(time[1]);
+  const minute = Number(time[2]);
+  if (hour > 23 || minute > 59) return void 0;
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Bangkok",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).formatToParts(reference);
+  const year = Number(parts.find((part) => part.type === "year")?.value);
+  const month = Number(parts.find((part) => part.type === "month")?.value);
+  const day = Number(parts.find((part) => part.type === "day")?.value);
+  if (!year || !month || !day) return void 0;
+  let candidate = new Date(Date.UTC(year, month - 1, day, hour - 7, minute, 0, 0));
+  const futureToleranceMs = 2 * 60 * 60 * 1e3;
+  if (candidate.getTime() > reference.getTime() + futureToleranceMs) {
+    candidate = new Date(candidate.getTime() - 24 * 60 * 60 * 1e3);
+  }
+  const ageMs = reference.getTime() - candidate.getTime();
+  if (ageMs < -futureToleranceMs || ageMs > 18 * 60 * 60 * 1e3) return void 0;
+  return { occurredAt: candidate, source: "upload-date" };
+}
 function selectImageProposal(proposals = []) {
   return proposals.find((item) => item.kind === "expense" && Number(item.amount) > 0) ?? proposals.find((item) => item.kind === "reminder");
 }
@@ -5897,16 +5925,20 @@ ${incomeSection}
       } else if (proposal.kind === "expense" && Number(proposal.amount ?? 0) > 0) {
         const amount = Number(proposal.amount ?? 0);
         const category = normalizeExpenseCategory(proposal.category, `${proposal.title ?? ""} ${proposal.merchant ?? ""} ${proposal.note ?? ""}`);
-        const occurredAt = parseExtractedDate(command.dateText ?? proposal.dateText, proposal.timeText);
+        const referenceDate = latest.vault.createdAt ? new Date(latest.vault.createdAt) : Number.isFinite(event.timestamp) ? new Date(event.timestamp) : void 0;
+        const resolvedDate = resolveReceiptOccurredAt(command.dateText ?? proposal.dateText, proposal.timeText, referenceDate);
+        const occurredAt = resolvedDate?.occurredAt;
         if (!occurredAt) {
-          message = `\u0E2D\u0E48\u0E32\u0E19\u0E22\u0E2D\u0E14 ${amount.toLocaleString("th-TH")} \u0E1A\u0E32\u0E17\u0E44\u0E14\u0E49 \u0E41\u0E15\u0E48\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48\u0E43\u0E19${proposal.documentType === "bank_slip" ? "\u0E2A\u0E25\u0E34\u0E1B" : "\u0E43\u0E1A\u0E40\u0E2A\u0E23\u0E47\u0E08"}\u0E44\u0E21\u0E48\u0E0A\u0E31\u0E14 \u0E08\u0E36\u0E07\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E40\u0E1E\u0E37\u0E48\u0E2D\u0E1B\u0E49\u0E2D\u0E07\u0E01\u0E31\u0E19\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E1C\u0E34\u0E14\u0E1E\u0E25\u0E32\u0E14
+          message = `\u0E2D\u0E48\u0E32\u0E19\u0E22\u0E2D\u0E14 ${amount.toLocaleString("th-TH")} \u0E1A\u0E32\u0E17\u0E44\u0E14\u0E49 \u0E41\u0E15\u0E48\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48\u0E43\u0E19${proposal.documentType === "bank_slip" ? "\u0E2A\u0E25\u0E34\u0E1B" : "\u0E43\u0E1A\u0E40\u0E2A\u0E23\u0E47\u0E08"}\u0E44\u0E21\u0E48\u0E0A\u0E31\u0E14 \u0E41\u0E25\u0E30\u0E44\u0E21\u0E48\u0E21\u0E35\u0E40\u0E27\u0E25\u0E32\u0E17\u0E35\u0E48\u0E19\u0E48\u0E32\u0E40\u0E0A\u0E37\u0E48\u0E2D\u0E16\u0E37\u0E2D\u0E1E\u0E2D\u0E2A\u0E33\u0E2B\u0E23\u0E31\u0E1A\u0E2D\u0E49\u0E32\u0E07\u0E2D\u0E34\u0E07\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48\u0E2A\u0E48\u0E07\u0E23\u0E39\u0E1B \u0E08\u0E36\u0E07\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01
 \u0E01\u0E23\u0E38\u0E13\u0E32\u0E1E\u0E34\u0E21\u0E1E\u0E4C \u201C\u0E22\u0E37\u0E19\u0E22\u0E31\u0E19\u0E04\u0E48\u0E32\u0E43\u0E0A\u0E49\u0E08\u0E48\u0E32\u0E22 \u0E27\u0E31\u0E19\u0E17\u0E35\u0E48 27/08/2569\u201D \u0E42\u0E14\u0E22\u0E41\u0E17\u0E19\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48\u0E08\u0E23\u0E34\u0E07`;
         } else {
-          const transactionId = await createTransaction({ lineChatId, lineUserId, financeAccountId: financeScope.financeAccountId, transactionType: "expense", amount, category, note: buildExpenseNote(proposal), occurredAt, source: "line_image" });
+          const baseNote = buildExpenseNote(proposal);
+          const note = resolvedDate.source === "upload-date" ? [baseNote, "\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48\u0E2D\u0E49\u0E32\u0E07\u0E2D\u0E34\u0E07\u0E08\u0E32\u0E01\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48\u0E2A\u0E48\u0E07\u0E23\u0E39\u0E1B \u0E40\u0E19\u0E37\u0E48\u0E2D\u0E07\u0E08\u0E32\u0E01 OCR \u0E2D\u0E48\u0E32\u0E19\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48\u0E1A\u0E19\u0E40\u0E2D\u0E01\u0E2A\u0E32\u0E23\u0E44\u0E21\u0E48\u0E0A\u0E31\u0E14"].filter(Boolean).join(" | ") : baseNote;
+          const transactionId = await createTransaction({ lineChatId, lineUserId, financeAccountId: financeScope.financeAccountId, transactionType: "expense", amount, category, note, occurredAt, source: "line_image" });
           await linkTransactionAttachment({ transactionId, vaultItemId: latest.vault.id, lineUserId, label: proposal.documentType === "bank_slip" ? "\u0E2A\u0E25\u0E34\u0E1B\u0E15\u0E49\u0E19\u0E09\u0E1A\u0E31\u0E1A" : "\u0E43\u0E1A\u0E40\u0E2A\u0E23\u0E47\u0E08\u0E15\u0E49\u0E19\u0E09\u0E1A\u0E31\u0E1A" });
           await setImageExtractionStatus(latest.extraction.id, "accepted");
           if (event.replyToken) {
-            await sendPostSaveSummary(event.replyToken, lineUserId, lineChatId, financeScope.financeAccountId, { transactionType: "expense", amount, category, note: buildExpenseNote(proposal), occurredAt });
+            await sendPostSaveSummary(event.replyToken, lineUserId, lineChatId, financeScope.financeAccountId, { transactionType: "expense", amount, category, note, occurredAt });
             return;
           }
           message = `\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22\u0E08\u0E32\u0E01${proposal.documentType === "bank_slip" ? "\u0E2A\u0E25\u0E34\u0E1B" : "\u0E43\u0E1A\u0E40\u0E2A\u0E23\u0E47\u0E08"} ${amount.toLocaleString("th-TH")} \u0E1A\u0E32\u0E17 \u0E43\u0E19\u0E2B\u0E21\u0E27\u0E14${category}\u0E41\u0E25\u0E49\u0E27`;
@@ -6513,7 +6545,7 @@ var healthHandler = async (req, res) => {
   res.status(200).json({
     status: "ok",
     service: "milo",
-    release: "dashboard-media-v16-receipt-date-repair-2026-09-14",
+    release: "dashboard-media-v17-time-only-receipt-fallback-2026-09-14",
     visionConfigured: runtime.authenticated,
     imageAnalysisMode: mode,
     visionModel: mode === "ocr-fallback" ? "tesseract-tha+eng" : process.env.MILO_VISION_MODEL || (mode.startsWith("vercel-ai-gateway") ? "google/gemini-2.5-flash" : mode.startsWith("forge-vision") ? "gemini-3-flash-preview" : "unconfigured"),

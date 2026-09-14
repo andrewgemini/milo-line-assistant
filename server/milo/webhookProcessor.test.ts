@@ -281,6 +281,28 @@ describe("LINE webhook processor", () => {
     expect(replyText).toHaveBeenCalledWith("token", expect.stringContaining("จึงยังไม่บันทึก"));
   });
 
+  it("uses the image upload date when only the receipt time is readable, so one-tap confirmation still saves", async () => {
+    const timeOnlyReceipt = {
+      summary: "พบยอดชำระ 30 บาท แต่วันที่ไม่ชัด",
+      confidence: 0.79,
+      proposals: [{ kind: "expense", documentType: "receipt", title: "อาหาร", merchant: "ร้านกระเพรากลางซอย", dateText: "", timeText: "10:57", amount: 30, currency: "บาท", category: "อาหาร", paymentMethod: "เงินสด", receiptNumber: "", lineItems: [], note: "วันที่อ่านไม่ชัด" }],
+    };
+    vi.mocked(db.registerWebhookEvent).mockResolvedValue(true);
+    vi.mocked(getProfile).mockResolvedValue({ displayName: "ผู้ส่ง" });
+    vi.mocked(sourceIdentity).mockReturnValue({ lineChatId: "U1", lineUserId: "U1", scope: "user" });
+    vi.mocked(db.latestImageExtraction).mockResolvedValue({ extraction: { id: 44, status: "proposed", extractedJson: JSON.stringify(timeOnlyReceipt) }, vault: { id: 29, mimeType: "image/jpeg", storageKey: "milo/U1/img-time-only", createdAt: new Date("2026-09-14T06:37:00.000Z") } } as never);
+    vi.mocked(db.createTransaction).mockResolvedValue(166 as never);
+    vi.mocked(db.linkTransactionAttachment).mockResolvedValue(true);
+    vi.mocked(db.financeReport).mockResolvedValue({ period: "day", income: 0, expense: 30, balance: -30, categories: { อาหาร: 30 } } as never);
+    vi.mocked(replyPostSaveSummaryImage).mockResolvedValue(new Response());
+
+    await processEvent({ type: "message", webhookEventId: "evt-time-only-confirm", timestamp: new Date("2026-09-14T06:39:00.000Z").getTime(), replyToken: "token", source: { type: "user", userId: "U1" }, message: { id: "txt-time-only", type: "text", text: "ยืนยันค่าใช้จ่าย" } }, "{}");
+
+    expect(db.createTransaction).toHaveBeenCalledWith(expect.objectContaining({ amount: 30, category: "อาหาร", occurredAt: new Date("2026-09-14T03:57:00.000Z"), note: expect.stringContaining("วันที่อ้างอิงจากวันที่ส่งรูป") }));
+    expect(db.setImageExtractionStatus).toHaveBeenCalledWith(44, "accepted");
+    expect(replyPostSaveSummaryImage).toHaveBeenCalledWith("token", expect.objectContaining({ amount: 30, occurredAt: new Date("2026-09-14T03:57:00.000Z") }));
+  });
+
   it("stores a PDF proposal and confirms multiple valid expense rows with the PDF linked as evidence", async () => {
     const pdfAnalysis = {
       summary: "พบ 2 รายการจาก statement",
