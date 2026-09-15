@@ -5,7 +5,7 @@ import { createRequire } from "node:module";
 import sharp from "sharp";
 import { createWorker } from "tesseract.js";
 import type { ImageAnalysis, ImageProposal } from "./imageAnalysis";
-import { enrichThaiReceiptProposal, extractThaiSlipDateTime } from "./thaiReceiptParser";
+import { enrichThaiReceiptProposal, extractThaiPayableAmount, extractThaiSlipDateTime } from "./thaiReceiptParser";
 
 const DATA_DIR = path.join(process.cwd(), "api", "tessdata");
 const CACHE_DIR = path.join(os.tmpdir(), "milo-tesscache");
@@ -81,6 +81,8 @@ function parseMoney(raw: string) {
 }
 
 function extractAmount(text: string) {
+  const payable = extractThaiPayableAmount(text);
+  if (payable > 0) return payable;
   const flat = text.replace(/\s+/g, " ");
   const lines = text.split(/\n+/).map(line => line.trim()).filter(Boolean);
   const preferred = /(จำนวน(?:เงิน)?|ยอด(?:โอน|ชำระ|สุทธิ|รวม)|amount|total)/i;
@@ -209,7 +211,8 @@ function merchantBoundary(line: string) {
 }
 
 function extractMerchant(text: string) {
-  const lines = text.split(/\n+/).map(line => line.trim()).filter(Boolean);
+  const lines = text.split(/\n+/).map(line => line.trim()).filter(Boolean)
+    .filter(line => !/^(?:ประเภท|ชื่อพนักงาน|พนักงาน|เวลา|สินค้า|qty|ทั้งหมด|เงินสด|เงินทอน)\s*[:：]?/i.test(line));
   const direct = lines.find(line => /^(?:ผู้รับ|ผู้รับเงิน|ไปยัง|ชื่อผู้รับ|recipient|merchant|to)\s*[:：-]?\s*.+/i.test(line));
   if (direct) return cleanMerchantCandidate(direct);
 
@@ -251,12 +254,13 @@ function extractReference(text: string) {
 
 function detectDocumentType(text: string): ImageProposal["documentType"] {
   if (/(โอนเงิน|โอนสำเร็จ|โอนเงินสำเร็จ|ชำระเงินสำเร็จ|พร้อมเพย์|promptpay|k\+|กสิกรไทย|ธ\.|ธนาคาร|bank transfer|transfer success(?:ful)?)/i.test(text)) return "bank_slip";
-  if (/(ใบเสร็จ|ใบกำกับ|receipt|ยอดสุทธิ|ยอดรวม|total|ค่าสินค้า\s*\/\s*บริการ|จำนวนเงินที่ชำระ)/i.test(text)) return "receipt";
+  if (/(ใบเสร็จ|ใบกำกับ|receipt|ยอดสุทธิ|ยอดรวม|total|ค่าสินค้า\s*\/\s*บริการ|จำนวนเงินที่ชำระ|ทั้งหมด\s*[:：]?\s*[฿B]?\s*\d)/i.test(text)) return "receipt";
   if (/(นัด|appointment|วันนัด)/i.test(text)) return "appointment";
   return "unknown";
 }
 
 function guessCategory(text: string) {
+  if (/ทานที่ร้าน|ต้มยำ|หมูย่าง|ปีกไก่|เป๊ปซี่|เหนียว|ทะเล/i.test(text)) return "อาหาร";
   if (/(กาแฟ|คาเฟ่|อเมซอน|amazon|coffee|cafe|อาหาร|restaurant|ข้าว|ชา|เครื่องดื่ม|food|กระเพรา|กะเพรา)/i.test(text)) return "อาหาร";
   if (/(น้ำมัน|fuel|gas station|แท็กซี่|taxi|grab|รถไฟ|bts|mrt|ทางด่วน)/i.test(text)) return "เดินทาง";
   if (/(ไฟฟ้า|ประปา|อินเทอร์เน็ต|internet|โทรศัพท์|ค่าไฟ|ค่าน้ำ)/i.test(text)) return "ค่าสาธารณูปโภค";

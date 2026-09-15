@@ -34,7 +34,9 @@ function isoDate(year: number, month: number, day: number) {
 function valueNearLabel(lines: string[], pattern: RegExp) {
   for (let i = 0; i < lines.length; i += 1) {
     if (!pattern.test(lines[i])) continue;
-    const window = [lines[i], lines[i + 1]].filter(Boolean).join(" ");
+    // Read the amount on this row first; the following row may be cash
+    // tendered, change, or an unrelated receipt number.
+    const window = /\d/.test(lines[i]) ? lines[i] : (lines[i + 1] || "");
     const matches = Array.from(window.matchAll(/-?\s*([0-9]{1,3}(?:,[0-9]{3})*(?:\.\d{1,2})|[0-9]+(?:\.\d{1,2})?)/g));
     if (!matches.length) continue;
     const raw = matches[matches.length - 1][1].replace(/,/g, "");
@@ -49,7 +51,8 @@ export function extractThaiPayableAmount(text: string) {
   const rules = [
     /จำนวนเงินที่ชำระ|จำนวนเงินชำระ|ยอดที่ชำระ|ยอดชำระสุทธิ|ยอดสุทธิ|รวมสุทธิ/i,
     /^ยอดชำระ\b/i,
-    /^ยอดรวม\b|^total\b/i,
+    /^(?:ทั้งหมด|grand\s+total)(?=\s|[:：฿]|\d|$)/i,
+    /^(?:ยอดรวม|total)(?=\s|[:：฿]|\d|$)/i,
     /ค่าสินค้า\s*\/\s*บริการ/i,
   ];
   for (const rule of rules) {

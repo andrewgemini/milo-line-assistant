@@ -4427,7 +4427,7 @@ function isoDate(year, month, day) {
 function valueNearLabel(lines, pattern) {
   for (let i = 0; i < lines.length; i += 1) {
     if (!pattern.test(lines[i])) continue;
-    const window = [lines[i], lines[i + 1]].filter(Boolean).join(" ");
+    const window = /\d/.test(lines[i]) ? lines[i] : lines[i + 1] || "";
     const matches = Array.from(window.matchAll(/-?\s*([0-9]{1,3}(?:,[0-9]{3})*(?:\.\d{1,2})|[0-9]+(?:\.\d{1,2})?)/g));
     if (!matches.length) continue;
     const raw = matches[matches.length - 1][1].replace(/,/g, "");
@@ -4441,7 +4441,8 @@ function extractThaiPayableAmount(text2) {
   const rules = [
     /จำนวนเงินที่ชำระ|จำนวนเงินชำระ|ยอดที่ชำระ|ยอดชำระสุทธิ|ยอดสุทธิ|รวมสุทธิ/i,
     /^ยอดชำระ\b/i,
-    /^ยอดรวม\b|^total\b/i,
+    /^(?:ทั้งหมด|grand\s+total)(?=\s|[:：฿]|\d|$)/i,
+    /^(?:ยอดรวม|total)(?=\s|[:：฿]|\d|$)/i,
     /ค่าสินค้า\s*\/\s*บริการ/i
   ];
   for (const rule of rules) {
@@ -4636,6 +4637,8 @@ function parseMoney(raw) {
   return Number.isFinite(value) ? value : 0;
 }
 function extractAmount(text2) {
+  const payable = extractThaiPayableAmount(text2);
+  if (payable > 0) return payable;
   const flat = text2.replace(/\s+/g, " ");
   const lines = text2.split(/\n+/).map((line) => line.trim()).filter(Boolean);
   const preferred = /(จำนวน(?:เงิน)?|ยอด(?:โอน|ชำระ|สุทธิ|รวม)|amount|total)/i;
@@ -4696,7 +4699,7 @@ function merchantBoundary(line) {
   return false;
 }
 function extractMerchant(text2) {
-  const lines = text2.split(/\n+/).map((line) => line.trim()).filter(Boolean);
+  const lines = text2.split(/\n+/).map((line) => line.trim()).filter(Boolean).filter((line) => !/^(?:ประเภท|ชื่อพนักงาน|พนักงาน|เวลา|สินค้า|qty|ทั้งหมด|เงินสด|เงินทอน)\s*[:：]?/i.test(line));
   const direct = lines.find((line) => /^(?:ผู้รับ|ผู้รับเงิน|ไปยัง|ชื่อผู้รับ|recipient|merchant|to)\s*[:：-]?\s*.+/i.test(line));
   if (direct) return cleanMerchantCandidate(direct);
   const markerIndex = lines.findIndex((line) => /^(?:ผู้รับ|ผู้รับเงิน|ไปยัง|ชื่อผู้รับ|recipient|merchant|to)\s*[:：-]?$/i.test(line));
@@ -4732,11 +4735,12 @@ function extractReference(text2) {
 }
 function detectDocumentType(text2) {
   if (/(โอนเงิน|โอนสำเร็จ|โอนเงินสำเร็จ|ชำระเงินสำเร็จ|พร้อมเพย์|promptpay|k\+|กสิกรไทย|ธ\.|ธนาคาร|bank transfer|transfer success(?:ful)?)/i.test(text2)) return "bank_slip";
-  if (/(ใบเสร็จ|ใบกำกับ|receipt|ยอดสุทธิ|ยอดรวม|total|ค่าสินค้า\s*\/\s*บริการ|จำนวนเงินที่ชำระ)/i.test(text2)) return "receipt";
+  if (/(ใบเสร็จ|ใบกำกับ|receipt|ยอดสุทธิ|ยอดรวม|total|ค่าสินค้า\s*\/\s*บริการ|จำนวนเงินที่ชำระ|ทั้งหมด\s*[:：]?\s*[฿B]?\s*\d)/i.test(text2)) return "receipt";
   if (/(นัด|appointment|วันนัด)/i.test(text2)) return "appointment";
   return "unknown";
 }
 function guessCategory(text2) {
+  if (/ทานที่ร้าน|ต้มยำ|หมูย่าง|ปีกไก่|เป๊ปซี่|เหนียว|ทะเล/i.test(text2)) return "\u0E2D\u0E32\u0E2B\u0E32\u0E23";
   if (/(กาแฟ|คาเฟ่|อเมซอน|amazon|coffee|cafe|อาหาร|restaurant|ข้าว|ชา|เครื่องดื่ม|food|กระเพรา|กะเพรา)/i.test(text2)) return "\u0E2D\u0E32\u0E2B\u0E32\u0E23";
   if (/(น้ำมัน|fuel|gas station|แท็กซี่|taxi|grab|รถไฟ|bts|mrt|ทางด่วน)/i.test(text2)) return "\u0E40\u0E14\u0E34\u0E19\u0E17\u0E32\u0E07";
   if (/(ไฟฟ้า|ประปา|อินเทอร์เน็ต|internet|โทรศัพท์|ค่าไฟ|ค่าน้ำ)/i.test(text2)) return "\u0E04\u0E48\u0E32\u0E2A\u0E32\u0E18\u0E32\u0E23\u0E13\u0E39\u0E1B\u0E42\u0E20\u0E04";
@@ -7108,7 +7112,7 @@ var healthHandler = async (req, res) => {
   res.status(200).json({
     status: runtime.authenticated && voice.configured && Boolean(process.env.LINE_CHANNEL_SECRET?.trim()) && Boolean(process.env.LINE_CHANNEL_ACCESS_TOKEN?.trim()) && Boolean(process.env.DATABASE_URL?.trim()) ? "ok" : "degraded",
     service: "milo",
-    release: "database-vault-v22-2026-09-15",
+    release: "receipt-total-v23-2026-09-15",
     visionConfigured: runtime.authenticated,
     imageAnalysisMode: mode,
     visionModel: mode === "ocr-fallback" ? "tesseract-tha+eng" : process.env.MILO_VISION_MODEL || (mode.startsWith("vercel-ai-gateway") ? "google/gemini-2.5-flash" : mode.startsWith("forge-vision") ? "gemini-3-flash-preview" : "unconfigured"),

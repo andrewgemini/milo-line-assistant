@@ -2,6 +2,39 @@ import { describe, expect, it } from "vitest";
 import { analyzeOcrText, normalizeOcrText, withOcrDeadline } from "./ocrImageAnalysis";
 
 describe("OCR slip parser", () => {
+  it("recognizes the damaged OCR text from the photographed restaurant receipt", () => {
+    const result = analyzeOcrText("โบเสร็จ\nทานหราน\nข่าวเหนีย\nน่าแข็่งแก้าว 2 4 00\nยปารวมมีตรทะเล 1 129.04\nบอดรวาม 9 123 nn\nทั้งหมด B423.00\nเง่นสศ 8423.00");
+    expect(result.proposals[0]).toMatchObject({ documentType: "receipt", amount: 423, category: "อาหาร" });
+  });
+  it("uses the Ocha receipt payable total instead of the quantity column", () => {
+    const result = analyzeOcrText(`ใบเสร็จ
+เลขที่: 03000728
+ประเภท: ทานที่ร้าน
+ชื่อพนักงาน: จ๊ะจ๋า
+เวลา: 13-09-2569 15:28
+สินค้า Qty ราคา
+ปีกไก่ทอด 1 80.00
+ต้มแซ่บกระดูกอ่อน 1 80.00
+ตำถาดหมูย่าง 1 80.00
+ข้าวเหนียว 2 20.00
+เป๊ปซี่ใหญ่ 1 30.00
+น้ำแข็งแก้ว 2 4.00
+ยำรวมมิตรทะเล 1 129.00
+ยอดรวม 9 423.00
+ทั้งหมด ฿423.00
+เงินสด ฿500.00
+เงินทอน ฿77.00
+Powered by Ocha`);
+    expect(result.proposals[0]).toMatchObject({ amount: 423, category: "อาหาร", dateText: "2026-09-13", timeText: "15:28", merchant: "" });
+    expect(result.summary).toContain("423");
+  });
+
+  it("keeps total-row money separate from quantities and subsequent cash rows", () => {
+    for (const totals of ["ยอดรวม 9 423.00", "ทั้งหมด\n฿423.00", "ยอดรวม423.00", "Total 9 423.00", "ยอดรวม 9\nทั้งหมด B423.00"]) {
+      expect(analyzeOcrText(`ใบเสร็จ\n${totals}\nเงินสด 500.00\nเงินทอน 77.00`).proposals[0].amount).toBe(423);
+    }
+  });
+
   it("bounds an OCR stage that never responds", async () => {
     await expect(withOcrDeadline(new Promise(() => {}), "initialization", 10)).rejects.toThrow("OCR initialization timed out");
     await expect(withOcrDeadline(Promise.resolve("ready"), "initialization", 100)).resolves.toBe("ready");
