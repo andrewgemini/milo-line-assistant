@@ -52,12 +52,12 @@ vi.mock("../_core/voiceTranscription", () => ({ transcribeAudio: vi.fn() }));
 vi.mock("./financialAssistant", () => ({ generateFinancialInsight: vi.fn(), suggestExpenseCategory: vi.fn() }));
 vi.mock("./line", () => ({
   replyRichMenu: vi.fn(), replyGreetingHome: vi.fn(), getMessageContent: vi.fn(), getProfile: vi.fn(), lineCredentials: vi.fn(() => ({ channelSecret: "test-secret", channelAccessToken: "test-token" })), pushText: vi.fn(), pushTextWithQuickReplies: vi.fn(), replyMention: vi.fn(), replyText: vi.fn(), replyTextWithQuickReplies: vi.fn(),
-  replyVoiceProposal: vi.fn(), replyPostSaveSummary: vi.fn(), replyPostSaveSummaryImage: vi.fn(), replyPostSaveSummaryFallback: vi.fn(), replyVoiceCategoryChoices: vi.fn(), postSaveSummaryText: vi.fn((summary: { amount: number }) => `รายจ่าย ${summary.amount} บาท`), replyFinanceReportCard: vi.fn(), replyFinanceReportCardFallback: vi.fn(), financeReportCardText: vi.fn(() => "สรุปการเงินวันนี้"),
+  replyVoiceProposal: vi.fn(), replyPostSaveSummary: vi.fn(), replyVoiceCategoryChoices: vi.fn(), postSaveSummaryText: vi.fn((summary: { amount: number }) => `รายจ่าย ${summary.amount} บาท`), replyFinanceReportCard: vi.fn(), replyFinanceReportCardFallback: vi.fn(), financeReportCardText: vi.fn(() => "สรุปการเงินวันนี้"),
   sourceIdentity: vi.fn(() => ({ lineChatId: "G1", lineUserId: "U1", scope: "group" })), verifyLineSignature: vi.fn(),
 }));
 
 import * as db from "../db";
-import { replyRichMenu, replyGreetingHome, getMessageContent, getProfile, pushTextWithQuickReplies, replyFinanceReportCard, replyMention, replyPostSaveSummary, replyPostSaveSummaryImage, replyPostSaveSummaryFallback, replyText, replyTextWithQuickReplies, replyVoiceCategoryChoices, replyVoiceProposal, sourceIdentity, verifyLineSignature } from "./line";
+import { replyRichMenu, replyGreetingHome, getMessageContent, getProfile, pushTextWithQuickReplies, replyFinanceReportCard, replyMention, replyPostSaveSummary, replyText, replyTextWithQuickReplies, replyVoiceCategoryChoices, replyVoiceProposal, sourceIdentity, verifyLineSignature } from "./line";
 import { storageGetSignedUrl, storagePut } from "../storage";
 import { analyzeImage } from "./imageAnalysis";
 import { analyzePdfBuffer } from "./pdfAnalysis";
@@ -234,7 +234,7 @@ describe("LINE webhook processor", () => {
     expect(db.addExpenseCategory).toHaveBeenCalledWith("U1", "เดินทาง", "expense", 7);
     expect(db.addExpenseCategory).toHaveBeenCalledWith("U1", "โบนัส", "income", 7);
     expect(db.listTransactionCategories).toHaveBeenCalledWith("U1", 7);
-    expect(replyPostSaveSummaryImage).toHaveBeenCalledWith("token", expect.objectContaining({ transactionType: "expense", amount: 65, category: "อาหาร", dailyExpense: 65 }));
+    expect(replyPostSaveSummary).toHaveBeenCalledWith("token", expect.objectContaining({ transactionType: "expense", amount: 65, category: "อาหาร", dailyExpense: 65 }));
     expect(replyRichMenu).toHaveBeenCalledWith("token", expect.stringContaining("Milo ช่วยคุณจบงานใน LINE แชทเดียวครับ"), "help");
   });
 
@@ -331,7 +331,7 @@ describe("LINE webhook processor", () => {
     expect(db.createTransaction).toHaveBeenCalledWith(expect.objectContaining({ note: expect.stringContaining("ร้านค้า/คู่ค้า: ร้านกาแฟ") }));
     expect(db.linkTransactionAttachment).toHaveBeenCalledWith({ transactionId: 155, vaultItemId: 9, lineUserId: "U1", label: "ใบเสร็จต้นฉบับ" });
     expect(db.setImageExtractionStatus).toHaveBeenCalledWith(3, "accepted");
-    expect(replyPostSaveSummaryImage).toHaveBeenCalledWith("token", expect.objectContaining({ transactionType: "expense", amount: 125, category: "อาหาร", dailyExpense: 125 }));
+    expect(replyPostSaveSummary).toHaveBeenCalledWith("token", expect.objectContaining({ transactionType: "expense", amount: 125, category: "อาหาร", dailyExpense: 125 }));
   });
 
   it("edits a receipt proposal in chat without creating a transaction before confirmation", async () => {
@@ -383,13 +383,13 @@ describe("LINE webhook processor", () => {
     vi.mocked(db.createTransaction).mockResolvedValue(166 as never);
     vi.mocked(db.linkTransactionAttachment).mockResolvedValue(true);
     vi.mocked(db.financeReport).mockResolvedValue({ period: "day", income: 0, expense: 30, balance: -30, categories: { อาหาร: 30 } } as never);
-    vi.mocked(replyPostSaveSummaryImage).mockResolvedValue(new Response());
+    vi.mocked(replyPostSaveSummary).mockResolvedValue(new Response());
 
     await processEvent({ type: "message", webhookEventId: "evt-time-only-confirm", timestamp: new Date("2026-09-14T06:39:00.000Z").getTime(), replyToken: "token", source: { type: "user", userId: "U1" }, message: { id: "txt-time-only", type: "text", text: "ยืนยันค่าใช้จ่าย" } }, "{}");
 
     expect(db.createTransaction).toHaveBeenCalledWith(expect.objectContaining({ amount: 30, category: "อาหาร", occurredAt: new Date("2026-09-14T03:57:00.000Z"), note: expect.stringContaining("วันที่อ้างอิงจากวันที่ส่งรูป") }));
     expect(db.setImageExtractionStatus).toHaveBeenCalledWith(44, "accepted");
-    expect(replyPostSaveSummaryImage).toHaveBeenCalledWith("token", expect.objectContaining({ amount: 30, occurredAt: new Date("2026-09-14T03:57:00.000Z") }));
+    expect(replyPostSaveSummary).toHaveBeenCalledWith("token", expect.objectContaining({ amount: 30, occurredAt: new Date("2026-09-14T03:57:00.000Z") }));
   });
 
   it("stores a PDF proposal and confirms multiple valid expense rows with the PDF linked as evidence", async () => {
@@ -538,12 +538,12 @@ describe("LINE webhook processor", () => {
     vi.mocked(db.financeReport).mockResolvedValue({ period: "day", income: 0, expense: 80, balance: -80, categories: { อาหาร: 80 } } as never);
     vi.mocked(db.financeBudgetCycleReport).mockResolvedValue({ key: "2026-09", categories: { อาหาร: 3880 }, income: 0, expense: 3880, balance: -3880, rows: [] } as never);
     vi.mocked(db.listBudgets).mockResolvedValue([{ category: "อาหาร", amount: "5000" }] as never);
-    vi.mocked(replyPostSaveSummaryImage).mockResolvedValue(new Response());
+    vi.mocked(replyPostSaveSummary).mockResolvedValue(new Response());
 
     await processEvent({ type: "message", webhookEventId: "evt-budget-expense", timestamp: Date.now(), replyToken: "token", source: { type: "user", userId: "U1" }, message: { id: "budget-expense", type: "text", text: "กินกาแฟ 80" } }, "{}");
 
     expect(db.createTransaction).toHaveBeenCalledWith(expect.objectContaining({ financeAccountId: 7, transactionType: "expense", amount: 80, category: "อาหาร", note: "กินกาแฟ" }));
-    expect(replyPostSaveSummaryImage).toHaveBeenCalledWith("token", expect.objectContaining({ amount: 80, category: "อาหาร", budgetSpent: 3880, budgetLimit: 5000, budgetPercent: 78 }));
+    expect(replyPostSaveSummary).toHaveBeenCalledWith("token", expect.objectContaining({ amount: 80, category: "อาหาร", budgetSpent: 3880, budgetLimit: 5000, budgetPercent: 78 }));
   });
 
   it("enforces the 20-item recurring transaction UAT limit in LINE", async () => {
@@ -560,23 +560,20 @@ describe("LINE webhook processor", () => {
     expect(db.finishWebhookEvent).toHaveBeenCalledWith("evt-recurring-limit", "processed");
   });
 
-  it("pushes a text summary if both Flex and reply-token fallbacks are rejected", async () => {
+  it("pushes a text summary if both Flex and native text replies are rejected", async () => {
     vi.mocked(db.registerWebhookEvent).mockResolvedValue(true);
     vi.mocked(getProfile).mockResolvedValue({ displayName: "ผู้ส่ง" });
     vi.mocked(sourceIdentity).mockReturnValue({ lineChatId: "U1", lineUserId: "U1", scope: "user" });
     vi.mocked(db.financeReport).mockResolvedValue({ period: "day", income: 0, expense: 100, balance: -100, categories: { อาหาร: 100 } } as never);
-    vi.mocked(replyPostSaveSummaryImage).mockRejectedValue(new Error("invalid image reply"));
     vi.mocked(replyPostSaveSummary).mockRejectedValue(new Error("invalid flex reply"));
+    vi.mocked(replyText).mockRejectedValue(new Error("invalid text reply"));
     const line = await import("./line");
-    vi.mocked(line.replyPostSaveSummaryFallback).mockRejectedValue(new Error("invalid reply token"));
-    vi.mocked(line.replyPostSaveSummary).mockRejectedValue(new Error("invalid flex reply"));
     vi.mocked(line.pushText).mockResolvedValue(new Response());
 
-    await processEvent({ type: "message", webhookEventId: "evt-save-push-fallback", timestamp: Date.now(), replyToken: "token", source: { type: "user", userId: "U1" }, message: { id: "expense-100", type: "text", text: "จ่ายค่าอาหาร 100 บาท" } }, "{}");
+    await processEvent({ type: "message", webhookEventId: "evt-save-push-fallback", timestamp: Date.now(), replyToken: "[REDACTED]", source: { type: "user", userId: "U1" }, message: { id: "expense-100", type: "text", text: "จ่ายค่าอาหาร 100 บาท" } }, "{}");
 
     expect(line.pushText).toHaveBeenCalledWith("U1", expect.stringContaining("รายจ่าย 100 บาท"));
   });
-
   it("continues slip/receipt analysis when permanent storage is unavailable", async () => {
     vi.mocked(db.registerWebhookEvent).mockResolvedValue(true);
     vi.mocked(getProfile).mockResolvedValue({ displayName: "ผู้ส่ง" });

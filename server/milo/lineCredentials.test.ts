@@ -70,6 +70,10 @@ describe("LINE credentials", () => {
     expect(String(init.body)).toContain("รายจ่าย  •  ค่าอาหาร");
     expect(String(init.body)).toContain("80 บาท");
     expect(String(init.body)).toContain("รายจ่าย 280 บาท");
+    expect(String(init.body)).toContain("สถานะงบประมาณหมวดหมู่");
+    expect(String(init.body)).toContain("ใช้ไป 4%");
+    expect(String(init.body)).toContain("วันที่ - เวลา");
+    expect(payload.messages).toHaveLength(1);
     expect(payload.messages[0]?.contents.body.backgroundColor).toBe("#F2F0FF");
     expect(String(init.body)).toContain('"text":"✓"');
     expect(payload.messages[0]?.contents.body.contents[1]?.backgroundColor).toBe("#FFFEFB");
@@ -107,7 +111,7 @@ describe("LINE credentials", () => {
     expect(payload.messages).toHaveLength(1);
     expect(payload.messages[0]?.type).toBe("image");
     expect(payload.messages[0]?.originalContentUrl).toContain("/api/milo/finance-report.png?");
-    expect(payload.messages[0]?.originalContentUrl).toContain("render=summary-v3");
+    expect(payload.messages[0]?.originalContentUrl).toContain("render=summary-v4");
     expect(payload.messages[0]?.originalContentUrl).not.toContain("report-week.png");
     expect(payload.messages[0]?.text).toBeUndefined();
     expect(payload.messages[0]?.quickReply?.items.map(item => item.action.text)).toEqual(["สรุปวันนี้", "สรุปสัปดาห์นี้", "สรุปเดือนนี้", "สรุปปีนี้"]);

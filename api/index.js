@@ -2270,21 +2270,6 @@ function miloRichMenuImageUrl(key) {
   const extension = key === "save-complete-preview" ? "jpg" : "png";
   return `${MILO_RICH_MENU_IMAGE_BASE_URL}/${key}.${extension}`;
 }
-function miloSaveResultImageUrl(summary) {
-  const appBaseUrl = (process.env.MILO_SAVE_RESULT_IMAGE_BASE_URL ?? "https://milo-line-app.vercel.app").replace(/\/+$/, "");
-  const params = new URLSearchParams({
-    transactionType: summary.transactionType,
-    item: (summary.note?.trim() || summary.category).slice(0, 300),
-    category: summary.category.slice(0, 50),
-    amount: String(summary.amount),
-    occurredAt: summary.occurredAt.toISOString(),
-    budgetSpent: String(summary.budgetSpent),
-    budgetLimit: String(summary.budgetLimit),
-    budgetPercent: summary.budgetPercent === void 0 ? "" : String(summary.budgetPercent),
-    render: "glyph-v2"
-  });
-  return `${appBaseUrl}/api/milo/save-result.png?${params.toString()}`;
-}
 async function replyText(replyToken, text2, credentials = lineCredentials()) {
   return callLine("/v2/bot/message/reply", credentials, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ replyToken, messages: [{ type: "text", text: text2.slice(0, 5e3) }] }) });
 }
@@ -2485,22 +2470,6 @@ async function replyPostSaveSummary(replyToken, summary, credentials = lineCrede
         }
       }
     ] })
-  });
-}
-async function replyPostSaveSummaryImage(replyToken, summary, credentials = lineCredentials()) {
-  const imageUrl = miloSaveResultImageUrl(summary);
-  return callLine("/v2/bot/message/reply", credentials, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ replyToken, messages: [{
-      type: "image",
-      originalContentUrl: imageUrl,
-      previewImageUrl: imageUrl,
-      quickReply: { items: [
-        { type: "action", action: { type: "message", label: "\u0E22\u0E01\u0E40\u0E25\u0E34\u0E01\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E25\u0E48\u0E32\u0E2A\u0E38\u0E14", text: "\u0E22\u0E01\u0E40\u0E25\u0E34\u0E01\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E25\u0E48\u0E32\u0E2A\u0E38\u0E14" } },
-        { type: "action", action: { type: "message", label: "\u0E2A\u0E23\u0E38\u0E1B\u0E27\u0E31\u0E19\u0E19\u0E35\u0E49", text: "\u0E2A\u0E23\u0E38\u0E1B\u0E27\u0E31\u0E19\u0E19\u0E35\u0E49" } }
-      ] }
-    }] })
   });
 }
 async function replyVoiceCategoryChoices(replyToken, credentials = lineCredentials()) {
@@ -6098,13 +6067,13 @@ async function sendPostSaveSummary(replyToken, lineUserId, lineChatId, financeAc
   const budgetPercent = budgetLimit > 0 ? Math.round(budgetSpent / budgetLimit * 100) : void 0;
   const summary = { transactionType: transaction.transactionType, amount: transaction.amount, category: transaction.category, note: transaction.note, occurredAt, dailyIncome: dailyReport.income, dailyExpense: dailyReport.expense, dailyBalance: dailyReport.balance, budgetSpent, budgetLimit, budgetPercent };
   try {
-    await replyPostSaveSummaryImage(replyToken, summary);
+    await replyPostSaveSummary(replyToken, summary);
   } catch (error) {
-    console.error("[Milo Save] image summary failed; sending Flex fallback", { error: error instanceof Error ? error.message : "unknown" });
+    console.error("[Milo Save] Flex summary failed; sending native text fallback", { error: error instanceof Error ? error.message : "unknown" });
     try {
-      await replyPostSaveSummary(replyToken, summary);
+      await replyText(replyToken, postSaveSummaryText(summary));
     } catch (fallbackError) {
-      console.error("[Milo Save] reply fallback failed; pushing text summary", { error: fallbackError instanceof Error ? fallbackError.message : "unknown" });
+      console.error("[Milo Save] text reply fallback failed; pushing text summary", { error: fallbackError instanceof Error ? fallbackError.message : "unknown" });
       await pushText(lineChatId, postSaveSummaryText(summary));
     }
   }
@@ -7230,7 +7199,7 @@ var healthHandler = async (req, res) => {
   res.status(200).json({
     status: runtime.authenticated && voice.configured && Boolean(process.env.LINE_CHANNEL_SECRET?.trim()) && Boolean(process.env.LINE_CHANNEL_ACCESS_TOKEN?.trim()) && Boolean(process.env.DATABASE_URL?.trim()) ? "ok" : "degraded",
     service: "milo",
-    release: "finance-summary-v4-2026-09-15",
+    release: "native-save-card-v1-2026-09-16",
     visionConfigured: runtime.authenticated,
     imageAnalysisMode: mode,
     visionModel: mode === "ocr-fallback" ? "tesseract-tha+eng" : process.env.MILO_VISION_MODEL || (mode.startsWith("vercel-ai-gateway") ? "google/gemini-2.5-flash" : mode.startsWith("forge-vision") ? "gemini-3-flash-preview" : "unconfigured"),
