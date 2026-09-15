@@ -88,7 +88,7 @@ function sign(payload: string) {
 export function buildFinanceReportImageUrl(input: FinanceReportImageInput) {
   const base = (process.env.MILO_SAVE_RESULT_IMAGE_BASE_URL ?? process.env.MILO_APP_BASE_URL ?? "https://milo-line-app.vercel.app").replace(/\/+$/, "");
   const data = encodePayload(input);
-  return `${base}/api/milo/finance-report.png?data=${encodeURIComponent(data)}&sig=${sign(data)}&render=summary-v3`;
+  return `${base}/api/milo/finance-report.png?data=${encodeURIComponent(data)}&sig=${sign(data)}&render=summary-v4`;
 }
 
 function validNumber(value: unknown) {

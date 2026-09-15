@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { buildFinanceReportImageUrl, renderFinanceReportImage } from "./financeReportImage";
 
 describe("dynamic finance report image UAT", () => {
-  it("renders the new Milo summary-v3 layout from real finance values and recent transactions", async () => {
+  it("renders the new Milo summary-v4 layout from real finance values and recent transactions", async () => {
     const png = await renderFinanceReportImage({
       period: "month",
       income: 48_750,
@@ -25,12 +25,12 @@ describe("dynamic finance report image UAT", () => {
     expect(png.subarray(1, 4).toString()).toBe("PNG");
   });
 
-  it("builds a signed summary-v3 dynamic URL instead of serving the static mockup with example numbers", () => {
+  it("builds a signed summary-v4 dynamic URL instead of serving the static mockup with example numbers", () => {
     const url = buildFinanceReportImageUrl({ period: "week", income: 1000, expense: 250, balance: 750, transactionCount: 2, categories: { อาหาร: 250 } });
     expect(url).toContain("/api/milo/finance-report.png?");
     expect(url).toContain("data=");
     expect(url).toContain("sig=");
-    expect(url).toContain("render=summary-v3");
+    expect(url).toContain("render=summary-v4");
     expect(url).not.toContain("report-week.png");
   });
 });
