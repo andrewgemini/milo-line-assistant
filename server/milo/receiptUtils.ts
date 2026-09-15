@@ -1,4 +1,5 @@
 import type { ImageProposal } from "./imageAnalysis";
+import { normalizeThaiMerchantName } from "./thaiReceiptParser";
 
 type ProposalLike = Partial<ImageProposal>;
 
@@ -82,8 +83,9 @@ export function selectImageProposal(proposals: ProposalLike[] = []) {
 }
 
 export function buildExpenseNote(proposal: ProposalLike) {
+  const merchant = normalizeThaiMerchantName(proposal.merchant ?? "");
   const entries = [
-    proposal.merchant ? `ร้านค้า/คู่ค้า: ${proposal.merchant}` : "",
+    merchant ? `ร้านค้า/คู่ค้า: ${merchant}` : "",
     proposal.title ? `รายการ: ${proposal.title}` : "",
     proposal.paymentMethod ? `ชำระ: ${proposal.paymentMethod}` : "",
     proposal.receiptNumber ? `เลขที่: ${proposal.receiptNumber}` : "",
@@ -96,7 +98,8 @@ export function buildExpenseNote(proposal: ProposalLike) {
 export function formatImageProposal(proposal: ProposalLike) {
   if (proposal.kind === "expense") {
     const source = proposal.documentType === "bank_slip" ? "สลิป" : "ใบเสร็จ";
-    const merchant = proposal.merchant ? ` · ${proposal.merchant}` : "";
+    const merchantName = normalizeThaiMerchantName(proposal.merchant ?? "");
+    const merchant = merchantName ? ` · ${merchantName}` : "";
     const rows = [
       `${source}${merchant}`,
       `ยอด ${Number(proposal.amount || 0).toLocaleString("th-TH")} ${proposal.currency || "บาท"} · หมวด${normalizeExpenseCategory(proposal.category, `${proposal.title ?? ""} ${proposal.merchant ?? ""}`)}`,
@@ -106,7 +109,11 @@ export function formatImageProposal(proposal: ProposalLike) {
     if (proposal.receiptNumber?.trim()) rows.push(`เลขที่รายการ ${proposal.receiptNumber.trim()}`);
     if (proposal.paymentMethod?.trim()) rows.push(`ชำระ ${proposal.paymentMethod.trim()}`);
     if (proposal.title?.trim()) rows.push(`รายการ ${proposal.title.trim()}`);
-    if (proposal.lineItems?.length) rows.push(...proposal.lineItems.slice(0, 4).map(item => `• ${item}`));
+    if (proposal.lineItems?.length) {
+      rows.push(`รายการสินค้า ${proposal.lineItems.length} รายการ`);
+      rows.push(...proposal.lineItems.slice(0, 10).map(item => `• ${item}`));
+      if (proposal.lineItems.length > 10) rows.push(`…อีก ${proposal.lineItems.length - 10} รายการ`);
+    }
     return rows.join("\n");
   }
   return proposal.title || proposal.note || "ไม่พบข้อมูลที่ยืนยันได้";

@@ -51,6 +51,16 @@ describe("receipt utilities", () => {
     expect(text).toContain("รายการ กาแฟ");
   });
 
+  it("never shows POS labels as the merchant in preview or saved notes", () => {
+    const contaminated = "ประเภท: ทานที่ร้าน ซื้อ พนักงาน: จ๊ะจ๋า เวลา: 13-09-2569 15:28";
+    const preview = formatImageProposal({ kind: "expense", documentType: "receipt", merchant: contaminated, amount: 423, currency: "บาท", category: "อาหาร", title: "รายการจากใบเสร็จ" });
+    expect(preview).not.toContain("ประเภท:");
+    expect(preview).not.toContain("พนักงาน:");
+    const note = buildExpenseNote({ merchant: contaminated, title: "รายการจากใบเสร็จ" });
+    expect(note).not.toContain("ร้านค้า/คู่ค้า:");
+    expect(note).toContain("รายการ: รายการจากใบเสร็จ");
+  });
+
   it("keeps merchant, payment method, receipt number and items in the expense note", () => {
     expect(buildExpenseNote({ merchant: "ร้านกาแฟ", title: "เครื่องดื่ม", paymentMethod: "PromptPay", receiptNumber: "R-123", lineItems: ["ลาเต้"] })).toContain("ร้านค้า/คู่ค้า: ร้านกาแฟ");
     expect(buildExpenseNote({ merchant: "ร้านกาแฟ", title: "เครื่องดื่ม", paymentMethod: "PromptPay", receiptNumber: "R-123", lineItems: ["ลาเต้"] })).toContain("เลขที่: R-123");

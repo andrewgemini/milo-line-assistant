@@ -57,7 +57,7 @@ const healthHandler = async (req: express.Request, res: express.Response) => {
   res.status(200).json({
     status: runtime.authenticated && voice.configured && Boolean(process.env.LINE_CHANNEL_SECRET?.trim()) && Boolean(process.env.LINE_CHANNEL_ACCESS_TOKEN?.trim()) && Boolean(process.env.DATABASE_URL?.trim()) ? "ok" : "degraded",
     service: "milo",
-    release: "receipt-total-v23-2026-09-15",
+    release: "receipt-complete-v23-2026-09-15",
     visionConfigured: runtime.authenticated,
     imageAnalysisMode: mode,
     visionModel: mode === "ocr-fallback" ? "tesseract-tha+eng" : process.env.MILO_VISION_MODEL || (mode.startsWith("vercel-ai-gateway") ? "google/gemini-2.5-flash" : mode.startsWith("forge-vision") ? "gemini-3-flash-preview" : "unconfigured"),

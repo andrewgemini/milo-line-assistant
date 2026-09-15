@@ -130,6 +130,40 @@ ys คาเฟอเมซอน สน.ปตท.บจก.โรสท์บ�
     expect(proposal.merchant).not.toContain("202609131789574");
   });
 
+  it("extracts POS receipt number, cash payment and all visible item rows", () => {
+    const result = analyzeOcrText(`
+ตำราลิ้น
+ใบเสร็จ
+เลขที่: 03000728
+ประเภท: ทานที่ร้าน
+ชื่อพนักงาน: จ๊ะจ๋า
+เวลา: 13-09-2569 15:28
+สินค้า Qty ราคา รวม
+ปีกไก่ทอด 1 80.00
+ต้มแซ่บกระดูกอ่อน 1 80.00
+ตำคอหมูย่าง 1 80.00
+ข้าวเหนียว 2 20.00
+เป๊ปซี่ใหญ่ 1 30.00
+น้ำแข็งแก้ว 2 4.00
+ข้าวผัดกะเพรา 1 129.00
+ยอดรวม 9 423.00
+ทั้งหมด ฿423.00
+เงินสด ฿423.00
+`);
+    expect(result.proposals[0]).toMatchObject({
+      kind: "expense",
+      documentType: "receipt",
+      merchant: "ตำราลิ้น",
+      amount: 423,
+      dateText: "2026-09-13",
+      timeText: "15:28",
+      receiptNumber: "03000728",
+      paymentMethod: "เงินสด",
+      category: "อาหาร",
+    });
+    expect(result.proposals[0].lineItems).toHaveLength(7);
+  });
+
   it("recovers a K+ amount when LINE OCR splits the จำนวน label and baht value across lines", () => {
     const result = analyzeOcrText(`
 ชำระเงินสำเร็จ

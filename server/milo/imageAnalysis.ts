@@ -58,8 +58,9 @@ const schema = {
   additionalProperties: false,
 } as const;
 
-const SYSTEM_PROMPT = "คุณคือไมโล ผู้ช่วยภาษาไทย อ่านภาพใบนัด ตาราง สลิปโอนเงิน และใบเสร็จอย่างระมัดระวัง คืน JSON ตาม schema เท่านั้น ห้ามเดาหรือแต่งข้อความ/ตัวเลขที่อ่านไม่ชัด สำหรับสลิปให้ใช้ยอดโอนจริง ไม่ใช้ยอดคงเหลือหรือค่าธรรมเนียม สำหรับใบเสร็จให้ใช้ยอดที่จ่ายจริงหลังส่วนลดหรือสิทธิช่วยเหลือ โดยให้ความสำคัญกับช่อง จำนวนเงินที่ชำระ, ยอดที่ชำระ, ยอดสุทธิ มากกว่าค่าสินค้า/บริการก่อนส่วนลด หากวันที่อ่านได้แน่ชัดให้ส่ง dateText รูปแบบ YYYY-MM-DD มิฉะนั้นเป็นสตริงว่าง สำหรับค่าใช้จ่ายให้แยก merchant แบบชื่อร้านจริงเท่านั้น ไม่รวมรายการสินค้า/ส่วนลด/ยอดเงิน, paymentMethod, receiptNumber, lineItems รายการสำคัญ และเลือก category ภาษาไทยจาก อาหาร, เดินทาง, ค่าสาธารณูปโภค, สุขภาพ, การศึกษา, บันเทิง, ช้อปปิ้ง, ท่องเที่ยว, ทั่วไป หากไม่พบข้อมูลที่บันทึกได้ให้ใช้ kind=unknown และ amount=0";
+const SYSTEM_PROMPT = "คุณคือไมโล ผู้ช่วยภาษาไทย อ่านภาพใบนัด ตาราง สลิปโอนเงิน และใบเสร็จอย่างระมัดระวัง คืน JSON ตาม schema เท่านั้น ห้ามเดาหรือแต่งข้อความ/ตัวเลขที่อ่านไม่ชัด สำหรับสลิปให้ใช้ยอดโอนจริง ไม่ใช้ยอดคงเหลือหรือค่าธรรมเนียม สำหรับใบเสร็จ POS ให้ตรวจตั้งแต่หัวใบเสร็จถึงท้ายใบ: merchant ต้องเป็นชื่อร้านจริงเท่านั้น, receiptNumber ต้องอ่านจากเลขที่ใบเสร็จ, dateText/timeText ต้องมาจากวันที่และเวลาที่พิมพ์บนเอกสาร, paymentMethod ให้อ่านจากเงินสด/QR/บัตร/โอนเงิน และ lineItems ต้องถอดทุกรายการในตารางสินค้าเท่าที่อ่านได้ โดยเก็บชื่อสินค้า จำนวน และยอดของแถวนั้น ไม่เอาหัวตาราง ยอดรวม เงินสด เงินทอน หรือ footer มาเป็นสินค้า สำหรับยอด amount ให้ใช้ยอดที่จ่ายจริงหลังส่วนลดหรือสิทธิช่วยเหลือ โดยให้ความสำคัญกับ จำนวนเงินที่ชำระ, ยอดที่ชำระ, ยอดสุทธิ, ทั้งหมด, Grand Total มากกว่าค่าสินค้า/บริการก่อนส่วนลด หากวันที่อ่านได้แน่ชัดให้ส่ง dateText รูปแบบ YYYY-MM-DD มิฉะนั้นเป็นสตริงว่าง สำหรับค่าใช้จ่ายให้เลือก category ภาษาไทยจาก อาหาร, เดินทาง, ค่าสาธารณูปโภค, สุขภาพ, การศึกษา, บันเทิง, ช้อปปิ้ง, ท่องเที่ยว, ทั่วไป หากไม่พบข้อมูลที่บันทึกได้ให้ใช้ kind=unknown และ amount=0";
 const USER_PROMPT = "วิเคราะห์ภาพเพื่อหาใบนัดหรือธุรกรรมค่าใช้จ่ายจากสลิป/ใบเสร็จ โดยเสนอข้อมูลเพื่อให้ผู้ใช้ยืนยันก่อนบันทึกเท่านั้น";
+const RECEIPT_DETAIL_PROMPT = "ตรวจใบเสร็จนี้ซ้ำแบบละเอียดเหมือนผู้ตรวจเอกสาร POS: อ่านชื่อร้านจากหัวเอกสาร, เลขที่ใบเสร็จ, ประเภทการซื้อ, พนักงานถ้ามี, วันที่/เวลา, วิธีชำระ, ยอดทั้งหมดที่จ่ายจริง และถอดรายการสินค้าในตารางให้ครบทุกแถวที่มองเห็น โดย lineItems แต่ละรายการควรมีชื่อสินค้า ×จำนวน ยอดบาท ห้ามเอา Qty/ราคา/ยอดรวม/ทั้งหมด/เงินสด/Powered by มาเป็นสินค้า ถ้าตัวอักษรแถวใดอ่านไม่ชัดให้เว้นส่วนนั้นแทนการเดา";
 
 function parseAnalysisContent(content: unknown): ImageAnalysis {
   if (typeof content !== "string" || !content.trim()) throw new Error("Image model did not return JSON");
@@ -176,8 +177,14 @@ async function receiptDateRepairRequest(dataUrl: string, token: string): Promise
   const body: Record<string, unknown> = {
     model: process.env.MILO_VISION_MODEL || "google/gemini-2.5-flash",
     messages: [
-      { role: "system", content: "à¸„à¸¸à¸“à¹€à¸›à¹‡à¸™ OCR verifier à¸ªà¸³à¸«à¸£à¸±à¸šà¹ƒà¸šà¹€à¸ªà¸£à¹‡à¸ˆà¹„à¸—à¸¢ à¸‡à¸²à¸™à¹€à¸”à¸µà¸¢à¸§à¸„à¸·à¸­à¸­à¹ˆà¸²à¸™à¸‚à¹‰à¸­à¸„à¸§à¸²à¸¡à¸§à¸±à¸™à¸—à¸³à¸£à¸²à¸¢à¸à¸²à¸£à¹à¸¥à¸°à¹€à¸§à¸¥à¸²à¸—à¸µà¹ˆà¸žà¸´à¸¡à¸žà¹Œà¸­à¸¢à¸¹à¹ˆà¹ƒà¸™à¸ à¸²à¸žà¸ˆà¸£à¸´à¸‡ à¸«à¹‰à¸²à¸¡à¹€à¸”à¸²à¸ˆà¸²à¸à¹€à¸§à¸¥à¸²à¸ªà¹ˆà¸‡à¸£à¸¹à¸› à¸§à¸±à¸™à¸—à¸µà¹ˆà¸›à¸±à¸ˆà¸ˆà¸¸à¸šà¸±à¸™ à¸«à¸£à¸·à¸­à¸šà¸£à¸´à¸šà¸—à¸­à¸·à¹ˆà¸™ à¸–à¹‰à¸²à¸­à¹ˆà¸²à¸™à¸§à¸±à¸™à¹€à¸”à¸·à¸­à¸™à¸›à¸µà¹„à¸¡à¹ˆà¸Šà¸±à¸”à¹ƒà¸«à¹‰ dateText à¹€à¸›à¹‡à¸™à¸ªà¸•à¸£à¸´à¸‡à¸§à¹ˆà¸²à¸‡ à¸–à¹‰à¸²à¸­à¹ˆà¸²à¸™à¹€à¸§à¸¥à¸²à¹„à¸¡à¹ˆà¸Šà¸±à¸”à¹ƒà¸«à¹‰ timeText à¹€à¸›à¹‡à¸™à¸ªà¸•à¸£à¸´à¸‡à¸§à¹ˆà¸²à¸‡ dateText à¸•à¹‰à¸­à¸‡à¹€à¸›à¹‡à¸™ YYYY-MM-DD à¹€à¸—à¹ˆà¸²à¸™à¸±à¹‰à¸™ à¹à¸¥à¸° evidence à¹ƒà¸«à¹‰à¸„à¸±à¸”à¸‚à¹‰à¸­à¸„à¸§à¸²à¸¡à¸ªà¸±à¹‰à¸™à¹† à¸—à¸µà¹ˆà¸¡à¸­à¸‡à¹€à¸«à¹‡à¸™à¸‹à¸¶à¹ˆà¸‡à¸£à¸­à¸‡à¸£à¸±à¸šà¸§à¸±à¸™à¸—à¸µà¹ˆ/à¹€à¸§à¸¥à¸²" },
-      { role: "user", content: [{ type: "text", text: "à¸•à¸£à¸§à¸ˆà¹€à¸‰à¸žà¸²à¸°à¸§à¸±à¸™à¸—à¸³à¸£à¸²à¸¢à¸à¸²à¸£à¹à¸¥à¸°à¹€à¸§à¸¥à¸²à¹ƒà¸™à¹€à¸­à¸à¸ªà¸²à¸£à¸™à¸µà¹‰ à¸¡à¸­à¸‡à¸—à¸±à¹‰à¸‡à¸«à¸±à¸§à¹€à¸­à¸à¸ªà¸²à¸£ à¸šà¸£à¸£à¸—à¸±à¸”à¹ƒà¸à¸¥à¹‰à¸„à¸³à¸§à¹ˆà¸² à¸—à¸³à¸£à¸²à¸¢à¸à¸²à¸£à¸ªà¸³à¹€à¸£à¹‡à¸ˆ/à¸§à¸±à¸™à¸—à¸µà¹ˆ/à¹€à¸§à¸¥à¸² à¹à¸¥à¸°à¸šà¸£à¸´à¹€à¸§à¸“à¸£à¸­à¸šà¸¢à¸­à¸”à¹€à¸‡à¸´à¸™ à¸§à¸±à¸™à¸—à¸µà¹ˆà¸­à¸²à¸ˆà¹€à¸›à¹‡à¸™ à¸ž.à¸¨. à¹€à¸Šà¹ˆà¸™ 14 à¸.à¸¢. 2569, 14 à¸à¸±à¸™à¸¢à¸²à¸¢à¸™ 2569, 14/09/2569, 14.09.69 à¸«à¸²à¸à¸¡à¸­à¸‡à¹„à¸¡à¹ˆà¹€à¸«à¹‡à¸™à¸§à¸±à¸™à¹€à¸”à¸·à¸­à¸™à¸›à¸µà¸ˆà¸£à¸´à¸‡à¹ƒà¸«à¹‰à¸„à¸·à¸™ dateText à¸§à¹ˆà¸²à¸‡" }, { type: "image_url", image_url: { url: dataUrl, detail: "high" } }] },
+      { role: "system", content: "คุณคือ OCR verifier สำหรับใบเสร็จไทย งานเดียวคืออ่านวันที่ทำรายการและเวลาที่พิมพ์อยู่ในภาพจริง ห้ามเดาจากเวลาส่งรูป วันที่ปัจจุบัน หรือบริบทอื่น ถ้าอ่านวันเดือนปีไม่ชัดให้ dateText เป็นสตริงว่าง ถ้าอ่านเวลาไม่ชัดให้ timeText เป็นสตริงว่าง dateText ต้องเป็น YYYY-MM-DD เท่านั้น และ evidence ให้คัดข้อความสั้นๆ ที่มองเห็นซึ่งรองรับวันที่/เวลา" },
+      {
+        role: "user",
+        content: [
+          { type: "text", text: "ตรวจเฉพาะวันที่ทำรายการและเวลาในเอกสารนี้ มองทั้งหัวเอกสาร บรรทัดใกล้คำว่า วันที่/เวลา และบริเวณรอบยอดเงิน วันที่อาจเป็น พ.ศ. เช่น 14 ก.ย. 2569, 14 กันยายน 2569, 14/09/2569, 14.09.69 หากมองไม่เห็นวันเดือนปีจริงให้คืน dateText ว่าง" },
+          { type: "image_url", image_url: { url: dataUrl, detail: "high" } },
+        ],
+      },
     ],
     stream: false,
     temperature: 0,
@@ -217,7 +224,7 @@ function mergeDedicatedDateRepair(base: ImageAnalysis, repair: ReceiptDateRepair
   return {
     ...base,
     summary: b.kind === "expense"
-      ? `à¸­à¹ˆà¸²à¸™${b.documentType === "bank_slip" ? "à¸ªà¸¥à¸´à¸›" : "à¹ƒà¸šà¹€à¸ªà¸£à¹‡à¸ˆ"}à¹„à¸”à¹‰ à¸¢à¸­à¸” ${b.amount.toLocaleString("th-TH")} à¸šà¸²à¸— à¸§à¸±à¸™à¸—à¸µà¹ˆ ${repair.dateText}`
+      ? `อ่าน${b.documentType === "bank_slip" ? "สลิป" : "ใบเสร็จ"}ได้ ยอด ${b.amount.toLocaleString("th-TH")} บาท วันที่ ${repair.dateText}`
       : base.summary,
     confidence: Math.max(base.confidence, 0.9),
     proposals: [{ ...b, dateText: repair.dateText, timeText: b.timeText || repair.timeText }, ...base.proposals.slice(1)],
@@ -247,6 +254,34 @@ export async function imageAnalysisRuntimeStatus(requestToken?: string) {
     authenticated: Boolean(ENV.forgeApiKey || imageGatewayToken(process.env, requestToken) || ocrAssetsReady()),
     ocrAssetsReady: ocrAssetsReady(),
   };
+}
+
+function receiptNeedsDetailRepair(analysis: ImageAnalysis) {
+  const proposal = analysis.proposals[0];
+  if (!proposal || proposal.documentType !== "receipt" || proposal.kind !== "expense" || proposal.amount <= 0) return false;
+  const merchant = normalizeThaiMerchantName(proposal.merchant);
+  const merchantLooksOperational = !merchant || /^(?:ประเภท|พนักงาน|เวลา|วันที่|สินค้า|qty|ราคา|รวม)/i.test(merchant);
+  return merchantLooksOperational || !proposal.lineItems?.length || proposal.lineItems.length < 2 || !proposal.receiptNumber;
+}
+
+async function refineReceiptDetails(analysis: ImageAnalysis, dataUrl: string, gatewayKey: string) {
+  if (!receiptNeedsDetailRepair(analysis)) return analysis;
+  try {
+    const repaired = await analyzeImageWithGatewayKey(dataUrl, gatewayKey, RECEIPT_DETAIL_PROMPT);
+    const repairedProposal = repaired.proposals[0];
+    if (!repairedProposal || repairedProposal.documentType !== "receipt") return analysis;
+    const merged = mergeImageAnalyses(analysis, repaired);
+    console.info("[Milo Image] receipt detail repair", {
+      merchant: merged.proposals[0]?.merchant,
+      receiptNumber: merged.proposals[0]?.receiptNumber,
+      lineItems: merged.proposals[0]?.lineItems?.length ?? 0,
+      amount: merged.proposals[0]?.amount,
+    });
+    return merged;
+  } catch (error) {
+    console.warn("[Milo Image] receipt detail repair failed", { error: error instanceof Error ? error.message : "unknown" });
+    return analysis;
+  }
 }
 
 function merchantQuality(value: string) {
@@ -283,7 +318,7 @@ export function mergeImageAnalyses(primary: ImageAnalysis, ocr: ImageAnalysis): 
     category: p.category && p.category !== "ทั่วไป" ? p.category : o.category,
     paymentMethod: p.paymentMethod || o.paymentMethod,
     receiptNumber: p.receiptNumber || o.receiptNumber,
-    lineItems: Array.from(new Set([...(p.lineItems || []), ...(o.lineItems || [])])).slice(0, 10),
+    lineItems: Array.from(new Set([...(p.lineItems || []), ...(o.lineItems || [])])).slice(0, 20),
     note: p.note || o.note,
     title: documentType === "bank_slip" && o.title === "รายการโอนเงิน" && !o.note
       ? o.title
@@ -352,6 +387,7 @@ export async function analyzeImage(dataUrl: string, options: { gatewayToken?: st
           });
         }
       }
+      if (gatewayKey) selected = await refineReceiptDetails(selected, dataUrl, gatewayKey);
       return selected;
     }
 
@@ -386,10 +422,11 @@ export async function analyzeImage(dataUrl: string, options: { gatewayToken?: st
       }
     }
 
+    if (gatewayKey) selected = await refineReceiptDetails(selected, dataUrl, gatewayKey);
     return selected;
   } catch (ocrError) {
     console.error("[Milo Image] OCR fallback failed", { error: ocrError instanceof Error ? ocrError.message : "unknown" });
-    if (providerAnalysis) return providerAnalysis;
+    if (providerAnalysis) return gatewayKey ? refineReceiptDetails(providerAnalysis, dataUrl, gatewayKey) : providerAnalysis;
     if (providerError) {
       const providerMessage = providerError instanceof Error ? providerError.message : "unknown provider error";
       const ocrMessage = ocrError instanceof Error ? ocrError.message : "unknown OCR error";

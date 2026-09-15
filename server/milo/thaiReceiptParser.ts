@@ -128,6 +128,12 @@ function isKbankNoise(line: string) {
 
 export function normalizeThaiMerchantName(value: string) {
   let cleaned = compact(value)
+    .replace(/\s+(?:ประเภท|ชื่อ?พนักงาน|พนักงาน|เวลา|วันที่|เลขที่|โต๊ะ|table|qty|จำนวน|สินค้า)\s*[:：][\s\S]*$/i, "")
+    .trim();
+
+  if (/^(?:ประเภท|ชื่อ?พนักงาน|พนักงาน|เวลา|วันที่|เลขที่|โต๊ะ|table|qty|จำนวน|สินค้า)\s*[:：]/i.test(cleaned)) return "";
+
+  cleaned = cleaned
     .replace(/^[=•·|:;._\-–—>]+\s*/, "")
     .replace(/^[A-Za-zก-๙]{1,2}\s+(?=ร้าน)/, "")
     .replace(/^[A-Za-z0-9]{1,4}[\s|:;._-]+(?=[ก-๙])/, "")
@@ -192,23 +198,114 @@ export function extractReceiptMerchant(text: string) {
   const cleanedLines = lines.map(cleanMerchant);
   const candidate = cleanedLines.find(line => /^(?:ร้าน|บจก\.?|หจก\.?|บริษัท|cj\b|cafe\b)/i.test(line)
     && !/(ค่าสินค้า|ยอด|จำนวนเงิน|ส่วนลด|สิทธิ|บาท|ค่าธรรมเนียม)/i.test(line));
-  if (!candidate) return "";
-  return candidate.trim().slice(0, 180);
+  if (candidate) return candidate.trim().slice(0, 180);
+
+  // Many restaurant/POS receipts print only a brand name at the very top
+  // (without a ร้าน/บริษัท prefix). Prefer a short header-like line, but reject
+  // receipt labels, phone numbers, dates, operational fields and item-table text.
+  const fallback = lines.slice(0, 8).map(cleanMerchant).find(line => {
+    if (!line || line.length < 2 || line.length > 80) return false;
+    if (!/[A-Za-zก-๙]/.test(line)) return false;
+    if (/^(?:ใบเสร็จ|receipt|โทรศัพท์|โทร|tel|เลขที่|ประเภท|ชื่อ?พนักงาน|พนักงาน|เวลา|วันที่|โต๊ะ|table|สินค้า|qty|ราคา|รวม|ทั้งหมด|เงินสด)/i.test(line)) return false;
+    if (/(?:\d{2,}[-./]){1,2}\d{2,4}|\b0\d{8,9}\b/i.test(line)) return false;
+    return true;
+  });
+  return (fallback || "").trim().slice(0, 180);
+}
+
+export function extractReceiptNumber(text: string) {
+  const lines = text.split(/\n+/).map(compact).filter(Boolean);
+  const labels = /^(?:เลขที่(?:ใบเสร็จ)?|receipt\s*(?:no\.?|number)|bill\s*(?:no\.?|number))\s*[:：#-]?\s*/i;
+  for (let i = 0; i < lines.length; i += 1) {
+    if (!labels.test(lines[i])) continue;
+    const sameLine = lines[i].replace(labels, "").trim().match(/^([A-Z0-9][A-Z0-9\/-]{3,39})$/i)?.[1];
+    if (sameLine) return sameLine;
+    const next = lines[i + 1]?.match(/^([A-Z0-9][A-Z0-9\/-]{3,39})$/i)?.[1];
+    if (next) return next;
+  }
+  return "";
+}
+
+export function extractReceiptPaymentMethod(text: string) {
+  if (/(?:^|\s)(?:เงินสด|cash)(?:\s|$)/i.test(text)) return "เงินสด";
+  if (/(?:พร้อมเพย์|promptpay|qr\s*(?:payment|pay)?|สแกนจ่าย)/i.test(text)) return "QR/พร้อมเพย์";
+  if (/(?:บัตรเครดิต|บัตรเดบิต|credit\s*card|debit\s*card|visa|mastercard)/i.test(text)) return "บัตร";
+  if (/(?:โอนเงิน|bank\s*transfer)/i.test(text)) return "โอนเงิน";
+  return "";
+}
+
+function cleanReceiptItemName(value: string) {
+  return compact(value)
+    .replace(/^[•·|:;._\-–—>]+\s*/, "")
+    .replace(/\s+(?:qty|จำนวน|ราคา|รวม)\s*$/i, "")
+    .trim();
+}
+
+function isReceiptTableHeader(line: string) {
+  return /(?:สินค้า|รายการ).*(?:qty|จำนวน).*(?:ราคา|ยอด|รวม)/i.test(line)
+    || (/^(?:สินค้า|รายการ)$/i.test(line) && /(?:qty|จำนวน|ราคา|รวม)/i.test(line));
+}
+
+function isReceiptFooter(line: string) {
+  return /^(?:ยอดรวม|รวมสุทธิ|ยอดสุทธิ|ทั้งหมด|subtotal|grand\s*total|total|เงินสด|cash|เงินทอน|change|ชำระ|ยอดชำระ|ขอบคุณ|thank\s*you|powered\s*by)/i.test(line);
+}
+
+function formatReceiptItem(name: string, qty: string, amount: string) {
+  const cleanedName = cleanReceiptItemName(name);
+  const cleanedAmount = amount.replace(/,/g, "");
+  if (!cleanedName || !/[A-Za-zก-๙]/.test(cleanedName)) return "";
+  return `${cleanedName} ×${Number(qty)} ${Number(cleanedAmount).toLocaleString("th-TH", { maximumFractionDigits: 2 })} บาท`;
 }
 
 export function extractReceiptLineItems(text: string) {
   const lines = text.split(/\n+/).map(compact).filter(Boolean);
-  const labels = /ค่าสินค้า\s*\/\s*บริการ|สิทธิ.*(?:พลัส|ช่วย)|ส่วนลด|จำนวนเงินที่ชำระ|ยอดที่ชำระ|ยอดสุทธิ/i;
+  const specialLabels = /ค่าสินค้า\s*\/\s*บริการ|สิทธิ.*(?:พลัส|ช่วย)|ส่วนลด|จำนวนเงินที่ชำระ|ยอดที่ชำระ|ยอดสุทธิ/i;
   const out: string[] = [];
+  const special: string[] = [];
 
   for (let i = 0; i < lines.length; i += 1) {
-    if (!labels.test(lines[i])) continue;
+    if (!specialLabels.test(lines[i])) continue;
     const joined = /\d/.test(lines[i]) ? lines[i] : [lines[i], lines[i + 1]].filter(Boolean).join(" ");
     const cleaned = compact(joined);
-    if (cleaned && !out.includes(cleaned)) out.push(cleaned);
+    if (cleaned && !special.includes(cleaned)) special.push(cleaned);
   }
 
-  return out.slice(0, 6);
+  let headerIndex = lines.findIndex(line => /(?:สินค้า|รายการ).*(?:qty|จำนวน|ราคา|รวม)/i.test(line));
+  if (headerIndex < 0) {
+    headerIndex = lines.findIndex((line, index) => /^(?:สินค้า|รายการ)$/i.test(line)
+      && lines.slice(index, index + 3).some(part => /(?:qty|จำนวน|ราคา|รวม)/i.test(part)));
+  }
+  const start = headerIndex >= 0 ? headerIndex + 1 : 0;
+  let pendingName = "";
+
+  for (let i = start; i < lines.length && out.length < 20; i += 1) {
+    const line = lines[i];
+    if (headerIndex >= 0 && isReceiptFooter(line)) break;
+    if (isReceiptTableHeader(line) || specialLabels.test(line)) continue;
+    if (/^(?:เลขที่|ประเภท|ชื่อ?พนักงาน|พนักงาน|เวลา|วันที่|โทรศัพท์|โทร|tel)\s*[:：]/i.test(line)) continue;
+
+    const row = line.match(/^(.+?)\s+(\d{1,3})\s+(\d{1,8}(?:[,.]\d{1,2})?)(?:\s+(\d{1,8}(?:[,.]\d{1,2})?))?$/);
+    if (row) {
+      const formatted = formatReceiptItem(row[1], row[2], row[4] || row[3]);
+      if (formatted && !out.includes(formatted)) out.push(formatted);
+      pendingName = "";
+      continue;
+    }
+
+    const numericOnly = line.match(/^(\d{1,3})\s+(\d{1,8}(?:[,.]\d{1,2})?)(?:\s+(\d{1,8}(?:[,.]\d{1,2})?))?$/);
+    if (numericOnly && pendingName) {
+      const formatted = formatReceiptItem(pendingName, numericOnly[1], numericOnly[3] || numericOnly[2]);
+      if (formatted && !out.includes(formatted)) out.push(formatted);
+      pendingName = "";
+      continue;
+    }
+
+    if (headerIndex >= 0 && /[A-Za-zก-๙]/.test(line) && !/\d{4,}/.test(line) && line.length <= 120) {
+      pendingName = cleanReceiptItemName(line);
+    }
+  }
+
+  return [...out, ...special.filter(item => !out.includes(item))].slice(0, 20);
 }
 
 export function enrichThaiReceiptProposal(text: string, proposal: ImageProposal): ImageProposal {
@@ -218,6 +315,8 @@ export function enrichThaiReceiptProposal(text: string, proposal: ImageProposal)
   const payable = extractThaiPayableAmount(text);
   const merchant = kbank ? extractKbankMerchant(text) : receiptLike ? extractReceiptMerchant(text) : "";
   const lineItems = receiptLike ? extractReceiptLineItems(text) : [];
+  const receiptNumber = receiptLike ? extractReceiptNumber(text) : "";
+  const paymentMethod = receiptLike ? extractReceiptPaymentMethod(text) : "";
   const documentType = proposal.documentType === "unknown" && receiptLike ? "receipt" : proposal.documentType;
 
   return {
@@ -227,6 +326,8 @@ export function enrichThaiReceiptProposal(text: string, proposal: ImageProposal)
     merchant: merchant || normalizeThaiMerchantName(proposal.merchant),
     dateText: proposal.dateText || dateTime.dateText,
     timeText: proposal.timeText || dateTime.timeText,
-    lineItems: lineItems.length ? Array.from(new Set([...(proposal.lineItems || []), ...lineItems])) : proposal.lineItems,
+    receiptNumber: proposal.receiptNumber || receiptNumber,
+    paymentMethod: proposal.paymentMethod || paymentMethod,
+    lineItems: lineItems.length ? Array.from(new Set([...(proposal.lineItems || []), ...lineItems])).slice(0, 20) : proposal.lineItems,
   };
 }

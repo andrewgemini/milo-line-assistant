@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { enrichThaiReceiptProposal, extractKbankMerchant, extractReceiptLineItems, extractThaiPayableAmount, extractThaiSlipDateTime, normalizeThaiMerchantName } from "./thaiReceiptParser";
+import { enrichThaiReceiptProposal, extractKbankMerchant, extractReceiptLineItems, extractReceiptNumber, extractReceiptPaymentMethod, extractThaiPayableAmount, extractThaiSlipDateTime, normalizeThaiMerchantName } from "./thaiReceiptParser";
 import type { ImageProposal } from "./imageAnalysis";
 
 const baseProposal: ImageProposal = {
@@ -65,6 +65,82 @@ CJ 1685 เพชรเกษม106
   it("cleans the noisy merchant line from the welfare receipt", () => {
     expect(normalizeThaiMerchantName("ฆ ร้านกระเพรากลางซอย ถุง อาหาร ของหวาน เครื่องคื่ม ค่าสินค้า/บริการ 75 บาท สิทธิไทยช่วยไทยพลัส -45 บาท"))
       .toBe("ร้านกระเพรากลางซอย");
+  });
+
+  it("rejects POS operational fields as a merchant and recovers a top-of-receipt restaurant brand", () => {
+    expect(normalizeThaiMerchantName("ประเภท: ทานที่ร้าน ซื้อ พนักงาน: จ๊ะจ๋า เวลา: 13-09-2569 15:28")).toBe("");
+    const text = `
+ตำราลิ้น
+โทรศัพท์: 0628595268
+ใบเสร็จ
+เลขที่: 03000728
+ประเภท: ทานที่ร้าน
+ชื่อพนักงาน: จ๊ะจ๋า
+เวลา: 13-09-2569 15:28
+สินค้า Qty ราคา
+ผัดไทย 1 80.00
+ทั้งหมด 423.00
+`;
+    expect(enrichThaiReceiptProposal(text, { ...baseProposal, documentType: "receipt", merchant: "ประเภท: ทานที่ร้าน ซื้อ พนักงาน: จ๊ะจ๋า เวลา: 13-09-2569 15:28", amount: 423 }).merchant).toBe("ตำราลิ้น");
+  });
+
+  it("reads a POS restaurant receipt like the production 423-baht case completely", () => {
+    const text = `
+ตำราลิ้น
+โทรศัพท์: 0628595268
+ใบเสร็จ
+เลขที่: 03000728
+ประเภท: ทานที่ร้าน
+ชื่อพนักงาน: จ๊ะจ๋า
+เวลา: 13-09-2569 15:28
+สินค้า Qty ราคา รวม
+ปีกไก่ทอด 1 80.00
+ต้มแซ่บกระดูกอ่อน 1 80.00
+ตำคอหมูย่าง 1 80.00
+ข้าวเหนียว 2 20.00
+เป๊ปซี่ใหญ่ 1 30.00
+น้ำแข็งแก้ว 2 4.00
+ข้าวผัดกะเพรา 1 129.00
+ยอดรวม 9 423.00
+ทั้งหมด ฿423.00
+เงินสด ฿423.00
+ขอบคุณและขอให้โชคดี
+Powered by Ocha
+`;
+    expect(extractReceiptNumber(text)).toBe("03000728");
+    expect(extractReceiptPaymentMethod(text)).toBe("เงินสด");
+    expect(extractReceiptLineItems(text)).toEqual([
+      "ปีกไก่ทอด ×1 80 บาท",
+      "ต้มแซ่บกระดูกอ่อน ×1 80 บาท",
+      "ตำคอหมูย่าง ×1 80 บาท",
+      "ข้าวเหนียว ×2 20 บาท",
+      "เป๊ปซี่ใหญ่ ×1 30 บาท",
+      "น้ำแข็งแก้ว ×2 4 บาท",
+      "ข้าวผัดกะเพรา ×1 129 บาท",
+    ]);
+    const enriched = enrichThaiReceiptProposal(text, { ...baseProposal, documentType: "receipt", amount: 423 });
+    expect(enriched).toMatchObject({
+      merchant: "ตำราลิ้น",
+      amount: 423,
+      dateText: "2026-09-13",
+      timeText: "15:28",
+      receiptNumber: "03000728",
+      paymentMethod: "เงินสด",
+    });
+    expect(enriched.lineItems).toHaveLength(7);
+  });
+
+  it("joins split POS item names with quantity and amount from the following OCR line", () => {
+    const text = `ใบเสร็จ
+สินค้า Qty ราคา รวม
+ต้มแซ่บกระดูกอ่อน
+1 80.00
+ข้าวเหนียว 2 20.00
+ยอดรวม 3 100.00`;
+    expect(extractReceiptLineItems(text)).toEqual([
+      "ต้มแซ่บกระดูกอ่อน ×1 80 บาท",
+      "ข้าวเหนียว ×2 20 บาท",
+    ]);
   });
 
   it("uses the actual paid amount after a welfare subsidy instead of the gross service amount", () => {
