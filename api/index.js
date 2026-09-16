@@ -7761,22 +7761,65 @@ async function processEvent(event, rawPayload, runtime = {}) {
 function registerLineWebhook(app2) {
   app2.post("/api/line/webhook", express.raw({ type: "*/*", limit: "2mb" }), async (req, res) => {
     const raw = req.body;
+    const signature = req.header("x-line-signature");
     const credentials = lineCredentials();
-    if (!verifyLineSignature(raw, req.header("x-line-signature"), credentials.channelSecret)) return res.status(401).json({ error: "invalid signature" });
+    console.info("[Milo Webhook] received", {
+      method: req.method,
+      bodyBytes: Buffer.isBuffer(raw) ? raw.length : -1,
+      hasSignature: Boolean(signature)
+    });
+    if (!verifyLineSignature(raw, signature, credentials.channelSecret)) {
+      console.error("[Milo Webhook] signature verification failed", {
+        hasChannelSecret: Boolean(credentials.channelSecret),
+        bodyIsBuffer: Buffer.isBuffer(raw)
+      });
+      return res.status(401).json({ error: "invalid signature" });
+    }
     let payload;
     try {
       payload = JSON.parse(raw.toString("utf8"));
     } catch {
+      console.error("[Milo Webhook] invalid JSON payload");
       return res.status(400).json({ error: "invalid json" });
     }
+    const events = payload.events ?? [];
     const runtime = { gatewayToken: req.header("x-vercel-oidc-token")?.trim() || void 0 };
+    console.info("[Milo Webhook] accepted", { eventCount: events.length, eventTypes: events.map((event) => event.type) });
     res.status(200).json({ ok: true });
     waitUntil(
-      Promise.all((payload.events ?? []).map((event) => processEvent(event, raw.toString("utf8"), runtime))).catch((error) => {
-        console.error("[Milo Webhook] event processing failed after acknowledgement", {
-          error: error instanceof Error ? error.message : "unknown"
-        });
-      })
+      Promise.all(events.map(async (event) => {
+        let completed = false;
+        const progressTimer = setTimeout(() => {
+          if (!completed && event.type === "message" && event.message?.type === "text") {
+            const identity = sourceIdentity(event.source);
+            if (identity.lineChatId) {
+              void pushText(identity.lineChatId, "\u0E23\u0E31\u0E1A\u0E02\u0E49\u0E2D\u0E04\u0E27\u0E32\u0E21\u0E41\u0E25\u0E49\u0E27\u0E04\u0E23\u0E31\u0E1A \u0E01\u0E33\u0E25\u0E31\u0E07\u0E1B\u0E23\u0E30\u0E21\u0E27\u0E25\u0E1C\u0E25\u0E43\u0E2B\u0E49\u0E2D\u0E22\u0E39\u0E48\u0E04\u0E23\u0E31\u0E1A").catch((error) => {
+                console.error("[Milo Webhook] progress push failed", { error: error instanceof Error ? error.message : "unknown" });
+              });
+            }
+          }
+        }, 7e3);
+        try {
+          await processEvent(event, raw.toString("utf8"), runtime);
+        } catch (error) {
+          const identity = sourceIdentity(event.source);
+          console.error("[Milo Webhook] event processing failed after acknowledgement", {
+            error: error instanceof Error ? error.message : "unknown",
+            eventType: event.type,
+            lineChatIdPresent: Boolean(identity.lineChatId)
+          });
+          if (identity.lineChatId) {
+            try {
+              await pushText(identity.lineChatId, "\u0E23\u0E31\u0E1A\u0E02\u0E49\u0E2D\u0E04\u0E27\u0E32\u0E21\u0E41\u0E25\u0E49\u0E27\u0E04\u0E23\u0E31\u0E1A \u0E41\u0E15\u0E48\u0E23\u0E2D\u0E1A\u0E19\u0E35\u0E49\u0E1B\u0E23\u0E30\u0E21\u0E27\u0E25\u0E1C\u0E25\u0E44\u0E21\u0E48\u0E2A\u0E33\u0E40\u0E23\u0E47\u0E08 \u0E44\u0E21\u0E42\u0E25\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E44\u0E14\u0E49\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E0B\u0E49\u0E33 \u0E01\u0E23\u0E38\u0E13\u0E32\u0E25\u0E2D\u0E07\u0E2A\u0E48\u0E07\u0E02\u0E49\u0E2D\u0E04\u0E27\u0E32\u0E21\u0E40\u0E14\u0E34\u0E21\u0E2D\u0E35\u0E01\u0E04\u0E23\u0E31\u0E49\u0E07\u0E04\u0E23\u0E31\u0E1A");
+            } catch (pushError) {
+              console.error("[Milo Webhook] failure push failed", { error: pushError instanceof Error ? pushError.message : "unknown" });
+            }
+          }
+        } finally {
+          completed = true;
+          clearTimeout(progressTimer);
+        }
+      }))
     );
   });
 }

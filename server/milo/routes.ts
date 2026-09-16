@@ -981,20 +981,65 @@ export async function processEvent(event: LineEvent, rawPayload: string, runtime
 export function registerLineWebhook(app: Express) {
   app.post("/api/line/webhook", express.raw({ type: "*/*", limit: "2mb" }), async (req: Request, res: Response) => {
     const raw = req.body as Buffer;
+    const signature = req.header("x-line-signature");
     const credentials = lineCredentials();
-    if (!verifyLineSignature(raw, req.header("x-line-signature"), credentials.channelSecret)) return res.status(401).json({ error: "invalid signature" });
+    console.info("[Milo Webhook] received", {
+      method: req.method,
+      bodyBytes: Buffer.isBuffer(raw) ? raw.length : -1,
+      hasSignature: Boolean(signature),
+    });
+    if (!verifyLineSignature(raw, signature, credentials.channelSecret)) {
+      console.error("[Milo Webhook] signature verification failed", {
+        hasChannelSecret: Boolean(credentials.channelSecret),
+        bodyIsBuffer: Buffer.isBuffer(raw),
+      });
+      return res.status(401).json({ error: "invalid signature" });
+    }
     let payload: { events?: LineEvent[] };
-    try { payload = JSON.parse(raw.toString("utf8")); } catch { return res.status(400).json({ error: "invalid json" }); }
+    try { payload = JSON.parse(raw.toString("utf8")); } catch {
+      console.error("[Milo Webhook] invalid JSON payload");
+      return res.status(400).json({ error: "invalid json" });
+    }
+    const events = payload.events ?? [];
     const runtime = { gatewayToken: req.header("x-vercel-oidc-token")?.trim() || undefined };
+    console.info("[Milo Webhook] accepted", { eventCount: events.length, eventTypes: events.map(event => event.type) });
     // Acknowledge LINE immediately. Processing may involve DB/profile lookups and external
     // providers; holding the webhook response until those finish can make LINE retry the event.
     res.status(200).json({ ok: true });
     waitUntil(
-      Promise.all((payload.events ?? []).map(event => processEvent(event, raw.toString("utf8"), runtime))).catch(error => {
-        console.error("[Milo Webhook] event processing failed after acknowledgement", {
-          error: error instanceof Error ? error.message : "unknown",
-        });
-      }),
+      Promise.all(events.map(async event => {
+        let completed = false;
+        const progressTimer = setTimeout(() => {
+          if (!completed && event.type === "message" && event.message?.type === "text") {
+            const identity = sourceIdentity(event.source);
+            if (identity.lineChatId) {
+              void pushText(identity.lineChatId, "รับข้อความแล้วครับ กำลังประมวลผลให้อยู่ครับ").catch(error => {
+                console.error("[Milo Webhook] progress push failed", { error: error instanceof Error ? error.message : "unknown" });
+              });
+            }
+          }
+        }, 7000);
+        try {
+          await processEvent(event, raw.toString("utf8"), runtime);
+        } catch (error) {
+          const identity = sourceIdentity(event.source);
+          console.error("[Milo Webhook] event processing failed after acknowledgement", {
+            error: error instanceof Error ? error.message : "unknown",
+            eventType: event.type,
+            lineChatIdPresent: Boolean(identity.lineChatId),
+          });
+          if (identity.lineChatId) {
+            try {
+              await pushText(identity.lineChatId, "รับข้อความแล้วครับ แต่รอบนี้ประมวลผลไม่สำเร็จ ไมโลยังไม่ได้บันทึกรายการซ้ำ กรุณาลองส่งข้อความเดิมอีกครั้งครับ");
+            } catch (pushError) {
+              console.error("[Milo Webhook] failure push failed", { error: pushError instanceof Error ? pushError.message : "unknown" });
+            }
+          }
+        } finally {
+          completed = true;
+          clearTimeout(progressTimer);
+        }
+      })),
     );
   });
 }
