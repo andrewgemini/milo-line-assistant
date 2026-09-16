@@ -61,6 +61,18 @@ describe("Milo command parser", () => {
     expect(parseMiloCommand("งานทั้งหมด", now)).toEqual({ type: "todoList" });
     expect(parseMiloCommand("เสร็จงาน #9", now)).toEqual({ type: "todoComplete", id: 9 });
   });
+  it("recognizes personal assistant brief and follow-up commands", () => {
+    const now = new Date("2026-09-16T02:00:00.000Z");
+    expect(parseMiloCommand("สรุปเช้า", now)).toEqual({ type: "morningBrief" });
+    expect(parseMiloCommand("สรุปเย็น", now)).toEqual({ type: "eveningSummary" });
+    const followUp = parseMiloCommand("ช่วยตามงาน Proposal ลูกค้า B อีก 24 ชั่วโมง", now);
+    expect(followUp.type).toBe("followUp");
+    if (followUp.type === "followUp") {
+      expect(followUp.title).toBe("Proposal ลูกค้า B");
+      expect(followUp.remindAt).toEqual(new Date("2026-09-17T02:00:00.000Z"));
+    }
+  });
+
   it("recognizes calendar, group-guide and vault-status commands", () => {
     const event = parseMiloCommand("ลงปฏิทิน ประชุมทีมพรุ่งนี้ 10:30", now);
     expect(event.type).toBe("calendarCreate");

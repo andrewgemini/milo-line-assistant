@@ -26,27 +26,18 @@ export function formatTodayOverview(input: {
   finance?: FinanceSummary;
 }) {
   const date = new Intl.DateTimeFormat("th-TH", { timeZone: "Asia/Bangkok", dateStyle: "long" }).format(input.reference);
-  const sections: string[] = [];
-
-  sections.push(input.calendars.length
-    ? `📅 นัดหมาย\n${input.calendars.slice(0, 5).map(item => `• ${thaiTime(item.startsAt)} • ${item.title}`).join("\n")}`
-    : "📅 นัดหมาย • ไม่มี");
-
-  sections.push(input.reminders.length
-    ? `🔔 เตือนวันนี้\n${input.reminders.slice(0, 5).map(item => `• ${item.nextRunAt ? thaiTime(item.nextRunAt) : "--:--"} • ${item.title}`).join("\n")}`
-    : "🔔 เตือนวันนี้ • ไม่มี");
-
-  sections.push(input.todos.length
-    ? `✅ งานค้าง\n${input.todos.slice(0, 5).map(item => `• #${item.id} ${item.title}${item.dueAt ? ` • ${thaiTime(item.dueAt)}` : ""}`).join("\n")}`
-    : "✅ งานค้าง • ไม่มี");
-
-  sections.push(input.bills.length
-    ? `🧾 บิลรอจ่าย\n${input.bills.slice(0, 5).map(item => `• #${item.id} ${item.title} ${Number(item.amount).toLocaleString("th-TH")} บาท • ${thaiTime(item.dueAt)}`).join("\n")}\nพิมพ์ “จ่ายบิล #เลขรายการ” เมื่อชำระจริง`
-    : "🧾 บิลรอจ่าย • ไม่มี");
-
-  if (input.finance) {
-    sections.push(`💰 วันนี้ • รับ ${input.finance.income.toLocaleString("th-TH")} • จ่าย ${input.finance.expense.toLocaleString("th-TH")} • คงเหลือ ${input.finance.balance.toLocaleString("th-TH")} บาท`);
-  }
-
+  const timeline = [
+    ...input.calendars.map(item => ({ at: new Date(item.startsAt), text: `📅 ${thaiTime(item.startsAt)} • ${item.title}` })),
+    ...input.reminders.filter(item => item.nextRunAt).map(item => ({ at: new Date(item.nextRunAt!), text: `🔔 ${thaiTime(item.nextRunAt!)} • ${item.title}` })),
+    ...input.bills.map(item => ({ at: new Date(item.dueAt), text: `🧾 ${thaiTime(item.dueAt)} • #${item.id} ${item.title} ${Number(item.amount).toLocaleString("th-TH")} บาท` })),
+    ...input.todos.filter(item => item.dueAt).map(item => ({ at: new Date(item.dueAt!), text: `✅ ${thaiTime(item.dueAt!)} • #${item.id} ${item.title}` })),
+  ].sort((a, b) => a.at.getTime() - b.at.getTime());
+  const undatedTodos = input.todos.filter(item => !item.dueAt).slice(0, 5).map(item => `• #${item.id} ${item.title}`);
+  const sections = [
+    timeline.length ? `🕒 Timeline\n${timeline.slice(0, 12).map(item => `• ${item.text}`).join("\n")}` : "🕒 Timeline • วันนี้ยังไม่มีรายการตามเวลา",
+    undatedTodos.length ? `📌 งานที่ยังไม่กำหนดเวลา\n${undatedTodos.join("\n")}` : "",
+    input.bills.length ? "พิมพ์ “จ่ายบิล #เลขรายการ” เมื่อชำระจริง" : "",
+    input.finance ? `💰 การเงินวันนี้ • รับ ${input.finance.income.toLocaleString("th-TH")} • จ่าย ${input.finance.expense.toLocaleString("th-TH")} • คงเหลือ ${input.finance.balance.toLocaleString("th-TH")} บาท` : "",
+  ].filter(Boolean);
   return `วันนี้ของฉัน • ${date}\n\n${sections.join("\n\n")}`;
 }

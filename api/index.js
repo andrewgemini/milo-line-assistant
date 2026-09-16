@@ -1130,6 +1130,16 @@ async function completeTodo(id, lineUserId) {
   const db = await requireDb();
   await db.update(todoItems).set({ status: "done", completedAt: /* @__PURE__ */ new Date() }).where(and(eq(todoItems.id, id), eq(todoItems.createdByLineUserId, lineUserId)));
 }
+async function listCompletedTodosForChat(lineUserId, lineChatId, scope, start, end) {
+  const db = await requireDb();
+  const chatScope = scope === "user" ? and(eq(todoItems.createdByLineUserId, lineUserId), eq(todoItems.lineChatId, lineChatId)) : eq(todoItems.lineChatId, lineChatId);
+  return db.select().from(todoItems).where(and(
+    chatScope,
+    eq(todoItems.status, "done"),
+    gte(todoItems.completedAt, start),
+    lte(todoItems.completedAt, end)
+  )).orderBy(desc(todoItems.completedAt)).limit(100);
+}
 async function writeAuditLog(input) {
   const db = await requireDb();
   await db.insert(auditLogs).values({
@@ -2620,13 +2630,13 @@ ${mascotExpenseCopy(summary.transactionType, summary.amount)}
 }
 function financeReportCardText(report) {
   const periodLabel2 = { day: "\u0E27\u0E31\u0E19\u0E19\u0E35\u0E49", week: "\u0E2A\u0E31\u0E1B\u0E14\u0E32\u0E2B\u0E4C\u0E19\u0E35\u0E49", month: "\u0E40\u0E14\u0E37\u0E2D\u0E19\u0E19\u0E35\u0E49", year: "\u0E1B\u0E35\u0E19\u0E35\u0E49" };
-  const money3 = (amount) => amount.toLocaleString("th-TH", { maximumFractionDigits: 2 });
-  const categories = Object.entries(report.categories).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([name, amount]) => `\u2022 ${name} ${money3(amount)} \u0E1A\u0E32\u0E17`).join("\n");
+  const money4 = (amount) => amount.toLocaleString("th-TH", { maximumFractionDigits: 2 });
+  const categories = Object.entries(report.categories).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([name, amount]) => `\u2022 ${name} ${money4(amount)} \u0E1A\u0E32\u0E17`).join("\n");
   return `${report.title ?? `\u0E2A\u0E23\u0E38\u0E1B\u0E01\u0E32\u0E23\u0E40\u0E07\u0E34\u0E19${periodLabel2[report.period]}`}
 ${report.subtitle ? `${report.subtitle}
-` : ""}\u0E23\u0E32\u0E22\u0E23\u0E31\u0E1A ${money3(report.income)} \u0E1A\u0E32\u0E17
-\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22 ${money3(report.expense)} \u0E1A\u0E32\u0E17
-\u0E01\u0E33\u0E44\u0E23/\u0E04\u0E07\u0E40\u0E2B\u0E25\u0E37\u0E2D ${money3(report.balance)} \u0E1A\u0E32\u0E17
+` : ""}\u0E23\u0E32\u0E22\u0E23\u0E31\u0E1A ${money4(report.income)} \u0E1A\u0E32\u0E17
+\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22 ${money4(report.expense)} \u0E1A\u0E32\u0E17
+\u0E01\u0E33\u0E44\u0E23/\u0E04\u0E07\u0E40\u0E2B\u0E25\u0E37\u0E2D ${money4(report.balance)} \u0E1A\u0E32\u0E17
 ${categories ? `
 \u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22\u0E15\u0E32\u0E21\u0E2B\u0E21\u0E27\u0E14
 ${categories}` : "\n\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E21\u0E35\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22\u0E43\u0E19\u0E0A\u0E48\u0E27\u0E07\u0E19\u0E35\u0E49"}`;
@@ -2666,11 +2676,11 @@ async function replyFinanceReportCardFallback(replyToken, report, credentials = 
   return replyText(replyToken, financeReportCardText(report), credentials);
 }
 async function pushFinanceReportCard(to, report, credentials = lineCredentials()) {
-  const money3 = (amount) => amount.toLocaleString("th-TH", { maximumFractionDigits: 2 });
+  const money4 = (amount) => amount.toLocaleString("th-TH", { maximumFractionDigits: 2 });
   const categories = Object.entries(report.categories).sort((a, b) => b[1] - a[1]).slice(0, 4);
   const categoryRows = categories.length ? categories.map(([name, amount]) => ({ type: "box", layout: "horizontal", margin: "sm", contents: [
     { type: "text", text: name, size: "xs", color: "#675B7C", flex: 1, wrap: true },
-    { type: "text", text: `${money3(amount)} \u0E1A\u0E32\u0E17`, size: "xs", weight: "bold", color: "#B9517B", align: "end" }
+    { type: "text", text: `${money4(amount)} \u0E1A\u0E32\u0E17`, size: "xs", weight: "bold", color: "#B9517B", align: "end" }
   ] })) : [{ type: "text", text: "\u0E44\u0E21\u0E48\u0E21\u0E35\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E43\u0E19\u0E0A\u0E48\u0E27\u0E07\u0E40\u0E27\u0E25\u0E32\u0E19\u0E35\u0E49", size: "xs", color: "#8A8097" }];
   const title = report.title ?? "\u0E2A\u0E23\u0E38\u0E1B\u0E01\u0E32\u0E23\u0E40\u0E07\u0E34\u0E19\u0E08\u0E32\u0E01\u0E44\u0E21\u0E42\u0E25";
   return callLine("/v2/bot/message/push", credentials, {
@@ -2691,10 +2701,10 @@ async function pushFinanceReportCard(to, report, credentials = lineCredentials()
           miloFinanceBrandStrip(),
           { type: "box", layout: "vertical", spacing: "sm", paddingAll: "14px", cornerRadius: "md", backgroundColor: "#FFFEFB", contents: [
             { type: "box", layout: "horizontal", spacing: "sm", contents: [
-              { type: "box", layout: "vertical", flex: 1, paddingAll: "10px", cornerRadius: "md", backgroundColor: "#EAF8F4", contents: [{ type: "text", text: "\u0E23\u0E32\u0E22\u0E23\u0E31\u0E1A", size: "xxs", color: "#5B8E81" }, { type: "text", text: `${money3(report.income)} \u0E1A\u0E32\u0E17`, size: "sm", weight: "bold", color: "#267C68", wrap: true }] },
-              { type: "box", layout: "vertical", flex: 1, paddingAll: "10px", cornerRadius: "md", backgroundColor: "#FDECF2", contents: [{ type: "text", text: "\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22", size: "xxs", color: "#A57086" }, { type: "text", text: `${money3(report.expense)} \u0E1A\u0E32\u0E17`, size: "sm", weight: "bold", color: "#BB527C", wrap: true }] }
+              { type: "box", layout: "vertical", flex: 1, paddingAll: "10px", cornerRadius: "md", backgroundColor: "#EAF8F4", contents: [{ type: "text", text: "\u0E23\u0E32\u0E22\u0E23\u0E31\u0E1A", size: "xxs", color: "#5B8E81" }, { type: "text", text: `${money4(report.income)} \u0E1A\u0E32\u0E17`, size: "sm", weight: "bold", color: "#267C68", wrap: true }] },
+              { type: "box", layout: "vertical", flex: 1, paddingAll: "10px", cornerRadius: "md", backgroundColor: "#FDECF2", contents: [{ type: "text", text: "\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22", size: "xxs", color: "#A57086" }, { type: "text", text: `${money4(report.expense)} \u0E1A\u0E32\u0E17`, size: "sm", weight: "bold", color: "#BB527C", wrap: true }] }
             ] },
-            { type: "box", layout: "horizontal", paddingAll: "10px", cornerRadius: "md", backgroundColor: "#EEEAF8", contents: [{ type: "text", text: "\u0E01\u0E33\u0E44\u0E23 / \u0E04\u0E07\u0E40\u0E2B\u0E25\u0E37\u0E2D", size: "xs", color: "#6B6080", flex: 1 }, { type: "text", text: `${money3(report.balance)} \u0E1A\u0E32\u0E17`, size: "sm", weight: "bold", color: "#4D4263", align: "end" }] },
+            { type: "box", layout: "horizontal", paddingAll: "10px", cornerRadius: "md", backgroundColor: "#EEEAF8", contents: [{ type: "text", text: "\u0E01\u0E33\u0E44\u0E23 / \u0E04\u0E07\u0E40\u0E2B\u0E25\u0E37\u0E2D", size: "xs", color: "#6B6080", flex: 1 }, { type: "text", text: `${money4(report.balance)} \u0E1A\u0E32\u0E17`, size: "sm", weight: "bold", color: "#4D4263", align: "end" }] },
             { type: "separator", color: "#E9E4F1" },
             { type: "text", text: "\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22\u0E15\u0E32\u0E21\u0E2B\u0E21\u0E27\u0E14", size: "xs", weight: "bold", color: "#76688E" },
             { type: "box", layout: "vertical", paddingAll: "10px", cornerRadius: "md", backgroundColor: "#FFF7FA", contents: categoryRows }
@@ -3222,7 +3232,7 @@ var schema = {
 };
 function deterministicFinancialInsight(input) {
   const periodLabel2 = { day: "\u0E27\u0E31\u0E19\u0E19\u0E35\u0E49", week: "\u0E2A\u0E31\u0E1B\u0E14\u0E32\u0E2B\u0E4C\u0E19\u0E35\u0E49", month: "\u0E40\u0E14\u0E37\u0E2D\u0E19\u0E19\u0E35\u0E49", year: "\u0E1B\u0E35\u0E19\u0E35\u0E49" };
-  const money3 = (value) => Number(value).toLocaleString("th-TH-u-nu-latn", { maximumFractionDigits: 2 });
+  const money4 = (value) => Number(value).toLocaleString("th-TH-u-nu-latn", { maximumFractionDigits: 2 });
   const categories = Object.entries(input.categories).filter(([, amount]) => Number(amount) > 0).sort((a, b) => Number(b[1]) - Number(a[1]));
   const dataSufficiency = input.transactionCount === 0 ? "insufficient" : input.transactionCount < 5 ? "limited" : "adequate";
   if (input.transactionCount === 0) {
@@ -3237,20 +3247,20 @@ function deterministicFinancialInsight(input) {
   const top = categories[0];
   const share = top && input.expense > 0 ? Math.round(Number(top[1]) / input.expense * 100) : 0;
   const highlights = [];
-  if (input.balance < 0) highlights.push(`\u0E22\u0E2D\u0E14\u0E2A\u0E38\u0E17\u0E18\u0E34\u0E40\u0E1B\u0E47\u0E19\u0E25\u0E1A ${money3(Math.abs(input.balance))} \u0E1A\u0E32\u0E17`);
-  else highlights.push(`\u0E22\u0E2D\u0E14\u0E2A\u0E38\u0E17\u0E18\u0E34\u0E04\u0E07\u0E40\u0E2B\u0E25\u0E37\u0E2D ${money3(input.balance)} \u0E1A\u0E32\u0E17`);
-  if (top) highlights.push(`\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22\u0E2A\u0E39\u0E07\u0E2A\u0E38\u0E14\u0E04\u0E37\u0E2D\u0E2B\u0E21\u0E27\u0E14${top[0]} ${money3(Number(top[1]))} \u0E1A\u0E32\u0E17${share ? ` (\u0E1B\u0E23\u0E30\u0E21\u0E32\u0E13 ${share}% \u0E02\u0E2D\u0E07\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22)` : ""}`);
+  if (input.balance < 0) highlights.push(`\u0E22\u0E2D\u0E14\u0E2A\u0E38\u0E17\u0E18\u0E34\u0E40\u0E1B\u0E47\u0E19\u0E25\u0E1A ${money4(Math.abs(input.balance))} \u0E1A\u0E32\u0E17`);
+  else highlights.push(`\u0E22\u0E2D\u0E14\u0E2A\u0E38\u0E17\u0E18\u0E34\u0E04\u0E07\u0E40\u0E2B\u0E25\u0E37\u0E2D ${money4(input.balance)} \u0E1A\u0E32\u0E17`);
+  if (top) highlights.push(`\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22\u0E2A\u0E39\u0E07\u0E2A\u0E38\u0E14\u0E04\u0E37\u0E2D\u0E2B\u0E21\u0E27\u0E14${top[0]} ${money4(Number(top[1]))} \u0E1A\u0E32\u0E17${share ? ` (\u0E1B\u0E23\u0E30\u0E21\u0E32\u0E13 ${share}% \u0E02\u0E2D\u0E07\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22)` : ""}`);
   const categoryObservations = categories.slice(0, 3).map(([category, amount]) => ({
     category,
-    observation: input.expense > 0 ? `${money3(Number(amount))} \u0E1A\u0E32\u0E17 \u0E2B\u0E23\u0E37\u0E2D\u0E1B\u0E23\u0E30\u0E21\u0E32\u0E13 ${Math.round(Number(amount) / input.expense * 100)}% \u0E02\u0E2D\u0E07\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22` : `${money3(Number(amount))} \u0E1A\u0E32\u0E17`
+    observation: input.expense > 0 ? `${money4(Number(amount))} \u0E1A\u0E32\u0E17 \u0E2B\u0E23\u0E37\u0E2D\u0E1B\u0E23\u0E30\u0E21\u0E32\u0E13 ${Math.round(Number(amount) / input.expense * 100)}% \u0E02\u0E2D\u0E07\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22` : `${money4(Number(amount))} \u0E1A\u0E32\u0E17`
   }));
   const suggestedActions = [];
-  if (top) suggestedActions.push(`\u0E15\u0E23\u0E27\u0E08\u0E07\u0E1A\u0E2B\u0E21\u0E27\u0E14${top[0]}\u0E40\u0E17\u0E35\u0E22\u0E1A\u0E01\u0E31\u0E1A\u0E22\u0E2D\u0E14\u0E43\u0E0A\u0E49\u0E08\u0E23\u0E34\u0E07 ${money3(Number(top[1]))} \u0E1A\u0E32\u0E17`);
+  if (top) suggestedActions.push(`\u0E15\u0E23\u0E27\u0E08\u0E07\u0E1A\u0E2B\u0E21\u0E27\u0E14${top[0]}\u0E40\u0E17\u0E35\u0E22\u0E1A\u0E01\u0E31\u0E1A\u0E22\u0E2D\u0E14\u0E43\u0E0A\u0E49\u0E08\u0E23\u0E34\u0E07 ${money4(Number(top[1]))} \u0E1A\u0E32\u0E17`);
   if (input.balance < 0) suggestedActions.push("\u0E17\u0E1A\u0E17\u0E27\u0E19\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22\u0E17\u0E35\u0E48\u0E15\u0E31\u0E14\u0E2B\u0E23\u0E37\u0E2D\u0E25\u0E14\u0E44\u0E14\u0E49\u0E01\u0E48\u0E2D\u0E19\u0E40\u0E1E\u0E34\u0E48\u0E21\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E43\u0E2B\u0E21\u0E48");
   else suggestedActions.push("\u0E15\u0E34\u0E14\u0E15\u0E32\u0E21\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22\u0E40\u0E17\u0E35\u0E22\u0E1A\u0E07\u0E1A\u0E15\u0E48\u0E2D\u0E40\u0E19\u0E37\u0E48\u0E2D\u0E07\u0E40\u0E1E\u0E37\u0E48\u0E2D\u0E23\u0E31\u0E01\u0E29\u0E32\u0E22\u0E2D\u0E14\u0E04\u0E07\u0E40\u0E2B\u0E25\u0E37\u0E2D");
   return {
     dataSufficiency,
-    summary: `${periodLabel2[input.period]}\u0E21\u0E35\u0E23\u0E32\u0E22\u0E23\u0E31\u0E1A ${money3(input.income)} \u0E1A\u0E32\u0E17 \u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22 ${money3(input.expense)} \u0E1A\u0E32\u0E17 \u0E04\u0E07\u0E40\u0E2B\u0E25\u0E37\u0E2D ${money3(input.balance)} \u0E1A\u0E32\u0E17 \u0E08\u0E32\u0E01 ${input.transactionCount.toLocaleString("th-TH-u-nu-latn")} \u0E23\u0E32\u0E22\u0E01\u0E32\u0E23`,
+    summary: `${periodLabel2[input.period]}\u0E21\u0E35\u0E23\u0E32\u0E22\u0E23\u0E31\u0E1A ${money4(input.income)} \u0E1A\u0E32\u0E17 \u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22 ${money4(input.expense)} \u0E1A\u0E32\u0E17 \u0E04\u0E07\u0E40\u0E2B\u0E25\u0E37\u0E2D ${money4(input.balance)} \u0E1A\u0E32\u0E17 \u0E08\u0E32\u0E01 ${input.transactionCount.toLocaleString("th-TH-u-nu-latn")} \u0E23\u0E32\u0E22\u0E01\u0E32\u0E23`,
     highlights,
     categoryObservations,
     suggestedActions
@@ -6001,6 +6011,14 @@ function recurringFrom(value, now) {
   }
   return void 0;
 }
+function followUpFrom(text2, now) {
+  const match = text2.trim().match(/^(?:ช่วย)?(?:ตาม|ทวง)งาน\s+(.+?)(?:\s+(?:อีก\s*)?(\d+)\s*ชั่วโมง)?\s*$/i);
+  if (!match) return void 0;
+  const title = match[1].trim().replace(/\s+(?:ด้วย|นะ|ครับ|ค่ะ)$/i, "").trim();
+  if (!title) return void 0;
+  const hours = Number(match[2] ?? 24);
+  return { type: "followUp", title, remindAt: new Date(now.getTime() + Math.max(1, hours) * 60 * 6e4) };
+}
 function reminderFrom(text2, now) {
   if (!/^(?:@?ไมโล\s*)?(?:ตั้ง)?เตือน(?:ฉัน)?\s*/i.test(text2.trim())) return void 0;
   const body = text2.trim().replace(/^(?:@?ไมโล\s*)?(?:ตั้ง)?เตือน(?:ฉัน)?\s*/i, "");
@@ -6068,6 +6086,10 @@ function parseMiloCommand(text2, now = /* @__PURE__ */ new Date()) {
   if (/^(?:ยืนยันรายการทั้งหมด|ยืนยันทั้งหมด)$/i.test(value)) return { type: "captureConfirm" };
   if (/^(?:ยกเลิกรายการทั้งหมด|ยกเลิกทั้งหมด)$/i.test(value)) return { type: "captureCancel" };
   if (/^(?:วันนี้มีอะไร|วันนี้ของฉัน|สรุปวันนี้ของฉัน)$/i.test(value)) return { type: "todayOverview" };
+  if (/^(?:สรุปเช้า|morning brief)$/i.test(value)) return { type: "morningBrief" };
+  if (/^(?:สรุปเย็น|evening summary)$/i.test(value)) return { type: "eveningSummary" };
+  const followUp = followUpFrom(value, now);
+  if (followUp) return followUp;
   if (/^(?:บิลรอจ่าย|รายการบิล|ดูบิล)$/i.test(value)) return { type: "pendingBillList" };
   const pendingBillPay = value.match(/^(?:จ่ายบิล|ชำระบิล|ยืนยันจ่ายบิล)\s*#?(\d+)$/i);
   if (pendingBillPay) return { type: "pendingBillPay", id: Number(pendingBillPay[1]) };
@@ -6109,13 +6131,13 @@ function parseMiloCommand(text2, now = /* @__PURE__ */ new Date()) {
   if (value === "\u0E08\u0E14\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01") return { type: "recordGuide" };
   if (value === "\u0E01\u0E23\u0E30\u0E40\u0E1B\u0E4B\u0E32\u0E40\u0E07\u0E34\u0E19") return { type: "budgetOverview" };
   if (value === "\u0E15\u0E31\u0E49\u0E07\u0E04\u0E48\u0E32") return { type: "settingGuide" };
-  const money3 = value.match(/^(จ่าย|รายจ่าย|รับ|รายรับ)\s*(.+?)\s+(\d[\d,]*(?:\.\d{1,2})?)\s*(?:บาท)?$/i);
-  if (money3) {
-    const income = /รับ|รายรับ/i.test(money3[1]);
-    const rawNote = money3[2].trim();
+  const money4 = value.match(/^(จ่าย|รายจ่าย|รับ|รายรับ)\s*(.+?)\s+(\d[\d,]*(?:\.\d{1,2})?)\s*(?:บาท)?$/i);
+  if (money4) {
+    const income = /รับ|รายรับ/i.test(money4[1]);
+    const rawNote = money4[2].trim();
     const note2 = income ? rawNote : rawNote.replace(/^ค่า(?=กาแฟ)/i, "");
     const transactionType = income ? "income" : "expense";
-    return { type: transactionType, amount: Number(money3[3].replace(/,/g, "")), category: suggestStandardCategory(transactionType, note2), note: note2 };
+    return { type: transactionType, amount: Number(money4[3].replace(/,/g, "")), category: suggestStandardCategory(transactionType, note2), note: note2 };
   }
   const naturalMoney = value.match(/^(.+?)\s+(\d[\d,]*(?:\.\d{1,2})?)\s*(?:บาท)?$/i);
   if (naturalMoney) {
@@ -6628,27 +6650,82 @@ function thaiTime(value) {
 }
 function formatTodayOverview(input) {
   const date = new Intl.DateTimeFormat("th-TH", { timeZone: "Asia/Bangkok", dateStyle: "long" }).format(input.reference);
-  const sections = [];
-  sections.push(input.calendars.length ? `\u{1F4C5} \u0E19\u0E31\u0E14\u0E2B\u0E21\u0E32\u0E22
-${input.calendars.slice(0, 5).map((item) => `\u2022 ${thaiTime(item.startsAt)} \u2022 ${item.title}`).join("\n")}` : "\u{1F4C5} \u0E19\u0E31\u0E14\u0E2B\u0E21\u0E32\u0E22 \u2022 \u0E44\u0E21\u0E48\u0E21\u0E35");
-  sections.push(input.reminders.length ? `\u{1F514} \u0E40\u0E15\u0E37\u0E2D\u0E19\u0E27\u0E31\u0E19\u0E19\u0E35\u0E49
-${input.reminders.slice(0, 5).map((item) => `\u2022 ${item.nextRunAt ? thaiTime(item.nextRunAt) : "--:--"} \u2022 ${item.title}`).join("\n")}` : "\u{1F514} \u0E40\u0E15\u0E37\u0E2D\u0E19\u0E27\u0E31\u0E19\u0E19\u0E35\u0E49 \u2022 \u0E44\u0E21\u0E48\u0E21\u0E35");
-  sections.push(input.todos.length ? `\u2705 \u0E07\u0E32\u0E19\u0E04\u0E49\u0E32\u0E07
-${input.todos.slice(0, 5).map((item) => `\u2022 #${item.id} ${item.title}${item.dueAt ? ` \u2022 ${thaiTime(item.dueAt)}` : ""}`).join("\n")}` : "\u2705 \u0E07\u0E32\u0E19\u0E04\u0E49\u0E32\u0E07 \u2022 \u0E44\u0E21\u0E48\u0E21\u0E35");
-  sections.push(input.bills.length ? `\u{1F9FE} \u0E1A\u0E34\u0E25\u0E23\u0E2D\u0E08\u0E48\u0E32\u0E22
-${input.bills.slice(0, 5).map((item) => `\u2022 #${item.id} ${item.title} ${Number(item.amount).toLocaleString("th-TH")} \u0E1A\u0E32\u0E17 \u2022 ${thaiTime(item.dueAt)}`).join("\n")}
-\u0E1E\u0E34\u0E21\u0E1E\u0E4C \u201C\u0E08\u0E48\u0E32\u0E22\u0E1A\u0E34\u0E25 #\u0E40\u0E25\u0E02\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u201D \u0E40\u0E21\u0E37\u0E48\u0E2D\u0E0A\u0E33\u0E23\u0E30\u0E08\u0E23\u0E34\u0E07` : "\u{1F9FE} \u0E1A\u0E34\u0E25\u0E23\u0E2D\u0E08\u0E48\u0E32\u0E22 \u2022 \u0E44\u0E21\u0E48\u0E21\u0E35");
-  if (input.finance) {
-    sections.push(`\u{1F4B0} \u0E27\u0E31\u0E19\u0E19\u0E35\u0E49 \u2022 \u0E23\u0E31\u0E1A ${input.finance.income.toLocaleString("th-TH")} \u2022 \u0E08\u0E48\u0E32\u0E22 ${input.finance.expense.toLocaleString("th-TH")} \u2022 \u0E04\u0E07\u0E40\u0E2B\u0E25\u0E37\u0E2D ${input.finance.balance.toLocaleString("th-TH")} \u0E1A\u0E32\u0E17`);
-  }
+  const timeline = [
+    ...input.calendars.map((item) => ({ at: new Date(item.startsAt), text: `\u{1F4C5} ${thaiTime(item.startsAt)} \u2022 ${item.title}` })),
+    ...input.reminders.filter((item) => item.nextRunAt).map((item) => ({ at: new Date(item.nextRunAt), text: `\u{1F514} ${thaiTime(item.nextRunAt)} \u2022 ${item.title}` })),
+    ...input.bills.map((item) => ({ at: new Date(item.dueAt), text: `\u{1F9FE} ${thaiTime(item.dueAt)} \u2022 #${item.id} ${item.title} ${Number(item.amount).toLocaleString("th-TH")} \u0E1A\u0E32\u0E17` })),
+    ...input.todos.filter((item) => item.dueAt).map((item) => ({ at: new Date(item.dueAt), text: `\u2705 ${thaiTime(item.dueAt)} \u2022 #${item.id} ${item.title}` }))
+  ].sort((a, b) => a.at.getTime() - b.at.getTime());
+  const undatedTodos = input.todos.filter((item) => !item.dueAt).slice(0, 5).map((item) => `\u2022 #${item.id} ${item.title}`);
+  const sections = [
+    timeline.length ? `\u{1F552} Timeline
+${timeline.slice(0, 12).map((item) => `\u2022 ${item.text}`).join("\n")}` : "\u{1F552} Timeline \u2022 \u0E27\u0E31\u0E19\u0E19\u0E35\u0E49\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E21\u0E35\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E15\u0E32\u0E21\u0E40\u0E27\u0E25\u0E32",
+    undatedTodos.length ? `\u{1F4CC} \u0E07\u0E32\u0E19\u0E17\u0E35\u0E48\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E01\u0E33\u0E2B\u0E19\u0E14\u0E40\u0E27\u0E25\u0E32
+${undatedTodos.join("\n")}` : "",
+    input.bills.length ? "\u0E1E\u0E34\u0E21\u0E1E\u0E4C \u201C\u0E08\u0E48\u0E32\u0E22\u0E1A\u0E34\u0E25 #\u0E40\u0E25\u0E02\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u201D \u0E40\u0E21\u0E37\u0E48\u0E2D\u0E0A\u0E33\u0E23\u0E30\u0E08\u0E23\u0E34\u0E07" : "",
+    input.finance ? `\u{1F4B0} \u0E01\u0E32\u0E23\u0E40\u0E07\u0E34\u0E19\u0E27\u0E31\u0E19\u0E19\u0E35\u0E49 \u2022 \u0E23\u0E31\u0E1A ${input.finance.income.toLocaleString("th-TH")} \u2022 \u0E08\u0E48\u0E32\u0E22 ${input.finance.expense.toLocaleString("th-TH")} \u2022 \u0E04\u0E07\u0E40\u0E2B\u0E25\u0E37\u0E2D ${input.finance.balance.toLocaleString("th-TH")} \u0E1A\u0E32\u0E17` : ""
+  ].filter(Boolean);
   return `\u0E27\u0E31\u0E19\u0E19\u0E35\u0E49\u0E02\u0E2D\u0E07\u0E09\u0E31\u0E19 \u2022 ${date}
 
 ${sections.join("\n\n")}`;
 }
 
+// server/milo/personalDigest.ts
+function thaiDate2(value) {
+  return new Intl.DateTimeFormat("th-TH", { timeZone: "Asia/Bangkok", dateStyle: "long" }).format(new Date(value));
+}
+function thaiTime2(value) {
+  return new Intl.DateTimeFormat("th-TH", { timeZone: "Asia/Bangkok", hour: "2-digit", minute: "2-digit" }).format(new Date(value));
+}
+function money2(value) {
+  return Number(value).toLocaleString("th-TH", { maximumFractionDigits: 2 });
+}
+function formatMorningBrief(input) {
+  const lines = [`\u2600\uFE0F Morning Brief \u2022 ${thaiDate2(input.reference)}`, "\u0E2A\u0E27\u0E31\u0E2A\u0E14\u0E35\u0E04\u0E23\u0E31\u0E1A \u0E27\u0E31\u0E19\u0E19\u0E35\u0E49 Milo \u0E2A\u0E23\u0E38\u0E1B\u0E2A\u0E34\u0E48\u0E07\u0E2A\u0E33\u0E04\u0E31\u0E0D\u0E43\u0E2B\u0E49\u0E01\u0E48\u0E2D\u0E19\u0E40\u0E23\u0E34\u0E48\u0E21\u0E27\u0E31\u0E19"];
+  if (input.calendars.length) lines.push(`
+\u{1F4C5} \u0E19\u0E31\u0E14\u0E2B\u0E21\u0E32\u0E22 ${input.calendars.length} \u0E23\u0E32\u0E22\u0E01\u0E32\u0E23
+${input.calendars.slice(0, 8).map((item) => `\u2022 ${thaiTime2(item.startsAt)} \u2022 ${item.title}`).join("\n")}`);
+  else lines.push("\n\u{1F4C5} \u0E27\u0E31\u0E19\u0E19\u0E35\u0E49\u0E44\u0E21\u0E48\u0E21\u0E35\u0E19\u0E31\u0E14\u0E2B\u0E21\u0E32\u0E22\u0E2A\u0E33\u0E04\u0E31\u0E0D");
+  const activeTodos = input.todos.filter((item) => item.status !== "done" && item.status !== "cancelled");
+  if (activeTodos.length) lines.push(`
+\u2705 \u0E07\u0E32\u0E19\u0E04\u0E49\u0E32\u0E07 ${activeTodos.length} \u0E23\u0E32\u0E22\u0E01\u0E32\u0E23
+${activeTodos.slice(0, 8).map((item) => `\u2022 #${item.id} ${item.title}${item.dueAt ? ` \u2022 ${thaiTime2(item.dueAt)}` : ""}`).join("\n")}`);
+  if (input.reminders.length) lines.push(`
+\u{1F514} \u0E40\u0E15\u0E37\u0E2D\u0E19 ${input.reminders.length} \u0E23\u0E32\u0E22\u0E01\u0E32\u0E23
+${input.reminders.slice(0, 8).map((item) => `\u2022 ${item.nextRunAt ? thaiTime2(item.nextRunAt) : "--:--"} \u2022 ${item.title}`).join("\n")}`);
+  if (input.bills.length) lines.push(`
+\u{1F9FE} \u0E1A\u0E34\u0E25\u0E23\u0E2D\u0E08\u0E48\u0E32\u0E22 ${input.bills.length} \u0E23\u0E32\u0E22\u0E01\u0E32\u0E23
+${input.bills.slice(0, 5).map((item) => `\u2022 #${item.id} ${item.title} ${money2(item.amount)} \u0E1A\u0E32\u0E17 \u2022 ${thaiTime2(item.dueAt)}`).join("\n")}`);
+  if (input.finance) lines.push(`
+\u{1F4B0} \u0E01\u0E32\u0E23\u0E40\u0E07\u0E34\u0E19\u0E27\u0E31\u0E19\u0E19\u0E35\u0E49
+\u0E23\u0E31\u0E1A ${money2(input.finance.income)} \u0E1A\u0E32\u0E17 \u2022 \u0E08\u0E48\u0E32\u0E22 ${money2(input.finance.expense)} \u0E1A\u0E32\u0E17 \u2022 \u0E04\u0E07\u0E40\u0E2B\u0E25\u0E37\u0E2D ${money2(input.finance.balance)} \u0E1A\u0E32\u0E17`);
+  lines.push("\n\u0E1E\u0E34\u0E21\u0E1E\u0E4C \u201C\u0E27\u0E31\u0E19\u0E19\u0E35\u0E49\u0E21\u0E35\u0E2D\u0E30\u0E44\u0E23\u201D \u0E40\u0E1E\u0E37\u0E48\u0E2D\u0E14\u0E39 Timeline \u0E23\u0E27\u0E21\u0E44\u0E14\u0E49\u0E17\u0E38\u0E01\u0E40\u0E21\u0E37\u0E48\u0E2D\u0E04\u0E23\u0E31\u0E1A");
+  return lines.join("\n");
+}
+function formatEveningSummary(input) {
+  const lines = [`\u{1F319} Evening Summary \u2022 ${thaiDate2(input.reference)}`, "\u0E2A\u0E23\u0E38\u0E1B\u0E27\u0E31\u0E19\u0E02\u0E2D\u0E07\u0E04\u0E38\u0E13\u0E01\u0E48\u0E2D\u0E19\u0E1E\u0E31\u0E01\u0E04\u0E23\u0E31\u0E1A"];
+  const completed = input.completedTodos ?? [];
+  if (completed.length) lines.push(`
+\u2705 \u0E07\u0E32\u0E19\u0E17\u0E35\u0E48\u0E40\u0E2A\u0E23\u0E47\u0E08 ${completed.length} \u0E23\u0E32\u0E22\u0E01\u0E32\u0E23
+${completed.slice(0, 8).map((item) => `\u2022 #${item.id} ${item.title}`).join("\n")}`);
+  else lines.push("\n\u2705 \u0E07\u0E32\u0E19\u0E17\u0E35\u0E48\u0E40\u0E2A\u0E23\u0E47\u0E08\u0E27\u0E31\u0E19\u0E19\u0E35\u0E49 \u2022 \u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E21\u0E35\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E17\u0E35\u0E48\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E44\u0E27\u0E49");
+  if (input.finance) lines.push(`
+\u{1F4B0} \u0E01\u0E32\u0E23\u0E40\u0E07\u0E34\u0E19
+\u0E23\u0E31\u0E1A ${money2(input.finance.income)} \u0E1A\u0E32\u0E17 \u2022 \u0E08\u0E48\u0E32\u0E22 ${money2(input.finance.expense)} \u0E1A\u0E32\u0E17 \u2022 \u0E2A\u0E38\u0E17\u0E18\u0E34 ${money2(input.finance.balance)} \u0E1A\u0E32\u0E17`);
+  if (input.bills.length) lines.push(`
+\u{1F9FE} \u0E1A\u0E34\u0E25\u0E17\u0E35\u0E48\u0E22\u0E31\u0E07\u0E23\u0E2D\u0E08\u0E48\u0E32\u0E22 ${input.bills.length} \u0E23\u0E32\u0E22\u0E01\u0E32\u0E23
+${input.bills.slice(0, 5).map((item) => `\u2022 #${item.id} ${item.title} ${money2(item.amount)} \u0E1A\u0E32\u0E17`).join("\n")}`);
+  if (input.todos.length) lines.push(`
+\u{1F4CC} \u0E07\u0E32\u0E19\u0E17\u0E35\u0E48\u0E22\u0E31\u0E07\u0E04\u0E49\u0E32\u0E07 ${input.todos.length} \u0E23\u0E32\u0E22\u0E01\u0E32\u0E23
+${input.todos.slice(0, 8).map((item) => `\u2022 #${item.id} ${item.title}${item.dueAt ? ` \u2022 ${thaiDate2(item.dueAt)} ${thaiTime2(item.dueAt)}` : ""}`).join("\n")}`);
+  if (!input.todos.length && !input.bills.length) lines.push("\n\u{1F389} \u0E44\u0E21\u0E48\u0E21\u0E35\u0E07\u0E32\u0E19\u0E04\u0E49\u0E32\u0E07\u0E2B\u0E23\u0E37\u0E2D\u0E1A\u0E34\u0E25\u0E23\u0E2D\u0E08\u0E48\u0E32\u0E22\u0E43\u0E19\u0E20\u0E32\u0E1E\u0E23\u0E27\u0E21\u0E27\u0E31\u0E19\u0E19\u0E35\u0E49");
+  lines.push("\n\u0E1E\u0E23\u0E38\u0E48\u0E07\u0E19\u0E35\u0E49\u0E1E\u0E34\u0E21\u0E1E\u0E4C \u201C\u0E27\u0E31\u0E19\u0E19\u0E35\u0E49\u0E21\u0E35\u0E2D\u0E30\u0E44\u0E23\u201D \u0E40\u0E1E\u0E37\u0E48\u0E2D\u0E14\u0E39\u0E15\u0E32\u0E23\u0E32\u0E07\u0E41\u0E25\u0E30\u0E2A\u0E34\u0E48\u0E07\u0E17\u0E35\u0E48\u0E15\u0E49\u0E2D\u0E07\u0E08\u0E31\u0E14\u0E01\u0E32\u0E23\u0E04\u0E23\u0E31\u0E1A");
+  return lines.join("\n");
+}
+
 // server/milo/routes.ts
 function helpText() {
-  return "Milo \u0E0A\u0E48\u0E27\u0E22\u0E04\u0E38\u0E13\u0E08\u0E1A\u0E07\u0E32\u0E19\u0E43\u0E19 LINE \u0E41\u0E0A\u0E17\u0E40\u0E14\u0E35\u0E22\u0E27\u0E04\u0E23\u0E31\u0E1A\n\u{1F514} \u0E40\u0E15\u0E37\u0E2D\u0E19: \u0E40\u0E15\u0E37\u0E2D\u0E19\u0E1B\u0E23\u0E30\u0E0A\u0E38\u0E21\u0E1E\u0E23\u0E38\u0E48\u0E07\u0E19\u0E35\u0E49 10:00 / \u0E40\u0E15\u0E37\u0E2D\u0E19\u0E14\u0E37\u0E48\u0E21\u0E19\u0E49\u0E33\u0E17\u0E38\u0E01 30 \u0E19\u0E32\u0E17\u0E35 / \u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E40\u0E15\u0E37\u0E2D\u0E19\n\u{1F5C2}\uFE0F \u0E40\u0E01\u0E47\u0E1A: \u0E40\u0E01\u0E47\u0E1A https://example.com #\u0E07\u0E32\u0E19 / \u0E04\u0E49\u0E19\u0E2B\u0E32 \u0E43\u0E1A\u0E40\u0E2A\u0E19\u0E2D\u0E23\u0E32\u0E04\u0E32 / \u0E2A\u0E16\u0E32\u0E19\u0E30\u0E04\u0E25\u0E31\u0E07\n\u{1F4E6} \u0E40\u0E2D\u0E01\u0E2A\u0E32\u0E23: \u0E2A\u0E23\u0E38\u0E1B\u0E40\u0E2D\u0E01\u0E2A\u0E32\u0E23\u0E40\u0E14\u0E37\u0E2D\u0E19\u0E19\u0E35\u0E49 / \u0E44\u0E1F\u0E25\u0E4C\u0E17\u0E35\u0E48\u0E15\u0E49\u0E2D\u0E07\u0E15\u0E23\u0E27\u0E08\n\u{1F9E0} \u0E08\u0E14\u0E2B\u0E25\u0E32\u0E22\u0E2D\u0E22\u0E48\u0E32\u0E07: \u0E1E\u0E23\u0E38\u0E48\u0E07\u0E19\u0E35\u0E49\u0E1A\u0E48\u0E32\u0E22\u0E2A\u0E2D\u0E07\u0E1B\u0E23\u0E30\u0E0A\u0E38\u0E21\u0E25\u0E39\u0E01\u0E04\u0E49\u0E32 \u0E04\u0E48\u0E32\u0E41\u0E17\u0E47\u0E01\u0E0B\u0E35\u0E48 300 \u0E0A\u0E48\u0E27\u0E22\u0E40\u0E15\u0E37\u0E2D\u0E19\u0E14\u0E49\u0E27\u0E22\n\u2600\uFE0F \u0E27\u0E31\u0E19\u0E19\u0E35\u0E49: \u0E27\u0E31\u0E19\u0E19\u0E35\u0E49\u0E21\u0E35\u0E2D\u0E30\u0E44\u0E23 / \u0E1A\u0E34\u0E25\u0E23\u0E2D\u0E08\u0E48\u0E32\u0E22 / \u0E08\u0E48\u0E32\u0E22\u0E1A\u0E34\u0E25 #\u0E40\u0E25\u0E02\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\n\u{1F4C5} \u0E1B\u0E0F\u0E34\u0E17\u0E34\u0E19: \u0E25\u0E07\u0E1B\u0E0F\u0E34\u0E17\u0E34\u0E19 \u0E1B\u0E23\u0E30\u0E0A\u0E38\u0E21\u0E17\u0E35\u0E21\u0E1E\u0E23\u0E38\u0E48\u0E07\u0E19\u0E35\u0E49 10:00 / \u0E14\u0E39\u0E1B\u0E0F\u0E34\u0E17\u0E34\u0E19\n\u{1F465} \u0E01\u0E25\u0E38\u0E48\u0E21 LINE: @\u0E44\u0E21\u0E42\u0E25 \u0E1C\u0E39\u0E49\u0E0A\u0E48\u0E27\u0E22\u0E01\u0E25\u0E38\u0E48\u0E21 / @\u0E44\u0E21\u0E42\u0E25 \u0E41\u0E08\u0E49\u0E07\u0E2A\u0E48\u0E07\u0E07\u0E32\u0E19\u0E14\u0E49\u0E27\u0E22\u0E16\u0E36\u0E07 @\u0E2A\u0E21\u0E0A\u0E32\u0E22\n\u2705 \u0E07\u0E32\u0E19: \u0E07\u0E32\u0E19 \u0E2A\u0E48\u0E07\u0E2A\u0E23\u0E38\u0E1B\u0E23\u0E32\u0E22\u0E2A\u0E31\u0E1B\u0E14\u0E32\u0E2B\u0E4C / \u0E14\u0E39\u0E07\u0E32\u0E19 / \u0E40\u0E2A\u0E23\u0E47\u0E08\u0E07\u0E32\u0E19 #12 / \u0E42\u0E19\u0E49\u0E15 \u0E23\u0E2B\u0E31\u0E2A Wi-Fi\n\u{1F4B0} \u0E01\u0E32\u0E23\u0E40\u0E07\u0E34\u0E19: \u0E01\u0E34\u0E19\u0E01\u0E32\u0E41\u0E1F 80 / \u0E40\u0E07\u0E34\u0E19\u0E40\u0E14\u0E37\u0E2D\u0E19\u0E40\u0E02\u0E49\u0E32 35000 / \u0E15\u0E31\u0E49\u0E07\u0E07\u0E1A \u0E2D\u0E32\u0E2B\u0E32\u0E23 5000 / \u0E2A\u0E23\u0E38\u0E1B\u0E40\u0E14\u0E37\u0E2D\u0E19\u0E19\u0E35\u0E49\n\u{1F4F7}\u{1F399}\uFE0F \u0E2A\u0E48\u0E07\u0E23\u0E39\u0E1B\u0E43\u0E1A\u0E40\u0E2A\u0E23\u0E47\u0E08\u0E2B\u0E23\u0E37\u0E2D\u0E40\u0E2A\u0E35\u0E22\u0E07\u0E43\u0E2B\u0E49\u0E44\u0E21\u0E42\u0E25\u0E2D\u0E48\u0E32\u0E19 \u0E41\u0E25\u0E49\u0E27\u0E15\u0E23\u0E27\u0E08\u0E41\u0E25\u0E30\u0E22\u0E37\u0E19\u0E22\u0E31\u0E19\u0E01\u0E48\u0E2D\u0E19\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\n\n\u0E1E\u0E34\u0E21\u0E1E\u0E4C \u201C\u0E0A\u0E48\u0E27\u0E22\u201D \u0E44\u0E14\u0E49\u0E17\u0E38\u0E01\u0E40\u0E21\u0E37\u0E48\u0E2D\u0E04\u0E23\u0E31\u0E1A";
+  return "Milo \u0E0A\u0E48\u0E27\u0E22\u0E04\u0E38\u0E13\u0E08\u0E1A\u0E07\u0E32\u0E19\u0E43\u0E19 LINE \u0E41\u0E0A\u0E17\u0E40\u0E14\u0E35\u0E22\u0E27\u0E04\u0E23\u0E31\u0E1A\n\u{1F514} \u0E40\u0E15\u0E37\u0E2D\u0E19: \u0E40\u0E15\u0E37\u0E2D\u0E19\u0E1B\u0E23\u0E30\u0E0A\u0E38\u0E21\u0E1E\u0E23\u0E38\u0E48\u0E07\u0E19\u0E35\u0E49 10:00 / \u0E40\u0E15\u0E37\u0E2D\u0E19\u0E14\u0E37\u0E48\u0E21\u0E19\u0E49\u0E33\u0E17\u0E38\u0E01 30 \u0E19\u0E32\u0E17\u0E35 / \u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E40\u0E15\u0E37\u0E2D\u0E19\n\u{1F3AF} \u0E15\u0E32\u0E21\u0E07\u0E32\u0E19: \u0E0A\u0E48\u0E27\u0E22\u0E15\u0E32\u0E21\u0E07\u0E32\u0E19 Proposal \u0E25\u0E39\u0E01\u0E04\u0E49\u0E32 B / \u0E0A\u0E48\u0E27\u0E22\u0E15\u0E32\u0E21\u0E07\u0E32\u0E19\u0E2A\u0E48\u0E07\u0E43\u0E1A\u0E40\u0E2A\u0E19\u0E2D\u0E23\u0E32\u0E04\u0E32 \u0E2D\u0E35\u0E01 24 \u0E0A\u0E31\u0E48\u0E27\u0E42\u0E21\u0E07\n\u2600\uFE0F \u0E27\u0E31\u0E19\u0E19\u0E35\u0E49: \u0E27\u0E31\u0E19\u0E19\u0E35\u0E49\u0E21\u0E35\u0E2D\u0E30\u0E44\u0E23 / \u0E2A\u0E23\u0E38\u0E1B\u0E40\u0E0A\u0E49\u0E32 / \u0E2A\u0E23\u0E38\u0E1B\u0E40\u0E22\u0E47\u0E19 / \u0E1A\u0E34\u0E25\u0E23\u0E2D\u0E08\u0E48\u0E32\u0E22 / \u0E08\u0E48\u0E32\u0E22\u0E1A\u0E34\u0E25 #\u0E40\u0E25\u0E02\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\n\u{1F5C2}\uFE0F \u0E40\u0E01\u0E47\u0E1A: \u0E40\u0E01\u0E47\u0E1A https://example.com #\u0E07\u0E32\u0E19 / \u0E04\u0E49\u0E19\u0E2B\u0E32 \u0E43\u0E1A\u0E40\u0E2A\u0E19\u0E2D\u0E23\u0E32\u0E04\u0E32 / \u0E2A\u0E16\u0E32\u0E19\u0E30\u0E04\u0E25\u0E31\u0E07\n\u{1F4E6} \u0E40\u0E2D\u0E01\u0E2A\u0E32\u0E23: \u0E2A\u0E23\u0E38\u0E1B\u0E40\u0E2D\u0E01\u0E2A\u0E32\u0E23\u0E40\u0E14\u0E37\u0E2D\u0E19\u0E19\u0E35\u0E49 / \u0E44\u0E1F\u0E25\u0E4C\u0E17\u0E35\u0E48\u0E15\u0E49\u0E2D\u0E07\u0E15\u0E23\u0E27\u0E08\n\u{1F9E0} \u0E08\u0E14\u0E2B\u0E25\u0E32\u0E22\u0E2D\u0E22\u0E48\u0E32\u0E07: \u0E1E\u0E23\u0E38\u0E48\u0E07\u0E19\u0E35\u0E49\u0E1A\u0E48\u0E32\u0E22\u0E2A\u0E2D\u0E07\u0E1B\u0E23\u0E30\u0E0A\u0E38\u0E21\u0E25\u0E39\u0E01\u0E04\u0E49\u0E32 \u0E04\u0E48\u0E32\u0E41\u0E17\u0E47\u0E01\u0E0B\u0E35\u0E48 300 \u0E0A\u0E48\u0E27\u0E22\u0E40\u0E15\u0E37\u0E2D\u0E19\u0E14\u0E49\u0E27\u0E22\n\u{1F4C5} \u0E1B\u0E0F\u0E34\u0E17\u0E34\u0E19: \u0E25\u0E07\u0E1B\u0E0F\u0E34\u0E17\u0E34\u0E19 \u0E1B\u0E23\u0E30\u0E0A\u0E38\u0E21\u0E17\u0E35\u0E21\u0E1E\u0E23\u0E38\u0E48\u0E07\u0E19\u0E35\u0E49 10:00 / \u0E14\u0E39\u0E1B\u0E0F\u0E34\u0E17\u0E34\u0E19\n\u{1F465} \u0E01\u0E25\u0E38\u0E48\u0E21 LINE: @\u0E44\u0E21\u0E42\u0E25 \u0E1C\u0E39\u0E49\u0E0A\u0E48\u0E27\u0E22\u0E01\u0E25\u0E38\u0E48\u0E21 / @\u0E44\u0E21\u0E42\u0E25 \u0E41\u0E08\u0E49\u0E07\u0E2A\u0E48\u0E07\u0E07\u0E32\u0E19\u0E14\u0E49\u0E27\u0E22\u0E16\u0E36\u0E07 @\u0E2A\u0E21\u0E0A\u0E32\u0E22\n\u2705 \u0E07\u0E32\u0E19: \u0E07\u0E32\u0E19 \u0E2A\u0E48\u0E07\u0E2A\u0E23\u0E38\u0E1B\u0E23\u0E32\u0E22\u0E2A\u0E31\u0E1B\u0E14\u0E32\u0E2B\u0E4C / \u0E14\u0E39\u0E07\u0E32\u0E19 / \u0E40\u0E2A\u0E23\u0E47\u0E08\u0E07\u0E32\u0E19 #12 / \u0E42\u0E19\u0E49\u0E15 \u0E23\u0E2B\u0E31\u0E2A Wi-Fi\n\u{1F4B0} \u0E01\u0E32\u0E23\u0E40\u0E07\u0E34\u0E19: \u0E01\u0E34\u0E19\u0E01\u0E32\u0E41\u0E1F 80 / \u0E40\u0E07\u0E34\u0E19\u0E40\u0E14\u0E37\u0E2D\u0E19\u0E40\u0E02\u0E49\u0E32 35000 / \u0E15\u0E31\u0E49\u0E07\u0E07\u0E1A \u0E2D\u0E32\u0E2B\u0E32\u0E23 5000 / \u0E2A\u0E23\u0E38\u0E1B\u0E40\u0E14\u0E37\u0E2D\u0E19\u0E19\u0E35\u0E49\n\u{1F4F7}\u{1F399}\uFE0F \u0E2A\u0E48\u0E07\u0E23\u0E39\u0E1B\u0E43\u0E1A\u0E40\u0E2A\u0E23\u0E47\u0E08\u0E2B\u0E23\u0E37\u0E2D\u0E40\u0E2A\u0E35\u0E22\u0E07\u0E43\u0E2B\u0E49\u0E44\u0E21\u0E42\u0E25\u0E2D\u0E48\u0E32\u0E19 \u0E41\u0E25\u0E49\u0E27\u0E15\u0E23\u0E27\u0E08\u0E41\u0E25\u0E30\u0E22\u0E37\u0E19\u0E22\u0E31\u0E19\u0E01\u0E48\u0E2D\u0E19\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\n\n\u0E1E\u0E34\u0E21\u0E1E\u0E4C \u201C\u0E0A\u0E48\u0E27\u0E22\u201D \u0E44\u0E14\u0E49\u0E17\u0E38\u0E01\u0E40\u0E21\u0E37\u0E48\u0E2D\u0E04\u0E23\u0E31\u0E1A";
 }
 function contextualFallback(text2) {
   const value = text2.trim().replace(/^@?ไมโล\s*/i, "").slice(0, 80);
@@ -6661,13 +6738,13 @@ function formatDate(date) {
   return new Intl.DateTimeFormat("th-TH", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Bangkok" }).format(date);
 }
 function formatFinanceReport(report) {
-  const money3 = (amount) => amount.toLocaleString("th-TH", { maximumFractionDigits: 2 });
+  const money4 = (amount) => amount.toLocaleString("th-TH", { maximumFractionDigits: 2 });
   const label = { day: "\u0E27\u0E31\u0E19\u0E19\u0E35\u0E49", week: "\u0E2A\u0E31\u0E1B\u0E14\u0E32\u0E2B\u0E4C\u0E19\u0E35\u0E49", month: "\u0E40\u0E14\u0E37\u0E2D\u0E19\u0E19\u0E35\u0E49", year: "\u0E1B\u0E35\u0E19\u0E35\u0E49" };
-  const categories = Object.entries(report.categories).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([name, amount]) => `\u2022 ${name} ${money3(amount)} \u0E1A\u0E32\u0E17`).join("\n");
+  const categories = Object.entries(report.categories).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([name, amount]) => `\u2022 ${name} ${money4(amount)} \u0E1A\u0E32\u0E17`).join("\n");
   return `\u0E2A\u0E23\u0E38\u0E1B\u0E01\u0E32\u0E23\u0E40\u0E07\u0E34\u0E19${label[report.period]}
-\u0E23\u0E32\u0E22\u0E23\u0E31\u0E1A ${money3(report.income)} \u0E1A\u0E32\u0E17
-\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22 ${money3(report.expense)} \u0E1A\u0E32\u0E17
-\u0E01\u0E33\u0E44\u0E23/\u0E04\u0E07\u0E40\u0E2B\u0E25\u0E37\u0E2D ${money3(report.balance)} \u0E1A\u0E32\u0E17
+\u0E23\u0E32\u0E22\u0E23\u0E31\u0E1A ${money4(report.income)} \u0E1A\u0E32\u0E17
+\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22 ${money4(report.expense)} \u0E1A\u0E32\u0E17
+\u0E01\u0E33\u0E44\u0E23/\u0E04\u0E07\u0E40\u0E2B\u0E25\u0E37\u0E2D ${money4(report.balance)} \u0E1A\u0E32\u0E17
 ${categories ? `
 \u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22\u0E15\u0E32\u0E21\u0E2B\u0E21\u0E27\u0E14
 ${categories}` : "\n\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E21\u0E35\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22\u0E43\u0E19\u0E0A\u0E48\u0E27\u0E07\u0E19\u0E35\u0E49"}`;
@@ -6799,6 +6876,26 @@ async function resolveFinanceScope(lineUserId, lineChatId, scope) {
   if (!access) return void 0;
   return { financeAccountId: access.account.id, role: access.membership.role };
 }
+async function buildPersonalDigestSnapshot(lineUserId, lineChatId, scope, reference = /* @__PURE__ */ new Date(), range = bangkokDayRange(reference)) {
+  const financeScope = scope === "user" ? await resolveFinanceScope(lineUserId, lineChatId, scope) : void 0;
+  const [calendars, reminders2, todos, completedTodos, bills, finance] = await Promise.all([
+    listCalendarEventsForRange(lineUserId, lineChatId, scope, range.start, new Date(range.end.getTime() - 1)),
+    listRemindersForChat(lineUserId, lineChatId, scope),
+    listTodosForChat(lineUserId, lineChatId, scope),
+    listCompletedTodosForChat(lineUserId, lineChatId, scope, range.start, new Date(range.end.getTime() - 1)),
+    financeScope ? listPendingBillsForChat(lineUserId, lineChatId, scope, financeScope.financeAccountId) : Promise.resolve([]),
+    financeScope ? financeReport(lineUserId, "day", reference, financeScope.financeAccountId) : Promise.resolve(void 0)
+  ]);
+  return {
+    reference,
+    calendars,
+    reminders: reminders2.filter((item) => item.status === "active" && item.nextRunAt && item.nextRunAt >= range.start && item.nextRunAt < range.end),
+    todos,
+    completedTodos,
+    bills: bills.filter((item) => item.dueAt >= range.start && item.dueAt < range.end),
+    finance
+  };
+}
 function financeAccessMessage(scope) {
   return scope === "user" ? "\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E1E\u0E1A\u0E1A\u0E31\u0E0D\u0E0A\u0E35\u0E01\u0E32\u0E23\u0E40\u0E07\u0E34\u0E19\u0E2A\u0E48\u0E27\u0E19\u0E15\u0E31\u0E27 \u0E25\u0E2D\u0E07\u0E2A\u0E48\u0E07\u0E04\u0E33\u0E2A\u0E31\u0E48\u0E07\u0E2D\u0E35\u0E01\u0E04\u0E23\u0E31\u0E49\u0E07\u0E04\u0E23\u0E31\u0E1A" : "\u0E01\u0E25\u0E38\u0E48\u0E21\u0E19\u0E35\u0E49\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E44\u0E14\u0E49\u0E40\u0E1B\u0E34\u0E14\u0E2A\u0E21\u0E38\u0E14\u0E1A\u0E31\u0E0D\u0E0A\u0E35\u0E2A\u0E33\u0E2B\u0E23\u0E31\u0E1A\u0E2A\u0E21\u0E32\u0E0A\u0E34\u0E01\u0E02\u0E2D\u0E07\u0E04\u0E38\u0E13 \u0E08\u0E36\u0E07\u0E44\u0E21\u0E48\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E2B\u0E23\u0E37\u0E2D\u0E41\u0E2A\u0E14\u0E07\u0E01\u0E32\u0E23\u0E40\u0E07\u0E34\u0E19\u0E23\u0E48\u0E27\u0E21\u0E42\u0E14\u0E22\u0E2D\u0E31\u0E15\u0E42\u0E19\u0E21\u0E31\u0E15\u0E34 \u0E40\u0E1E\u0E37\u0E48\u0E2D\u0E1B\u0E01\u0E1B\u0E49\u0E2D\u0E07\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E2A\u0E48\u0E27\u0E19\u0E15\u0E31\u0E27 \u0E43\u0E2B\u0E49\u0E40\u0E08\u0E49\u0E32\u0E02\u0E2D\u0E07\u0E01\u0E25\u0E38\u0E48\u0E21\u0E15\u0E31\u0E49\u0E07\u0E04\u0E48\u0E32\u0E1A\u0E31\u0E0D\u0E0A\u0E35\u0E41\u0E25\u0E30\u0E1A\u0E17\u0E1A\u0E32\u0E17\u0E08\u0E32\u0E01 dashboard \u0E01\u0E48\u0E2D\u0E19\u0E04\u0E23\u0E31\u0E1A";
 }
@@ -6821,7 +6918,7 @@ ${lineUserId}
   const financeCommands = /* @__PURE__ */ new Set(["expense", "income", "transactionSearch", "transactionUndo", "transactionDelete", "transactionUpdate", "openingBalance", "financeReport", "aiSummary", "budgetOverview", "transactionList", "voiceConfirm", "voiceEditPrompt", "voiceCategoryChange", "voiceEdit", "budget", "budgetCycleStart", "categoryAdd", "categoryRemove", "categoryList", "imageConfirm", "imageEdit", "pdfConfirm", "recurringCreate", "recurringList", "recurringStatus", "exportFinance", "pendingBillList", "pendingBillPay", "pendingBillCancel"]);
   const captureNeedsFinance = command.type === "captureDraft" && command.plan.items.some((item) => item.type === "pending_bill");
   const needsFinance = financeCommands.has(command.type) || captureNeedsFinance;
-  if (command.type === "reminder" && !hasMiloEntitlement(plan, "reminders")) {
+  if ((command.type === "reminder" || command.type === "followUp") && !hasMiloEntitlement(plan, "reminders")) {
     if (event.replyToken) await replyText(event.replyToken, entitlementMessage("reminders"));
     return;
   }
@@ -6944,6 +7041,27 @@ ${lineUserId}
       bills: bills.filter((item) => item.dueAt < range.end),
       finance
     });
+  } else if (command.type === "morningBrief") {
+    message = formatMorningBrief(await buildPersonalDigestSnapshot(lineUserId, lineChatId, scope));
+  } else if (command.type === "eveningSummary") {
+    message = formatEveningSummary(await buildPersonalDigestSnapshot(lineUserId, lineChatId, scope));
+  } else if (command.type === "followUp") {
+    const todoResult = await createTodo(lineChatId, lineUserId, command.title, command.remindAt);
+    const reminderId = await createReminder({
+      lineChatId,
+      createdByLineUserId: lineUserId,
+      title: `\u0E15\u0E34\u0E14\u0E15\u0E32\u0E21\u0E07\u0E32\u0E19: ${command.title}`,
+      recurrenceType: "once",
+      recurrenceInterval: 1,
+      dueAt: command.remindAt,
+      nextRunAt: command.remindAt,
+      sourceMessageId: event.message?.id ? `followup:${event.message.id}` : void 0
+    });
+    const todoId = Number(todoResult[0]?.insertId ?? 0);
+    message = `\u{1F3AF} \u0E15\u0E31\u0E49\u0E07\u0E15\u0E34\u0E14\u0E15\u0E32\u0E21\u0E07\u0E32\u0E19\u0E41\u0E25\u0E49\u0E27
+${command.title}
+\u0E07\u0E32\u0E19 #${todoId} \u2022 \u0E40\u0E15\u0E37\u0E2D\u0E19 #${reminderId}
+\u0E08\u0E30\u0E40\u0E15\u0E37\u0E2D\u0E19\u0E2D\u0E35\u0E01 ${Math.max(1, Math.round((command.remindAt.getTime() - Date.now()) / 36e5))} \u0E0A\u0E31\u0E48\u0E27\u0E42\u0E21\u0E07\u0E04\u0E23\u0E31\u0E1A`;
   } else if (command.type === "pendingBillList") {
     const bills = await listPendingBillsForChat(lineUserId, lineChatId, scope, financeScope.financeAccountId);
     message = bills.length ? `\u{1F9FE} \u0E1A\u0E34\u0E25\u0E23\u0E2D\u0E08\u0E48\u0E32\u0E22
@@ -7929,7 +8047,7 @@ function registerMiloCron(app2) {
 
 // server/milo/saveResultImage.ts
 import sharp4 from "sharp";
-var money2 = (value) => normalizeRenderText(value.toLocaleString("th-TH-u-nu-latn", { maximumFractionDigits: 2 }));
+var money3 = (value) => normalizeRenderText(value.toLocaleString("th-TH-u-nu-latn", { maximumFractionDigits: 2 }));
 var thaiDateTime2 = (value) => normalizeRenderText(new Intl.DateTimeFormat("th-TH-u-nu-latn", {
   day: "2-digit",
   month: "short",
@@ -8027,7 +8145,7 @@ function buildSaveResultSvg(input) {
 
     <text x="80" y="444" font-size="24" font-weight="600" fill="#4B6173">${escapeXml(thaiDateTime2(occurredAt))}</text>
     <text x="80" y="510" font-size="47" font-weight="800" fill="#163D3C">${escapeXml(item)}</text>
-    <text x="844" y="510" text-anchor="end" font-size="55" font-weight="900" fill="${accent}">\u0E3F${money2(amount)}</text>
+    <text x="844" y="510" text-anchor="end" font-size="55" font-weight="900" fill="${accent}">\u0E3F${money3(amount)}</text>
     <line x1="78" y1="535" x2="855" y2="535" stroke="#8ADDC0" stroke-width="3"/>
 
     ${budgetLimit > 0 ? `
@@ -8037,11 +8155,11 @@ function buildSaveResultSvg(input) {
       <text x="150" y="630" font-size="30" font-weight="800" fill="#173F3B">\u0E07\u0E1A\u0E2B\u0E21\u0E27\u0E14${escapeXml(category)}</text>
 
       <text x="90" y="681" font-size="19" fill="#526979">\u0E43\u0E0A\u0E49\u0E44\u0E1B</text>
-      <text x="90" y="725" font-size="39" font-weight="900" fill="${accent}">\u0E3F${money2(budgetSpent)}</text>
+      <text x="90" y="725" font-size="39" font-weight="900" fill="${accent}">\u0E3F${money3(budgetSpent)}</text>
       <text x="378" y="681" font-size="19" fill="#526979">\u0E07\u0E1A\u0E17\u0E31\u0E49\u0E07\u0E2B\u0E21\u0E14</text>
-      <text x="378" y="725" font-size="34" font-weight="800" fill="#149A68">\u0E3F${money2(budgetLimit)}</text>
+      <text x="378" y="725" font-size="34" font-weight="800" fill="#149A68">\u0E3F${money3(budgetLimit)}</text>
       <text x="646" y="681" font-size="19" fill="#526979">${remainingLabel}</text>
-      <text x="646" y="725" font-size="34" font-weight="800" fill="${metrics.isOverBudget ? "#F51D72" : "#149A68"}">\u0E3F${money2(remainingAmount)}</text>
+      <text x="646" y="725" font-size="34" font-weight="800" fill="${metrics.isOverBudget ? "#F51D72" : "#149A68"}">\u0E3F${money3(remainingAmount)}</text>
 
       <rect x="90" y="760" width="660" height="24" rx="12" fill="#DDEFE8"/>
       <rect x="90" y="760" width="${usageWidth}" height="24" rx="12" fill="url(#progress)"/>
@@ -8054,7 +8172,7 @@ function buildSaveResultSvg(input) {
 
     <rect x="70" y="910" width="792" height="132" rx="34" fill="#FFFFFF" stroke="#D4F3E5" stroke-width="2" filter="url(#shadow)"/>
     <text x="108" y="958" font-size="27" font-weight="700" fill="#3D5870">\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E43\u0E2B\u0E49\u0E41\u0E25\u0E49\u0E27\u0E19\u0E48\u0E30\u0E08\u0E4A\u0E30</text>
-    <text x="108" y="1004" font-size="25" fill="#3D5870">${escapeXml(item)} \u2022 ${escapeXml(categoryLabel)} \u2022 ${money2(amount)} \u0E1A\u0E32\u0E17</text>
+    <text x="108" y="1004" font-size="25" fill="#3D5870">${escapeXml(item)} \u2022 ${escapeXml(categoryLabel)} \u2022 ${money3(amount)} \u0E1A\u0E32\u0E17</text>
   </svg>`;
 }
 function vectorLayer(text2, options) {
@@ -8082,18 +8200,18 @@ function buildThaiTextLayers(input) {
     vectorLayer(`\u2022 ${categoryLabel}`, { left: 273, top: 344, width: 560, fontSize: 34, color: "#183D3A", bold: true }),
     vectorLayer(thaiDateTime2(input.occurredAt), { left: 80, top: 411, width: 760, fontSize: 24, color: "#4B6173", bold: true }),
     ...itemLines.length > 1 ? itemLines.slice(0, 2).map((line, index2) => vectorLayer(line, { left: 80, top: 452 + index2 * 34, width: 470, fontSize: 27, color: "#163D3C", bold: true })) : [vectorLayer(item, { left: 80, top: 457, width: 470, fontSize: itemFontSize, color: "#163D3C", bold: true })],
-    vectorLayer(`\u0E3F${money2(input.amount)}`, { left: 555, top: 453, width: 289, fontSize: 55, color: accent, bold: true, align: "right" })
+    vectorLayer(`\u0E3F${money3(input.amount)}`, { left: 555, top: 453, width: 289, fontSize: 55, color: accent, bold: true, align: "right" })
   ];
   if (input.budgetLimit > 0) {
     layers.push(
       vectorLayer("\u0E3F", { left: 91, top: 599, width: 40, fontSize: 24, color: "#FFFFFF", bold: true, align: "center" }),
       vectorLayer(`\u0E07\u0E1A\u0E2B\u0E21\u0E27\u0E14${category}`, { left: 150, top: 593, width: 650, fontSize: 30, color: "#173F3B", bold: true }),
       vectorLayer("\u0E43\u0E0A\u0E49\u0E44\u0E1B", { left: 90, top: 651, width: 200, fontSize: 19, color: "#526979" }),
-      vectorLayer(`\u0E3F${money2(input.budgetSpent)}`, { left: 90, top: 683, width: 240, fontSize: 39, color: accent, bold: true }),
+      vectorLayer(`\u0E3F${money3(input.budgetSpent)}`, { left: 90, top: 683, width: 240, fontSize: 39, color: accent, bold: true }),
       vectorLayer("\u0E07\u0E1A\u0E17\u0E31\u0E49\u0E07\u0E2B\u0E21\u0E14", { left: 378, top: 651, width: 220, fontSize: 19, color: "#526979" }),
-      vectorLayer(`\u0E3F${money2(input.budgetLimit)}`, { left: 378, top: 683, width: 230, fontSize: 34, color: "#149A68", bold: true }),
+      vectorLayer(`\u0E3F${money3(input.budgetLimit)}`, { left: 378, top: 683, width: 230, fontSize: 34, color: "#149A68", bold: true }),
       vectorLayer(remainingLabel, { left: 646, top: 651, width: 190, fontSize: 19, color: "#526979" }),
-      vectorLayer(`\u0E3F${money2(remainingAmount)}`, { left: 646, top: 683, width: 190, fontSize: 34, color: metrics.isOverBudget ? "#F51D72" : "#149A68", bold: true }),
+      vectorLayer(`\u0E3F${money3(remainingAmount)}`, { left: 646, top: 683, width: 190, fontSize: 34, color: metrics.isOverBudget ? "#F51D72" : "#149A68", bold: true }),
       vectorLayer(budgetStatusCopy(category, input.budgetSpent, input.budgetLimit), { left: 90, top: 792, width: 735, fontSize: 23, color: metrics.isOverBudget ? "#D94A6E" : "#32685C", bold: true })
     );
   } else {
@@ -8102,7 +8220,7 @@ function buildThaiTextLayers(input) {
       vectorLayer("\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E19\u0E35\u0E49\u0E16\u0E39\u0E01\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E14\u0E49\u0E27\u0E22\u0E22\u0E2D\u0E14\u0E41\u0E25\u0E30\u0E40\u0E27\u0E25\u0E32\u0E08\u0E23\u0E34\u0E07\u0E40\u0E23\u0E35\u0E22\u0E1A\u0E23\u0E49\u0E2D\u0E22\u0E41\u0E25\u0E49\u0E27", { left: 100, top: 661, width: 730, fontSize: 22, color: "#526979" })
     );
   }
-  const footerText = display.secondary || `${item} \u2022 ${categoryLabel} \u2022 ${money2(input.amount)} \u0E1A\u0E32\u0E17`;
+  const footerText = display.secondary || `${item} \u2022 ${categoryLabel} \u2022 ${money3(input.amount)} \u0E1A\u0E32\u0E17`;
   const footerLines = wrapGraphemes(footerText, 48, 2);
   layers.push(
     vectorLayer("\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E43\u0E2B\u0E49\u0E41\u0E25\u0E49\u0E27\u0E19\u0E48\u0E30\u0E08\u0E4A\u0E30", { left: 108, top: 931, width: 650, fontSize: 27, color: "#3D5870", bold: true }),

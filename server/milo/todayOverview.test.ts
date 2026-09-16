@@ -19,7 +19,7 @@ describe("today overview", () => {
     });
     expect(text).toContain("วันนี้ของฉัน");
     expect(text).toContain("ประชุมลูกค้า");
-    expect(text).toContain("บิลรอจ่าย");
+    expect(text).toContain("ค่าไฟ");
     expect(text).toContain("1,250");
     expect(text).toContain("คงเหลือ 34,920 บาท");
   });

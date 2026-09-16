@@ -22,6 +22,9 @@ export type MiloCommand =
   | { type: "captureConfirm" }
   | { type: "captureCancel" }
   | { type: "todayOverview" }
+  | { type: "morningBrief" }
+  | { type: "eveningSummary" }
+  | { type: "followUp"; title: string; remindAt: Date }
   | { type: "pendingBillList" }
   | { type: "pendingBillPay"; id: number }
   | { type: "pendingBillCancel"; id: number }
@@ -114,6 +117,15 @@ function recurringFrom(value: string, now: Date): Extract<MiloCommand, { type: "
   return undefined;
 }
 
+function followUpFrom(text: string, now: Date): Extract<MiloCommand, { type: "followUp" }> | undefined {
+  const match = text.trim().match(/^(?:ช่วย)?(?:ตาม|ทวง)งาน\s+(.+?)(?:\s+(?:อีก\s*)?(\d+)\s*ชั่วโมง)?\s*$/i);
+  if (!match) return undefined;
+  const title = match[1].trim().replace(/\s+(?:ด้วย|นะ|ครับ|ค่ะ)$/i, "").trim();
+  if (!title) return undefined;
+  const hours = Number(match[2] ?? 24);
+  return { type: "followUp", title, remindAt: new Date(now.getTime() + Math.max(1, hours) * 60 * 60_000) };
+}
+
 function reminderFrom(text: string, now: Date): ReminderDraft | undefined {
   if (!/^(?:@?ไมโล\s*)?(?:ตั้ง)?เตือน(?:ฉัน)?\s*/i.test(text.trim())) return undefined;
   const body = text.trim().replace(/^(?:@?ไมโล\s*)?(?:ตั้ง)?เตือน(?:ฉัน)?\s*/i, ""); const time = clock(body); const title = titleWithoutSchedule(body);
@@ -133,6 +145,9 @@ export function parseMiloCommand(text: string, now = new Date()): MiloCommand {
   if (/^(?:ยืนยันรายการทั้งหมด|ยืนยันทั้งหมด)$/i.test(value)) return { type: "captureConfirm" };
   if (/^(?:ยกเลิกรายการทั้งหมด|ยกเลิกทั้งหมด)$/i.test(value)) return { type: "captureCancel" };
   if (/^(?:วันนี้มีอะไร|วันนี้ของฉัน|สรุปวันนี้ของฉัน)$/i.test(value)) return { type: "todayOverview" };
+  if (/^(?:สรุปเช้า|morning brief)$/i.test(value)) return { type: "morningBrief" };
+  if (/^(?:สรุปเย็น|evening summary)$/i.test(value)) return { type: "eveningSummary" };
+  const followUp = followUpFrom(value, now); if (followUp) return followUp;
   if (/^(?:บิลรอจ่าย|รายการบิล|ดูบิล)$/i.test(value)) return { type: "pendingBillList" };
   const pendingBillPay = value.match(/^(?:จ่ายบิล|ชำระบิล|ยืนยันจ่ายบิล)\s*#?(\d+)$/i);
   if (pendingBillPay) return { type: "pendingBillPay", id: Number(pendingBillPay[1]) };

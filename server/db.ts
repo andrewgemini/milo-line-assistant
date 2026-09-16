@@ -786,6 +786,19 @@ export async function completeTodo(id: number, lineUserId: string) {
   await db.update(todoItems).set({ status: "done", completedAt: new Date() }).where(and(eq(todoItems.id, id), eq(todoItems.createdByLineUserId, lineUserId)));
 }
 
+export async function listCompletedTodosForChat(lineUserId: string, lineChatId: string, scope: "user" | "group" | "room", start: Date, end: Date) {
+  const db = await requireDb();
+  const chatScope = scope === "user"
+    ? and(eq(todoItems.createdByLineUserId, lineUserId), eq(todoItems.lineChatId, lineChatId))
+    : eq(todoItems.lineChatId, lineChatId);
+  return db.select().from(todoItems).where(and(
+    chatScope,
+    eq(todoItems.status, "done"),
+    gte(todoItems.completedAt, start),
+    lte(todoItems.completedAt, end),
+  )).orderBy(desc(todoItems.completedAt)).limit(100);
+}
+
 export async function writeAuditLog(input: { action: string; entityType: string; entityId?: number; dashboardUserId?: number; actorLineUserId?: string; lineChatId?: string; details?: Record<string, unknown> }) {
   const db = await requireDb();
   await db.insert(auditLogs).values({

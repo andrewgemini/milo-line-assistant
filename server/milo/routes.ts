@@ -23,11 +23,12 @@ import { applyImageExpenseEdit } from "./imageProposalEdit";
 import { bangkokMonthRange, buildDocumentIntelligence, classifyDocumentKind, documentKindLabel, documentStatusLabel, fingerprintMedia, mergeVaultTags, readDocumentStatus, summarizeVaultDocuments, type DocumentAnalysis } from "./documentIntelligence";
 import { deserializeCapturePlan, formatCapturePreview, serializeCapturePlan } from "./multiIntent";
 import { bangkokDayRange, formatTodayOverview } from "./todayOverview";
+import { formatEveningSummary, formatMorningBrief } from "./personalDigest";
 import { STANDARD_EXPENSE_CATEGORIES, STANDARD_INCOME_CATEGORIES } from "./financeCategories";
 import { financeReportCardText, getMessageContent, getProfile, lineCredentials, postSaveSummaryText, pushText, pushTextWithQuickReplies, replyFinanceReportCard, replyFinanceReportCardFallback, replyGreetingHome, replyMention, replyPostSaveSummary, replyPostSaveSummaryFallback, replyPostSaveSummaryImage, replyText, replyTextWithQuickReplies, replyVoiceCategoryChoices, replyVoiceProposal, replyVoiceProposalFallback, sourceIdentity, type LineEvent, type VoiceTransactionProposal, verifyLineSignature } from "./line";
 
 function helpText() {
-  return "Milo ช่วยคุณจบงานใน LINE แชทเดียวครับ\n🔔 เตือน: เตือนประชุมพรุ่งนี้ 10:00 / เตือนดื่มน้ำทุก 30 นาที / รายการเตือน\n🗂️ เก็บ: เก็บ https://example.com #งาน / ค้นหา ใบเสนอราคา / สถานะคลัง\n📦 เอกสาร: สรุปเอกสารเดือนนี้ / ไฟล์ที่ต้องตรวจ\n🧠 จดหลายอย่าง: พรุ่งนี้บ่ายสองประชุมลูกค้า ค่าแท็กซี่ 300 ช่วยเตือนด้วย\n☀️ วันนี้: วันนี้มีอะไร / บิลรอจ่าย / จ่ายบิล #เลขรายการ\n📅 ปฏิทิน: ลงปฏิทิน ประชุมทีมพรุ่งนี้ 10:00 / ดูปฏิทิน\n👥 กลุ่ม LINE: @ไมโล ผู้ช่วยกลุ่ม / @ไมโล แจ้งส่งงานด้วยถึง @สมชาย\n✅ งาน: งาน ส่งสรุปรายสัปดาห์ / ดูงาน / เสร็จงาน #12 / โน้ต รหัส Wi-Fi\n💰 การเงิน: กินกาแฟ 80 / เงินเดือนเข้า 35000 / ตั้งงบ อาหาร 5000 / สรุปเดือนนี้\n📷🎙️ ส่งรูปใบเสร็จหรือเสียงให้ไมโลอ่าน แล้วตรวจและยืนยันก่อนบันทึก\n\nพิมพ์ “ช่วย” ได้ทุกเมื่อครับ";
+  return "Milo ช่วยคุณจบงานใน LINE แชทเดียวครับ\n🔔 เตือน: เตือนประชุมพรุ่งนี้ 10:00 / เตือนดื่มน้ำทุก 30 นาที / รายการเตือน\n🎯 ตามงาน: ช่วยตามงาน Proposal ลูกค้า B / ช่วยตามงานส่งใบเสนอราคา อีก 24 ชั่วโมง\n☀️ วันนี้: วันนี้มีอะไร / สรุปเช้า / สรุปเย็น / บิลรอจ่าย / จ่ายบิล #เลขรายการ\n🗂️ เก็บ: เก็บ https://example.com #งาน / ค้นหา ใบเสนอราคา / สถานะคลัง\n📦 เอกสาร: สรุปเอกสารเดือนนี้ / ไฟล์ที่ต้องตรวจ\n🧠 จดหลายอย่าง: พรุ่งนี้บ่ายสองประชุมลูกค้า ค่าแท็กซี่ 300 ช่วยเตือนด้วย\n📅 ปฏิทิน: ลงปฏิทิน ประชุมทีมพรุ่งนี้ 10:00 / ดูปฏิทิน\n👥 กลุ่ม LINE: @ไมโล ผู้ช่วยกลุ่ม / @ไมโล แจ้งส่งงานด้วยถึง @สมชาย\n✅ งาน: งาน ส่งสรุปรายสัปดาห์ / ดูงาน / เสร็จงาน #12 / โน้ต รหัส Wi-Fi\n💰 การเงิน: กินกาแฟ 80 / เงินเดือนเข้า 35000 / ตั้งงบ อาหาร 5000 / สรุปเดือนนี้\n📷🎙️ ส่งรูปใบเสร็จหรือเสียงให้ไมโลอ่าน แล้วตรวจและยืนยันก่อนบันทึก\n\nพิมพ์ “ช่วย” ได้ทุกเมื่อครับ";
 }
 
 function contextualFallback(text: string) {
@@ -184,6 +185,27 @@ async function resolveFinanceScope(lineUserId: string, lineChatId: string, scope
   return { financeAccountId: access.account.id, role: access.membership.role };
 }
 
+async function buildPersonalDigestSnapshot(lineUserId: string, lineChatId: string, scope: LineFinanceScope, reference = new Date(), range = bangkokDayRange(reference)) {
+  const financeScope = scope === "user" ? await resolveFinanceScope(lineUserId, lineChatId, scope) : undefined;
+  const [calendars, reminders, todos, completedTodos, bills, finance] = await Promise.all([
+    db.listCalendarEventsForRange(lineUserId, lineChatId, scope, range.start, new Date(range.end.getTime() - 1)),
+    db.listRemindersForChat(lineUserId, lineChatId, scope),
+    db.listTodosForChat(lineUserId, lineChatId, scope),
+    db.listCompletedTodosForChat(lineUserId, lineChatId, scope, range.start, new Date(range.end.getTime() - 1)),
+    financeScope ? db.listPendingBillsForChat(lineUserId, lineChatId, scope, financeScope.financeAccountId) : Promise.resolve([]),
+    financeScope ? db.financeReport(lineUserId, "day", reference, financeScope.financeAccountId) : Promise.resolve(undefined),
+  ]);
+  return {
+    reference,
+    calendars,
+    reminders: reminders.filter(item => item.status === "active" && item.nextRunAt && item.nextRunAt >= range.start && item.nextRunAt < range.end),
+    todos,
+    completedTodos,
+    bills: bills.filter(item => item.dueAt >= range.start && item.dueAt < range.end),
+    finance,
+  };
+}
+
 function financeAccessMessage(scope: LineFinanceScope) {
   return scope === "user"
     ? "ยังไม่พบบัญชีการเงินส่วนตัว ลองส่งคำสั่งอีกครั้งครับ"
@@ -206,7 +228,7 @@ async function handleText(event: LineEvent, lineChatId: string, lineUserId: stri
   const financeCommands = new Set(["expense", "income", "transactionSearch", "transactionUndo", "transactionDelete", "transactionUpdate", "openingBalance", "financeReport", "aiSummary", "budgetOverview", "transactionList", "voiceConfirm", "voiceEditPrompt", "voiceCategoryChange", "voiceEdit", "budget", "budgetCycleStart", "categoryAdd", "categoryRemove", "categoryList", "imageConfirm", "imageEdit", "pdfConfirm", "recurringCreate", "recurringList", "recurringStatus", "exportFinance", "pendingBillList", "pendingBillPay", "pendingBillCancel"]);
   const captureNeedsFinance = command.type === "captureDraft" && command.plan.items.some(item => item.type === "pending_bill");
   const needsFinance = financeCommands.has(command.type) || captureNeedsFinance;
-  if (command.type === "reminder" && !hasMiloEntitlement(plan, "reminders")) { if (event.replyToken) await replyText(event.replyToken, entitlementMessage("reminders")); return; }
+  if ((command.type === "reminder" || command.type === "followUp") && !hasMiloEntitlement(plan, "reminders")) { if (event.replyToken) await replyText(event.replyToken, entitlementMessage("reminders")); return; }
   if (command.type === "pdfConfirm" && !hasMiloEntitlement(plan, "pdf")) { if (event.replyToken) await replyText(event.replyToken, entitlementMessage("pdf")); return; }
   if (command.type === "budgetCycleStart" && !hasMiloEntitlement(plan, "customBudgetCycle")) { if (event.replyToken) await replyText(event.replyToken, entitlementMessage("customBudgetCycle")); return; }
   if (scope !== "user" && needsFinance && !hasMiloEntitlement(plan, "groupAccounting")) { if (event.replyToken) await replyText(event.replyToken, entitlementMessage("groupAccounting")); return; }
@@ -318,6 +340,24 @@ async function handleText(event: LineEvent, lineChatId: string, lineUserId: stri
       bills: bills.filter(item => item.dueAt < range.end),
       finance,
     });
+  } else if (command.type === "morningBrief") {
+    message = formatMorningBrief(await buildPersonalDigestSnapshot(lineUserId, lineChatId, scope));
+  } else if (command.type === "eveningSummary") {
+    message = formatEveningSummary(await buildPersonalDigestSnapshot(lineUserId, lineChatId, scope));
+  } else if (command.type === "followUp") {
+    const todoResult = await db.createTodo(lineChatId, lineUserId, command.title, command.remindAt);
+    const reminderId = await db.createReminder({
+      lineChatId,
+      createdByLineUserId: lineUserId,
+      title: `ติดตามงาน: ${command.title}`,
+      recurrenceType: "once",
+      recurrenceInterval: 1,
+      dueAt: command.remindAt,
+      nextRunAt: command.remindAt,
+      sourceMessageId: event.message?.id ? `followup:${event.message.id}` : undefined,
+    });
+    const todoId = Number(todoResult[0]?.insertId ?? 0);
+    message = `🎯 ตั้งติดตามงานแล้ว\n${command.title}\nงาน #${todoId} • เตือน #${reminderId}\nจะเตือนอีก ${Math.max(1, Math.round((command.remindAt.getTime() - Date.now()) / 3_600_000))} ชั่วโมงครับ`;
   } else if (command.type === "pendingBillList") {
     const bills = await db.listPendingBillsForChat(lineUserId, lineChatId, scope, financeScope!.financeAccountId);
     message = bills.length
