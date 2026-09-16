@@ -23,7 +23,7 @@ import { applyImageExpenseEdit } from "./imageProposalEdit";
 import { bangkokMonthRange, buildDocumentIntelligence, classifyDocumentKind, documentKindLabel, documentStatusLabel, fingerprintMedia, mergeVaultTags, readDocumentStatus, summarizeVaultDocuments, type DocumentAnalysis } from "./documentIntelligence";
 import { deserializeCapturePlan, formatCapturePreview, serializeCapturePlan } from "./multiIntent";
 import { bangkokDayRange, formatTodayOverview } from "./todayOverview";
-import { formatEveningSummary, formatMorningBrief } from "./personalDigest";
+import { formatEveningSummary, formatMorningBrief, shouldDeliverDailyDigest } from "./personalDigest";
 import { STANDARD_EXPENSE_CATEGORIES, STANDARD_INCOME_CATEGORIES } from "./financeCategories";
 import { financeReportCardText, getMessageContent, getProfile, lineCredentials, postSaveSummaryText, pushText, pushTextWithQuickReplies, replyFinanceReportCard, replyFinanceReportCardFallback, replyGreetingHome, replyMention, replyPostSaveSummary, replyPostSaveSummaryFallback, replyPostSaveSummaryImage, replyText, replyTextWithQuickReplies, replyVoiceCategoryChoices, replyVoiceProposal, replyVoiceProposalFallback, sourceIdentity, type LineEvent, type VoiceTransactionProposal, verifyLineSignature } from "./line";
 
@@ -1133,6 +1133,29 @@ export function registerMiloCron(app: Express) {
       }
     });
   };
+  const registerPersonalDigestRoute = (path: string, settingKey: string, formatter: (snapshot: Awaited<ReturnType<typeof buildPersonalDigestSnapshot>>) => string) => {
+    app.get(path, async (req: Request, res: Response) => {
+      try {
+        const isVercelCron = req.headers["user-agent"] === "vercel-cron/1.0";
+        const secret = process.env.CRON_SECRET?.trim();
+        if (!isVercelCron || !secret || req.headers.authorization !== `Bearer ${secret}`) return res.status(401).json({ error: "cron-unauthorized" });
+        const targetLineUserId = await db.getOwnerLinkedLineUser();
+        if (!targetLineUserId) return res.json({ ok: true, skipped: "no-linked-private-line-user" });
+        const now = new Date();
+        const schedule = await db.getAutomationSetting(settingKey);
+        const dayKey = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Bangkok", year: "numeric", month: "2-digit", day: "2-digit" }).format(now);
+        if (!shouldDeliverDailyDigest(schedule?.lastRunAt, now)) return res.json({ ok: true, skipped: "already-delivered", date: dayKey });
+        const snapshot = await buildPersonalDigestSnapshot(targetLineUserId, targetLineUserId, "user", now);
+        await pushText(targetLineUserId, formatter(snapshot));
+        await db.saveAutomationSetting({ settingKey, isEnabled: true, lastRunAt: now });
+        return res.json({ ok: true, delivered: true, date: dayKey });
+      } catch (error) {
+        return res.status(500).json({ error: error instanceof Error ? error.message : "unknown", timestamp: new Date().toISOString() });
+      }
+    });
+  };
   registerFinanceDigestRoute("/api/scheduled/finance-daily", "finance-digest-daily", "daily");
   registerFinanceDigestRoute("/api/scheduled/finance-weekly", "finance-digest-weekly", "weekly");
+  registerPersonalDigestRoute("/api/scheduled/personal-morning", "personal-digest-morning", formatMorningBrief);
+  registerPersonalDigestRoute("/api/scheduled/personal-evening", "personal-digest-evening", formatEveningSummary);
 }

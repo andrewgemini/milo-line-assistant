@@ -8,6 +8,12 @@ function thaiDate(value: Date | string) { return new Intl.DateTimeFormat("th-TH"
 function thaiTime(value: Date | string) { return new Intl.DateTimeFormat("th-TH", { timeZone: "Asia/Bangkok", hour: "2-digit", minute: "2-digit" }).format(new Date(value)); }
 function money(value: number | string) { return Number(value).toLocaleString("th-TH", { maximumFractionDigits: 2 }); }
 
+export function shouldDeliverDailyDigest(lastRunAt: Date | string | null | undefined, reference: Date) {
+  if (!lastRunAt) return true;
+  const key = (value: Date | string) => new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Bangkok", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(value));
+  return key(lastRunAt) !== key(reference);
+}
+
 export type PersonalDigestSnapshot = {
   reference: Date;
   calendars: CalendarRow[];

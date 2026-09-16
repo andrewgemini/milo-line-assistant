@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatEveningSummary, formatMorningBrief } from "./personalDigest";
+import { formatEveningSummary, formatMorningBrief, shouldDeliverDailyDigest } from "./personalDigest";
 
 describe("personal digests", () => {
   const reference = new Date("2026-09-16T02:00:00.000Z");
@@ -28,5 +28,11 @@ describe("personal digests", () => {
     expect(text).toContain("เช็กยอด");
     expect(text).toContain("ส่งรายงาน");
     expect(text).toContain("ค่าไฟ");
+  });
+
+  it("prevents duplicate delivery within the same Bangkok day", () => {
+    expect(shouldDeliverDailyDigest(null, reference)).toBe(true);
+    expect(shouldDeliverDailyDigest("2026-09-16T01:00:00.000Z", reference)).toBe(false);
+    expect(shouldDeliverDailyDigest("2026-09-15T10:00:00.000Z", reference)).toBe(true);
   });
 });

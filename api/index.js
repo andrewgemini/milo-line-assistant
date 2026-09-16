@@ -6680,6 +6680,11 @@ function thaiTime2(value) {
 function money2(value) {
   return Number(value).toLocaleString("th-TH", { maximumFractionDigits: 2 });
 }
+function shouldDeliverDailyDigest(lastRunAt, reference) {
+  if (!lastRunAt) return true;
+  const key = (value) => new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Bangkok", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date(value));
+  return key(lastRunAt) !== key(reference);
+}
 function formatMorningBrief(input) {
   const lines = [`\u2600\uFE0F Morning Brief \u2022 ${thaiDate2(input.reference)}`, "\u0E2A\u0E27\u0E31\u0E2A\u0E14\u0E35\u0E04\u0E23\u0E31\u0E1A \u0E27\u0E31\u0E19\u0E19\u0E35\u0E49 Milo \u0E2A\u0E23\u0E38\u0E1B\u0E2A\u0E34\u0E48\u0E07\u0E2A\u0E33\u0E04\u0E31\u0E0D\u0E43\u0E2B\u0E49\u0E01\u0E48\u0E2D\u0E19\u0E40\u0E23\u0E34\u0E48\u0E21\u0E27\u0E31\u0E19"];
   if (input.calendars.length) lines.push(`
@@ -8041,8 +8046,31 @@ function registerMiloCron(app2) {
       }
     });
   };
+  const registerPersonalDigestRoute = (path4, settingKey, formatter) => {
+    app2.get(path4, async (req, res) => {
+      try {
+        const isVercelCron = req.headers["user-agent"] === "vercel-cron/1.0";
+        const secret3 = process.env.CRON_SECRET?.trim();
+        if (!isVercelCron || !secret3 || req.headers.authorization !== `Bearer ${secret3}`) return res.status(401).json({ error: "cron-unauthorized" });
+        const targetLineUserId = await getOwnerLinkedLineUser();
+        if (!targetLineUserId) return res.json({ ok: true, skipped: "no-linked-private-line-user" });
+        const now = /* @__PURE__ */ new Date();
+        const schedule = await getAutomationSetting(settingKey);
+        const dayKey = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Bangkok", year: "numeric", month: "2-digit", day: "2-digit" }).format(now);
+        if (!shouldDeliverDailyDigest(schedule?.lastRunAt, now)) return res.json({ ok: true, skipped: "already-delivered", date: dayKey });
+        const snapshot = await buildPersonalDigestSnapshot(targetLineUserId, targetLineUserId, "user", now);
+        await pushText(targetLineUserId, formatter(snapshot));
+        await saveAutomationSetting({ settingKey, isEnabled: true, lastRunAt: now });
+        return res.json({ ok: true, delivered: true, date: dayKey });
+      } catch (error) {
+        return res.status(500).json({ error: error instanceof Error ? error.message : "unknown", timestamp: (/* @__PURE__ */ new Date()).toISOString() });
+      }
+    });
+  };
   registerFinanceDigestRoute("/api/scheduled/finance-daily", "finance-digest-daily", "daily");
   registerFinanceDigestRoute("/api/scheduled/finance-weekly", "finance-digest-weekly", "weekly");
+  registerPersonalDigestRoute("/api/scheduled/personal-morning", "personal-digest-morning", formatMorningBrief);
+  registerPersonalDigestRoute("/api/scheduled/personal-evening", "personal-digest-evening", formatEveningSummary);
 }
 
 // server/milo/saveResultImage.ts

@@ -1,6 +1,10 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "version": 2,
+  "crons": [
+    { "path": "/api/scheduled/personal-morning", "schedule": "0 0 * * *" },
+    { "path": "/api/scheduled/personal-evening", "schedule": "0 13 * * *" }
+  ],
   "buildCommand": "pnpm build",
   "outputDirectory": "dist/public",
   "rewrites": [
