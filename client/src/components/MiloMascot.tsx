@@ -25,12 +25,12 @@ export function MiloMascot({ className = "", size = "lg" }: MiloMascotProps) {
         @keyframes miloFloat { 0%,100% { transform: translate3d(0,0,0) rotate(-1deg); } 50% { transform: translate3d(0,-8px,0) rotate(1deg); } }
         @keyframes miloGlow { 0%,100% { opacity: .14; transform: scale(.98); } 50% { opacity: .28; transform: scale(1.03); } }
         @keyframes miloHello { 0%,100% { opacity: 0; transform: translateY(8px) scale(.94); } 15%,80% { opacity: 1; transform: translateY(0) scale(1); } }
-        @keyframes miloManeki { 0%,100% { transform: rotate(-16deg); } 50% { transform: rotate(28deg); } }
+        @keyframes miloManeki { 0%,100% { transform: rotate(-32deg) translateY(2px); } 50% { transform: rotate(38deg) translateY(-3px); } }
         .milo-art-float { animation: miloFloat 3.6s ease-in-out infinite; transform-origin: center bottom; }
         .milo-art-glow { animation: miloGlow 3.6s ease-in-out infinite; }
         .milo-hello { animation: miloHello 4.8s ease-in-out infinite; }
-        .milo-maneki-paw { transform-origin: 88% 92%; }
-        .milo-maneki-arm { animation: miloManeki 1.25s ease-in-out infinite; transform-box: fill-box; transform-origin: 88% 92%; }
+        .milo-maneki-paw { transform-origin: 50% 92%; }
+        .milo-maneki-arm { animation: miloManeki .8s ease-in-out infinite; transform-box: fill-box; transform-origin: 50% 92%; }
         @media (prefers-reduced-motion: reduce) {
           .milo-art-float, .milo-art-glow, .milo-hello, .milo-maneki-arm { animation: none; }
         }
