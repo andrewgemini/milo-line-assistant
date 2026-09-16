@@ -984,12 +984,16 @@ export function registerLineWebhook(app: Express) {
     if (!verifyLineSignature(raw, req.header("x-line-signature"), credentials.channelSecret)) return res.status(401).json({ error: "invalid signature" });
     let payload: { events?: LineEvent[] };
     try { payload = JSON.parse(raw.toString("utf8")); } catch { return res.status(400).json({ error: "invalid json" }); }
+    const runtime = { gatewayToken: req.header("x-vercel-oidc-token")?.trim() || undefined };
+    // Acknowledge LINE immediately. Processing may involve DB/profile lookups and external
+    // providers; holding the webhook response until those finish can make LINE retry the event.
+    res.status(200).json({ ok: true });
     try {
-      const runtime = { gatewayToken: req.header("x-vercel-oidc-token")?.trim() || undefined };
       await Promise.all((payload.events ?? []).map(event => processEvent(event, raw.toString("utf8"), runtime)));
-      return res.status(200).json({ ok: true });
     } catch (error) {
-      return res.status(500).json({ error: error instanceof Error ? error.message : "event processing failed" });
+      console.error("[Milo Webhook] event processing failed after acknowledgement", {
+        error: error instanceof Error ? error.message : "unknown",
+      });
     }
   });
 }
