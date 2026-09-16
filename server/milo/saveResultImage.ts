@@ -2,6 +2,7 @@ import type { Express, Request, Response } from "express";
 import sharp from "sharp";
 import { budgetStatusCopy, getBudgetMetrics } from "./budgetStatus";
 import { normalizeRenderText, vectorTextSvg } from "./vectorText";
+import { cleanReceiptMerchant } from "./receiptUtils";
 
 const money = (value: number) => normalizeRenderText(value.toLocaleString("th-TH-u-nu-latn", { maximumFractionDigits: 2 }));
 const thaiDateTime = (value: Date) => normalizeRenderText(new Intl.DateTimeFormat("th-TH-u-nu-latn", {
@@ -47,10 +48,15 @@ function wrapGraphemes(value: string, maxPerLine: number, maxLines: number) {
 
 export function saveResultDisplayText(value: string) {
   const normalized = normalizeRenderText(value).replace(/\s+/g, " ").trim();
-  const segments = normalized.split(/\s*\|\s*/).map(part => part.trim()).filter(Boolean);
+  const segments = normalized.split(/\s*\|\s*/).map(part => {
+    const merchant = part.match(/^ร้านค้า\/คู่ค้า\s*:\s*(.*)$/i);
+    if (!merchant) return part.trim();
+    const cleaned = cleanReceiptMerchant(merchant[1]);
+    return cleaned ? `ร้านค้า/คู่ค้า: ${cleaned}` : "";
+  }).filter(Boolean);
   const merchantIndex = segments.findIndex(part => /^ร้านค้า\/คู่ค้า\s*:/i.test(part));
   const primaryIndex = merchantIndex >= 0 ? merchantIndex : 0;
-  const primary = segments[primaryIndex] || normalized || "รายการ";
+  const primary = segments[primaryIndex] || "รายการ";
   const secondary = segments.filter((_part, index) => index !== primaryIndex).slice(0, 3).join(" • ");
   return {
     primary,

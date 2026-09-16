@@ -4507,7 +4507,7 @@ function isKbankNoise(line) {
 function normalizeThaiMerchantName(value) {
   let cleaned = compact(value).replace(/\s+(?:ประเภท|ชื่อ?พนักงาน|พนักงาน|เวลา|วันที่|เลขที่|โต๊ะ|table|qty|จำนวน|สินค้า)\s*[:：][\s\S]*$/i, "").trim();
   if (/^(?:ประเภท|ชื่อ?พนักงาน|พนักงาน|เวลา|วันที่|เลขที่|โต๊ะ|table|qty|จำนวน|สินค้า)\s*[:：]/i.test(cleaned)) return "";
-  cleaned = cleaned.replace(/^[=•·|:;._\-–—>]+\s*/, "").replace(/^[A-Za-zก-๙]{1,2}\s+(?=ร้าน)/, "").replace(/^[A-Za-z0-9]{1,4}[\s|:;._-]+(?=[ก-๙])/, "").replace(/คาเฟ[่]?\s*อเมซอน/gi, "\u0E04\u0E32\u0E40\u0E1F\u0E48 \u0E2D\u0E40\u0E21\u0E0B\u0E2D\u0E19").replace(/cafe\s*amazon/gi, "Cafe Amazon").replace(/([ก-๙])\s+(เฮ้าส์)/g, "$1$2").replace(/เพชรเกษม\s*(\d)\s+(\d{2})(?=\b|\s|$)/gi, "\u0E40\u0E1E\u0E0A\u0E23\u0E40\u0E01\u0E29\u0E21$1$2").replace(/เอกซ์เพรส/g, "\u0E40\u0E2D\u0E47\u0E01\u0E0B\u0E4C\u0E40\u0E1E\u0E23\u0E2A").replace(/\s+(?:ถุง|ของหวาน|เครื่อง(?:ดื่ม|คื่ม))(?=\s|$)[\s\S]*$/i, "").replace(/\s+(?:ค่าสินค้า\s*\/\s*บริการ|จำนวนเงินที่ชำระ|ยอด(?:ที่)?ชำระ|สิทธิไทยช่วยไทยพลัส)[\s\S]*$/i, "").replace(/\s+(?:[A-Z0-9]{14,}|\d{10,})\s*$/i, "").trim();
+  cleaned = cleaned.replace(/\s+(?:[A-Za-z]{1,3}[!%?.,;:]*\s+)?(?:อาหาร|ของหวาน|เครื่อง(?:ดื่ม|คื่ม))(?:\s+(?:อาหาร|ของหวาน|เครื่อง(?:ดื่ม|คื่ม)))*\s*$/i, "").replace(/^[=•·|:;._\-–—>]+\s*/, "").replace(/^[A-Za-zก-๙]{1,2}\s+(?=ร้าน)/, "").replace(/^[A-Za-z0-9]{1,4}[\s|:;._-]+(?=[ก-๙])/, "").replace(/คาเฟ[่]?\s*อเมซอน/gi, "\u0E04\u0E32\u0E40\u0E1F\u0E48 \u0E2D\u0E40\u0E21\u0E0B\u0E2D\u0E19").replace(/cafe\s*amazon/gi, "Cafe Amazon").replace(/([ก-๙])\s+(เฮ้าส์)/g, "$1$2").replace(/เพชรเกษม\s*(\d)\s+(\d{2})(?=\b|\s|$)/gi, "\u0E40\u0E1E\u0E0A\u0E23\u0E40\u0E01\u0E29\u0E21$1$2").replace(/เอกซ์เพรส/g, "\u0E40\u0E2D\u0E47\u0E01\u0E0B\u0E4C\u0E40\u0E1E\u0E23\u0E2A").replace(/\s+(?:ถุง|ของหวาน|เครื่อง(?:ดื่ม|คื่ม))(?=\s|$)[\s\S]*$/i, "").replace(/\s+(?:ค่าสินค้า\s*\/\s*บริการ|จำนวนเงินที่ชำระ|ยอด(?:ที่)?ชำระ|สิทธิไทยช่วยไทยพลัส)[\s\S]*$/i, "").replace(/\s+(?:[A-Z0-9]{14,}|\d{10,})\s*$/i, "").trim();
   if (/^CJ\s*\d{3,5}\b/i.test(cleaned)) {
     const match = cleaned.match(/^CJ\s*(\d{3,5})\s*(.*)$/i);
     if (match) {
@@ -5975,8 +5975,12 @@ function resolveReceiptOccurredAt(value, timeText, referenceDate) {
 function selectImageProposal(proposals = []) {
   return proposals.find((item) => item.kind === "expense" && Number(item.amount) > 0) ?? proposals.find((item) => item.kind === "reminder");
 }
+function cleanReceiptMerchant(value) {
+  const merchant = normalizeThaiMerchantName(value ?? "");
+  return isPlausibleReceiptMerchant(merchant) ? merchant : "";
+}
 function buildExpenseNote(proposal) {
-  const merchant = normalizeThaiMerchantName(proposal.merchant ?? "");
+  const merchant = cleanReceiptMerchant(proposal.merchant);
   const entries = [
     merchant ? `\u0E23\u0E49\u0E32\u0E19\u0E04\u0E49\u0E32/\u0E04\u0E39\u0E48\u0E04\u0E49\u0E32: ${merchant}` : "",
     proposal.title ? `\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23: ${proposal.title}` : "",
@@ -5990,7 +5994,7 @@ function buildExpenseNote(proposal) {
 function formatImageProposal(proposal) {
   if (proposal.kind === "expense") {
     const source = proposal.documentType === "bank_slip" ? "\u0E2A\u0E25\u0E34\u0E1B" : "\u0E43\u0E1A\u0E40\u0E2A\u0E23\u0E47\u0E08";
-    const merchantName = normalizeThaiMerchantName(proposal.merchant ?? "");
+    const merchantName = cleanReceiptMerchant(proposal.merchant);
     const merchant = merchantName ? ` \xB7 ${merchantName}` : "";
     const rows = [
       `${source}${merchant}`,
@@ -7018,10 +7022,15 @@ function wrapGraphemes(value, maxPerLine, maxLines) {
 }
 function saveResultDisplayText(value) {
   const normalized = normalizeRenderText(value).replace(/\s+/g, " ").trim();
-  const segments = normalized.split(/\s*\|\s*/).map((part) => part.trim()).filter(Boolean);
+  const segments = normalized.split(/\s*\|\s*/).map((part) => {
+    const merchant = part.match(/^ร้านค้า\/คู่ค้า\s*:\s*(.*)$/i);
+    if (!merchant) return part.trim();
+    const cleaned = cleanReceiptMerchant(merchant[1]);
+    return cleaned ? `\u0E23\u0E49\u0E32\u0E19\u0E04\u0E49\u0E32/\u0E04\u0E39\u0E48\u0E04\u0E49\u0E32: ${cleaned}` : "";
+  }).filter(Boolean);
   const merchantIndex = segments.findIndex((part) => /^ร้านค้า\/คู่ค้า\s*:/i.test(part));
   const primaryIndex = merchantIndex >= 0 ? merchantIndex : 0;
-  const primary = segments[primaryIndex] || normalized || "\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23";
+  const primary = segments[primaryIndex] || "\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23";
   const secondary = segments.filter((_part, index2) => index2 !== primaryIndex).slice(0, 3).join(" \u2022 ");
   return {
     primary,
@@ -7256,7 +7265,7 @@ var healthHandler = async (req, res) => {
   res.status(200).json({
     status: runtime.authenticated && voice.configured && Boolean(process.env.LINE_CHANNEL_SECRET?.trim()) && Boolean(process.env.LINE_CHANNEL_ACCESS_TOKEN?.trim()) && Boolean(process.env.DATABASE_URL?.trim()) ? "ok" : "degraded",
     service: "milo",
-    release: "receipt-merchant-guard-v1-2026-09-16",
+    release: "receipt-merchant-guard-v2-2026-09-16",
     visionConfigured: runtime.authenticated,
     imageAnalysisMode: mode,
     visionModel: mode === "ocr-fallback" ? "tesseract-tha+eng" : process.env.MILO_VISION_MODEL || (mode.startsWith("vercel-ai-gateway") ? "google/gemini-2.5-flash" : mode.startsWith("forge-vision") ? "gemini-3-flash-preview" : "unconfigured"),

@@ -48,6 +48,12 @@ describe("image analysis merge", () => {
     });
   });
 
+  it("normalizes a contaminated INDI Coffee merchant before merging", () => {
+    const primary = analysis({ merchant: "INDI Coffee as! อาหาร", amount: 16, dateText: "2026-09-16", timeText: "10:34", category: "อาหาร" });
+    const ocr = analysis({ merchant: "INDI Coffee", amount: 16, dateText: "2026-09-16", timeText: "10:34", category: "อาหาร" });
+    expect(mergeImageAnalyses(primary, ocr).proposals[0].merchant).toBe("INDI Coffee");
+  });
+
   it("rejects a corrupted provider merchant and keeps the readable OCR coffee shop", () => {
     const primary = analysis({ merchant: "ะ ภ% 7 oo WAT", amount: 40, dateText: "2026-09-16", timeText: "10:34", category: "อาหาร" });
     const ocr = analysis({ merchant: "INDI Coffee", amount: 16, dateText: "2026-09-16", timeText: "10:34", category: "อาหาร" });

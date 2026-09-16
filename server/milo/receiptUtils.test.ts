@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildExpenseNote, formatImageProposal, normalizeExpenseCategory, parseExtractedDate, resolveReceiptOccurredAt, selectImageProposal } from "./receiptUtils";
+import { buildExpenseNote, cleanReceiptMerchant, formatImageProposal, normalizeExpenseCategory, parseExtractedDate, resolveReceiptOccurredAt, selectImageProposal } from "./receiptUtils";
 
 describe("receipt utilities", () => {
   it("normalizes a receipt category from merchant and item context", () => {
@@ -49,6 +49,15 @@ describe("receipt utilities", () => {
     expect(text).toContain("วันที่/เวลา 2026-09-13 15:07");
     expect(text).toContain("เลขที่รายการ 016256150715DQR03239");
     expect(text).toContain("รายการ กาแฟ");
+  });
+
+  it("uses the clean INDI Coffee merchant consistently in preview and saved notes", () => {
+    expect(cleanReceiptMerchant("INDI Coffee as! อาหาร")).toBe("INDI Coffee");
+    const proposal = { kind: "expense" as const, documentType: "receipt" as const, merchant: "INDI Coffee as! อาหาร", amount: 16, currency: "บาท", category: "อาหาร", title: "รายการจากใบเสร็จ" };
+    expect(formatImageProposal(proposal)).toContain("ใบเสร็จ · INDI Coffee\n");
+    expect(formatImageProposal(proposal)).not.toContain("as!");
+    expect(buildExpenseNote(proposal)).toContain("ร้านค้า/คู่ค้า: INDI Coffee |");
+    expect(buildExpenseNote(proposal)).not.toContain("as!");
   });
 
   it("never shows POS labels as the merchant in preview or saved notes", () => {

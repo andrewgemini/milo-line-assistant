@@ -1,5 +1,5 @@
 import type { ImageProposal } from "./imageAnalysis";
-import { normalizeThaiMerchantName } from "./thaiReceiptParser";
+import { isPlausibleReceiptMerchant, normalizeThaiMerchantName } from "./thaiReceiptParser";
 
 type ProposalLike = Partial<ImageProposal>;
 
@@ -82,8 +82,13 @@ export function selectImageProposal(proposals: ProposalLike[] = []) {
     ?? proposals.find(item => item.kind === "reminder");
 }
 
+export function cleanReceiptMerchant(value?: string) {
+  const merchant = normalizeThaiMerchantName(value ?? "");
+  return isPlausibleReceiptMerchant(merchant) ? merchant : "";
+}
+
 export function buildExpenseNote(proposal: ProposalLike) {
-  const merchant = normalizeThaiMerchantName(proposal.merchant ?? "");
+  const merchant = cleanReceiptMerchant(proposal.merchant);
   const entries = [
     merchant ? `ร้านค้า/คู่ค้า: ${merchant}` : "",
     proposal.title ? `รายการ: ${proposal.title}` : "",
@@ -98,7 +103,7 @@ export function buildExpenseNote(proposal: ProposalLike) {
 export function formatImageProposal(proposal: ProposalLike) {
   if (proposal.kind === "expense") {
     const source = proposal.documentType === "bank_slip" ? "สลิป" : "ใบเสร็จ";
-    const merchantName = normalizeThaiMerchantName(proposal.merchant ?? "");
+    const merchantName = cleanReceiptMerchant(proposal.merchant);
     const merchant = merchantName ? ` · ${merchantName}` : "";
     const rows = [
       `${source}${merchant}`,

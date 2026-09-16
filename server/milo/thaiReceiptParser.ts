@@ -134,6 +134,10 @@ export function normalizeThaiMerchantName(value: string) {
   if (/^(?:ประเภท|ชื่อ?พนักงาน|พนักงาน|เวลา|วันที่|เลขที่|โต๊ะ|table|qty|จำนวน|สินค้า)\s*[:：]/i.test(cleaned)) return "";
 
   cleaned = cleaned
+    // Wallet receipts often place the business category immediately after the
+    // merchant. OCR may insert a short garbage token between them (for example
+    // "INDI Coffee as! อาหาร"). Neither token belongs to the merchant name.
+    .replace(/\s+(?:[A-Za-z]{1,3}[!%?.,;:]*\s+)?(?:อาหาร|ของหวาน|เครื่อง(?:ดื่ม|คื่ม))(?:\s+(?:อาหาร|ของหวาน|เครื่อง(?:ดื่ม|คื่ม)))*\s*$/i, "")
     .replace(/^[=•·|:;._\-–—>]+\s*/, "")
     .replace(/^[A-Za-zก-๙]{1,2}\s+(?=ร้าน)/, "")
     .replace(/^[A-Za-z0-9]{1,4}[\s|:;._-]+(?=[ก-๙])/, "")

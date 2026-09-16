@@ -143,6 +143,12 @@ Powered by Ocha
     ]);
   });
 
+  it("removes wallet category text and a short OCR garbage token from the merchant", () => {
+    expect(normalizeThaiMerchantName("INDI Coffee as! อาหาร")).toBe("INDI Coffee");
+    expect(normalizeThaiMerchantName("INDI Coffee อาหาร ของหวาน เครื่องดื่ม")).toBe("INDI Coffee");
+    expect(normalizeThaiMerchantName("ชื่อพนักงาน: จ๊ะจ๋า")).toBe("");
+  });
+
   it("prefers the real coffee shop on a welfare wallet receipt and rejects OCR garbage", () => {
     const text = `
 การทำรายการสำเร็จ

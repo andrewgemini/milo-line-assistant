@@ -6,6 +6,17 @@ import { findMissingGlyphs } from "./vectorText";
 import { registerSaveResultImageRoute, saveResultDisplayText, saveResultPrimaryFontSize } from "./saveResultImage";
 
 describe("save-result vector image route UAT", () => {
+  it("cleans OCR category noise and drops operational fields before rendering", () => {
+    const clean = saveResultDisplayText("ร้านค้า/คู่ค้า: INDI Coffee as! อาหาร | รายการ: รายการจากใบเสร็จ");
+    expect(clean.primary).toBe("ร้านค้า/คู่ค้า: INDI Coffee");
+    expect(clean.primaryLines.join("")).toBe("ร้านค้า/คู่ค้า: INDI Coffee");
+    expect(clean.secondary).toBe("รายการ: รายการจากใบเสร็จ");
+
+    const operational = saveResultDisplayText("ร้านค้า/คู่ค้า: ชื่อพนักงาน: จ๊ะจ๋า | รายการ: รายการจากใบเสร็จ");
+    expect(operational.primary).toBe("รายการ: รายการจากใบเสร็จ");
+    expect(operational.primary).not.toContain("พนักงาน");
+  });
+
   it("wraps a long K+ merchant across two lines without losing the merchant name", () => {
     const note = "ร้านค้า/คู่ค้า: คาเฟ่ อเมซอน สน.ปตท.บจก.โรสท์บีนเฮ้าส์ | รายการ: กาแฟ | เลขที่: 016256150715DQR03239";
     const display = saveResultDisplayText(note);
