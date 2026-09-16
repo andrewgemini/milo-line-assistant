@@ -83,7 +83,7 @@ export default function Home() {
         <section className="relative overflow-hidden bg-gradient-to-br from-[#f2fffa] via-white to-[#effbf7]">
           <div className="absolute -left-24 top-20 size-[420px] rounded-full bg-[#c6f4e3]/60 blur-3xl" />
           <div className="absolute right-0 top-0 size-[520px] rounded-full bg-[#e5faf3] blur-3xl" />
-          <div className="relative mx-auto grid min-h-[390px] max-w-[1500px] items-center gap-6 px-5 py-8 lg:grid-cols-[.9fr_1.1fr_.8fr] lg:px-12 lg:py-5">
+          <div className="relative mx-auto grid min-h-[390px] max-w-[1500px] items-center gap-6 px-5 py-8 lg:grid-cols-[.8fr_1.4fr_.8fr] lg:px-12 lg:py-5">
             <div className="relative z-10 py-5">
               <span className="inline-flex items-center gap-2 rounded-full border border-[#d8eee7] bg-white px-4 py-2 text-xs font-bold text-[#247f6b] shadow-sm"><span className="grid size-5 place-items-center rounded-full bg-[#0bb575] text-[8px] text-white">LINE</span> LINE Official Account</span>
               <h1 className="font-display mt-5 text-6xl font-black leading-[.95] tracking-tight text-[#075b4b] sm:text-7xl">Milo<span className="text-[#08b475]">✣</span><br /><span className="text-[#10ae78]">LINE Assistant</span></h1>
