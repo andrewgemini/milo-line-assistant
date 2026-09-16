@@ -1,3 +1,4 @@
+import { waitUntil } from "@vercel/functions";
 import { artworkForCommand } from "./richMenuArtwork";
 import { buildCalendarIcsUrl, buildGoogleCalendarUrl } from "./calendar";
 import { replyRichMenu } from "./line";
@@ -988,13 +989,13 @@ export function registerLineWebhook(app: Express) {
     // Acknowledge LINE immediately. Processing may involve DB/profile lookups and external
     // providers; holding the webhook response until those finish can make LINE retry the event.
     res.status(200).json({ ok: true });
-    try {
-      await Promise.all((payload.events ?? []).map(event => processEvent(event, raw.toString("utf8"), runtime)));
-    } catch (error) {
-      console.error("[Milo Webhook] event processing failed after acknowledgement", {
-        error: error instanceof Error ? error.message : "unknown",
-      });
-    }
+    waitUntil(
+      Promise.all((payload.events ?? []).map(event => processEvent(event, raw.toString("utf8"), runtime))).catch(error => {
+        console.error("[Milo Webhook] event processing failed after acknowledgement", {
+          error: error instanceof Error ? error.message : "unknown",
+        });
+      }),
+    );
   });
 }
 

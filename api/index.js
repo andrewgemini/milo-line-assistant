@@ -3780,6 +3780,9 @@ function registerStorageProxy(app2) {
   });
 }
 
+// server/milo/routes.ts
+import { waitUntil } from "@vercel/functions";
+
 // server/milo/calendar.ts
 import crypto6 from "node:crypto";
 var BANGKOK_OFFSET_MS2 = 7 * 60 * 60 * 1e3;
@@ -7768,13 +7771,13 @@ function registerLineWebhook(app2) {
     }
     const runtime = { gatewayToken: req.header("x-vercel-oidc-token")?.trim() || void 0 };
     res.status(200).json({ ok: true });
-    try {
-      await Promise.all((payload.events ?? []).map((event) => processEvent(event, raw.toString("utf8"), runtime)));
-    } catch (error) {
-      console.error("[Milo Webhook] event processing failed after acknowledgement", {
-        error: error instanceof Error ? error.message : "unknown"
-      });
-    }
+    waitUntil(
+      Promise.all((payload.events ?? []).map((event) => processEvent(event, raw.toString("utf8"), runtime))).catch((error) => {
+        console.error("[Milo Webhook] event processing failed after acknowledgement", {
+          error: error instanceof Error ? error.message : "unknown"
+        });
+      })
+    );
   });
 }
 function registerMiloCron(app2) {
