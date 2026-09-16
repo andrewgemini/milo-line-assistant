@@ -4,6 +4,7 @@ import type { AddressInfo } from "node:net";
 
 vi.mock("../db", () => ({
   registerWebhookEvent: vi.fn(),
+  ensureCaptureSchema: vi.fn(),
   upsertLineChat: vi.fn(),
   upsertLineMember: vi.fn(),
   finishWebhookEvent: vi.fn(),

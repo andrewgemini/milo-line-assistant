@@ -945,7 +945,10 @@ export async function processEvent(event: LineEvent, rawPayload: string, runtime
     const isGroup = identity.scope !== "user";
     const isMention = event.message.mention?.mentionees?.some(item => item.isSelf) || event.message.text?.trim().startsWith("@ไมโล");
     if (isGroup && event.message.type === "text" && !isMention) { await db.finishWebhookEvent(event.webhookEventId, "ignored"); return; }
-    if (event.message.type === "text") await handleText(event, identity.lineChatId, identity.lineUserId, identity.scope);
+    if (event.message.type === "text") {
+      await db.ensureCaptureSchema();
+      await handleText(event, identity.lineChatId, identity.lineUserId, identity.scope);
+    }
     else if (event.message.type === "image" || event.message.type === "file" || event.message.type === "audio") await handleMedia(event, identity.lineChatId, identity.lineUserId, identity.scope, { ...runtime, senderDisplayName: profile?.displayName });
     await db.finishWebhookEvent(event.webhookEventId, "processed");
   } catch (error) {

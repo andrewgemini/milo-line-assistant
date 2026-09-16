@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, inArray, like, lte, ne, or } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, like, lte, ne, or, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import {
   auditLogs,
@@ -239,6 +239,60 @@ export async function removeFinanceAccountMember(financeAccountId: number, lineU
   const db = await requireDb();
   const result = await db.delete(financeAccountMembers).where(and(eq(financeAccountMembers.financeAccountId, financeAccountId), eq(financeAccountMembers.lineUserId, lineUserId), ne(financeAccountMembers.role, "owner")));
   return result[0].affectedRows > 0;
+}
+
+let captureSchemaReady: Promise<void> | undefined;
+
+export async function ensureCaptureSchema() {
+  if (!captureSchemaReady) {
+    captureSchemaReady = (async () => {
+      const db = await requireDb();
+      await db.execute(sql.raw(`
+        CREATE TABLE IF NOT EXISTS capture_drafts (
+          id INT NOT NULL AUTO_INCREMENT,
+          lineChatId VARCHAR(128) NOT NULL,
+          lineUserId VARCHAR(128) NOT NULL,
+          financeAccountId INT NULL,
+          sourceMessageId VARCHAR(128) NULL,
+          payloadJson TEXT NOT NULL,
+          status ENUM('proposed','accepted','rejected','failed') NOT NULL DEFAULT 'proposed',
+          acceptedAt TIMESTAMP NULL,
+          createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          updatedAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+          PRIMARY KEY (id),
+          INDEX capture_drafts_chat_status_idx (lineChatId, lineUserId, status, createdAt),
+          UNIQUE KEY capture_drafts_source_unique (lineChatId, sourceMessageId)
+        )
+      `));
+      await db.execute(sql.raw(`
+        CREATE TABLE IF NOT EXISTS pending_bills (
+          id INT NOT NULL AUTO_INCREMENT,
+          lineChatId VARCHAR(128) NOT NULL,
+          lineUserId VARCHAR(128) NOT NULL,
+          financeAccountId INT NULL,
+          captureDraftId INT NULL,
+          title VARCHAR(255) NOT NULL,
+          amount DECIMAL(12,2) NOT NULL,
+          category VARCHAR(100) NOT NULL,
+          dueAt TIMESTAMP NOT NULL,
+          status ENUM('pending','paid','cancelled') NOT NULL DEFAULT 'pending',
+          sourceMessageId VARCHAR(128) NULL,
+          paidTransactionId INT NULL,
+          paidAt TIMESTAMP NULL,
+          createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          updatedAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+          PRIMARY KEY (id),
+          INDEX pending_bills_chat_due_idx (lineChatId, status, dueAt),
+          INDEX pending_bills_account_due_idx (financeAccountId, status, dueAt),
+          UNIQUE KEY pending_bills_capture_unique (captureDraftId, sourceMessageId)
+        )
+      `));
+    })().catch(error => {
+      captureSchemaReady = undefined;
+      throw error;
+    });
+  }
+  return captureSchemaReady;
 }
 
 export async function registerWebhookEvent(input: { webhookEventId: string; eventType: string; lineChatId?: string; occurredAt: Date; rawPayload: string }) {
