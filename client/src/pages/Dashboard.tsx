@@ -635,11 +635,6 @@ function LoginGate({ loading }: { loading: boolean }) {
             {isSubmitting ? "กำลังตรวจสอบข้อมูล..." : "ลงชื่อเข้าใช้ผู้ดูแลระบบ"}
           </Button>
 
-          <div className="rounded-xl bg-[#f5fbf9] p-3 text-center border border-[#e4f5ef]">
-            <p className="text-[11px] text-[#5e877f]">
-              🔑 ค่าเริ่มต้น: Username <strong>admin</strong> | Password <strong>admin1234</strong>
-            </p>
-          </div>
         </form>
 
         <Link href="/" className="mt-6 block text-xs text-[#528c81] hover:underline">

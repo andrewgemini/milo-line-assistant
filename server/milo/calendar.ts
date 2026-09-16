@@ -37,11 +37,28 @@ function normalizeYear(raw: number, fallback: number) {
   return raw;
 }
 
-function parseStart(value: string, now: Date) {
+const THAI_HOURS: Record<string, number> = {
+  "หนึ่ง": 1, "สอง": 2, "สาม": 3, "สี่": 4, "ห้า": 5, "หก": 6,
+  "เจ็ด": 7, "แปด": 8, "เก้า": 9, "สิบ": 10, "สิบเอ็ด": 11, "สิบสอง": 12,
+};
+
+function naturalClock(value: string) {
+  const match = value.match(/(ตี|บ่าย|เย็น|ค่ำ)?\s*(\d{1,2}|หนึ่ง|สอง|สาม|สี่|ห้า|หก|เจ็ด|แปด|เก้า|สิบ|สิบเอ็ด|สิบสอง)\s*(โมง|ทุ่ม|นาฬิกา)?/i);
+  if (!match || (!match[1] && !match[3])) return undefined;
+  let hour = /^\d+$/.test(match[2]) ? Number(match[2]) : THAI_HOURS[match[2]];
+  if (!Number.isFinite(hour)) return undefined;
+  if (/ทุ่ม/i.test(match[3] ?? "")) hour = 18 + Math.min(Math.max(hour, 1), 5);
+  else if (/บ่าย/i.test(match[1] ?? "") && hour <= 5) hour += 12;
+  else if (/เย็น|ค่ำ/i.test(match[1] ?? "") && hour < 12) hour += 12;
+  return { hour: Math.min(Math.max(hour, 0), 23), minute: 0 };
+}
+
+export function parseCalendarDateTime(value: string, now = new Date()) {
   const current = bangkokParts(now);
   const clock = value.match(/(?:เวลา\s*)?(\d{1,2})(?::|\.)(\d{2})/i);
-  const hour = Math.min(Math.max(Number(clock?.[1] ?? 9), 0), 23);
-  const minute = Math.min(Math.max(Number(clock?.[2] ?? 0), 0), 59);
+  const spoken = clock ? undefined : naturalClock(value);
+  const hour = Math.min(Math.max(Number(clock?.[1] ?? spoken?.hour ?? 9), 0), 23);
+  const minute = Math.min(Math.max(Number(clock?.[2] ?? spoken?.minute ?? 0), 0), 59);
 
   const iso = value.match(/(\d{4})-(\d{1,2})-(\d{1,2})/);
   const thai = value.match(/(?:วันที่\s*)?(\d{1,2})[\/-](\d{1,2})(?:[\/-](\d{2,4}))?/);
@@ -70,6 +87,7 @@ function eventTitle(value: string) {
     .replace(/\d{4}-\d{1,2}-\d{1,2}/g, " ")
     .replace(/ถึง\s*\d{1,2}(?::|\.)\d{2}/gi, " ")
     .replace(/(?:เวลา\s*)?\d{1,2}(?::|\.)\d{2}/gi, " ")
+    .replace(/(?:ตี|บ่าย|เย็น|ค่ำ)\s*(?:\d{1,2}|หนึ่ง|สอง|สาม|สี่|ห้า|หก|เจ็ด|แปด|เก้า|สิบ|สิบเอ็ด|สิบสอง)(?:\s*โมง)?|(?:\d{1,2}|หนึ่ง|สอง|สาม|สี่|ห้า|หก|เจ็ด|แปด|เก้า|สิบ|สิบเอ็ด|สิบสอง)\s*(?:โมง|ทุ่ม|นาฬิกา)/gi, " ")
     .replace(/(?:นาน\s*)?\d+(?:\.\d+)?\s*(?:ชั่วโมง|ชม\.?|นาที)/gi, " ")
     .replace(/\s+/g, " ")
     .trim();
@@ -101,7 +119,7 @@ export function parseCalendarIntent(text: string, now = new Date()): CalendarInt
   if (!create) return undefined;
   const body = create[1].trim();
   if (!body) return undefined;
-  const startsAt = parseStart(body, now);
+  const startsAt = parseCalendarDateTime(body, now);
   const title = eventTitle(body) || "นัดหมาย";
   return { type: "create", data: { title: title.slice(0, 255), startsAt, endsAt: eventEnd(body, startsAt) } };
 }

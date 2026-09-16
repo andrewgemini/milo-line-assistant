@@ -4,6 +4,7 @@ import {
   auditLogs,
   budgets,
   calendarEvents,
+  captureDrafts,
   expenseCategories,
   financeAccountMembers,
   financeAccounts,
@@ -15,6 +16,7 @@ import {
   lineChats,
   lineMembers,
   notes,
+  pendingBills,
   reminders,
   reminderDeliveryAttempts,
   recurringTransactionRuns,
@@ -260,6 +262,13 @@ export async function createReminder(input: {
   recurrenceWeekdays?: string; recurrenceDayOfMonth?: number; dueAt: Date; nextRunAt: Date; sourceMessageId?: string; sourceImageKey?: string;
 }) {
   const db = await requireDb();
+  if (input.sourceMessageId) {
+    const existing = (await db.select({ id: reminders.id }).from(reminders).where(and(
+      eq(reminders.lineChatId, input.lineChatId),
+      eq(reminders.sourceMessageId, input.sourceMessageId),
+    )).limit(1))[0];
+    if (existing) return existing.id;
+  }
   const result = await db.insert(reminders).values({
     ...input, detail: input.detail ?? null, recurrenceWeekdays: input.recurrenceWeekdays ?? null,
     recurrenceDayOfMonth: input.recurrenceDayOfMonth ?? null, sourceMessageId: input.sourceMessageId ?? null, sourceImageKey: input.sourceImageKey ?? null,
@@ -368,6 +377,178 @@ export async function cancelCalendarEvent(id: number, lineUserId: string, lineCh
   if (!current) return false;
   await db.update(calendarEvents).set({ status: "cancelled" }).where(eq(calendarEvents.id, id));
   await writeAuditLog({ action: "calendar.cancel", entityType: "calendar_event", entityId: id, actorLineUserId: lineUserId, lineChatId, details: { title: current.title } });
+  return true;
+}
+
+export async function listCalendarEventsForRange(lineUserId: string, lineChatId: string, scope: "user" | "group" | "room", start: Date, end: Date) {
+  const db = await requireDb();
+  const access = scope === "user"
+    ? and(eq(calendarEvents.createdByLineUserId, lineUserId), eq(calendarEvents.lineChatId, lineChatId))
+    : eq(calendarEvents.lineChatId, lineChatId);
+  return db.select().from(calendarEvents).where(and(
+    access,
+    eq(calendarEvents.status, "active"),
+    lte(calendarEvents.startsAt, end),
+    gte(calendarEvents.endsAt, start),
+  )).orderBy(calendarEvents.startsAt).limit(50);
+}
+
+export async function createCaptureDraft(input: {
+  lineChatId: string;
+  lineUserId: string;
+  financeAccountId?: number;
+  sourceMessageId?: string;
+  payloadJson: string;
+}) {
+  const db = await requireDb();
+  if (input.sourceMessageId) {
+    const existing = (await db.select().from(captureDrafts).where(and(
+      eq(captureDrafts.lineChatId, input.lineChatId),
+      eq(captureDrafts.sourceMessageId, input.sourceMessageId),
+    )).limit(1))[0];
+    if (existing) return existing.id;
+  }
+  await db.update(captureDrafts).set({ status: "rejected" }).where(and(
+    eq(captureDrafts.lineChatId, input.lineChatId),
+    eq(captureDrafts.lineUserId, input.lineUserId),
+    eq(captureDrafts.status, "proposed"),
+  ));
+  const result = await db.insert(captureDrafts).values({
+    ...input,
+    financeAccountId: input.financeAccountId ?? null,
+    sourceMessageId: input.sourceMessageId ?? null,
+  });
+  const id = Number(result[0].insertId);
+  await writeAuditLog({
+    action: "capture.propose",
+    entityType: "capture_draft",
+    entityId: id,
+    actorLineUserId: input.lineUserId,
+    lineChatId: input.lineChatId,
+  });
+  return id;
+}
+
+export async function latestProposedCaptureDraft(lineUserId: string, lineChatId: string) {
+  const db = await requireDb();
+  return (await db.select().from(captureDrafts).where(and(
+    eq(captureDrafts.lineUserId, lineUserId),
+    eq(captureDrafts.lineChatId, lineChatId),
+    eq(captureDrafts.status, "proposed"),
+  )).orderBy(desc(captureDrafts.createdAt), desc(captureDrafts.id)).limit(1))[0];
+}
+
+export async function finishCaptureDraft(input: {
+  id: number;
+  lineUserId: string;
+  lineChatId: string;
+  status: "accepted" | "rejected" | "failed";
+  details?: Record<string, unknown>;
+}) {
+  const db = await requireDb();
+  const result = await db.update(captureDrafts).set({
+    status: input.status,
+    acceptedAt: input.status === "accepted" ? new Date() : null,
+  }).where(and(
+    eq(captureDrafts.id, input.id),
+    eq(captureDrafts.lineUserId, input.lineUserId),
+    eq(captureDrafts.lineChatId, input.lineChatId),
+    eq(captureDrafts.status, "proposed"),
+  ));
+  if (result[0].affectedRows < 1) return false;
+  await writeAuditLog({
+    action: `capture.${input.status}`,
+    entityType: "capture_draft",
+    entityId: input.id,
+    actorLineUserId: input.lineUserId,
+    lineChatId: input.lineChatId,
+    details: input.details,
+  });
+  return true;
+}
+
+export async function createPendingBill(input: {
+  lineChatId: string;
+  lineUserId: string;
+  financeAccountId: number;
+  captureDraftId?: number;
+  title: string;
+  amount: number;
+  category: string;
+  dueAt: Date;
+  sourceMessageId?: string;
+}) {
+  const db = await requireDb();
+  if (input.captureDraftId && input.sourceMessageId) {
+    const existing = (await db.select({ id: pendingBills.id }).from(pendingBills).where(and(
+      eq(pendingBills.captureDraftId, input.captureDraftId),
+      eq(pendingBills.sourceMessageId, input.sourceMessageId),
+    )).limit(1))[0];
+    if (existing) return existing.id;
+  }
+  const result = await db.insert(pendingBills).values({
+    ...input,
+    amount: String(input.amount),
+    captureDraftId: input.captureDraftId ?? null,
+    sourceMessageId: input.sourceMessageId ?? null,
+  });
+  const id = Number(result[0].insertId);
+  await writeAuditLog({
+    action: "pending_bill.create",
+    entityType: "pending_bill",
+    entityId: id,
+    actorLineUserId: input.lineUserId,
+    lineChatId: input.lineChatId,
+    details: { amount: input.amount, category: input.category, dueAt: input.dueAt.toISOString(), captureDraftId: input.captureDraftId ?? null },
+  });
+  return id;
+}
+
+export async function listPendingBillsForChat(lineUserId: string, lineChatId: string, scope: "user" | "group" | "room", financeAccountId?: number) {
+  const db = await requireDb();
+  const access = scope === "user"
+    ? and(eq(pendingBills.lineUserId, lineUserId), eq(pendingBills.lineChatId, lineChatId))
+    : eq(pendingBills.lineChatId, lineChatId);
+  const account = financeAccountId === undefined ? undefined : eq(pendingBills.financeAccountId, financeAccountId);
+  return db.select().from(pendingBills).where(and(
+    access,
+    account,
+    eq(pendingBills.status, "pending"),
+  )).orderBy(pendingBills.dueAt, pendingBills.id).limit(100);
+}
+
+export async function getPendingBillForAction(id: number, lineUserId: string, lineChatId: string, financeAccountId: number) {
+  const db = await requireDb();
+  return (await db.select().from(pendingBills).where(and(
+    eq(pendingBills.id, id),
+    eq(pendingBills.lineChatId, lineChatId),
+    eq(pendingBills.financeAccountId, financeAccountId),
+    eq(pendingBills.status, "pending"),
+  )).limit(1))[0];
+}
+
+export async function markPendingBillPaid(input: { id: number; transactionId: number; lineUserId: string; lineChatId: string }) {
+  const db = await requireDb();
+  const result = await db.update(pendingBills).set({
+    status: "paid",
+    paidTransactionId: input.transactionId,
+    paidAt: new Date(),
+  }).where(and(eq(pendingBills.id, input.id), eq(pendingBills.status, "pending")));
+  if (result[0].affectedRows < 1) return false;
+  await writeAuditLog({ action: "pending_bill.pay", entityType: "pending_bill", entityId: input.id, actorLineUserId: input.lineUserId, lineChatId: input.lineChatId, details: { transactionId: input.transactionId } });
+  return true;
+}
+
+export async function cancelPendingBill(input: { id: number; lineUserId: string; lineChatId: string; financeAccountId: number }) {
+  const db = await requireDb();
+  const result = await db.update(pendingBills).set({ status: "cancelled" }).where(and(
+    eq(pendingBills.id, input.id),
+    eq(pendingBills.lineChatId, input.lineChatId),
+    eq(pendingBills.financeAccountId, input.financeAccountId),
+    eq(pendingBills.status, "pending"),
+  ));
+  if (result[0].affectedRows < 1) return false;
+  await writeAuditLog({ action: "pending_bill.cancel", entityType: "pending_bill", entityId: input.id, actorLineUserId: input.lineUserId, lineChatId: input.lineChatId });
   return true;
 }
 

@@ -1,5 +1,6 @@
 import { suggestStandardCategory } from "./financeCategories";
 import { parseCalendarIntent, type CalendarDraft } from "./calendar";
+import { parseCompoundCapture, type CompoundCapturePlan } from "./multiIntent";
 
 export type ReminderDraft = {
   title: string; recurrenceType: "once" | "minute" | "day" | "week" | "month"; recurrenceInterval: number;
@@ -17,6 +18,13 @@ export type MiloCommand =
   | { type: "vaultStatus" }
   | { type: "documentPacket" }
   | { type: "documentIssues" }
+  | { type: "captureDraft"; plan: CompoundCapturePlan }
+  | { type: "captureConfirm" }
+  | { type: "captureCancel" }
+  | { type: "todayOverview" }
+  | { type: "pendingBillList" }
+  | { type: "pendingBillPay"; id: number }
+  | { type: "pendingBillCancel"; id: number }
   | { type: "expense" | "income"; amount: number; category: string; note: string }
   | { type: "note"; title: string; content: string }
   | { type: "todo"; title: string }
@@ -121,8 +129,17 @@ function reminderFrom(text: string, now: Date): ReminderDraft | undefined {
 }
 
 export function parseMiloCommand(text: string, now = new Date()): MiloCommand {
-  const reminder = reminderFrom(text, now); if (reminder) return { type: "reminder", data: reminder };
   const value = text.trim().replace(/^@?ไมโล\s*/i, "");
+  if (/^(?:ยืนยันรายการทั้งหมด|ยืนยันทั้งหมด)$/i.test(value)) return { type: "captureConfirm" };
+  if (/^(?:ยกเลิกรายการทั้งหมด|ยกเลิกทั้งหมด)$/i.test(value)) return { type: "captureCancel" };
+  if (/^(?:วันนี้มีอะไร|วันนี้ของฉัน|สรุปวันนี้ของฉัน)$/i.test(value)) return { type: "todayOverview" };
+  if (/^(?:บิลรอจ่าย|รายการบิล|ดูบิล)$/i.test(value)) return { type: "pendingBillList" };
+  const pendingBillPay = value.match(/^(?:จ่ายบิล|ชำระบิล|ยืนยันจ่ายบิล)\s*#?(\d+)$/i);
+  if (pendingBillPay) return { type: "pendingBillPay", id: Number(pendingBillPay[1]) };
+  const pendingBillCancel = value.match(/^(?:ยกเลิกบิล|ลบบิล)\s*#?(\d+)$/i);
+  if (pendingBillCancel) return { type: "pendingBillCancel", id: Number(pendingBillCancel[1]) };
+  const compound = parseCompoundCapture(value, now); if (compound) return { type: "captureDraft", plan: compound };
+  const reminder = reminderFrom(text, now); if (reminder) return { type: "reminder", data: reminder };
   const reminderCancel = value.match(/^(?:ยกเลิก|ลบ)เตือน\s*#?(\d+)$/i);
   if (reminderCancel) return { type: "reminderCancel", id: Number(reminderCancel[1]) };
   if (/^(?:ดูเตือน|รายการเตือน|ดูรายการเตือน)$/i.test(value)) return { type: "reminderList" };

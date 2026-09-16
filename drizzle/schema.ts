@@ -129,6 +129,44 @@ export const calendarEvents = mysqlTable("calendar_events", {
   index("calendar_events_source_idx").on(table.sourceMessageId),
 ]);
 
+export const captureDrafts = mysqlTable("capture_drafts", {
+  id: int("id").autoincrement().primaryKey(),
+  lineChatId: varchar("lineChatId", { length: 128 }).notNull(),
+  lineUserId: varchar("lineUserId", { length: 128 }).notNull(),
+  financeAccountId: int("financeAccountId"),
+  sourceMessageId: varchar("sourceMessageId", { length: 128 }),
+  payloadJson: text("payloadJson").notNull(),
+  status: mysqlEnum("status", ["proposed", "accepted", "rejected", "failed"]).default("proposed").notNull(),
+  acceptedAt: timestamp("acceptedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, table => [
+  index("capture_drafts_chat_status_idx").on(table.lineChatId, table.lineUserId, table.status, table.createdAt),
+  unique("capture_drafts_source_unique").on(table.lineChatId, table.sourceMessageId),
+]);
+
+export const pendingBills = mysqlTable("pending_bills", {
+  id: int("id").autoincrement().primaryKey(),
+  lineChatId: varchar("lineChatId", { length: 128 }).notNull(),
+  lineUserId: varchar("lineUserId", { length: 128 }).notNull(),
+  financeAccountId: int("financeAccountId"),
+  captureDraftId: int("captureDraftId"),
+  title: varchar("title", { length: 255 }).notNull(),
+  amount: decimal("amount", { precision: 12, scale: 2 }).notNull(),
+  category: varchar("category", { length: 100 }).notNull(),
+  dueAt: timestamp("dueAt").notNull(),
+  status: mysqlEnum("status", ["pending", "paid", "cancelled"]).default("pending").notNull(),
+  sourceMessageId: varchar("sourceMessageId", { length: 128 }),
+  paidTransactionId: int("paidTransactionId"),
+  paidAt: timestamp("paidAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, table => [
+  index("pending_bills_chat_due_idx").on(table.lineChatId, table.status, table.dueAt),
+  index("pending_bills_account_due_idx").on(table.financeAccountId, table.status, table.dueAt),
+  unique("pending_bills_capture_unique").on(table.captureDraftId, table.sourceMessageId),
+]);
+
 export const reminderDeliveryAttempts = mysqlTable("reminder_delivery_attempts", {
   id: int("id").autoincrement().primaryKey(),
   reminderId: int("reminderId").notNull(),
@@ -345,3 +383,5 @@ export const expenseCategories = mysqlTable("expense_categories", {
 export type User = typeof users.$inferSelect;
 export type InsertUser = typeof users.$inferInsert;
 export type Reminder = typeof reminders.$inferSelect;
+export type CaptureDraft = typeof captureDrafts.$inferSelect;
+export type PendingBill = typeof pendingBills.$inferSelect;

@@ -13,6 +13,15 @@ vi.mock("../db", () => ({
   cancelReminderForChat: vi.fn(),
   createCalendarEvent: vi.fn(),
   listCalendarEvents: vi.fn(),
+  listCalendarEventsForRange: vi.fn(),
+  createCaptureDraft: vi.fn(),
+  latestProposedCaptureDraft: vi.fn(),
+  finishCaptureDraft: vi.fn(),
+  createPendingBill: vi.fn(),
+  listPendingBillsForChat: vi.fn(),
+  getPendingBillForAction: vi.fn(),
+  markPendingBillPaid: vi.fn(),
+  cancelPendingBill: vi.fn(),
   cancelCalendarEvent: vi.fn(),
   createTransaction: vi.fn(),
   deleteLatestTransaction: vi.fn(),
@@ -71,6 +80,8 @@ import { processEvent, registerLineWebhook } from "./routes";
 describe("LINE webhook processor", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(getProfile).mockResolvedValue({ displayName: "Milo Tester" });
+    vi.mocked(sourceIdentity).mockReturnValue({ lineChatId: "G1", lineUserId: "U1", scope: "group" });
     process.env.LINE_CHANNEL_SECRET = "test-calendar-signing-secret";
     process.env.MILO_PRO_MAX_LINE_USER_IDS = "U1";
     vi.mocked(db.isAdminLinkedLineUser).mockResolvedValue(true);
@@ -85,6 +96,114 @@ describe("LINE webhook processor", () => {
     vi.mocked(db.findVaultItemByFingerprint).mockResolvedValue(undefined as never);
     vi.mocked(db.listVaultDocumentsForChat).mockResolvedValue([] as never);
     vi.mocked(db.updateVaultIntelligence).mockResolvedValue(true as never);
+    vi.mocked(db.listCalendarEventsForRange).mockResolvedValue([] as never);
+    vi.mocked(db.listRemindersForChat).mockResolvedValue([] as never);
+    vi.mocked(db.listTodosForChat).mockResolvedValue([] as never);
+    vi.mocked(db.listPendingBillsForChat).mockResolvedValue([] as never);
+    vi.mocked(db.latestProposedCaptureDraft).mockResolvedValue(undefined as never);
+    vi.mocked(db.finishCaptureDraft).mockResolvedValue(true as never);
+    vi.mocked(db.markPendingBillPaid).mockResolvedValue(true as never);
+    vi.mocked(db.cancelPendingBill).mockResolvedValue(true as never);
+  });
+
+  it("stages a compound message as one confirmation draft without creating finance data", async () => {
+    vi.mocked(db.registerWebhookEvent).mockResolvedValue(true);
+    vi.mocked(sourceIdentity).mockReturnValueOnce({ lineChatId: "U1", lineUserId: "U1", scope: "user" });
+    vi.mocked(db.createCaptureDraft).mockResolvedValue(31 as never);
+    vi.mocked(replyTextWithQuickReplies).mockResolvedValue(new Response());
+
+    await processEvent({
+      type: "message", webhookEventId: "evt-capture-draft", timestamp: Date.parse("2026-09-16T02:00:00.000Z"),
+      replyToken: "token", source: { type: "user", userId: "U1" },
+      message: { id: "compound-1", type: "text", text: "พรุ่งนี้บ่ายสองประชุมกับลูกค้า ค่าแท็กซี่ 300 บาท ช่วยเตือนก่อนประชุมด้วยนะ" },
+    }, "{}");
+
+    expect(db.createCaptureDraft).toHaveBeenCalledWith(expect.objectContaining({
+      lineChatId: "U1", lineUserId: "U1", financeAccountId: 7, sourceMessageId: "compound-1",
+    }));
+    expect(replyTextWithQuickReplies).toHaveBeenCalledTimes(1);
+    expect(replyTextWithQuickReplies).toHaveBeenCalledWith("token", expect.stringContaining("ยังไม่สร้างรายการการเงินจริง"), expect.any(Array));
+    expect(db.createCalendarEvent).not.toHaveBeenCalled();
+    expect(db.createReminder).not.toHaveBeenCalled();
+    expect(db.createPendingBill).not.toHaveBeenCalled();
+    expect(db.createTransaction).not.toHaveBeenCalled();
+  });
+
+  it("confirms a staged capture into calendar, reminder, and pending bill but not a transaction", async () => {
+    vi.mocked(db.registerWebhookEvent).mockResolvedValue(true);
+    vi.mocked(sourceIdentity).mockReturnValueOnce({ lineChatId: "U1", lineUserId: "U1", scope: "user" });
+    vi.mocked(db.latestProposedCaptureDraft).mockResolvedValue({
+      id: 31,
+      payloadJson: JSON.stringify({
+        originalText: "compound",
+        items: [
+          { type: "calendar", title: "ประชุมกับลูกค้า", startsAt: "2026-09-17T07:00:00.000Z", endsAt: "2026-09-17T08:00:00.000Z" },
+          { type: "pending_bill", title: "ค่าแท็กซี่", amount: 300, category: "เดินทาง", dueAt: "2026-09-17T07:00:00.000Z" },
+          { type: "reminder", title: "เตือนประชุมกับลูกค้า", dueAt: "2026-09-17T06:45:00.000Z" },
+        ],
+      }),
+    } as never);
+    vi.mocked(db.createCalendarEvent).mockResolvedValue(101 as never);
+    vi.mocked(db.createPendingBill).mockResolvedValue(102 as never);
+    vi.mocked(db.createReminder).mockResolvedValue(103 as never);
+    vi.mocked(replyTextWithQuickReplies).mockResolvedValue(new Response());
+
+    await processEvent({
+      type: "message", webhookEventId: "evt-capture-confirm", timestamp: Date.now(),
+      replyToken: "token", source: { type: "user", userId: "U1" },
+      message: { id: "confirm-1", type: "text", text: "ยืนยันรายการทั้งหมด" },
+    }, "{}");
+
+    expect(db.createCalendarEvent).toHaveBeenCalledTimes(1);
+    expect(db.createReminder).toHaveBeenCalledTimes(1);
+    expect(db.createPendingBill).toHaveBeenCalledWith(expect.objectContaining({ captureDraftId: 31, amount: 300, financeAccountId: 7 }));
+    expect(db.finishCaptureDraft).toHaveBeenCalledWith(expect.objectContaining({ id: 31, status: "accepted" }));
+    expect(db.createTransaction).not.toHaveBeenCalled();
+    expect(replyTextWithQuickReplies).toHaveBeenCalledTimes(1);
+  });
+
+  it("creates the real expense only when a pending bill is marked paid", async () => {
+    vi.mocked(db.registerWebhookEvent).mockResolvedValue(true);
+    vi.mocked(sourceIdentity).mockReturnValueOnce({ lineChatId: "U1", lineUserId: "U1", scope: "user" });
+    vi.mocked(db.getPendingBillForAction).mockResolvedValue({ id: 42, title: "ค่าไฟ", amount: "1250.00", category: "ค่าสาธารณูปโภค" } as never);
+    vi.mocked(db.createTransaction).mockResolvedValue(700 as never);
+    vi.mocked(db.financeReport).mockResolvedValue({ income: 0, expense: 1250, balance: -1250 } as never);
+    vi.mocked(replyPostSaveSummaryImage).mockResolvedValue(new Response());
+
+    await processEvent({
+      type: "message", webhookEventId: "evt-bill-paid", timestamp: Date.parse("2026-09-16T03:00:00.000Z"),
+      replyToken: "token", source: { type: "user", userId: "U1" },
+      message: { id: "bill-pay-1", type: "text", text: "จ่ายบิล #42" },
+    }, "{}");
+
+    expect(db.createTransaction).toHaveBeenCalledWith(expect.objectContaining({
+      transactionType: "expense", amount: 1250, source: "pending_bill", sourceMessageId: "pending-bill:42",
+    }));
+    expect(db.markPendingBillPaid).toHaveBeenCalledWith({ id: 42, transactionId: 700, lineUserId: "U1", lineChatId: "U1" });
+    expect(replyPostSaveSummaryImage).toHaveBeenCalledTimes(1);
+    expect(replyText).not.toHaveBeenCalled();
+  });
+
+  it("combines appointments, reminders, todos, bills, and today's finance in one overview", async () => {
+    vi.mocked(db.registerWebhookEvent).mockResolvedValue(true);
+    vi.mocked(sourceIdentity).mockReturnValueOnce({ lineChatId: "U1", lineUserId: "U1", scope: "user" });
+    const now = new Date();
+    vi.mocked(db.listCalendarEventsForRange).mockResolvedValue([{ id: 1, title: "ประชุมทีม", startsAt: now }] as never);
+    vi.mocked(db.listRemindersForChat).mockResolvedValue([{ id: 2, title: "ส่งรายงาน", status: "active", nextRunAt: now }] as never);
+    vi.mocked(db.listTodosForChat).mockResolvedValue([{ id: 3, title: "ตรวจเอกสาร", dueAt: null }] as never);
+    vi.mocked(db.listPendingBillsForChat).mockResolvedValue([{ id: 4, title: "ค่าไฟ", amount: "1250", dueAt: now }] as never);
+    vi.mocked(db.financeReport).mockResolvedValue({ income: 5000, expense: 1250, balance: 3750 } as never);
+    vi.mocked(replyText).mockResolvedValue(new Response());
+
+    await processEvent({
+      type: "message", webhookEventId: "evt-today", timestamp: Date.now(),
+      replyToken: "token", source: { type: "user", userId: "U1" },
+      message: { id: "today-1", type: "text", text: "วันนี้มีอะไร" },
+    }, "{}");
+
+    expect(replyText).toHaveBeenCalledTimes(1);
+    expect(replyText).toHaveBeenCalledWith("token", expect.stringContaining("วันนี้ของฉัน"));
+    expect(replyText).toHaveBeenCalledWith("token", expect.stringContaining("ค่าไฟ"));
   });
 
   it("summarizes this month's document packet from the current chat", async () => {

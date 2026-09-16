@@ -20,11 +20,13 @@ import { deliverFinanceDigest, type FinanceDigestType } from "./financeDigest";
 import { buildExpenseNote, formatImageProposal, normalizeExpenseCategory, parseExtractedDate, resolveReceiptOccurredAt, selectImageProposal } from "./receiptUtils";
 import { applyImageExpenseEdit } from "./imageProposalEdit";
 import { bangkokMonthRange, buildDocumentIntelligence, classifyDocumentKind, documentKindLabel, documentStatusLabel, fingerprintMedia, mergeVaultTags, readDocumentStatus, summarizeVaultDocuments, type DocumentAnalysis } from "./documentIntelligence";
+import { deserializeCapturePlan, formatCapturePreview, serializeCapturePlan } from "./multiIntent";
+import { bangkokDayRange, formatTodayOverview } from "./todayOverview";
 import { STANDARD_EXPENSE_CATEGORIES, STANDARD_INCOME_CATEGORIES } from "./financeCategories";
 import { financeReportCardText, getMessageContent, getProfile, lineCredentials, postSaveSummaryText, pushText, pushTextWithQuickReplies, replyFinanceReportCard, replyFinanceReportCardFallback, replyGreetingHome, replyMention, replyPostSaveSummary, replyPostSaveSummaryFallback, replyPostSaveSummaryImage, replyText, replyTextWithQuickReplies, replyVoiceCategoryChoices, replyVoiceProposal, replyVoiceProposalFallback, sourceIdentity, type LineEvent, type VoiceTransactionProposal, verifyLineSignature } from "./line";
 
 function helpText() {
-  return "Milo ช่วยคุณจบงานใน LINE แชทเดียวครับ\n🔔 เตือน: เตือนประชุมพรุ่งนี้ 10:00 / เตือนดื่มน้ำทุก 30 นาที / รายการเตือน\n🗂️ เก็บ: เก็บ https://example.com #งาน / ค้นหา ใบเสนอราคา / สถานะคลัง\n📦 เอกสาร: สรุปเอกสารเดือนนี้ / ไฟล์ที่ต้องตรวจ\n📅 ปฏิทิน: ลงปฏิทิน ประชุมทีมพรุ่งนี้ 10:00 / ดูปฏิทิน\n👥 กลุ่ม LINE: @ไมโล ผู้ช่วยกลุ่ม / @ไมโล แจ้งส่งงานด้วยถึง @สมชาย\n✅ งาน: งาน ส่งสรุปรายสัปดาห์ / ดูงาน / เสร็จงาน #12 / โน้ต รหัส Wi-Fi\n💰 การเงิน: กินกาแฟ 80 / เงินเดือนเข้า 35000 / ตั้งงบ อาหาร 5000 / สรุปเดือนนี้\n📷🎙️ ส่งรูปใบเสร็จหรือเสียงให้ไมโลอ่าน แล้วตรวจและยืนยันก่อนบันทึก\n\nพิมพ์ “ช่วย” ได้ทุกเมื่อครับ";
+  return "Milo ช่วยคุณจบงานใน LINE แชทเดียวครับ\n🔔 เตือน: เตือนประชุมพรุ่งนี้ 10:00 / เตือนดื่มน้ำทุก 30 นาที / รายการเตือน\n🗂️ เก็บ: เก็บ https://example.com #งาน / ค้นหา ใบเสนอราคา / สถานะคลัง\n📦 เอกสาร: สรุปเอกสารเดือนนี้ / ไฟล์ที่ต้องตรวจ\n🧠 จดหลายอย่าง: พรุ่งนี้บ่ายสองประชุมลูกค้า ค่าแท็กซี่ 300 ช่วยเตือนด้วย\n☀️ วันนี้: วันนี้มีอะไร / บิลรอจ่าย / จ่ายบิล #เลขรายการ\n📅 ปฏิทิน: ลงปฏิทิน ประชุมทีมพรุ่งนี้ 10:00 / ดูปฏิทิน\n👥 กลุ่ม LINE: @ไมโล ผู้ช่วยกลุ่ม / @ไมโล แจ้งส่งงานด้วยถึง @สมชาย\n✅ งาน: งาน ส่งสรุปรายสัปดาห์ / ดูงาน / เสร็จงาน #12 / โน้ต รหัส Wi-Fi\n💰 การเงิน: กินกาแฟ 80 / เงินเดือนเข้า 35000 / ตั้งงบ อาหาร 5000 / สรุปเดือนนี้\n📷🎙️ ส่งรูปใบเสร็จหรือเสียงให้ไมโลอ่าน แล้วตรวจและยืนยันก่อนบันทึก\n\nพิมพ์ “ช่วย” ได้ทุกเมื่อครับ";
 }
 
 function contextualFallback(text: string) {
@@ -200,17 +202,169 @@ async function handleText(event: LineEvent, lineChatId: string, lineUserId: stri
   const command = parseMiloCommand(text);
   const plan = resolveMiloPlan(lineUserId, process.env, await db.isAdminLinkedLineUser(lineUserId));
   let message = "";
-  const financeCommands = new Set(["expense", "income", "transactionSearch", "transactionUndo", "transactionDelete", "transactionUpdate", "openingBalance", "financeReport", "aiSummary", "budgetOverview", "transactionList", "voiceConfirm", "voiceEditPrompt", "voiceCategoryChange", "voiceEdit", "budget", "budgetCycleStart", "categoryAdd", "categoryRemove", "categoryList", "imageConfirm", "imageEdit", "pdfConfirm", "recurringCreate", "recurringList", "recurringStatus", "exportFinance"]);
+  const financeCommands = new Set(["expense", "income", "transactionSearch", "transactionUndo", "transactionDelete", "transactionUpdate", "openingBalance", "financeReport", "aiSummary", "budgetOverview", "transactionList", "voiceConfirm", "voiceEditPrompt", "voiceCategoryChange", "voiceEdit", "budget", "budgetCycleStart", "categoryAdd", "categoryRemove", "categoryList", "imageConfirm", "imageEdit", "pdfConfirm", "recurringCreate", "recurringList", "recurringStatus", "exportFinance", "pendingBillList", "pendingBillPay", "pendingBillCancel"]);
+  const captureNeedsFinance = command.type === "captureDraft" && command.plan.items.some(item => item.type === "pending_bill");
+  const needsFinance = financeCommands.has(command.type) || captureNeedsFinance;
   if (command.type === "reminder" && !hasMiloEntitlement(plan, "reminders")) { if (event.replyToken) await replyText(event.replyToken, entitlementMessage("reminders")); return; }
   if (command.type === "pdfConfirm" && !hasMiloEntitlement(plan, "pdf")) { if (event.replyToken) await replyText(event.replyToken, entitlementMessage("pdf")); return; }
   if (command.type === "budgetCycleStart" && !hasMiloEntitlement(plan, "customBudgetCycle")) { if (event.replyToken) await replyText(event.replyToken, entitlementMessage("customBudgetCycle")); return; }
-  if (scope !== "user" && financeCommands.has(command.type) && !hasMiloEntitlement(plan, "groupAccounting")) { if (event.replyToken) await replyText(event.replyToken, entitlementMessage("groupAccounting")); return; }
-  const financeScope = financeCommands.has(command.type) ? await resolveFinanceScope(lineUserId, lineChatId, scope) : undefined;
-  if (financeCommands.has(command.type) && !financeScope) {
+  if (scope !== "user" && needsFinance && !hasMiloEntitlement(plan, "groupAccounting")) { if (event.replyToken) await replyText(event.replyToken, entitlementMessage("groupAccounting")); return; }
+  const financeScope = needsFinance ? await resolveFinanceScope(lineUserId, lineChatId, scope) : undefined;
+  if (needsFinance && !financeScope) {
     if (event.replyToken) await replyText(event.replyToken, financeAccessMessage(scope));
     return;
   }
-  if (command.type === "reminderList") {
+  if (command.type === "captureDraft") {
+    if (command.plan.items.some(item => item.type === "reminder") && !hasMiloEntitlement(plan, "reminders")) {
+      if (event.replyToken) await replyText(event.replyToken, entitlementMessage("reminders"));
+      return;
+    }
+    if (captureNeedsFinance && !db.canCreateFinanceTransaction(financeScope!.role)) {
+      if (event.replyToken) await replyText(event.replyToken, "สิทธิ์ของคุณในสมุดบัญชีนี้ยังสร้างบิลรอจ่ายไม่ได้");
+      return;
+    }
+    await db.createCaptureDraft({
+      lineChatId,
+      lineUserId,
+      financeAccountId: financeScope?.financeAccountId,
+      sourceMessageId: event.message?.id,
+      payloadJson: serializeCapturePlan(command.plan),
+    });
+    const preview = formatCapturePreview(command.plan, formatDate);
+    if (event.replyToken) {
+      await replyTextWithQuickReplies(event.replyToken, preview, [
+        { label: "ยืนยันทั้งหมด", text: "ยืนยันรายการทั้งหมด" },
+        { label: "ยกเลิก", text: "ยกเลิกรายการทั้งหมด" },
+      ]);
+      return;
+    }
+    message = preview;
+  } else if (command.type === "captureConfirm") {
+    const draft = await db.latestProposedCaptureDraft(lineUserId, lineChatId);
+    if (!draft) {
+      message = "ยังไม่มีชุดรายการที่รอยืนยัน ลองพิมพ์นัดหมาย บิล และคำเตือนในข้อความเดียวก่อนครับ";
+    } else {
+      const capture = deserializeCapturePlan(draft.payloadJson);
+      if (capture.items.some(item => item.type === "reminder") && !hasMiloEntitlement(plan, "reminders")) {
+        if (event.replyToken) await replyText(event.replyToken, entitlementMessage("reminders"));
+        return;
+      }
+      const hasBill = capture.items.some(item => item.type === "pending_bill");
+      let captureFinance = financeScope;
+      if (hasBill) {
+        if (scope !== "user" && !hasMiloEntitlement(plan, "groupAccounting")) {
+          if (event.replyToken) await replyText(event.replyToken, entitlementMessage("groupAccounting"));
+          return;
+        }
+        captureFinance = await resolveFinanceScope(lineUserId, lineChatId, scope);
+        if (!captureFinance) {
+          if (event.replyToken) await replyText(event.replyToken, financeAccessMessage(scope));
+          return;
+        }
+        if (!db.canCreateFinanceTransaction(captureFinance.role)) {
+          if (event.replyToken) await replyText(event.replyToken, "สิทธิ์ของคุณในสมุดบัญชีนี้ยังยืนยันบิลรอจ่ายไม่ได้");
+          return;
+        }
+      }
+      const created: Array<{ type: string; id: number }> = [];
+      for (let index = 0; index < capture.items.length; index += 1) {
+        const item = capture.items[index];
+        const sourceMessageId = `capture:${draft.id}:${item.type}:${index}`;
+        if (item.type === "calendar") {
+          const id = await db.createCalendarEvent({ lineChatId, createdByLineUserId: lineUserId, title: item.title, startsAt: item.startsAt, endsAt: item.endsAt, sourceMessageId });
+          created.push({ type: item.type, id });
+        } else if (item.type === "reminder") {
+          const id = await db.createReminder({ lineChatId, createdByLineUserId: lineUserId, title: item.title, recurrenceType: "once", recurrenceInterval: 1, dueAt: item.dueAt, nextRunAt: item.dueAt, sourceMessageId });
+          created.push({ type: item.type, id });
+        } else {
+          const id = await db.createPendingBill({ lineChatId, lineUserId, financeAccountId: captureFinance!.financeAccountId, captureDraftId: draft.id, title: item.title, amount: item.amount, category: item.category, dueAt: item.dueAt, sourceMessageId });
+          created.push({ type: item.type, id });
+        }
+      }
+      await db.finishCaptureDraft({ id: draft.id, lineUserId, lineChatId, status: "accepted", details: { created } });
+      const billIds = created.filter(item => item.type === "pending_bill").map(item => `#${item.id}`).join(", ");
+      message = `บันทึกชุดรายการแล้ว ✅\nนัดหมาย ${created.filter(item => item.type === "calendar").length} • เตือน ${created.filter(item => item.type === "reminder").length} • บิลรอจ่าย ${created.filter(item => item.type === "pending_bill").length}${billIds ? ` (${billIds})` : ""}\n\nยังไม่มีการสร้างรายจ่ายจริง พิมพ์ “จ่ายบิล #เลขรายการ” เมื่อชำระแล้ว`;
+      if (event.replyToken) {
+        await replyTextWithQuickReplies(event.replyToken, message, [
+          { label: "วันนี้มีอะไร", text: "วันนี้มีอะไร" },
+          { label: "ดูบิลรอจ่าย", text: "บิลรอจ่าย" },
+        ]);
+        return;
+      }
+    }
+  } else if (command.type === "captureCancel") {
+    const draft = await db.latestProposedCaptureDraft(lineUserId, lineChatId);
+    message = draft && await db.finishCaptureDraft({ id: draft.id, lineUserId, lineChatId, status: "rejected" })
+      ? "ยกเลิกชุดรายการที่รอยืนยันแล้วครับ"
+      : "ไม่มีชุดรายการที่รอยกเลิกครับ";
+  } else if (command.type === "todayOverview") {
+    const range = bangkokDayRange(new Date());
+    const optionalFinance = scope === "user" || hasMiloEntitlement(plan, "groupAccounting")
+      ? await resolveFinanceScope(lineUserId, lineChatId, scope)
+      : undefined;
+    const [calendars, reminders, todos, bills, finance] = await Promise.all([
+      db.listCalendarEventsForRange(lineUserId, lineChatId, scope, range.start, new Date(range.end.getTime() - 1)),
+      db.listRemindersForChat(lineUserId, lineChatId, scope),
+      db.listTodosForChat(lineUserId, lineChatId, scope),
+      optionalFinance ? db.listPendingBillsForChat(lineUserId, lineChatId, scope, optionalFinance.financeAccountId) : Promise.resolve([]),
+      optionalFinance ? db.financeReport(lineUserId, "day", new Date(), optionalFinance.financeAccountId) : Promise.resolve(undefined),
+    ]);
+    message = formatTodayOverview({
+      reference: new Date(),
+      calendars,
+      reminders: reminders.filter(item => item.status === "active" && item.nextRunAt && item.nextRunAt >= range.start && item.nextRunAt < range.end),
+      todos: todos.filter(item => !item.dueAt || item.dueAt < range.end),
+      bills: bills.filter(item => item.dueAt < range.end),
+      finance,
+    });
+  } else if (command.type === "pendingBillList") {
+    const bills = await db.listPendingBillsForChat(lineUserId, lineChatId, scope, financeScope!.financeAccountId);
+    message = bills.length
+      ? `🧾 บิลรอจ่าย\n${bills.slice(0, 30).map(item => `#${item.id} • ${item.title} • ${Number(item.amount).toLocaleString("th-TH")} บาท • ครบกำหนด ${formatDate(item.dueAt)}`).join("\n")}\n\nเมื่อจ่ายแล้วพิมพ์ “จ่ายบิล #เลขรายการ”`
+      : "🧾 ไม่มีบิลรอจ่ายครับ";
+  } else if (command.type === "pendingBillPay") {
+    if (!db.canCreateFinanceTransaction(financeScope!.role)) {
+      if (event.replyToken) await replyText(event.replyToken, "สิทธิ์ของคุณในสมุดบัญชีนี้ยังชำระบิลไม่ได้");
+      return;
+    }
+    const bill = await db.getPendingBillForAction(command.id, lineUserId, lineChatId, financeScope!.financeAccountId);
+    if (!bill) {
+      message = `ไม่พบบิลรอจ่าย #${command.id} ในสมุดบัญชีนี้`;
+    } else {
+      const occurredAt = Number.isFinite(event.timestamp) ? new Date(event.timestamp) : new Date();
+      const transactionId = await db.createTransaction({
+        lineChatId,
+        lineUserId,
+        financeAccountId: financeScope!.financeAccountId,
+        transactionType: "expense",
+        amount: Number(bill.amount),
+        category: bill.category,
+        note: bill.title,
+        occurredAt,
+        source: "pending_bill",
+        sourceMessageId: `pending-bill:${bill.id}`,
+      });
+      await db.markPendingBillPaid({ id: bill.id, transactionId, lineUserId, lineChatId });
+      if (event.replyToken) {
+        await sendPostSaveSummary(event.replyToken, lineUserId, lineChatId, financeScope!.financeAccountId, {
+          transactionType: "expense",
+          amount: Number(bill.amount),
+          category: bill.category,
+          note: bill.title,
+          occurredAt,
+        });
+        return;
+      }
+      message = `จ่ายบิล #${bill.id} แล้ว และบันทึกรายจ่าย ${Number(bill.amount).toLocaleString("th-TH")} บาท`;
+    }
+  } else if (command.type === "pendingBillCancel") {
+    if (!db.canCreateFinanceTransaction(financeScope!.role)) {
+      if (event.replyToken) await replyText(event.replyToken, "สิทธิ์ของคุณในสมุดบัญชีนี้ยังยกเลิกบิลไม่ได้");
+      return;
+    }
+    const cancelled = await db.cancelPendingBill({ id: command.id, lineUserId, lineChatId, financeAccountId: financeScope!.financeAccountId });
+    message = cancelled ? `ยกเลิกบิล #${command.id} แล้วครับ` : `ไม่พบบิลรอจ่าย #${command.id}`;
+  } else if (command.type === "reminderList") {
     const items = await db.listRemindersForChat(lineUserId, lineChatId, scope);
     message = items.length
       ? `🔔 รายการเตือนใน${scope === "user" ? "แชทนี้" : "กลุ่มนี้"}\n${items.slice(0, 20).map(item => `#${item.id} • ${item.title} • ${item.nextRunAt ? formatDate(item.nextRunAt) : "รอกำหนดเวลา"}`).join("\n")}\n\nยกเลิกของคุณ: ยกเลิกเตือน #เลขรายการ`

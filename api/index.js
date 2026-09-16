@@ -174,6 +174,42 @@ var calendarEvents = mysqlTable("calendar_events", {
   index("calendar_events_user_start_idx").on(table.createdByLineUserId, table.status, table.startsAt),
   index("calendar_events_source_idx").on(table.sourceMessageId)
 ]);
+var captureDrafts = mysqlTable("capture_drafts", {
+  id: int("id").autoincrement().primaryKey(),
+  lineChatId: varchar("lineChatId", { length: 128 }).notNull(),
+  lineUserId: varchar("lineUserId", { length: 128 }).notNull(),
+  financeAccountId: int("financeAccountId"),
+  sourceMessageId: varchar("sourceMessageId", { length: 128 }),
+  payloadJson: text("payloadJson").notNull(),
+  status: mysqlEnum("status", ["proposed", "accepted", "rejected", "failed"]).default("proposed").notNull(),
+  acceptedAt: timestamp("acceptedAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull()
+}, (table) => [
+  index("capture_drafts_chat_status_idx").on(table.lineChatId, table.lineUserId, table.status, table.createdAt),
+  unique("capture_drafts_source_unique").on(table.lineChatId, table.sourceMessageId)
+]);
+var pendingBills = mysqlTable("pending_bills", {
+  id: int("id").autoincrement().primaryKey(),
+  lineChatId: varchar("lineChatId", { length: 128 }).notNull(),
+  lineUserId: varchar("lineUserId", { length: 128 }).notNull(),
+  financeAccountId: int("financeAccountId"),
+  captureDraftId: int("captureDraftId"),
+  title: varchar("title", { length: 255 }).notNull(),
+  amount: decimal("amount", { precision: 12, scale: 2 }).notNull(),
+  category: varchar("category", { length: 100 }).notNull(),
+  dueAt: timestamp("dueAt").notNull(),
+  status: mysqlEnum("status", ["pending", "paid", "cancelled"]).default("pending").notNull(),
+  sourceMessageId: varchar("sourceMessageId", { length: 128 }),
+  paidTransactionId: int("paidTransactionId"),
+  paidAt: timestamp("paidAt"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull()
+}, (table) => [
+  index("pending_bills_chat_due_idx").on(table.lineChatId, table.status, table.dueAt),
+  index("pending_bills_account_due_idx").on(table.financeAccountId, table.status, table.dueAt),
+  unique("pending_bills_capture_unique").on(table.captureDraftId, table.sourceMessageId)
+]);
 var reminderDeliveryAttempts = mysqlTable("reminder_delivery_attempts", {
   id: int("id").autoincrement().primaryKey(),
   reminderId: int("reminderId").notNull(),
@@ -672,6 +708,13 @@ async function finishWebhookEvent(webhookEventId, status, errorMessage) {
 }
 async function createReminder(input) {
   const db = await requireDb();
+  if (input.sourceMessageId) {
+    const existing = (await db.select({ id: reminders.id }).from(reminders).where(and(
+      eq(reminders.lineChatId, input.lineChatId),
+      eq(reminders.sourceMessageId, input.sourceMessageId)
+    )).limit(1))[0];
+    if (existing) return existing.id;
+  }
   const result = await db.insert(reminders).values({
     ...input,
     detail: input.detail ?? null,
@@ -764,6 +807,143 @@ async function cancelCalendarEvent(id, lineUserId, lineChatId) {
   if (!current) return false;
   await db.update(calendarEvents).set({ status: "cancelled" }).where(eq(calendarEvents.id, id));
   await writeAuditLog({ action: "calendar.cancel", entityType: "calendar_event", entityId: id, actorLineUserId: lineUserId, lineChatId, details: { title: current.title } });
+  return true;
+}
+async function listCalendarEventsForRange(lineUserId, lineChatId, scope, start, end) {
+  const db = await requireDb();
+  const access = scope === "user" ? and(eq(calendarEvents.createdByLineUserId, lineUserId), eq(calendarEvents.lineChatId, lineChatId)) : eq(calendarEvents.lineChatId, lineChatId);
+  return db.select().from(calendarEvents).where(and(
+    access,
+    eq(calendarEvents.status, "active"),
+    lte(calendarEvents.startsAt, end),
+    gte(calendarEvents.endsAt, start)
+  )).orderBy(calendarEvents.startsAt).limit(50);
+}
+async function createCaptureDraft(input) {
+  const db = await requireDb();
+  if (input.sourceMessageId) {
+    const existing = (await db.select().from(captureDrafts).where(and(
+      eq(captureDrafts.lineChatId, input.lineChatId),
+      eq(captureDrafts.sourceMessageId, input.sourceMessageId)
+    )).limit(1))[0];
+    if (existing) return existing.id;
+  }
+  await db.update(captureDrafts).set({ status: "rejected" }).where(and(
+    eq(captureDrafts.lineChatId, input.lineChatId),
+    eq(captureDrafts.lineUserId, input.lineUserId),
+    eq(captureDrafts.status, "proposed")
+  ));
+  const result = await db.insert(captureDrafts).values({
+    ...input,
+    financeAccountId: input.financeAccountId ?? null,
+    sourceMessageId: input.sourceMessageId ?? null
+  });
+  const id = Number(result[0].insertId);
+  await writeAuditLog({
+    action: "capture.propose",
+    entityType: "capture_draft",
+    entityId: id,
+    actorLineUserId: input.lineUserId,
+    lineChatId: input.lineChatId
+  });
+  return id;
+}
+async function latestProposedCaptureDraft(lineUserId, lineChatId) {
+  const db = await requireDb();
+  return (await db.select().from(captureDrafts).where(and(
+    eq(captureDrafts.lineUserId, lineUserId),
+    eq(captureDrafts.lineChatId, lineChatId),
+    eq(captureDrafts.status, "proposed")
+  )).orderBy(desc(captureDrafts.createdAt), desc(captureDrafts.id)).limit(1))[0];
+}
+async function finishCaptureDraft(input) {
+  const db = await requireDb();
+  const result = await db.update(captureDrafts).set({
+    status: input.status,
+    acceptedAt: input.status === "accepted" ? /* @__PURE__ */ new Date() : null
+  }).where(and(
+    eq(captureDrafts.id, input.id),
+    eq(captureDrafts.lineUserId, input.lineUserId),
+    eq(captureDrafts.lineChatId, input.lineChatId),
+    eq(captureDrafts.status, "proposed")
+  ));
+  if (result[0].affectedRows < 1) return false;
+  await writeAuditLog({
+    action: `capture.${input.status}`,
+    entityType: "capture_draft",
+    entityId: input.id,
+    actorLineUserId: input.lineUserId,
+    lineChatId: input.lineChatId,
+    details: input.details
+  });
+  return true;
+}
+async function createPendingBill(input) {
+  const db = await requireDb();
+  if (input.captureDraftId && input.sourceMessageId) {
+    const existing = (await db.select({ id: pendingBills.id }).from(pendingBills).where(and(
+      eq(pendingBills.captureDraftId, input.captureDraftId),
+      eq(pendingBills.sourceMessageId, input.sourceMessageId)
+    )).limit(1))[0];
+    if (existing) return existing.id;
+  }
+  const result = await db.insert(pendingBills).values({
+    ...input,
+    amount: String(input.amount),
+    captureDraftId: input.captureDraftId ?? null,
+    sourceMessageId: input.sourceMessageId ?? null
+  });
+  const id = Number(result[0].insertId);
+  await writeAuditLog({
+    action: "pending_bill.create",
+    entityType: "pending_bill",
+    entityId: id,
+    actorLineUserId: input.lineUserId,
+    lineChatId: input.lineChatId,
+    details: { amount: input.amount, category: input.category, dueAt: input.dueAt.toISOString(), captureDraftId: input.captureDraftId ?? null }
+  });
+  return id;
+}
+async function listPendingBillsForChat(lineUserId, lineChatId, scope, financeAccountId) {
+  const db = await requireDb();
+  const access = scope === "user" ? and(eq(pendingBills.lineUserId, lineUserId), eq(pendingBills.lineChatId, lineChatId)) : eq(pendingBills.lineChatId, lineChatId);
+  const account = financeAccountId === void 0 ? void 0 : eq(pendingBills.financeAccountId, financeAccountId);
+  return db.select().from(pendingBills).where(and(
+    access,
+    account,
+    eq(pendingBills.status, "pending")
+  )).orderBy(pendingBills.dueAt, pendingBills.id).limit(100);
+}
+async function getPendingBillForAction(id, lineUserId, lineChatId, financeAccountId) {
+  const db = await requireDb();
+  return (await db.select().from(pendingBills).where(and(
+    eq(pendingBills.id, id),
+    eq(pendingBills.lineChatId, lineChatId),
+    eq(pendingBills.financeAccountId, financeAccountId),
+    eq(pendingBills.status, "pending")
+  )).limit(1))[0];
+}
+async function markPendingBillPaid(input) {
+  const db = await requireDb();
+  const result = await db.update(pendingBills).set({
+    status: "paid",
+    paidTransactionId: input.transactionId,
+    paidAt: /* @__PURE__ */ new Date()
+  }).where(and(eq(pendingBills.id, input.id), eq(pendingBills.status, "pending")));
+  if (result[0].affectedRows < 1) return false;
+  await writeAuditLog({ action: "pending_bill.pay", entityType: "pending_bill", entityId: input.id, actorLineUserId: input.lineUserId, lineChatId: input.lineChatId, details: { transactionId: input.transactionId } });
+  return true;
+}
+async function cancelPendingBill(input) {
+  const db = await requireDb();
+  const result = await db.update(pendingBills).set({ status: "cancelled" }).where(and(
+    eq(pendingBills.id, input.id),
+    eq(pendingBills.lineChatId, input.lineChatId),
+    eq(pendingBills.financeAccountId, input.financeAccountId),
+    eq(pendingBills.status, "pending")
+  ));
+  if (result[0].affectedRows < 1) return false;
+  await writeAuditLog({ action: "pending_bill.cancel", entityType: "pending_bill", entityId: input.id, actorLineUserId: input.lineUserId, lineChatId: input.lineChatId });
   return true;
 }
 async function createVaultItem(input) {
@@ -3620,11 +3800,36 @@ function normalizeYear(raw, fallback) {
   if (raw < 100) return 2e3 + raw;
   return raw;
 }
-function parseStart(value, now) {
+var THAI_HOURS = {
+  "\u0E2B\u0E19\u0E36\u0E48\u0E07": 1,
+  "\u0E2A\u0E2D\u0E07": 2,
+  "\u0E2A\u0E32\u0E21": 3,
+  "\u0E2A\u0E35\u0E48": 4,
+  "\u0E2B\u0E49\u0E32": 5,
+  "\u0E2B\u0E01": 6,
+  "\u0E40\u0E08\u0E47\u0E14": 7,
+  "\u0E41\u0E1B\u0E14": 8,
+  "\u0E40\u0E01\u0E49\u0E32": 9,
+  "\u0E2A\u0E34\u0E1A": 10,
+  "\u0E2A\u0E34\u0E1A\u0E40\u0E2D\u0E47\u0E14": 11,
+  "\u0E2A\u0E34\u0E1A\u0E2A\u0E2D\u0E07": 12
+};
+function naturalClock(value) {
+  const match = value.match(/(ตี|บ่าย|เย็น|ค่ำ)?\s*(\d{1,2}|หนึ่ง|สอง|สาม|สี่|ห้า|หก|เจ็ด|แปด|เก้า|สิบ|สิบเอ็ด|สิบสอง)\s*(โมง|ทุ่ม|นาฬิกา)?/i);
+  if (!match || !match[1] && !match[3]) return void 0;
+  let hour = /^\d+$/.test(match[2]) ? Number(match[2]) : THAI_HOURS[match[2]];
+  if (!Number.isFinite(hour)) return void 0;
+  if (/ทุ่ม/i.test(match[3] ?? "")) hour = 18 + Math.min(Math.max(hour, 1), 5);
+  else if (/บ่าย/i.test(match[1] ?? "") && hour <= 5) hour += 12;
+  else if (/เย็น|ค่ำ/i.test(match[1] ?? "") && hour < 12) hour += 12;
+  return { hour: Math.min(Math.max(hour, 0), 23), minute: 0 };
+}
+function parseCalendarDateTime(value, now = /* @__PURE__ */ new Date()) {
   const current = bangkokParts2(now);
   const clock2 = value.match(/(?:เวลา\s*)?(\d{1,2})(?::|\.)(\d{2})/i);
-  const hour = Math.min(Math.max(Number(clock2?.[1] ?? 9), 0), 23);
-  const minute = Math.min(Math.max(Number(clock2?.[2] ?? 0), 0), 59);
+  const spoken = clock2 ? void 0 : naturalClock(value);
+  const hour = Math.min(Math.max(Number(clock2?.[1] ?? spoken?.hour ?? 9), 0), 23);
+  const minute = Math.min(Math.max(Number(clock2?.[2] ?? spoken?.minute ?? 0), 0), 59);
   const iso2 = value.match(/(\d{4})-(\d{1,2})-(\d{1,2})/);
   const thai = value.match(/(?:วันที่\s*)?(\d{1,2})[\/-](\d{1,2})(?:[\/-](\d{2,4}))?/);
   let target = { ...current };
@@ -3643,7 +3848,7 @@ function parseStart(value, now) {
   return startsAt;
 }
 function eventTitle(value) {
-  return value.replace(/(?:วันนี้|พรุ่งนี้)/gi, " ").replace(/(?:วันที่\s*)?\d{1,2}[\/-]\d{1,2}(?:[\/-]\d{2,4})?/g, " ").replace(/\d{4}-\d{1,2}-\d{1,2}/g, " ").replace(/ถึง\s*\d{1,2}(?::|\.)\d{2}/gi, " ").replace(/(?:เวลา\s*)?\d{1,2}(?::|\.)\d{2}/gi, " ").replace(/(?:นาน\s*)?\d+(?:\.\d+)?\s*(?:ชั่วโมง|ชม\.?|นาที)/gi, " ").replace(/\s+/g, " ").trim();
+  return value.replace(/(?:วันนี้|พรุ่งนี้)/gi, " ").replace(/(?:วันที่\s*)?\d{1,2}[\/-]\d{1,2}(?:[\/-]\d{2,4})?/g, " ").replace(/\d{4}-\d{1,2}-\d{1,2}/g, " ").replace(/ถึง\s*\d{1,2}(?::|\.)\d{2}/gi, " ").replace(/(?:เวลา\s*)?\d{1,2}(?::|\.)\d{2}/gi, " ").replace(/(?:ตี|บ่าย|เย็น|ค่ำ)\s*(?:\d{1,2}|หนึ่ง|สอง|สาม|สี่|ห้า|หก|เจ็ด|แปด|เก้า|สิบ|สิบเอ็ด|สิบสอง)(?:\s*โมง)?|(?:\d{1,2}|หนึ่ง|สอง|สาม|สี่|ห้า|หก|เจ็ด|แปด|เก้า|สิบ|สิบเอ็ด|สิบสอง)\s*(?:โมง|ทุ่ม|นาฬิกา)/gi, " ").replace(/(?:นาน\s*)?\d+(?:\.\d+)?\s*(?:ชั่วโมง|ชม\.?|นาที)/gi, " ").replace(/\s+/g, " ").trim();
 }
 function eventEnd(value, startsAt) {
   const until = value.match(/ถึง\s*(\d{1,2})(?::|\.)(\d{2})/i);
@@ -3669,7 +3874,7 @@ function parseCalendarIntent(text2, now = /* @__PURE__ */ new Date()) {
   if (!create2) return void 0;
   const body = create2[1].trim();
   if (!body) return void 0;
-  const startsAt = parseStart(body, now);
+  const startsAt = parseCalendarDateTime(body, now);
   const title = eventTitle(body) || "\u0E19\u0E31\u0E14\u0E2B\u0E21\u0E32\u0E22";
   return { type: "create", data: { title: title.slice(0, 255), startsAt, endsAt: eventEnd(body, startsAt) } };
 }
@@ -5573,6 +5778,106 @@ function suggestStandardCategory(transactionType, note) {
   return "\u0E17\u0E31\u0E48\u0E27\u0E44\u0E1B";
 }
 
+// server/milo/multiIntent.ts
+var MONEY_CLAUSE = /((?:(?:จ่าย|ชำระ|ซื้อ)\s*)?ค่า[\u0E00-\u0E7FA-Za-z0-9._/-]+(?:\s+[\u0E00-\u0E7FA-Za-z0-9._/-]+){0,2}|(?:จ่าย|ชำระ|ซื้อ)\s+[\u0E00-\u0E7FA-Za-z0-9._/-]+(?:\s+[\u0E00-\u0E7FA-Za-z0-9._/-]+){0,2})\s+(\d[\d,]*(?:\.\d{1,2})?)\s*บาท(?:\s|$)/;
+var CALENDAR_CUE = /ประชุม|นัด|พบ|คุย|สัมภาษณ์|ส่งงาน/i;
+var FUTURE_CUE = /วันนี้|พรุ่งนี้|วันที่\s*\d|\d{1,2}[/-]\d{1,2}|\d{4}-\d{1,2}-\d{1,2}|(?:เวลา\s*)?\d{1,2}(?::|\.)\d{2}|(?:ตี|บ่าย|เย็น|ค่ำ)\s*(?:\d{1,2}|หนึ่ง|สอง|สาม|สี่|ห้า|หก|เจ็ด|แปด|เก้า|สิบ)/i;
+function cleanBillTitle(raw) {
+  return raw.replace(/^(?:จ่าย|ชำระ|ซื้อ)\s*/i, "").replace(/^ค่า\s*/i, "\u0E04\u0E48\u0E32").replace(/\s+/g, " ").trim().slice(0, 255);
+}
+function reminderLeadMinutes(value) {
+  const explicit = value.match(/(?:เตือน)?ก่อน(?:ประชุม|นัด)?\s*(\d+)\s*นาที/i);
+  return explicit ? Math.min(Math.max(Number(explicit[1]), 1), 24 * 60) : 15;
+}
+function stripCaptureClauses(value, moneyMatch) {
+  let result = value;
+  if (moneyMatch?.[0]) result = result.replace(moneyMatch[0], " ");
+  return result.replace(/(?:ช่วย)?เตือน(?:ฉัน)?ก่อน(?:ประชุม|นัด)?(?:\s*\d+\s*นาที)?(?:ด้วยนะ|ด้วย|นะ|ครับ|ค่ะ)?/gi, " ").replace(/\s+/g, " ").trim();
+}
+function parseCompoundCapture(text2, now = /* @__PURE__ */ new Date()) {
+  const value = text2.trim().replace(/^@?ไมโล\s*/i, "").trim();
+  if (!value || !FUTURE_CUE.test(value)) return void 0;
+  if (/^(?:ยืนยัน|แก้(?:ไข)?|ตั้งจด|จดอัตโนมัติ|จดประจำ|รายการประจำ|ตั้งงบ|เพิ่มหมวด|ลบหมวด|ค้นหา|ส่งออก)/i.test(value) || /ทุก(?:วัน|สัปดาห์|เดือน)/i.test(value)) return void 0;
+  const moneyMatch = value.match(MONEY_CLAUSE);
+  if (!moneyMatch) return void 0;
+  const calendarText = stripCaptureClauses(value, moneyMatch);
+  const calendarIntent = CALENDAR_CUE.test(calendarText) ? parseCalendarIntent(`\u0E19\u0E31\u0E14 ${calendarText}`, now) : void 0;
+  const calendar = calendarIntent?.type === "create" ? calendarIntent.data : void 0;
+  const items = [];
+  if (calendar) {
+    items.push({ type: "calendar", title: calendar.title, startsAt: calendar.startsAt, endsAt: calendar.endsAt });
+  }
+  if (moneyMatch) {
+    const amount = Number(moneyMatch[2].replace(/,/g, ""));
+    const title = cleanBillTitle(moneyMatch[1]);
+    if (title && Number.isFinite(amount) && amount > 0) {
+      const dueAt = calendar?.startsAt ?? parseCalendarDateTime(value, now);
+      items.push({
+        type: "pending_bill",
+        title,
+        amount: Math.round(amount * 100) / 100,
+        category: suggestStandardCategory("expense", title),
+        dueAt
+      });
+      if (!calendar && !/เตือน/i.test(value)) {
+        items.push({ type: "reminder", title: `\u0E16\u0E36\u0E07\u0E01\u0E33\u0E2B\u0E19\u0E14\u0E08\u0E48\u0E32\u0E22${title}`, dueAt });
+      }
+    }
+  }
+  if (calendar && /เตือน/i.test(value)) {
+    items.push({
+      type: "reminder",
+      title: `\u0E40\u0E15\u0E37\u0E2D\u0E19${calendar.title}`,
+      dueAt: new Date(calendar.startsAt.getTime() - reminderLeadMinutes(value) * 6e4)
+    });
+  }
+  if (items.length < 2) return void 0;
+  return { originalText: value.slice(0, 2e3), items };
+}
+function serializeCapturePlan(plan) {
+  return JSON.stringify(plan);
+}
+function deserializeCapturePlan(payload) {
+  const parsed = JSON.parse(payload);
+  if (typeof parsed.originalText !== "string" || !Array.isArray(parsed.items)) throw new Error("Invalid capture payload");
+  const items = parsed.items.map((item) => {
+    if (item.type === "calendar" && typeof item.title === "string") {
+      const startsAt = new Date(String(item.startsAt));
+      const endsAt = new Date(String(item.endsAt));
+      if (!Number.isFinite(startsAt.getTime()) || !Number.isFinite(endsAt.getTime())) throw new Error("Invalid calendar capture");
+      return { type: "calendar", title: item.title, startsAt, endsAt };
+    }
+    if (item.type === "reminder" && typeof item.title === "string") {
+      const dueAt = new Date(String(item.dueAt));
+      if (!Number.isFinite(dueAt.getTime())) throw new Error("Invalid reminder capture");
+      return { type: "reminder", title: item.title, dueAt };
+    }
+    if (item.type === "pending_bill" && typeof item.title === "string" && typeof item.category === "string") {
+      const dueAt = new Date(String(item.dueAt));
+      const amount = Number(item.amount);
+      if (!Number.isFinite(dueAt.getTime()) || !Number.isFinite(amount) || amount <= 0) throw new Error("Invalid bill capture");
+      return { type: "pending_bill", title: item.title, category: item.category, amount, dueAt };
+    }
+    throw new Error("Unknown capture item");
+  });
+  return { originalText: parsed.originalText, items };
+}
+function formatCapturePreview(plan, formatDate2) {
+  const rows = plan.items.map((item) => {
+    if (item.type === "calendar") return `\u{1F4C5} \u0E19\u0E31\u0E14\u0E2B\u0E21\u0E32\u0E22 \u2022 ${item.title}
+   ${formatDate2(item.startsAt)}`;
+    if (item.type === "reminder") return `\u{1F514} \u0E40\u0E15\u0E37\u0E2D\u0E19 \u2022 ${item.title}
+   ${formatDate2(item.dueAt)}`;
+    return `\u{1F9FE} \u0E1A\u0E34\u0E25\u0E23\u0E2D\u0E08\u0E48\u0E32\u0E22 \u2022 ${item.title} ${item.amount.toLocaleString("th-TH")} \u0E1A\u0E32\u0E17
+   \u0E04\u0E23\u0E1A\u0E01\u0E33\u0E2B\u0E19\u0E14 ${formatDate2(item.dueAt)} \u2022 \u0E2B\u0E21\u0E27\u0E14${item.category}`;
+  });
+  return `\u0E44\u0E21\u0E42\u0E25\u0E40\u0E02\u0E49\u0E32\u0E43\u0E08\u0E27\u0E48\u0E32\u2026
+
+${rows.join("\n\n")}
+
+\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E2A\u0E23\u0E49\u0E32\u0E07\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E01\u0E32\u0E23\u0E40\u0E07\u0E34\u0E19\u0E08\u0E23\u0E34\u0E07\u0E08\u0E19\u0E01\u0E27\u0E48\u0E32\u0E08\u0E30\u0E01\u0E14\u0E08\u0E48\u0E32\u0E22\u0E1A\u0E34\u0E25`;
+}
+
 // server/milo/commandParser.ts
 var BANGKOK_OFFSET_MS3 = 7 * 60 * 60 * 1e3;
 function titleWithoutSchedule(text2) {
@@ -5704,9 +6009,19 @@ function reminderFrom(text2, now) {
   return { title, recurrenceType: "once", recurrenceInterval: 1, dueAt: run, nextRunAt: run };
 }
 function parseMiloCommand(text2, now = /* @__PURE__ */ new Date()) {
+  const value = text2.trim().replace(/^@?ไมโล\s*/i, "");
+  if (/^(?:ยืนยันรายการทั้งหมด|ยืนยันทั้งหมด)$/i.test(value)) return { type: "captureConfirm" };
+  if (/^(?:ยกเลิกรายการทั้งหมด|ยกเลิกทั้งหมด)$/i.test(value)) return { type: "captureCancel" };
+  if (/^(?:วันนี้มีอะไร|วันนี้ของฉัน|สรุปวันนี้ของฉัน)$/i.test(value)) return { type: "todayOverview" };
+  if (/^(?:บิลรอจ่าย|รายการบิล|ดูบิล)$/i.test(value)) return { type: "pendingBillList" };
+  const pendingBillPay = value.match(/^(?:จ่ายบิล|ชำระบิล|ยืนยันจ่ายบิล)\s*#?(\d+)$/i);
+  if (pendingBillPay) return { type: "pendingBillPay", id: Number(pendingBillPay[1]) };
+  const pendingBillCancel = value.match(/^(?:ยกเลิกบิล|ลบบิล)\s*#?(\d+)$/i);
+  if (pendingBillCancel) return { type: "pendingBillCancel", id: Number(pendingBillCancel[1]) };
+  const compound = parseCompoundCapture(value, now);
+  if (compound) return { type: "captureDraft", plan: compound };
   const reminder = reminderFrom(text2, now);
   if (reminder) return { type: "reminder", data: reminder };
-  const value = text2.trim().replace(/^@?ไมโล\s*/i, "");
   const reminderCancel = value.match(/^(?:ยกเลิก|ลบ)เตือน\s*#?(\d+)$/i);
   if (reminderCancel) return { type: "reminderCancel", id: Number(reminderCancel[1]) };
   if (/^(?:ดูเตือน|รายการเตือน|ดูรายการเตือน)$/i.test(value)) return { type: "reminderList" };
@@ -6245,9 +6560,40 @@ function summarizeVaultDocuments(rows) {
   };
 }
 
+// server/milo/todayOverview.ts
+var BANGKOK_OFFSET_MS4 = 7 * 60 * 60 * 1e3;
+function bangkokDayRange(reference = /* @__PURE__ */ new Date()) {
+  const shifted = new Date(reference.getTime() + BANGKOK_OFFSET_MS4);
+  const start = new Date(Date.UTC(shifted.getUTCFullYear(), shifted.getUTCMonth(), shifted.getUTCDate(), -7));
+  const end = new Date(start.getTime() + 24 * 60 * 60 * 1e3);
+  return { start, end };
+}
+function thaiTime(value) {
+  return new Intl.DateTimeFormat("th-TH", { timeZone: "Asia/Bangkok", hour: "2-digit", minute: "2-digit" }).format(new Date(value));
+}
+function formatTodayOverview(input) {
+  const date = new Intl.DateTimeFormat("th-TH", { timeZone: "Asia/Bangkok", dateStyle: "long" }).format(input.reference);
+  const sections = [];
+  sections.push(input.calendars.length ? `\u{1F4C5} \u0E19\u0E31\u0E14\u0E2B\u0E21\u0E32\u0E22
+${input.calendars.slice(0, 5).map((item) => `\u2022 ${thaiTime(item.startsAt)} \u2022 ${item.title}`).join("\n")}` : "\u{1F4C5} \u0E19\u0E31\u0E14\u0E2B\u0E21\u0E32\u0E22 \u2022 \u0E44\u0E21\u0E48\u0E21\u0E35");
+  sections.push(input.reminders.length ? `\u{1F514} \u0E40\u0E15\u0E37\u0E2D\u0E19\u0E27\u0E31\u0E19\u0E19\u0E35\u0E49
+${input.reminders.slice(0, 5).map((item) => `\u2022 ${item.nextRunAt ? thaiTime(item.nextRunAt) : "--:--"} \u2022 ${item.title}`).join("\n")}` : "\u{1F514} \u0E40\u0E15\u0E37\u0E2D\u0E19\u0E27\u0E31\u0E19\u0E19\u0E35\u0E49 \u2022 \u0E44\u0E21\u0E48\u0E21\u0E35");
+  sections.push(input.todos.length ? `\u2705 \u0E07\u0E32\u0E19\u0E04\u0E49\u0E32\u0E07
+${input.todos.slice(0, 5).map((item) => `\u2022 #${item.id} ${item.title}${item.dueAt ? ` \u2022 ${thaiTime(item.dueAt)}` : ""}`).join("\n")}` : "\u2705 \u0E07\u0E32\u0E19\u0E04\u0E49\u0E32\u0E07 \u2022 \u0E44\u0E21\u0E48\u0E21\u0E35");
+  sections.push(input.bills.length ? `\u{1F9FE} \u0E1A\u0E34\u0E25\u0E23\u0E2D\u0E08\u0E48\u0E32\u0E22
+${input.bills.slice(0, 5).map((item) => `\u2022 #${item.id} ${item.title} ${Number(item.amount).toLocaleString("th-TH")} \u0E1A\u0E32\u0E17 \u2022 ${thaiTime(item.dueAt)}`).join("\n")}
+\u0E1E\u0E34\u0E21\u0E1E\u0E4C \u201C\u0E08\u0E48\u0E32\u0E22\u0E1A\u0E34\u0E25 #\u0E40\u0E25\u0E02\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u201D \u0E40\u0E21\u0E37\u0E48\u0E2D\u0E0A\u0E33\u0E23\u0E30\u0E08\u0E23\u0E34\u0E07` : "\u{1F9FE} \u0E1A\u0E34\u0E25\u0E23\u0E2D\u0E08\u0E48\u0E32\u0E22 \u2022 \u0E44\u0E21\u0E48\u0E21\u0E35");
+  if (input.finance) {
+    sections.push(`\u{1F4B0} \u0E27\u0E31\u0E19\u0E19\u0E35\u0E49 \u2022 \u0E23\u0E31\u0E1A ${input.finance.income.toLocaleString("th-TH")} \u2022 \u0E08\u0E48\u0E32\u0E22 ${input.finance.expense.toLocaleString("th-TH")} \u2022 \u0E04\u0E07\u0E40\u0E2B\u0E25\u0E37\u0E2D ${input.finance.balance.toLocaleString("th-TH")} \u0E1A\u0E32\u0E17`);
+  }
+  return `\u0E27\u0E31\u0E19\u0E19\u0E35\u0E49\u0E02\u0E2D\u0E07\u0E09\u0E31\u0E19 \u2022 ${date}
+
+${sections.join("\n\n")}`;
+}
+
 // server/milo/routes.ts
 function helpText() {
-  return "Milo \u0E0A\u0E48\u0E27\u0E22\u0E04\u0E38\u0E13\u0E08\u0E1A\u0E07\u0E32\u0E19\u0E43\u0E19 LINE \u0E41\u0E0A\u0E17\u0E40\u0E14\u0E35\u0E22\u0E27\u0E04\u0E23\u0E31\u0E1A\n\u{1F514} \u0E40\u0E15\u0E37\u0E2D\u0E19: \u0E40\u0E15\u0E37\u0E2D\u0E19\u0E1B\u0E23\u0E30\u0E0A\u0E38\u0E21\u0E1E\u0E23\u0E38\u0E48\u0E07\u0E19\u0E35\u0E49 10:00 / \u0E40\u0E15\u0E37\u0E2D\u0E19\u0E14\u0E37\u0E48\u0E21\u0E19\u0E49\u0E33\u0E17\u0E38\u0E01 30 \u0E19\u0E32\u0E17\u0E35 / \u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E40\u0E15\u0E37\u0E2D\u0E19\n\u{1F5C2}\uFE0F \u0E40\u0E01\u0E47\u0E1A: \u0E40\u0E01\u0E47\u0E1A https://example.com #\u0E07\u0E32\u0E19 / \u0E04\u0E49\u0E19\u0E2B\u0E32 \u0E43\u0E1A\u0E40\u0E2A\u0E19\u0E2D\u0E23\u0E32\u0E04\u0E32 / \u0E2A\u0E16\u0E32\u0E19\u0E30\u0E04\u0E25\u0E31\u0E07\n\u{1F4E6} \u0E40\u0E2D\u0E01\u0E2A\u0E32\u0E23: \u0E2A\u0E23\u0E38\u0E1B\u0E40\u0E2D\u0E01\u0E2A\u0E32\u0E23\u0E40\u0E14\u0E37\u0E2D\u0E19\u0E19\u0E35\u0E49 / \u0E44\u0E1F\u0E25\u0E4C\u0E17\u0E35\u0E48\u0E15\u0E49\u0E2D\u0E07\u0E15\u0E23\u0E27\u0E08\n\u{1F4C5} \u0E1B\u0E0F\u0E34\u0E17\u0E34\u0E19: \u0E25\u0E07\u0E1B\u0E0F\u0E34\u0E17\u0E34\u0E19 \u0E1B\u0E23\u0E30\u0E0A\u0E38\u0E21\u0E17\u0E35\u0E21\u0E1E\u0E23\u0E38\u0E48\u0E07\u0E19\u0E35\u0E49 10:00 / \u0E14\u0E39\u0E1B\u0E0F\u0E34\u0E17\u0E34\u0E19\n\u{1F465} \u0E01\u0E25\u0E38\u0E48\u0E21 LINE: @\u0E44\u0E21\u0E42\u0E25 \u0E1C\u0E39\u0E49\u0E0A\u0E48\u0E27\u0E22\u0E01\u0E25\u0E38\u0E48\u0E21 / @\u0E44\u0E21\u0E42\u0E25 \u0E41\u0E08\u0E49\u0E07\u0E2A\u0E48\u0E07\u0E07\u0E32\u0E19\u0E14\u0E49\u0E27\u0E22\u0E16\u0E36\u0E07 @\u0E2A\u0E21\u0E0A\u0E32\u0E22\n\u2705 \u0E07\u0E32\u0E19: \u0E07\u0E32\u0E19 \u0E2A\u0E48\u0E07\u0E2A\u0E23\u0E38\u0E1B\u0E23\u0E32\u0E22\u0E2A\u0E31\u0E1B\u0E14\u0E32\u0E2B\u0E4C / \u0E14\u0E39\u0E07\u0E32\u0E19 / \u0E40\u0E2A\u0E23\u0E47\u0E08\u0E07\u0E32\u0E19 #12 / \u0E42\u0E19\u0E49\u0E15 \u0E23\u0E2B\u0E31\u0E2A Wi-Fi\n\u{1F4B0} \u0E01\u0E32\u0E23\u0E40\u0E07\u0E34\u0E19: \u0E01\u0E34\u0E19\u0E01\u0E32\u0E41\u0E1F 80 / \u0E40\u0E07\u0E34\u0E19\u0E40\u0E14\u0E37\u0E2D\u0E19\u0E40\u0E02\u0E49\u0E32 35000 / \u0E15\u0E31\u0E49\u0E07\u0E07\u0E1A \u0E2D\u0E32\u0E2B\u0E32\u0E23 5000 / \u0E2A\u0E23\u0E38\u0E1B\u0E40\u0E14\u0E37\u0E2D\u0E19\u0E19\u0E35\u0E49\n\u{1F4F7}\u{1F399}\uFE0F \u0E2A\u0E48\u0E07\u0E23\u0E39\u0E1B\u0E43\u0E1A\u0E40\u0E2A\u0E23\u0E47\u0E08\u0E2B\u0E23\u0E37\u0E2D\u0E40\u0E2A\u0E35\u0E22\u0E07\u0E43\u0E2B\u0E49\u0E44\u0E21\u0E42\u0E25\u0E2D\u0E48\u0E32\u0E19 \u0E41\u0E25\u0E49\u0E27\u0E15\u0E23\u0E27\u0E08\u0E41\u0E25\u0E30\u0E22\u0E37\u0E19\u0E22\u0E31\u0E19\u0E01\u0E48\u0E2D\u0E19\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\n\n\u0E1E\u0E34\u0E21\u0E1E\u0E4C \u201C\u0E0A\u0E48\u0E27\u0E22\u201D \u0E44\u0E14\u0E49\u0E17\u0E38\u0E01\u0E40\u0E21\u0E37\u0E48\u0E2D\u0E04\u0E23\u0E31\u0E1A";
+  return "Milo \u0E0A\u0E48\u0E27\u0E22\u0E04\u0E38\u0E13\u0E08\u0E1A\u0E07\u0E32\u0E19\u0E43\u0E19 LINE \u0E41\u0E0A\u0E17\u0E40\u0E14\u0E35\u0E22\u0E27\u0E04\u0E23\u0E31\u0E1A\n\u{1F514} \u0E40\u0E15\u0E37\u0E2D\u0E19: \u0E40\u0E15\u0E37\u0E2D\u0E19\u0E1B\u0E23\u0E30\u0E0A\u0E38\u0E21\u0E1E\u0E23\u0E38\u0E48\u0E07\u0E19\u0E35\u0E49 10:00 / \u0E40\u0E15\u0E37\u0E2D\u0E19\u0E14\u0E37\u0E48\u0E21\u0E19\u0E49\u0E33\u0E17\u0E38\u0E01 30 \u0E19\u0E32\u0E17\u0E35 / \u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E40\u0E15\u0E37\u0E2D\u0E19\n\u{1F5C2}\uFE0F \u0E40\u0E01\u0E47\u0E1A: \u0E40\u0E01\u0E47\u0E1A https://example.com #\u0E07\u0E32\u0E19 / \u0E04\u0E49\u0E19\u0E2B\u0E32 \u0E43\u0E1A\u0E40\u0E2A\u0E19\u0E2D\u0E23\u0E32\u0E04\u0E32 / \u0E2A\u0E16\u0E32\u0E19\u0E30\u0E04\u0E25\u0E31\u0E07\n\u{1F4E6} \u0E40\u0E2D\u0E01\u0E2A\u0E32\u0E23: \u0E2A\u0E23\u0E38\u0E1B\u0E40\u0E2D\u0E01\u0E2A\u0E32\u0E23\u0E40\u0E14\u0E37\u0E2D\u0E19\u0E19\u0E35\u0E49 / \u0E44\u0E1F\u0E25\u0E4C\u0E17\u0E35\u0E48\u0E15\u0E49\u0E2D\u0E07\u0E15\u0E23\u0E27\u0E08\n\u{1F9E0} \u0E08\u0E14\u0E2B\u0E25\u0E32\u0E22\u0E2D\u0E22\u0E48\u0E32\u0E07: \u0E1E\u0E23\u0E38\u0E48\u0E07\u0E19\u0E35\u0E49\u0E1A\u0E48\u0E32\u0E22\u0E2A\u0E2D\u0E07\u0E1B\u0E23\u0E30\u0E0A\u0E38\u0E21\u0E25\u0E39\u0E01\u0E04\u0E49\u0E32 \u0E04\u0E48\u0E32\u0E41\u0E17\u0E47\u0E01\u0E0B\u0E35\u0E48 300 \u0E0A\u0E48\u0E27\u0E22\u0E40\u0E15\u0E37\u0E2D\u0E19\u0E14\u0E49\u0E27\u0E22\n\u2600\uFE0F \u0E27\u0E31\u0E19\u0E19\u0E35\u0E49: \u0E27\u0E31\u0E19\u0E19\u0E35\u0E49\u0E21\u0E35\u0E2D\u0E30\u0E44\u0E23 / \u0E1A\u0E34\u0E25\u0E23\u0E2D\u0E08\u0E48\u0E32\u0E22 / \u0E08\u0E48\u0E32\u0E22\u0E1A\u0E34\u0E25 #\u0E40\u0E25\u0E02\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\n\u{1F4C5} \u0E1B\u0E0F\u0E34\u0E17\u0E34\u0E19: \u0E25\u0E07\u0E1B\u0E0F\u0E34\u0E17\u0E34\u0E19 \u0E1B\u0E23\u0E30\u0E0A\u0E38\u0E21\u0E17\u0E35\u0E21\u0E1E\u0E23\u0E38\u0E48\u0E07\u0E19\u0E35\u0E49 10:00 / \u0E14\u0E39\u0E1B\u0E0F\u0E34\u0E17\u0E34\u0E19\n\u{1F465} \u0E01\u0E25\u0E38\u0E48\u0E21 LINE: @\u0E44\u0E21\u0E42\u0E25 \u0E1C\u0E39\u0E49\u0E0A\u0E48\u0E27\u0E22\u0E01\u0E25\u0E38\u0E48\u0E21 / @\u0E44\u0E21\u0E42\u0E25 \u0E41\u0E08\u0E49\u0E07\u0E2A\u0E48\u0E07\u0E07\u0E32\u0E19\u0E14\u0E49\u0E27\u0E22\u0E16\u0E36\u0E07 @\u0E2A\u0E21\u0E0A\u0E32\u0E22\n\u2705 \u0E07\u0E32\u0E19: \u0E07\u0E32\u0E19 \u0E2A\u0E48\u0E07\u0E2A\u0E23\u0E38\u0E1B\u0E23\u0E32\u0E22\u0E2A\u0E31\u0E1B\u0E14\u0E32\u0E2B\u0E4C / \u0E14\u0E39\u0E07\u0E32\u0E19 / \u0E40\u0E2A\u0E23\u0E47\u0E08\u0E07\u0E32\u0E19 #12 / \u0E42\u0E19\u0E49\u0E15 \u0E23\u0E2B\u0E31\u0E2A Wi-Fi\n\u{1F4B0} \u0E01\u0E32\u0E23\u0E40\u0E07\u0E34\u0E19: \u0E01\u0E34\u0E19\u0E01\u0E32\u0E41\u0E1F 80 / \u0E40\u0E07\u0E34\u0E19\u0E40\u0E14\u0E37\u0E2D\u0E19\u0E40\u0E02\u0E49\u0E32 35000 / \u0E15\u0E31\u0E49\u0E07\u0E07\u0E1A \u0E2D\u0E32\u0E2B\u0E32\u0E23 5000 / \u0E2A\u0E23\u0E38\u0E1B\u0E40\u0E14\u0E37\u0E2D\u0E19\u0E19\u0E35\u0E49\n\u{1F4F7}\u{1F399}\uFE0F \u0E2A\u0E48\u0E07\u0E23\u0E39\u0E1B\u0E43\u0E1A\u0E40\u0E2A\u0E23\u0E47\u0E08\u0E2B\u0E23\u0E37\u0E2D\u0E40\u0E2A\u0E35\u0E22\u0E07\u0E43\u0E2B\u0E49\u0E44\u0E21\u0E42\u0E25\u0E2D\u0E48\u0E32\u0E19 \u0E41\u0E25\u0E49\u0E27\u0E15\u0E23\u0E27\u0E08\u0E41\u0E25\u0E30\u0E22\u0E37\u0E19\u0E22\u0E31\u0E19\u0E01\u0E48\u0E2D\u0E19\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\n\n\u0E1E\u0E34\u0E21\u0E1E\u0E4C \u201C\u0E0A\u0E48\u0E27\u0E22\u201D \u0E44\u0E14\u0E49\u0E17\u0E38\u0E01\u0E40\u0E21\u0E37\u0E48\u0E2D\u0E04\u0E23\u0E31\u0E1A";
 }
 function contextualFallback(text2) {
   const value = text2.trim().replace(/^@?ไมโล\s*/i, "").slice(0, 80);
@@ -6417,7 +6763,9 @@ ${lineUserId}
   const command = parseMiloCommand(text2);
   const plan = resolveMiloPlan(lineUserId, process.env, await isAdminLinkedLineUser(lineUserId));
   let message = "";
-  const financeCommands = /* @__PURE__ */ new Set(["expense", "income", "transactionSearch", "transactionUndo", "transactionDelete", "transactionUpdate", "openingBalance", "financeReport", "aiSummary", "budgetOverview", "transactionList", "voiceConfirm", "voiceEditPrompt", "voiceCategoryChange", "voiceEdit", "budget", "budgetCycleStart", "categoryAdd", "categoryRemove", "categoryList", "imageConfirm", "imageEdit", "pdfConfirm", "recurringCreate", "recurringList", "recurringStatus", "exportFinance"]);
+  const financeCommands = /* @__PURE__ */ new Set(["expense", "income", "transactionSearch", "transactionUndo", "transactionDelete", "transactionUpdate", "openingBalance", "financeReport", "aiSummary", "budgetOverview", "transactionList", "voiceConfirm", "voiceEditPrompt", "voiceCategoryChange", "voiceEdit", "budget", "budgetCycleStart", "categoryAdd", "categoryRemove", "categoryList", "imageConfirm", "imageEdit", "pdfConfirm", "recurringCreate", "recurringList", "recurringStatus", "exportFinance", "pendingBillList", "pendingBillPay", "pendingBillCancel"]);
+  const captureNeedsFinance = command.type === "captureDraft" && command.plan.items.some((item) => item.type === "pending_bill");
+  const needsFinance = financeCommands.has(command.type) || captureNeedsFinance;
   if (command.type === "reminder" && !hasMiloEntitlement(plan, "reminders")) {
     if (event.replyToken) await replyText(event.replyToken, entitlementMessage("reminders"));
     return;
@@ -6430,16 +6778,166 @@ ${lineUserId}
     if (event.replyToken) await replyText(event.replyToken, entitlementMessage("customBudgetCycle"));
     return;
   }
-  if (scope !== "user" && financeCommands.has(command.type) && !hasMiloEntitlement(plan, "groupAccounting")) {
+  if (scope !== "user" && needsFinance && !hasMiloEntitlement(plan, "groupAccounting")) {
     if (event.replyToken) await replyText(event.replyToken, entitlementMessage("groupAccounting"));
     return;
   }
-  const financeScope = financeCommands.has(command.type) ? await resolveFinanceScope(lineUserId, lineChatId, scope) : void 0;
-  if (financeCommands.has(command.type) && !financeScope) {
+  const financeScope = needsFinance ? await resolveFinanceScope(lineUserId, lineChatId, scope) : void 0;
+  if (needsFinance && !financeScope) {
     if (event.replyToken) await replyText(event.replyToken, financeAccessMessage(scope));
     return;
   }
-  if (command.type === "reminderList") {
+  if (command.type === "captureDraft") {
+    if (command.plan.items.some((item) => item.type === "reminder") && !hasMiloEntitlement(plan, "reminders")) {
+      if (event.replyToken) await replyText(event.replyToken, entitlementMessage("reminders"));
+      return;
+    }
+    if (captureNeedsFinance && !canCreateFinanceTransaction(financeScope.role)) {
+      if (event.replyToken) await replyText(event.replyToken, "\u0E2A\u0E34\u0E17\u0E18\u0E34\u0E4C\u0E02\u0E2D\u0E07\u0E04\u0E38\u0E13\u0E43\u0E19\u0E2A\u0E21\u0E38\u0E14\u0E1A\u0E31\u0E0D\u0E0A\u0E35\u0E19\u0E35\u0E49\u0E22\u0E31\u0E07\u0E2A\u0E23\u0E49\u0E32\u0E07\u0E1A\u0E34\u0E25\u0E23\u0E2D\u0E08\u0E48\u0E32\u0E22\u0E44\u0E21\u0E48\u0E44\u0E14\u0E49");
+      return;
+    }
+    await createCaptureDraft({
+      lineChatId,
+      lineUserId,
+      financeAccountId: financeScope?.financeAccountId,
+      sourceMessageId: event.message?.id,
+      payloadJson: serializeCapturePlan(command.plan)
+    });
+    const preview = formatCapturePreview(command.plan, formatDate);
+    if (event.replyToken) {
+      await replyTextWithQuickReplies(event.replyToken, preview, [
+        { label: "\u0E22\u0E37\u0E19\u0E22\u0E31\u0E19\u0E17\u0E31\u0E49\u0E07\u0E2B\u0E21\u0E14", text: "\u0E22\u0E37\u0E19\u0E22\u0E31\u0E19\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E17\u0E31\u0E49\u0E07\u0E2B\u0E21\u0E14" },
+        { label: "\u0E22\u0E01\u0E40\u0E25\u0E34\u0E01", text: "\u0E22\u0E01\u0E40\u0E25\u0E34\u0E01\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E17\u0E31\u0E49\u0E07\u0E2B\u0E21\u0E14" }
+      ]);
+      return;
+    }
+    message = preview;
+  } else if (command.type === "captureConfirm") {
+    const draft = await latestProposedCaptureDraft(lineUserId, lineChatId);
+    if (!draft) {
+      message = "\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E21\u0E35\u0E0A\u0E38\u0E14\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E17\u0E35\u0E48\u0E23\u0E2D\u0E22\u0E37\u0E19\u0E22\u0E31\u0E19 \u0E25\u0E2D\u0E07\u0E1E\u0E34\u0E21\u0E1E\u0E4C\u0E19\u0E31\u0E14\u0E2B\u0E21\u0E32\u0E22 \u0E1A\u0E34\u0E25 \u0E41\u0E25\u0E30\u0E04\u0E33\u0E40\u0E15\u0E37\u0E2D\u0E19\u0E43\u0E19\u0E02\u0E49\u0E2D\u0E04\u0E27\u0E32\u0E21\u0E40\u0E14\u0E35\u0E22\u0E27\u0E01\u0E48\u0E2D\u0E19\u0E04\u0E23\u0E31\u0E1A";
+    } else {
+      const capture = deserializeCapturePlan(draft.payloadJson);
+      if (capture.items.some((item) => item.type === "reminder") && !hasMiloEntitlement(plan, "reminders")) {
+        if (event.replyToken) await replyText(event.replyToken, entitlementMessage("reminders"));
+        return;
+      }
+      const hasBill = capture.items.some((item) => item.type === "pending_bill");
+      let captureFinance = financeScope;
+      if (hasBill) {
+        if (scope !== "user" && !hasMiloEntitlement(plan, "groupAccounting")) {
+          if (event.replyToken) await replyText(event.replyToken, entitlementMessage("groupAccounting"));
+          return;
+        }
+        captureFinance = await resolveFinanceScope(lineUserId, lineChatId, scope);
+        if (!captureFinance) {
+          if (event.replyToken) await replyText(event.replyToken, financeAccessMessage(scope));
+          return;
+        }
+        if (!canCreateFinanceTransaction(captureFinance.role)) {
+          if (event.replyToken) await replyText(event.replyToken, "\u0E2A\u0E34\u0E17\u0E18\u0E34\u0E4C\u0E02\u0E2D\u0E07\u0E04\u0E38\u0E13\u0E43\u0E19\u0E2A\u0E21\u0E38\u0E14\u0E1A\u0E31\u0E0D\u0E0A\u0E35\u0E19\u0E35\u0E49\u0E22\u0E31\u0E07\u0E22\u0E37\u0E19\u0E22\u0E31\u0E19\u0E1A\u0E34\u0E25\u0E23\u0E2D\u0E08\u0E48\u0E32\u0E22\u0E44\u0E21\u0E48\u0E44\u0E14\u0E49");
+          return;
+        }
+      }
+      const created = [];
+      for (let index2 = 0; index2 < capture.items.length; index2 += 1) {
+        const item = capture.items[index2];
+        const sourceMessageId = `capture:${draft.id}:${item.type}:${index2}`;
+        if (item.type === "calendar") {
+          const id = await createCalendarEvent({ lineChatId, createdByLineUserId: lineUserId, title: item.title, startsAt: item.startsAt, endsAt: item.endsAt, sourceMessageId });
+          created.push({ type: item.type, id });
+        } else if (item.type === "reminder") {
+          const id = await createReminder({ lineChatId, createdByLineUserId: lineUserId, title: item.title, recurrenceType: "once", recurrenceInterval: 1, dueAt: item.dueAt, nextRunAt: item.dueAt, sourceMessageId });
+          created.push({ type: item.type, id });
+        } else {
+          const id = await createPendingBill({ lineChatId, lineUserId, financeAccountId: captureFinance.financeAccountId, captureDraftId: draft.id, title: item.title, amount: item.amount, category: item.category, dueAt: item.dueAt, sourceMessageId });
+          created.push({ type: item.type, id });
+        }
+      }
+      await finishCaptureDraft({ id: draft.id, lineUserId, lineChatId, status: "accepted", details: { created } });
+      const billIds = created.filter((item) => item.type === "pending_bill").map((item) => `#${item.id}`).join(", ");
+      message = `\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E0A\u0E38\u0E14\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E41\u0E25\u0E49\u0E27 \u2705
+\u0E19\u0E31\u0E14\u0E2B\u0E21\u0E32\u0E22 ${created.filter((item) => item.type === "calendar").length} \u2022 \u0E40\u0E15\u0E37\u0E2D\u0E19 ${created.filter((item) => item.type === "reminder").length} \u2022 \u0E1A\u0E34\u0E25\u0E23\u0E2D\u0E08\u0E48\u0E32\u0E22 ${created.filter((item) => item.type === "pending_bill").length}${billIds ? ` (${billIds})` : ""}
+
+\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E21\u0E35\u0E01\u0E32\u0E23\u0E2A\u0E23\u0E49\u0E32\u0E07\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22\u0E08\u0E23\u0E34\u0E07 \u0E1E\u0E34\u0E21\u0E1E\u0E4C \u201C\u0E08\u0E48\u0E32\u0E22\u0E1A\u0E34\u0E25 #\u0E40\u0E25\u0E02\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u201D \u0E40\u0E21\u0E37\u0E48\u0E2D\u0E0A\u0E33\u0E23\u0E30\u0E41\u0E25\u0E49\u0E27`;
+      if (event.replyToken) {
+        await replyTextWithQuickReplies(event.replyToken, message, [
+          { label: "\u0E27\u0E31\u0E19\u0E19\u0E35\u0E49\u0E21\u0E35\u0E2D\u0E30\u0E44\u0E23", text: "\u0E27\u0E31\u0E19\u0E19\u0E35\u0E49\u0E21\u0E35\u0E2D\u0E30\u0E44\u0E23" },
+          { label: "\u0E14\u0E39\u0E1A\u0E34\u0E25\u0E23\u0E2D\u0E08\u0E48\u0E32\u0E22", text: "\u0E1A\u0E34\u0E25\u0E23\u0E2D\u0E08\u0E48\u0E32\u0E22" }
+        ]);
+        return;
+      }
+    }
+  } else if (command.type === "captureCancel") {
+    const draft = await latestProposedCaptureDraft(lineUserId, lineChatId);
+    message = draft && await finishCaptureDraft({ id: draft.id, lineUserId, lineChatId, status: "rejected" }) ? "\u0E22\u0E01\u0E40\u0E25\u0E34\u0E01\u0E0A\u0E38\u0E14\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E17\u0E35\u0E48\u0E23\u0E2D\u0E22\u0E37\u0E19\u0E22\u0E31\u0E19\u0E41\u0E25\u0E49\u0E27\u0E04\u0E23\u0E31\u0E1A" : "\u0E44\u0E21\u0E48\u0E21\u0E35\u0E0A\u0E38\u0E14\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E17\u0E35\u0E48\u0E23\u0E2D\u0E22\u0E01\u0E40\u0E25\u0E34\u0E01\u0E04\u0E23\u0E31\u0E1A";
+  } else if (command.type === "todayOverview") {
+    const range = bangkokDayRange(/* @__PURE__ */ new Date());
+    const optionalFinance = scope === "user" || hasMiloEntitlement(plan, "groupAccounting") ? await resolveFinanceScope(lineUserId, lineChatId, scope) : void 0;
+    const [calendars, reminders2, todos, bills, finance] = await Promise.all([
+      listCalendarEventsForRange(lineUserId, lineChatId, scope, range.start, new Date(range.end.getTime() - 1)),
+      listRemindersForChat(lineUserId, lineChatId, scope),
+      listTodosForChat(lineUserId, lineChatId, scope),
+      optionalFinance ? listPendingBillsForChat(lineUserId, lineChatId, scope, optionalFinance.financeAccountId) : Promise.resolve([]),
+      optionalFinance ? financeReport(lineUserId, "day", /* @__PURE__ */ new Date(), optionalFinance.financeAccountId) : Promise.resolve(void 0)
+    ]);
+    message = formatTodayOverview({
+      reference: /* @__PURE__ */ new Date(),
+      calendars,
+      reminders: reminders2.filter((item) => item.status === "active" && item.nextRunAt && item.nextRunAt >= range.start && item.nextRunAt < range.end),
+      todos: todos.filter((item) => !item.dueAt || item.dueAt < range.end),
+      bills: bills.filter((item) => item.dueAt < range.end),
+      finance
+    });
+  } else if (command.type === "pendingBillList") {
+    const bills = await listPendingBillsForChat(lineUserId, lineChatId, scope, financeScope.financeAccountId);
+    message = bills.length ? `\u{1F9FE} \u0E1A\u0E34\u0E25\u0E23\u0E2D\u0E08\u0E48\u0E32\u0E22
+${bills.slice(0, 30).map((item) => `#${item.id} \u2022 ${item.title} \u2022 ${Number(item.amount).toLocaleString("th-TH")} \u0E1A\u0E32\u0E17 \u2022 \u0E04\u0E23\u0E1A\u0E01\u0E33\u0E2B\u0E19\u0E14 ${formatDate(item.dueAt)}`).join("\n")}
+
+\u0E40\u0E21\u0E37\u0E48\u0E2D\u0E08\u0E48\u0E32\u0E22\u0E41\u0E25\u0E49\u0E27\u0E1E\u0E34\u0E21\u0E1E\u0E4C \u201C\u0E08\u0E48\u0E32\u0E22\u0E1A\u0E34\u0E25 #\u0E40\u0E25\u0E02\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u201D` : "\u{1F9FE} \u0E44\u0E21\u0E48\u0E21\u0E35\u0E1A\u0E34\u0E25\u0E23\u0E2D\u0E08\u0E48\u0E32\u0E22\u0E04\u0E23\u0E31\u0E1A";
+  } else if (command.type === "pendingBillPay") {
+    if (!canCreateFinanceTransaction(financeScope.role)) {
+      if (event.replyToken) await replyText(event.replyToken, "\u0E2A\u0E34\u0E17\u0E18\u0E34\u0E4C\u0E02\u0E2D\u0E07\u0E04\u0E38\u0E13\u0E43\u0E19\u0E2A\u0E21\u0E38\u0E14\u0E1A\u0E31\u0E0D\u0E0A\u0E35\u0E19\u0E35\u0E49\u0E22\u0E31\u0E07\u0E0A\u0E33\u0E23\u0E30\u0E1A\u0E34\u0E25\u0E44\u0E21\u0E48\u0E44\u0E14\u0E49");
+      return;
+    }
+    const bill = await getPendingBillForAction(command.id, lineUserId, lineChatId, financeScope.financeAccountId);
+    if (!bill) {
+      message = `\u0E44\u0E21\u0E48\u0E1E\u0E1A\u0E1A\u0E34\u0E25\u0E23\u0E2D\u0E08\u0E48\u0E32\u0E22 #${command.id} \u0E43\u0E19\u0E2A\u0E21\u0E38\u0E14\u0E1A\u0E31\u0E0D\u0E0A\u0E35\u0E19\u0E35\u0E49`;
+    } else {
+      const occurredAt = Number.isFinite(event.timestamp) ? new Date(event.timestamp) : /* @__PURE__ */ new Date();
+      const transactionId = await createTransaction({
+        lineChatId,
+        lineUserId,
+        financeAccountId: financeScope.financeAccountId,
+        transactionType: "expense",
+        amount: Number(bill.amount),
+        category: bill.category,
+        note: bill.title,
+        occurredAt,
+        source: "pending_bill",
+        sourceMessageId: `pending-bill:${bill.id}`
+      });
+      await markPendingBillPaid({ id: bill.id, transactionId, lineUserId, lineChatId });
+      if (event.replyToken) {
+        await sendPostSaveSummary(event.replyToken, lineUserId, lineChatId, financeScope.financeAccountId, {
+          transactionType: "expense",
+          amount: Number(bill.amount),
+          category: bill.category,
+          note: bill.title,
+          occurredAt
+        });
+        return;
+      }
+      message = `\u0E08\u0E48\u0E32\u0E22\u0E1A\u0E34\u0E25 #${bill.id} \u0E41\u0E25\u0E49\u0E27 \u0E41\u0E25\u0E30\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22 ${Number(bill.amount).toLocaleString("th-TH")} \u0E1A\u0E32\u0E17`;
+    }
+  } else if (command.type === "pendingBillCancel") {
+    if (!canCreateFinanceTransaction(financeScope.role)) {
+      if (event.replyToken) await replyText(event.replyToken, "\u0E2A\u0E34\u0E17\u0E18\u0E34\u0E4C\u0E02\u0E2D\u0E07\u0E04\u0E38\u0E13\u0E43\u0E19\u0E2A\u0E21\u0E38\u0E14\u0E1A\u0E31\u0E0D\u0E0A\u0E35\u0E19\u0E35\u0E49\u0E22\u0E31\u0E07\u0E22\u0E01\u0E40\u0E25\u0E34\u0E01\u0E1A\u0E34\u0E25\u0E44\u0E21\u0E48\u0E44\u0E14\u0E49");
+      return;
+    }
+    const cancelled = await cancelPendingBill({ id: command.id, lineUserId, lineChatId, financeAccountId: financeScope.financeAccountId });
+    message = cancelled ? `\u0E22\u0E01\u0E40\u0E25\u0E34\u0E01\u0E1A\u0E34\u0E25 #${command.id} \u0E41\u0E25\u0E49\u0E27\u0E04\u0E23\u0E31\u0E1A` : `\u0E44\u0E21\u0E48\u0E1E\u0E1A\u0E1A\u0E34\u0E25\u0E23\u0E2D\u0E08\u0E48\u0E32\u0E22 #${command.id}`;
+  } else if (command.type === "reminderList") {
     const items = await listRemindersForChat(lineUserId, lineChatId, scope);
     message = items.length ? `\u{1F514} \u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E40\u0E15\u0E37\u0E2D\u0E19\u0E43\u0E19${scope === "user" ? "\u0E41\u0E0A\u0E17\u0E19\u0E35\u0E49" : "\u0E01\u0E25\u0E38\u0E48\u0E21\u0E19\u0E35\u0E49"}
 ${items.slice(0, 20).map((item) => `#${item.id} \u2022 ${item.title} \u2022 ${item.nextRunAt ? formatDate(item.nextRunAt) : "\u0E23\u0E2D\u0E01\u0E33\u0E2B\u0E19\u0E14\u0E40\u0E27\u0E25\u0E32"}`).join("\n")}

@@ -78,6 +78,19 @@ describe("Milo command parser", () => {
     expect(parseMiloCommand("เอกสารเดือนนี้ครบไหม", now)).toEqual({ type: "documentPacket" });
     expect(parseMiloCommand("ไฟล์ที่ต้องตรวจ", now)).toEqual({ type: "documentIssues" });
   });
+  it("recognizes KhunNote-style compound capture, today overview, and pending-bill commands", () => {
+    const compound = parseMiloCommand("พรุ่งนี้บ่ายสองประชุมกับลูกค้า ค่าแท็กซี่ 300 บาท ช่วยเตือนก่อนประชุมด้วยนะ", new Date("2026-09-16T02:00:00.000Z"));
+    expect(compound.type).toBe("captureDraft");
+    if (compound.type === "captureDraft") {
+      expect(compound.plan.items.map(item => item.type)).toEqual(["calendar", "pending_bill", "reminder"]);
+    }
+    expect(parseMiloCommand("ยืนยันรายการทั้งหมด", now)).toEqual({ type: "captureConfirm" });
+    expect(parseMiloCommand("ยกเลิกรายการทั้งหมด", now)).toEqual({ type: "captureCancel" });
+    expect(parseMiloCommand("วันนี้มีอะไร", now)).toEqual({ type: "todayOverview" });
+    expect(parseMiloCommand("บิลรอจ่าย", now)).toEqual({ type: "pendingBillList" });
+    expect(parseMiloCommand("จ่ายบิล #42", now)).toEqual({ type: "pendingBillPay", id: 42 });
+    expect(parseMiloCommand("ยกเลิกบิล 42", now)).toEqual({ type: "pendingBillCancel", id: 42 });
+  });
   it("recognizes recurring transaction commands from LINE", () => {
     const monthly = parseMiloCommand("ตั้งจดอัตโนมัติ ค่าเช่า 5000 ทุกเดือนวันที่ 1 09:00", now);
     expect(monthly).toMatchObject({ type: "recurringCreate", transactionType: "expense", amount: 5000, recurrenceType: "month", recurrenceDayOfMonth: 1 });
