@@ -1,6 +1,7 @@
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Button } from "@/components/ui/button";
 import { MiloMascot } from "@/components/MiloMascot";
+import { MiloHeroMascot } from "@/components/MiloHeroMascot";
 import {
   ArrowRight, BellRing, BriefcaseBusiness, CalendarClock, Check, CheckCircle2, FileText,
   Globe2, ListChecks, LockKeyhole, MousePointer2, ReceiptText, Search,
@@ -98,7 +99,7 @@ export default function Home() {
               <div className="absolute left-[3%] top-5 hidden w-[235px] rotate-[-7deg] rounded-[30px] border-[8px] border-[#163d37] bg-white p-2 shadow-2xl sm:block">
                 <div className="rounded-[20px] bg-[#f4faf8] p-3"><div className="mb-3 flex items-center gap-2 text-xs font-bold"><span className="size-5 rounded-full bg-[#12b77c]" /> Milo</div><div className="rounded-2xl bg-white p-3 text-[11px] leading-5 shadow-sm">สวัสดีครับ!<br />Milo พร้อมดูแลคุณ<br />จัดการร้านค้าได้แล้ว<br />วันนี้มีอะไรให้ช่วยบ้าง?</div><div className="mt-2 w-fit rounded-full bg-[#12b77c] px-3 py-1 text-[10px] font-bold text-white">เริ่มใช้งานเลย! ♥</div></div>
               </div>
-              <div className="relative z-10 -mb-4 drop-shadow-2xl"><MiloMascot size="lg" /></div>
+              <div className="relative z-10 -mb-4 drop-shadow-2xl"><MiloHeroMascot /></div>
               <div className="absolute right-[1%] top-7 rounded-[28px] bg-[#0b9e70] px-7 py-4 text-center text-lg font-black leading-tight text-white shadow-xl">ทุกอย่างจบ<br />ใน LINE แชทเดียว<br /><span className="text-2xl">กับ Milo ✣</span></div>
             </div>
 
@@ -167,9 +168,9 @@ export default function Home() {
           <div className="relative isolate overflow-hidden rounded-[28px] border border-[#ccefe2] bg-gradient-to-r from-[#e9fff6] via-[#dffaf0] to-[#effff9] shadow-sm">
             <div className="absolute -left-16 -top-20 size-64 rounded-full bg-[#b5f1d9]/60 blur-3xl" />
             <div className="absolute -right-20 -bottom-28 size-80 rounded-full bg-[#b8f4dc]/50 blur-3xl" />
-            <div className="relative grid min-h-[145px] items-center gap-6 px-5 py-5 sm:px-8 lg:grid-cols-[190px_1fr_auto_auto_240px] lg:px-10">
+            <div className="relative grid min-h-[190px] items-center gap-6 px-5 py-5 sm:px-8 lg:grid-cols-[190px_1fr_auto_auto_240px] lg:px-10">
               <div className="relative hidden h-[145px] self-end lg:block">
-                <div className="absolute bottom-0 left-0 h-[145px] w-[145px]"><MiloMascot size="lg" /></div>
+                <div className="absolute bottom-0 left-0 h-[180px] w-[180px]"><MiloMascot size="lg" /></div>
               </div>
               <div className="min-w-0">
                 <p className="font-display text-2xl font-black tracking-tight text-[#0d6554] sm:text-3xl">เริ่มใช้งานไมโลวันนี้ <span className="text-[#f2b632]">✦</span></p>
