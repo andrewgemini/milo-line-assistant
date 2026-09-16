@@ -1,7 +1,7 @@
 ﻿import { invokeLLM } from "../_core/llm";
 import { ENV } from "../_core/env";
 import { analyzeImageWithOcr, buildReceiptHeaderDataUrl, ocrAssetsReady } from "./ocrImageAnalysis";
-import { extractThaiSlipDateTime, normalizeThaiMerchantName } from "./thaiReceiptParser";
+import { extractThaiSlipDateTime, isPlausibleReceiptMerchant, normalizeThaiMerchantName, receiptMerchantQuality } from "./thaiReceiptParser";
 
 export type ImageProposal = {
   kind: "reminder" | "expense" | "unknown";
@@ -58,7 +58,7 @@ const schema = {
   additionalProperties: false,
 } as const;
 
-const SYSTEM_PROMPT = "คุณคือไมโล ผู้ช่วยภาษาไทย อ่านภาพใบนัด ตาราง สลิปโอนเงิน และใบเสร็จอย่างระมัดระวัง คืน JSON ตาม schema เท่านั้น ห้ามเดาหรือแต่งข้อความ/ตัวเลขที่อ่านไม่ชัด สำหรับสลิปให้ใช้ยอดโอนจริง ไม่ใช้ยอดคงเหลือหรือค่าธรรมเนียม สำหรับใบเสร็จ POS ให้ตรวจตั้งแต่หัวใบเสร็จถึงท้ายใบ: merchant ต้องเป็นชื่อร้านจริงเท่านั้น, receiptNumber ต้องอ่านจากเลขที่ใบเสร็จ, dateText/timeText ต้องมาจากวันที่และเวลาที่พิมพ์บนเอกสาร, paymentMethod ให้อ่านจากเงินสด/QR/บัตร/โอนเงิน และ lineItems ต้องถอดทุกรายการในตารางสินค้าเท่าที่อ่านได้ โดยเก็บชื่อสินค้า จำนวน และยอดของแถวนั้น ไม่เอาหัวตาราง ยอดรวม เงินสด เงินทอน หรือ footer มาเป็นสินค้า สำหรับยอด amount ให้ใช้ยอดที่จ่ายจริงหลังส่วนลดหรือสิทธิช่วยเหลือ โดยให้ความสำคัญกับ จำนวนเงินที่ชำระ, ยอดที่ชำระ, ยอดสุทธิ, ทั้งหมด, Grand Total มากกว่าค่าสินค้า/บริการก่อนส่วนลด หากวันที่อ่านได้แน่ชัดให้ส่ง dateText รูปแบบ YYYY-MM-DD มิฉะนั้นเป็นสตริงว่าง สำหรับค่าใช้จ่ายให้เลือก category ภาษาไทยจาก อาหาร, เดินทาง, ค่าสาธารณูปโภค, สุขภาพ, การศึกษา, บันเทิง, ช้อปปิ้ง, ท่องเที่ยว, ทั่วไป หากไม่พบข้อมูลที่บันทึกได้ให้ใช้ kind=unknown และ amount=0";
+const SYSTEM_PROMPT = "คุณคือไมโล ผู้ช่วยภาษาไทย อ่านภาพใบนัด ตาราง สลิปโอนเงิน และใบเสร็จอย่างระมัดระวัง คืน JSON ตาม schema เท่านั้น ห้ามเดาหรือแต่งข้อความ/ตัวเลขที่อ่านไม่ชัด สำหรับสลิปให้ใช้ยอดโอนจริง ไม่ใช้ยอดคงเหลือหรือค่าธรรมเนียม สำหรับใบเสร็จ POS ให้ตรวจตั้งแต่หัวใบเสร็จถึงท้ายใบ: merchant ต้องเป็นชื่อร้านจริงที่พิมพ์ข้างโลโก้หรือข้อมูลร้านเท่านั้น (เช่น INDI Coffee) ห้ามใช้หัวข้อสถานะ รหัส Wallet เลขอ้างอิง หรือข้อความที่มีอักขระเพี้ยน, receiptNumber ต้องอ่านจากเลขที่ใบเสร็จ, dateText/timeText ต้องมาจากวันที่และเวลาที่พิมพ์บนเอกสาร, paymentMethod ให้อ่านจากเงินสด/QR/บัตร/โอนเงิน และ lineItems ต้องถอดทุกรายการในตารางสินค้าเท่าที่อ่านได้ โดยเก็บชื่อสินค้า จำนวน และยอดของแถวนั้น ไม่เอาหัวตาราง ยอดรวม เงินสด เงินทอน หรือ footer มาเป็นสินค้า สำหรับยอด amount ให้ใช้ยอดที่จ่ายจริงหลังส่วนลดหรือสิทธิช่วยเหลือ โดยให้ความสำคัญกับ จำนวนเงินที่ชำระ, ยอดที่ชำระ, ยอดสุทธิ, ทั้งหมด, Grand Total มากกว่าค่าสินค้า/บริการก่อนส่วนลด หากวันที่อ่านได้แน่ชัดให้ส่ง dateText รูปแบบ YYYY-MM-DD มิฉะนั้นเป็นสตริงว่าง สำหรับค่าใช้จ่ายให้เลือก category ภาษาไทยจาก อาหาร, เดินทาง, ค่าสาธารณูปโภค, สุขภาพ, การศึกษา, บันเทิง, ช้อปปิ้ง, ท่องเที่ยว, ทั่วไป หากไม่พบข้อมูลที่บันทึกได้ให้ใช้ kind=unknown และ amount=0";
 const USER_PROMPT = "วิเคราะห์ภาพเพื่อหาใบนัดหรือธุรกรรมค่าใช้จ่ายจากสลิป/ใบเสร็จ โดยเสนอข้อมูลเพื่อให้ผู้ใช้ยืนยันก่อนบันทึกเท่านั้น";
 const RECEIPT_DETAIL_PROMPT = "ตรวจใบเสร็จนี้ซ้ำแบบละเอียดเหมือนผู้ตรวจเอกสาร POS: อ่านชื่อร้านจากหัวเอกสาร, เลขที่ใบเสร็จ, ประเภทการซื้อ, พนักงานถ้ามี, วันที่/เวลา, วิธีชำระ, ยอดทั้งหมดที่จ่ายจริง และถอดรายการสินค้าในตารางให้ครบทุกแถวที่มองเห็น โดย lineItems แต่ละรายการควรมีชื่อสินค้า ×จำนวน ยอดบาท ห้ามเอา Qty/ราคา/ยอดรวม/ทั้งหมด/เงินสด/Powered by มาเป็นสินค้า ถ้าตัวอักษรแถวใดอ่านไม่ชัดให้เว้นส่วนนั้นแทนการเดา";
 
@@ -260,7 +260,7 @@ function receiptNeedsDetailRepair(analysis: ImageAnalysis) {
   const proposal = analysis.proposals[0];
   if (!proposal || proposal.documentType !== "receipt" || proposal.kind !== "expense" || proposal.amount <= 0) return false;
   const merchant = normalizeThaiMerchantName(proposal.merchant);
-  const merchantLooksOperational = !merchant || /^(?:ประเภท|พนักงาน|เวลา|วันที่|สินค้า|qty|ราคา|รวม)/i.test(merchant);
+  const merchantLooksOperational = !isPlausibleReceiptMerchant(merchant) || /^(?:ประเภท|พนักงาน|เวลา|วันที่|สินค้า|qty|ราคา|รวม)/i.test(merchant);
   return merchantLooksOperational || !proposal.lineItems?.length || proposal.lineItems.length < 2 || !proposal.receiptNumber;
 }
 
@@ -284,15 +284,6 @@ async function refineReceiptDetails(analysis: ImageAnalysis, dataUrl: string, ga
   }
 }
 
-function merchantQuality(value: string) {
-  const candidate = normalizeThaiMerchantName(value);
-  if (!candidate) return -100;
-  let score = Math.min(candidate.length, 80);
-  if (/(ค่าสินค้า|บริการ|จำนวนเงิน|ยอด|ส่วนลด|สิทธิ|บาท|ค่าธรรมเนียม)/i.test(candidate)) score -= 80;
-  if (/ร้าน|บจก|บริษัท|หจก|cj\b|cafe|amazon|อเมซอน/i.test(candidate)) score += 20;
-  return score;
-}
-
 export function mergeImageAnalyses(primary: ImageAnalysis, ocr: ImageAnalysis): ImageAnalysis {
   const p = primary.proposals[0];
   const o = ocr.proposals[0];
@@ -302,9 +293,9 @@ export function mergeImageAnalyses(primary: ImageAnalysis, ocr: ImageAnalysis): 
   const documentType = p.documentType !== "unknown" ? p.documentType : o.documentType;
   const preferOcrAmount = o.amount > 0 && (p.amount <= 0 || (documentType === "receipt" && o.amount !== p.amount));
   const amount = preferOcrAmount ? o.amount : (p.amount || o.amount);
-  const primaryMerchant = normalizeThaiMerchantName(p.merchant);
-  const ocrMerchant = normalizeThaiMerchantName(o.merchant);
-  const merchant = merchantQuality(ocrMerchant) >= merchantQuality(primaryMerchant) ? ocrMerchant : primaryMerchant;
+  const primaryMerchant = isPlausibleReceiptMerchant(p.merchant) ? normalizeThaiMerchantName(p.merchant) : "";
+  const ocrMerchant = isPlausibleReceiptMerchant(o.merchant) ? normalizeThaiMerchantName(o.merchant) : "";
+  const merchant = receiptMerchantQuality(ocrMerchant) >= receiptMerchantQuality(primaryMerchant) ? ocrMerchant : primaryMerchant;
 
   const merged: ImageProposal = {
     ...p,
@@ -330,6 +321,16 @@ export function mergeImageAnalyses(primary: ImageAnalysis, ocr: ImageAnalysis): 
     : primary.summary || ocr.summary;
 
   return { summary, confidence: Math.max(primary.confidence, ocr.confidence), proposals: [merged, ...primary.proposals.slice(1)] };
+}
+
+function sanitizeAnalysisMerchants(analysis: ImageAnalysis): ImageAnalysis {
+  return {
+    ...analysis,
+    proposals: analysis.proposals.map(proposal => ({
+      ...proposal,
+      merchant: isPlausibleReceiptMerchant(proposal.merchant) ? normalizeThaiMerchantName(proposal.merchant) : "",
+    })),
+  };
 }
 
 export async function analyzeImage(dataUrl: string, options: { gatewayToken?: string } = {}): Promise<ImageAnalysis> {
@@ -388,7 +389,7 @@ export async function analyzeImage(dataUrl: string, options: { gatewayToken?: st
         }
       }
       if (gatewayKey) selected = await refineReceiptDetails(selected, dataUrl, gatewayKey);
-      return selected;
+      return sanitizeAnalysisMerchants(selected);
     }
 
     const score = (analysis: ImageAnalysis) => analysis.proposals.reduce((total, item) => total
@@ -423,10 +424,13 @@ export async function analyzeImage(dataUrl: string, options: { gatewayToken?: st
     }
 
     if (gatewayKey) selected = await refineReceiptDetails(selected, dataUrl, gatewayKey);
-    return selected;
+    return sanitizeAnalysisMerchants(selected);
   } catch (ocrError) {
     console.error("[Milo Image] OCR fallback failed", { error: ocrError instanceof Error ? ocrError.message : "unknown" });
-    if (providerAnalysis) return gatewayKey ? refineReceiptDetails(providerAnalysis, dataUrl, gatewayKey) : providerAnalysis;
+    if (providerAnalysis) {
+      const fallback = gatewayKey ? await refineReceiptDetails(providerAnalysis, dataUrl, gatewayKey) : providerAnalysis;
+      return sanitizeAnalysisMerchants(fallback);
+    }
     if (providerError) {
       const providerMessage = providerError instanceof Error ? providerError.message : "unknown provider error";
       const ocrMessage = ocrError instanceof Error ? ocrError.message : "unknown OCR error";

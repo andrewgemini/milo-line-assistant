@@ -167,6 +167,31 @@ export function normalizeThaiMerchantName(value: string) {
   return compact(cleaned);
 }
 
+export function receiptMerchantQuality(value: string) {
+  const candidate = normalizeThaiMerchantName(value);
+  if (!candidate) return -100;
+  if (/^(?:การทำรายการสำเร็จ|ทำรายการสำเร็จ|ชำระเงินสำเร็จ|โอนเงินสำเร็จ|ใบเสร็จ|receipt|g[\s-]*wallet|wallet\s*id|อาหาร(?:\s+ของหวาน)?(?:\s+เครื่อง(?:ดื่ม|คื่ม))?|ประเภท|ชื่อ?พนักงาน|พนักงาน|เวลา|วันที่|เลขที่|ค่าสินค้า|จำนวนเงิน|ยอด|สิทธิ|ส่วนลด)/i.test(candidate)) return -100;
+  if (/(?:ค่าสินค้า|บริการ|จำนวนเงิน|ยอด|ส่วนลด|สิทธิ|บาท|ค่าธรรมเนียม)/i.test(candidate)) return -80;
+
+  const letters = candidate.match(/[A-Za-zก-๙]/g)?.length ?? 0;
+  if (letters < 2) return -100;
+  const tokens = candidate.split(/\s+/).filter(Boolean);
+  const oneCharacterTokens = tokens.filter(token => /^[A-Za-zก-๙0-9]$/.test(token.replace(/[^A-Za-zก-๙0-9]/g, ""))).length;
+  const symbols = candidate.match(/[%@#^*_+=<>?]/g)?.length ?? 0;
+  if (symbols > 0 && oneCharacterTokens >= 2) return -90;
+  if (tokens.length >= 3 && oneCharacterTokens >= Math.ceil(tokens.length / 2)) return -90;
+
+  let score = Math.min(letters, 60);
+  if (/(?:coffee|cafe|คาเฟ่|กาแฟ|ร้าน|restaurant|bistro|bakery|market|mart|บจก\.?|บริษัท|หจก\.?|cj\b|amazon|อเมซอน)/i.test(candidate)) score += 35;
+  if (/^[A-Z][A-Za-z0-9&.'-]*(?:\s+[A-Z][A-Za-z0-9&.'-]*)+$/i.test(candidate)) score += 10;
+  if (symbols > 0) score -= symbols * 12;
+  return score;
+}
+
+export function isPlausibleReceiptMerchant(value: string) {
+  return receiptMerchantQuality(value) > 0;
+}
+
 function cleanMerchant(value: string) {
   return normalizeThaiMerchantName(value);
 }
@@ -195,22 +220,20 @@ export function extractKbankMerchant(text: string) {
 
 export function extractReceiptMerchant(text: string) {
   const lines = text.split(/\n+/).map(compact).filter(Boolean);
-  const cleanedLines = lines.map(cleanMerchant);
-  const candidate = cleanedLines.find(line => /^(?:ร้าน|บจก\.?|หจก\.?|บริษัท|cj\b|cafe\b)/i.test(line)
-    && !/(ค่าสินค้า|ยอด|จำนวนเงิน|ส่วนลด|สิทธิ|บาท|ค่าธรรมเนียม)/i.test(line));
-  if (candidate) return candidate.trim().slice(0, 180);
+  const candidates = lines.slice(0, 16).map((raw, index) => {
+    const line = cleanMerchant(raw);
+    if (!line || line.length < 2 || line.length > 100) return { line: "", score: -1000 };
+    if (/^(?:การทำรายการสำเร็จ|ทำรายการสำเร็จ|ชำระเงินสำเร็จ|โอนเงินสำเร็จ|ใบเสร็จ|receipt|โทรศัพท์|โทร|tel|เลขที่|ประเภท|ชื่อ?พนักงาน|พนักงาน|เวลา|วันที่|โต๊ะ|table|สินค้า|qty|ราคา|รวม|ทั้งหมด|เงินสด|g[\s-]*wallet|wallet\s*id|อาหาร(?:\s+ของหวาน)?(?:\s+เครื่อง(?:ดื่ม|คื่ม))?)/i.test(line)) return { line: "", score: -1000 };
+    if (/(?:\d{2,}[-./]){1,2}\d{2,4}|\b0\d{8,9}\b/i.test(line)) return { line: "", score: -1000 };
+    if (/\s+\d{1,3}\s+\d{1,8}(?:[,.]\d{1,2})?\s*$/.test(line)) return { line: "", score: -1000 };
 
-  // Many restaurant/POS receipts print only a brand name at the very top
-  // (without a ร้าน/บริษัท prefix). Prefer a short header-like line, but reject
-  // receipt labels, phone numbers, dates, operational fields and item-table text.
-  const fallback = lines.slice(0, 8).map(cleanMerchant).find(line => {
-    if (!line || line.length < 2 || line.length > 80) return false;
-    if (!/[A-Za-zก-๙]/.test(line)) return false;
-    if (/^(?:ใบเสร็จ|receipt|โทรศัพท์|โทร|tel|เลขที่|ประเภท|ชื่อ?พนักงาน|พนักงาน|เวลา|วันที่|โต๊ะ|table|สินค้า|qty|ราคา|รวม|ทั้งหมด|เงินสด)/i.test(line)) return false;
-    if (/(?:\d{2,}[-./]){1,2}\d{2,4}|\b0\d{8,9}\b/i.test(line)) return false;
-    return true;
-  });
-  return (fallback || "").trim().slice(0, 180);
+    let score = receiptMerchantQuality(line) - index * 0.5;
+    if (/(?:coffee|cafe|คาเฟ่|กาแฟ|restaurant|bistro|bakery|ร้าน|บจก\.?|หจก\.?|บริษัท|cj\b)/i.test(line)) score += 60;
+    return { line, score };
+  }).filter(item => item.line && item.score > 0);
+
+  candidates.sort((a, b) => b.score - a.score);
+  return (candidates[0]?.line || "").trim().slice(0, 180);
 }
 
 export function extractReceiptNumber(text: string) {
@@ -323,7 +346,9 @@ export function enrichThaiReceiptProposal(text: string, proposal: ImageProposal)
     ...proposal,
     documentType,
     amount: payable > 0 ? payable : proposal.amount,
-    merchant: merchant || normalizeThaiMerchantName(proposal.merchant),
+    merchant: receiptMerchantQuality(merchant) >= receiptMerchantQuality(proposal.merchant)
+      ? (isPlausibleReceiptMerchant(merchant) ? normalizeThaiMerchantName(merchant) : "")
+      : (isPlausibleReceiptMerchant(proposal.merchant) ? normalizeThaiMerchantName(proposal.merchant) : ""),
     dateText: proposal.dateText || dateTime.dateText,
     timeText: proposal.timeText || dateTime.timeText,
     receiptNumber: proposal.receiptNumber || receiptNumber,

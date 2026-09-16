@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { enrichThaiReceiptProposal, extractKbankMerchant, extractReceiptLineItems, extractReceiptNumber, extractReceiptPaymentMethod, extractThaiPayableAmount, extractThaiSlipDateTime, normalizeThaiMerchantName } from "./thaiReceiptParser";
+import { enrichThaiReceiptProposal, extractKbankMerchant, extractReceiptLineItems, extractReceiptMerchant, extractReceiptNumber, extractReceiptPaymentMethod, extractThaiPayableAmount, extractThaiSlipDateTime, normalizeThaiMerchantName, receiptMerchantQuality } from "./thaiReceiptParser";
 import type { ImageProposal } from "./imageAnalysis";
 
 const baseProposal: ImageProposal = {
@@ -141,6 +141,32 @@ Powered by Ocha
       "ต้มแซ่บกระดูกอ่อน ×1 80 บาท",
       "ข้าวเหนียว ×2 20 บาท",
     ]);
+  });
+
+  it("prefers the real coffee shop on a welfare wallet receipt and rejects OCR garbage", () => {
+    const text = `
+การทำรายการสำเร็จ
+16 ก.ย. 2569 10:34 น.
+G-Wallet ID: **** **** 2310
+INDI Coffee
+อาหาร ของหวาน เครื่องดื่ม
+ค่าสินค้า/บริการ 40 บาท
+สิทธิไทยช่วยไทยพลัส -24 บาท
+จำนวนเงินที่ชำระ 16 บาท
+`;
+    expect(receiptMerchantQuality("ะ ภ% 7 oo WAT")).toBeLessThan(0);
+    expect(extractReceiptMerchant(text)).toBe("INDI Coffee");
+    expect(enrichThaiReceiptProposal(text, {
+      ...baseProposal,
+      documentType: "receipt",
+      merchant: "ะ ภ% 7 oo WAT",
+      amount: 40,
+    })).toMatchObject({
+      merchant: "INDI Coffee",
+      amount: 16,
+      dateText: "2026-09-16",
+      timeText: "10:34",
+    });
   });
 
   it("uses the actual paid amount after a welfare subsidy instead of the gross service amount", () => {

@@ -4520,6 +4520,27 @@ function normalizeThaiMerchantName(value) {
   }
   return compact(cleaned);
 }
+function receiptMerchantQuality(value) {
+  const candidate = normalizeThaiMerchantName(value);
+  if (!candidate) return -100;
+  if (/^(?:การทำรายการสำเร็จ|ทำรายการสำเร็จ|ชำระเงินสำเร็จ|โอนเงินสำเร็จ|ใบเสร็จ|receipt|g[\s-]*wallet|wallet\s*id|อาหาร(?:\s+ของหวาน)?(?:\s+เครื่อง(?:ดื่ม|คื่ม))?|ประเภท|ชื่อ?พนักงาน|พนักงาน|เวลา|วันที่|เลขที่|ค่าสินค้า|จำนวนเงิน|ยอด|สิทธิ|ส่วนลด)/i.test(candidate)) return -100;
+  if (/(?:ค่าสินค้า|บริการ|จำนวนเงิน|ยอด|ส่วนลด|สิทธิ|บาท|ค่าธรรมเนียม)/i.test(candidate)) return -80;
+  const letters = candidate.match(/[A-Za-zก-๙]/g)?.length ?? 0;
+  if (letters < 2) return -100;
+  const tokens = candidate.split(/\s+/).filter(Boolean);
+  const oneCharacterTokens = tokens.filter((token) => /^[A-Za-zก-๙0-9]$/.test(token.replace(/[^A-Za-zก-๙0-9]/g, ""))).length;
+  const symbols = candidate.match(/[%@#^*_+=<>?]/g)?.length ?? 0;
+  if (symbols > 0 && oneCharacterTokens >= 2) return -90;
+  if (tokens.length >= 3 && oneCharacterTokens >= Math.ceil(tokens.length / 2)) return -90;
+  let score = Math.min(letters, 60);
+  if (/(?:coffee|cafe|คาเฟ่|กาแฟ|ร้าน|restaurant|bistro|bakery|market|mart|บจก\.?|บริษัท|หจก\.?|cj\b|amazon|อเมซอน)/i.test(candidate)) score += 35;
+  if (/^[A-Z][A-Za-z0-9&.'-]*(?:\s+[A-Z][A-Za-z0-9&.'-]*)+$/i.test(candidate)) score += 10;
+  if (symbols > 0) score -= symbols * 12;
+  return score;
+}
+function isPlausibleReceiptMerchant(value) {
+  return receiptMerchantQuality(value) > 0;
+}
 function cleanMerchant(value) {
   return normalizeThaiMerchantName(value);
 }
@@ -4544,17 +4565,18 @@ function extractKbankMerchant(text2) {
 }
 function extractReceiptMerchant(text2) {
   const lines = text2.split(/\n+/).map(compact).filter(Boolean);
-  const cleanedLines = lines.map(cleanMerchant);
-  const candidate = cleanedLines.find((line) => /^(?:ร้าน|บจก\.?|หจก\.?|บริษัท|cj\b|cafe\b)/i.test(line) && !/(ค่าสินค้า|ยอด|จำนวนเงิน|ส่วนลด|สิทธิ|บาท|ค่าธรรมเนียม)/i.test(line));
-  if (candidate) return candidate.trim().slice(0, 180);
-  const fallback = lines.slice(0, 8).map(cleanMerchant).find((line) => {
-    if (!line || line.length < 2 || line.length > 80) return false;
-    if (!/[A-Za-zก-๙]/.test(line)) return false;
-    if (/^(?:ใบเสร็จ|receipt|โทรศัพท์|โทร|tel|เลขที่|ประเภท|ชื่อ?พนักงาน|พนักงาน|เวลา|วันที่|โต๊ะ|table|สินค้า|qty|ราคา|รวม|ทั้งหมด|เงินสด)/i.test(line)) return false;
-    if (/(?:\d{2,}[-./]){1,2}\d{2,4}|\b0\d{8,9}\b/i.test(line)) return false;
-    return true;
-  });
-  return (fallback || "").trim().slice(0, 180);
+  const candidates = lines.slice(0, 16).map((raw, index2) => {
+    const line = cleanMerchant(raw);
+    if (!line || line.length < 2 || line.length > 100) return { line: "", score: -1e3 };
+    if (/^(?:การทำรายการสำเร็จ|ทำรายการสำเร็จ|ชำระเงินสำเร็จ|โอนเงินสำเร็จ|ใบเสร็จ|receipt|โทรศัพท์|โทร|tel|เลขที่|ประเภท|ชื่อ?พนักงาน|พนักงาน|เวลา|วันที่|โต๊ะ|table|สินค้า|qty|ราคา|รวม|ทั้งหมด|เงินสด|g[\s-]*wallet|wallet\s*id|อาหาร(?:\s+ของหวาน)?(?:\s+เครื่อง(?:ดื่ม|คื่ม))?)/i.test(line)) return { line: "", score: -1e3 };
+    if (/(?:\d{2,}[-./]){1,2}\d{2,4}|\b0\d{8,9}\b/i.test(line)) return { line: "", score: -1e3 };
+    if (/\s+\d{1,3}\s+\d{1,8}(?:[,.]\d{1,2})?\s*$/.test(line)) return { line: "", score: -1e3 };
+    let score = receiptMerchantQuality(line) - index2 * 0.5;
+    if (/(?:coffee|cafe|คาเฟ่|กาแฟ|restaurant|bistro|bakery|ร้าน|บจก\.?|หจก\.?|บริษัท|cj\b)/i.test(line)) score += 60;
+    return { line, score };
+  }).filter((item) => item.line && item.score > 0);
+  candidates.sort((a, b) => b.score - a.score);
+  return (candidates[0]?.line || "").trim().slice(0, 180);
 }
 function extractReceiptNumber(text2) {
   const lines = text2.split(/\n+/).map(compact).filter(Boolean);
@@ -4646,7 +4668,7 @@ function enrichThaiReceiptProposal(text2, proposal) {
     ...proposal,
     documentType,
     amount: payable > 0 ? payable : proposal.amount,
-    merchant: merchant || normalizeThaiMerchantName(proposal.merchant),
+    merchant: receiptMerchantQuality(merchant) >= receiptMerchantQuality(proposal.merchant) ? isPlausibleReceiptMerchant(merchant) ? normalizeThaiMerchantName(merchant) : "" : isPlausibleReceiptMerchant(proposal.merchant) ? normalizeThaiMerchantName(proposal.merchant) : "",
     dateText: proposal.dateText || dateTime.dateText,
     timeText: proposal.timeText || dateTime.timeText,
     receiptNumber: proposal.receiptNumber || receiptNumber,
@@ -4979,7 +5001,7 @@ var schema2 = {
   required: ["summary", "confidence", "proposals"],
   additionalProperties: false
 };
-var SYSTEM_PROMPT = "\u0E04\u0E38\u0E13\u0E04\u0E37\u0E2D\u0E44\u0E21\u0E42\u0E25 \u0E1C\u0E39\u0E49\u0E0A\u0E48\u0E27\u0E22\u0E20\u0E32\u0E29\u0E32\u0E44\u0E17\u0E22 \u0E2D\u0E48\u0E32\u0E19\u0E20\u0E32\u0E1E\u0E43\u0E1A\u0E19\u0E31\u0E14 \u0E15\u0E32\u0E23\u0E32\u0E07 \u0E2A\u0E25\u0E34\u0E1B\u0E42\u0E2D\u0E19\u0E40\u0E07\u0E34\u0E19 \u0E41\u0E25\u0E30\u0E43\u0E1A\u0E40\u0E2A\u0E23\u0E47\u0E08\u0E2D\u0E22\u0E48\u0E32\u0E07\u0E23\u0E30\u0E21\u0E31\u0E14\u0E23\u0E30\u0E27\u0E31\u0E07 \u0E04\u0E37\u0E19 JSON \u0E15\u0E32\u0E21 schema \u0E40\u0E17\u0E48\u0E32\u0E19\u0E31\u0E49\u0E19 \u0E2B\u0E49\u0E32\u0E21\u0E40\u0E14\u0E32\u0E2B\u0E23\u0E37\u0E2D\u0E41\u0E15\u0E48\u0E07\u0E02\u0E49\u0E2D\u0E04\u0E27\u0E32\u0E21/\u0E15\u0E31\u0E27\u0E40\u0E25\u0E02\u0E17\u0E35\u0E48\u0E2D\u0E48\u0E32\u0E19\u0E44\u0E21\u0E48\u0E0A\u0E31\u0E14 \u0E2A\u0E33\u0E2B\u0E23\u0E31\u0E1A\u0E2A\u0E25\u0E34\u0E1B\u0E43\u0E2B\u0E49\u0E43\u0E0A\u0E49\u0E22\u0E2D\u0E14\u0E42\u0E2D\u0E19\u0E08\u0E23\u0E34\u0E07 \u0E44\u0E21\u0E48\u0E43\u0E0A\u0E49\u0E22\u0E2D\u0E14\u0E04\u0E07\u0E40\u0E2B\u0E25\u0E37\u0E2D\u0E2B\u0E23\u0E37\u0E2D\u0E04\u0E48\u0E32\u0E18\u0E23\u0E23\u0E21\u0E40\u0E19\u0E35\u0E22\u0E21 \u0E2A\u0E33\u0E2B\u0E23\u0E31\u0E1A\u0E43\u0E1A\u0E40\u0E2A\u0E23\u0E47\u0E08 POS \u0E43\u0E2B\u0E49\u0E15\u0E23\u0E27\u0E08\u0E15\u0E31\u0E49\u0E07\u0E41\u0E15\u0E48\u0E2B\u0E31\u0E27\u0E43\u0E1A\u0E40\u0E2A\u0E23\u0E47\u0E08\u0E16\u0E36\u0E07\u0E17\u0E49\u0E32\u0E22\u0E43\u0E1A: merchant \u0E15\u0E49\u0E2D\u0E07\u0E40\u0E1B\u0E47\u0E19\u0E0A\u0E37\u0E48\u0E2D\u0E23\u0E49\u0E32\u0E19\u0E08\u0E23\u0E34\u0E07\u0E40\u0E17\u0E48\u0E32\u0E19\u0E31\u0E49\u0E19, receiptNumber \u0E15\u0E49\u0E2D\u0E07\u0E2D\u0E48\u0E32\u0E19\u0E08\u0E32\u0E01\u0E40\u0E25\u0E02\u0E17\u0E35\u0E48\u0E43\u0E1A\u0E40\u0E2A\u0E23\u0E47\u0E08, dateText/timeText \u0E15\u0E49\u0E2D\u0E07\u0E21\u0E32\u0E08\u0E32\u0E01\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48\u0E41\u0E25\u0E30\u0E40\u0E27\u0E25\u0E32\u0E17\u0E35\u0E48\u0E1E\u0E34\u0E21\u0E1E\u0E4C\u0E1A\u0E19\u0E40\u0E2D\u0E01\u0E2A\u0E32\u0E23, paymentMethod \u0E43\u0E2B\u0E49\u0E2D\u0E48\u0E32\u0E19\u0E08\u0E32\u0E01\u0E40\u0E07\u0E34\u0E19\u0E2A\u0E14/QR/\u0E1A\u0E31\u0E15\u0E23/\u0E42\u0E2D\u0E19\u0E40\u0E07\u0E34\u0E19 \u0E41\u0E25\u0E30 lineItems \u0E15\u0E49\u0E2D\u0E07\u0E16\u0E2D\u0E14\u0E17\u0E38\u0E01\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E43\u0E19\u0E15\u0E32\u0E23\u0E32\u0E07\u0E2A\u0E34\u0E19\u0E04\u0E49\u0E32\u0E40\u0E17\u0E48\u0E32\u0E17\u0E35\u0E48\u0E2D\u0E48\u0E32\u0E19\u0E44\u0E14\u0E49 \u0E42\u0E14\u0E22\u0E40\u0E01\u0E47\u0E1A\u0E0A\u0E37\u0E48\u0E2D\u0E2A\u0E34\u0E19\u0E04\u0E49\u0E32 \u0E08\u0E33\u0E19\u0E27\u0E19 \u0E41\u0E25\u0E30\u0E22\u0E2D\u0E14\u0E02\u0E2D\u0E07\u0E41\u0E16\u0E27\u0E19\u0E31\u0E49\u0E19 \u0E44\u0E21\u0E48\u0E40\u0E2D\u0E32\u0E2B\u0E31\u0E27\u0E15\u0E32\u0E23\u0E32\u0E07 \u0E22\u0E2D\u0E14\u0E23\u0E27\u0E21 \u0E40\u0E07\u0E34\u0E19\u0E2A\u0E14 \u0E40\u0E07\u0E34\u0E19\u0E17\u0E2D\u0E19 \u0E2B\u0E23\u0E37\u0E2D footer \u0E21\u0E32\u0E40\u0E1B\u0E47\u0E19\u0E2A\u0E34\u0E19\u0E04\u0E49\u0E32 \u0E2A\u0E33\u0E2B\u0E23\u0E31\u0E1A\u0E22\u0E2D\u0E14 amount \u0E43\u0E2B\u0E49\u0E43\u0E0A\u0E49\u0E22\u0E2D\u0E14\u0E17\u0E35\u0E48\u0E08\u0E48\u0E32\u0E22\u0E08\u0E23\u0E34\u0E07\u0E2B\u0E25\u0E31\u0E07\u0E2A\u0E48\u0E27\u0E19\u0E25\u0E14\u0E2B\u0E23\u0E37\u0E2D\u0E2A\u0E34\u0E17\u0E18\u0E34\u0E0A\u0E48\u0E27\u0E22\u0E40\u0E2B\u0E25\u0E37\u0E2D \u0E42\u0E14\u0E22\u0E43\u0E2B\u0E49\u0E04\u0E27\u0E32\u0E21\u0E2A\u0E33\u0E04\u0E31\u0E0D\u0E01\u0E31\u0E1A \u0E08\u0E33\u0E19\u0E27\u0E19\u0E40\u0E07\u0E34\u0E19\u0E17\u0E35\u0E48\u0E0A\u0E33\u0E23\u0E30, \u0E22\u0E2D\u0E14\u0E17\u0E35\u0E48\u0E0A\u0E33\u0E23\u0E30, \u0E22\u0E2D\u0E14\u0E2A\u0E38\u0E17\u0E18\u0E34, \u0E17\u0E31\u0E49\u0E07\u0E2B\u0E21\u0E14, Grand Total \u0E21\u0E32\u0E01\u0E01\u0E27\u0E48\u0E32\u0E04\u0E48\u0E32\u0E2A\u0E34\u0E19\u0E04\u0E49\u0E32/\u0E1A\u0E23\u0E34\u0E01\u0E32\u0E23\u0E01\u0E48\u0E2D\u0E19\u0E2A\u0E48\u0E27\u0E19\u0E25\u0E14 \u0E2B\u0E32\u0E01\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48\u0E2D\u0E48\u0E32\u0E19\u0E44\u0E14\u0E49\u0E41\u0E19\u0E48\u0E0A\u0E31\u0E14\u0E43\u0E2B\u0E49\u0E2A\u0E48\u0E07 dateText \u0E23\u0E39\u0E1B\u0E41\u0E1A\u0E1A YYYY-MM-DD \u0E21\u0E34\u0E09\u0E30\u0E19\u0E31\u0E49\u0E19\u0E40\u0E1B\u0E47\u0E19\u0E2A\u0E15\u0E23\u0E34\u0E07\u0E27\u0E48\u0E32\u0E07 \u0E2A\u0E33\u0E2B\u0E23\u0E31\u0E1A\u0E04\u0E48\u0E32\u0E43\u0E0A\u0E49\u0E08\u0E48\u0E32\u0E22\u0E43\u0E2B\u0E49\u0E40\u0E25\u0E37\u0E2D\u0E01 category \u0E20\u0E32\u0E29\u0E32\u0E44\u0E17\u0E22\u0E08\u0E32\u0E01 \u0E2D\u0E32\u0E2B\u0E32\u0E23, \u0E40\u0E14\u0E34\u0E19\u0E17\u0E32\u0E07, \u0E04\u0E48\u0E32\u0E2A\u0E32\u0E18\u0E32\u0E23\u0E13\u0E39\u0E1B\u0E42\u0E20\u0E04, \u0E2A\u0E38\u0E02\u0E20\u0E32\u0E1E, \u0E01\u0E32\u0E23\u0E28\u0E36\u0E01\u0E29\u0E32, \u0E1A\u0E31\u0E19\u0E40\u0E17\u0E34\u0E07, \u0E0A\u0E49\u0E2D\u0E1B\u0E1B\u0E34\u0E49\u0E07, \u0E17\u0E48\u0E2D\u0E07\u0E40\u0E17\u0E35\u0E48\u0E22\u0E27, \u0E17\u0E31\u0E48\u0E27\u0E44\u0E1B \u0E2B\u0E32\u0E01\u0E44\u0E21\u0E48\u0E1E\u0E1A\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E17\u0E35\u0E48\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E44\u0E14\u0E49\u0E43\u0E2B\u0E49\u0E43\u0E0A\u0E49 kind=unknown \u0E41\u0E25\u0E30 amount=0";
+var SYSTEM_PROMPT = "\u0E04\u0E38\u0E13\u0E04\u0E37\u0E2D\u0E44\u0E21\u0E42\u0E25 \u0E1C\u0E39\u0E49\u0E0A\u0E48\u0E27\u0E22\u0E20\u0E32\u0E29\u0E32\u0E44\u0E17\u0E22 \u0E2D\u0E48\u0E32\u0E19\u0E20\u0E32\u0E1E\u0E43\u0E1A\u0E19\u0E31\u0E14 \u0E15\u0E32\u0E23\u0E32\u0E07 \u0E2A\u0E25\u0E34\u0E1B\u0E42\u0E2D\u0E19\u0E40\u0E07\u0E34\u0E19 \u0E41\u0E25\u0E30\u0E43\u0E1A\u0E40\u0E2A\u0E23\u0E47\u0E08\u0E2D\u0E22\u0E48\u0E32\u0E07\u0E23\u0E30\u0E21\u0E31\u0E14\u0E23\u0E30\u0E27\u0E31\u0E07 \u0E04\u0E37\u0E19 JSON \u0E15\u0E32\u0E21 schema \u0E40\u0E17\u0E48\u0E32\u0E19\u0E31\u0E49\u0E19 \u0E2B\u0E49\u0E32\u0E21\u0E40\u0E14\u0E32\u0E2B\u0E23\u0E37\u0E2D\u0E41\u0E15\u0E48\u0E07\u0E02\u0E49\u0E2D\u0E04\u0E27\u0E32\u0E21/\u0E15\u0E31\u0E27\u0E40\u0E25\u0E02\u0E17\u0E35\u0E48\u0E2D\u0E48\u0E32\u0E19\u0E44\u0E21\u0E48\u0E0A\u0E31\u0E14 \u0E2A\u0E33\u0E2B\u0E23\u0E31\u0E1A\u0E2A\u0E25\u0E34\u0E1B\u0E43\u0E2B\u0E49\u0E43\u0E0A\u0E49\u0E22\u0E2D\u0E14\u0E42\u0E2D\u0E19\u0E08\u0E23\u0E34\u0E07 \u0E44\u0E21\u0E48\u0E43\u0E0A\u0E49\u0E22\u0E2D\u0E14\u0E04\u0E07\u0E40\u0E2B\u0E25\u0E37\u0E2D\u0E2B\u0E23\u0E37\u0E2D\u0E04\u0E48\u0E32\u0E18\u0E23\u0E23\u0E21\u0E40\u0E19\u0E35\u0E22\u0E21 \u0E2A\u0E33\u0E2B\u0E23\u0E31\u0E1A\u0E43\u0E1A\u0E40\u0E2A\u0E23\u0E47\u0E08 POS \u0E43\u0E2B\u0E49\u0E15\u0E23\u0E27\u0E08\u0E15\u0E31\u0E49\u0E07\u0E41\u0E15\u0E48\u0E2B\u0E31\u0E27\u0E43\u0E1A\u0E40\u0E2A\u0E23\u0E47\u0E08\u0E16\u0E36\u0E07\u0E17\u0E49\u0E32\u0E22\u0E43\u0E1A: merchant \u0E15\u0E49\u0E2D\u0E07\u0E40\u0E1B\u0E47\u0E19\u0E0A\u0E37\u0E48\u0E2D\u0E23\u0E49\u0E32\u0E19\u0E08\u0E23\u0E34\u0E07\u0E17\u0E35\u0E48\u0E1E\u0E34\u0E21\u0E1E\u0E4C\u0E02\u0E49\u0E32\u0E07\u0E42\u0E25\u0E42\u0E01\u0E49\u0E2B\u0E23\u0E37\u0E2D\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E23\u0E49\u0E32\u0E19\u0E40\u0E17\u0E48\u0E32\u0E19\u0E31\u0E49\u0E19 (\u0E40\u0E0A\u0E48\u0E19 INDI Coffee) \u0E2B\u0E49\u0E32\u0E21\u0E43\u0E0A\u0E49\u0E2B\u0E31\u0E27\u0E02\u0E49\u0E2D\u0E2A\u0E16\u0E32\u0E19\u0E30 \u0E23\u0E2B\u0E31\u0E2A Wallet \u0E40\u0E25\u0E02\u0E2D\u0E49\u0E32\u0E07\u0E2D\u0E34\u0E07 \u0E2B\u0E23\u0E37\u0E2D\u0E02\u0E49\u0E2D\u0E04\u0E27\u0E32\u0E21\u0E17\u0E35\u0E48\u0E21\u0E35\u0E2D\u0E31\u0E01\u0E02\u0E23\u0E30\u0E40\u0E1E\u0E35\u0E49\u0E22\u0E19, receiptNumber \u0E15\u0E49\u0E2D\u0E07\u0E2D\u0E48\u0E32\u0E19\u0E08\u0E32\u0E01\u0E40\u0E25\u0E02\u0E17\u0E35\u0E48\u0E43\u0E1A\u0E40\u0E2A\u0E23\u0E47\u0E08, dateText/timeText \u0E15\u0E49\u0E2D\u0E07\u0E21\u0E32\u0E08\u0E32\u0E01\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48\u0E41\u0E25\u0E30\u0E40\u0E27\u0E25\u0E32\u0E17\u0E35\u0E48\u0E1E\u0E34\u0E21\u0E1E\u0E4C\u0E1A\u0E19\u0E40\u0E2D\u0E01\u0E2A\u0E32\u0E23, paymentMethod \u0E43\u0E2B\u0E49\u0E2D\u0E48\u0E32\u0E19\u0E08\u0E32\u0E01\u0E40\u0E07\u0E34\u0E19\u0E2A\u0E14/QR/\u0E1A\u0E31\u0E15\u0E23/\u0E42\u0E2D\u0E19\u0E40\u0E07\u0E34\u0E19 \u0E41\u0E25\u0E30 lineItems \u0E15\u0E49\u0E2D\u0E07\u0E16\u0E2D\u0E14\u0E17\u0E38\u0E01\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E43\u0E19\u0E15\u0E32\u0E23\u0E32\u0E07\u0E2A\u0E34\u0E19\u0E04\u0E49\u0E32\u0E40\u0E17\u0E48\u0E32\u0E17\u0E35\u0E48\u0E2D\u0E48\u0E32\u0E19\u0E44\u0E14\u0E49 \u0E42\u0E14\u0E22\u0E40\u0E01\u0E47\u0E1A\u0E0A\u0E37\u0E48\u0E2D\u0E2A\u0E34\u0E19\u0E04\u0E49\u0E32 \u0E08\u0E33\u0E19\u0E27\u0E19 \u0E41\u0E25\u0E30\u0E22\u0E2D\u0E14\u0E02\u0E2D\u0E07\u0E41\u0E16\u0E27\u0E19\u0E31\u0E49\u0E19 \u0E44\u0E21\u0E48\u0E40\u0E2D\u0E32\u0E2B\u0E31\u0E27\u0E15\u0E32\u0E23\u0E32\u0E07 \u0E22\u0E2D\u0E14\u0E23\u0E27\u0E21 \u0E40\u0E07\u0E34\u0E19\u0E2A\u0E14 \u0E40\u0E07\u0E34\u0E19\u0E17\u0E2D\u0E19 \u0E2B\u0E23\u0E37\u0E2D footer \u0E21\u0E32\u0E40\u0E1B\u0E47\u0E19\u0E2A\u0E34\u0E19\u0E04\u0E49\u0E32 \u0E2A\u0E33\u0E2B\u0E23\u0E31\u0E1A\u0E22\u0E2D\u0E14 amount \u0E43\u0E2B\u0E49\u0E43\u0E0A\u0E49\u0E22\u0E2D\u0E14\u0E17\u0E35\u0E48\u0E08\u0E48\u0E32\u0E22\u0E08\u0E23\u0E34\u0E07\u0E2B\u0E25\u0E31\u0E07\u0E2A\u0E48\u0E27\u0E19\u0E25\u0E14\u0E2B\u0E23\u0E37\u0E2D\u0E2A\u0E34\u0E17\u0E18\u0E34\u0E0A\u0E48\u0E27\u0E22\u0E40\u0E2B\u0E25\u0E37\u0E2D \u0E42\u0E14\u0E22\u0E43\u0E2B\u0E49\u0E04\u0E27\u0E32\u0E21\u0E2A\u0E33\u0E04\u0E31\u0E0D\u0E01\u0E31\u0E1A \u0E08\u0E33\u0E19\u0E27\u0E19\u0E40\u0E07\u0E34\u0E19\u0E17\u0E35\u0E48\u0E0A\u0E33\u0E23\u0E30, \u0E22\u0E2D\u0E14\u0E17\u0E35\u0E48\u0E0A\u0E33\u0E23\u0E30, \u0E22\u0E2D\u0E14\u0E2A\u0E38\u0E17\u0E18\u0E34, \u0E17\u0E31\u0E49\u0E07\u0E2B\u0E21\u0E14, Grand Total \u0E21\u0E32\u0E01\u0E01\u0E27\u0E48\u0E32\u0E04\u0E48\u0E32\u0E2A\u0E34\u0E19\u0E04\u0E49\u0E32/\u0E1A\u0E23\u0E34\u0E01\u0E32\u0E23\u0E01\u0E48\u0E2D\u0E19\u0E2A\u0E48\u0E27\u0E19\u0E25\u0E14 \u0E2B\u0E32\u0E01\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48\u0E2D\u0E48\u0E32\u0E19\u0E44\u0E14\u0E49\u0E41\u0E19\u0E48\u0E0A\u0E31\u0E14\u0E43\u0E2B\u0E49\u0E2A\u0E48\u0E07 dateText \u0E23\u0E39\u0E1B\u0E41\u0E1A\u0E1A YYYY-MM-DD \u0E21\u0E34\u0E09\u0E30\u0E19\u0E31\u0E49\u0E19\u0E40\u0E1B\u0E47\u0E19\u0E2A\u0E15\u0E23\u0E34\u0E07\u0E27\u0E48\u0E32\u0E07 \u0E2A\u0E33\u0E2B\u0E23\u0E31\u0E1A\u0E04\u0E48\u0E32\u0E43\u0E0A\u0E49\u0E08\u0E48\u0E32\u0E22\u0E43\u0E2B\u0E49\u0E40\u0E25\u0E37\u0E2D\u0E01 category \u0E20\u0E32\u0E29\u0E32\u0E44\u0E17\u0E22\u0E08\u0E32\u0E01 \u0E2D\u0E32\u0E2B\u0E32\u0E23, \u0E40\u0E14\u0E34\u0E19\u0E17\u0E32\u0E07, \u0E04\u0E48\u0E32\u0E2A\u0E32\u0E18\u0E32\u0E23\u0E13\u0E39\u0E1B\u0E42\u0E20\u0E04, \u0E2A\u0E38\u0E02\u0E20\u0E32\u0E1E, \u0E01\u0E32\u0E23\u0E28\u0E36\u0E01\u0E29\u0E32, \u0E1A\u0E31\u0E19\u0E40\u0E17\u0E34\u0E07, \u0E0A\u0E49\u0E2D\u0E1B\u0E1B\u0E34\u0E49\u0E07, \u0E17\u0E48\u0E2D\u0E07\u0E40\u0E17\u0E35\u0E48\u0E22\u0E27, \u0E17\u0E31\u0E48\u0E27\u0E44\u0E1B \u0E2B\u0E32\u0E01\u0E44\u0E21\u0E48\u0E1E\u0E1A\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E17\u0E35\u0E48\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E44\u0E14\u0E49\u0E43\u0E2B\u0E49\u0E43\u0E0A\u0E49 kind=unknown \u0E41\u0E25\u0E30 amount=0";
 var USER_PROMPT = "\u0E27\u0E34\u0E40\u0E04\u0E23\u0E32\u0E30\u0E2B\u0E4C\u0E20\u0E32\u0E1E\u0E40\u0E1E\u0E37\u0E48\u0E2D\u0E2B\u0E32\u0E43\u0E1A\u0E19\u0E31\u0E14\u0E2B\u0E23\u0E37\u0E2D\u0E18\u0E38\u0E23\u0E01\u0E23\u0E23\u0E21\u0E04\u0E48\u0E32\u0E43\u0E0A\u0E49\u0E08\u0E48\u0E32\u0E22\u0E08\u0E32\u0E01\u0E2A\u0E25\u0E34\u0E1B/\u0E43\u0E1A\u0E40\u0E2A\u0E23\u0E47\u0E08 \u0E42\u0E14\u0E22\u0E40\u0E2A\u0E19\u0E2D\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E40\u0E1E\u0E37\u0E48\u0E2D\u0E43\u0E2B\u0E49\u0E1C\u0E39\u0E49\u0E43\u0E0A\u0E49\u0E22\u0E37\u0E19\u0E22\u0E31\u0E19\u0E01\u0E48\u0E2D\u0E19\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E40\u0E17\u0E48\u0E32\u0E19\u0E31\u0E49\u0E19";
 var RECEIPT_DETAIL_PROMPT = "\u0E15\u0E23\u0E27\u0E08\u0E43\u0E1A\u0E40\u0E2A\u0E23\u0E47\u0E08\u0E19\u0E35\u0E49\u0E0B\u0E49\u0E33\u0E41\u0E1A\u0E1A\u0E25\u0E30\u0E40\u0E2D\u0E35\u0E22\u0E14\u0E40\u0E2B\u0E21\u0E37\u0E2D\u0E19\u0E1C\u0E39\u0E49\u0E15\u0E23\u0E27\u0E08\u0E40\u0E2D\u0E01\u0E2A\u0E32\u0E23 POS: \u0E2D\u0E48\u0E32\u0E19\u0E0A\u0E37\u0E48\u0E2D\u0E23\u0E49\u0E32\u0E19\u0E08\u0E32\u0E01\u0E2B\u0E31\u0E27\u0E40\u0E2D\u0E01\u0E2A\u0E32\u0E23, \u0E40\u0E25\u0E02\u0E17\u0E35\u0E48\u0E43\u0E1A\u0E40\u0E2A\u0E23\u0E47\u0E08, \u0E1B\u0E23\u0E30\u0E40\u0E20\u0E17\u0E01\u0E32\u0E23\u0E0B\u0E37\u0E49\u0E2D, \u0E1E\u0E19\u0E31\u0E01\u0E07\u0E32\u0E19\u0E16\u0E49\u0E32\u0E21\u0E35, \u0E27\u0E31\u0E19\u0E17\u0E35\u0E48/\u0E40\u0E27\u0E25\u0E32, \u0E27\u0E34\u0E18\u0E35\u0E0A\u0E33\u0E23\u0E30, \u0E22\u0E2D\u0E14\u0E17\u0E31\u0E49\u0E07\u0E2B\u0E21\u0E14\u0E17\u0E35\u0E48\u0E08\u0E48\u0E32\u0E22\u0E08\u0E23\u0E34\u0E07 \u0E41\u0E25\u0E30\u0E16\u0E2D\u0E14\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E2A\u0E34\u0E19\u0E04\u0E49\u0E32\u0E43\u0E19\u0E15\u0E32\u0E23\u0E32\u0E07\u0E43\u0E2B\u0E49\u0E04\u0E23\u0E1A\u0E17\u0E38\u0E01\u0E41\u0E16\u0E27\u0E17\u0E35\u0E48\u0E21\u0E2D\u0E07\u0E40\u0E2B\u0E47\u0E19 \u0E42\u0E14\u0E22 lineItems \u0E41\u0E15\u0E48\u0E25\u0E30\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E04\u0E27\u0E23\u0E21\u0E35\u0E0A\u0E37\u0E48\u0E2D\u0E2A\u0E34\u0E19\u0E04\u0E49\u0E32 \xD7\u0E08\u0E33\u0E19\u0E27\u0E19 \u0E22\u0E2D\u0E14\u0E1A\u0E32\u0E17 \u0E2B\u0E49\u0E32\u0E21\u0E40\u0E2D\u0E32 Qty/\u0E23\u0E32\u0E04\u0E32/\u0E22\u0E2D\u0E14\u0E23\u0E27\u0E21/\u0E17\u0E31\u0E49\u0E07\u0E2B\u0E21\u0E14/\u0E40\u0E07\u0E34\u0E19\u0E2A\u0E14/Powered by \u0E21\u0E32\u0E40\u0E1B\u0E47\u0E19\u0E2A\u0E34\u0E19\u0E04\u0E49\u0E32 \u0E16\u0E49\u0E32\u0E15\u0E31\u0E27\u0E2D\u0E31\u0E01\u0E29\u0E23\u0E41\u0E16\u0E27\u0E43\u0E14\u0E2D\u0E48\u0E32\u0E19\u0E44\u0E21\u0E48\u0E0A\u0E31\u0E14\u0E43\u0E2B\u0E49\u0E40\u0E27\u0E49\u0E19\u0E2A\u0E48\u0E27\u0E19\u0E19\u0E31\u0E49\u0E19\u0E41\u0E17\u0E19\u0E01\u0E32\u0E23\u0E40\u0E14\u0E32";
 function parseAnalysisContent(content) {
@@ -5161,7 +5183,7 @@ function receiptNeedsDetailRepair(analysis) {
   const proposal = analysis.proposals[0];
   if (!proposal || proposal.documentType !== "receipt" || proposal.kind !== "expense" || proposal.amount <= 0) return false;
   const merchant = normalizeThaiMerchantName(proposal.merchant);
-  const merchantLooksOperational = !merchant || /^(?:ประเภท|พนักงาน|เวลา|วันที่|สินค้า|qty|ราคา|รวม)/i.test(merchant);
+  const merchantLooksOperational = !isPlausibleReceiptMerchant(merchant) || /^(?:ประเภท|พนักงาน|เวลา|วันที่|สินค้า|qty|ราคา|รวม)/i.test(merchant);
   return merchantLooksOperational || !proposal.lineItems?.length || proposal.lineItems.length < 2 || !proposal.receiptNumber;
 }
 async function refineReceiptDetails(analysis, dataUrl, gatewayKey) {
@@ -5183,14 +5205,6 @@ async function refineReceiptDetails(analysis, dataUrl, gatewayKey) {
     return analysis;
   }
 }
-function merchantQuality(value) {
-  const candidate = normalizeThaiMerchantName(value);
-  if (!candidate) return -100;
-  let score = Math.min(candidate.length, 80);
-  if (/(ค่าสินค้า|บริการ|จำนวนเงิน|ยอด|ส่วนลด|สิทธิ|บาท|ค่าธรรมเนียม)/i.test(candidate)) score -= 80;
-  if (/ร้าน|บจก|บริษัท|หจก|cj\b|cafe|amazon|อเมซอน/i.test(candidate)) score += 20;
-  return score;
-}
 function mergeImageAnalyses(primary, ocr) {
   const p = primary.proposals[0];
   const o = ocr.proposals[0];
@@ -5199,9 +5213,9 @@ function mergeImageAnalyses(primary, ocr) {
   const documentType = p.documentType !== "unknown" ? p.documentType : o.documentType;
   const preferOcrAmount = o.amount > 0 && (p.amount <= 0 || documentType === "receipt" && o.amount !== p.amount);
   const amount = preferOcrAmount ? o.amount : p.amount || o.amount;
-  const primaryMerchant = normalizeThaiMerchantName(p.merchant);
-  const ocrMerchant = normalizeThaiMerchantName(o.merchant);
-  const merchant = merchantQuality(ocrMerchant) >= merchantQuality(primaryMerchant) ? ocrMerchant : primaryMerchant;
+  const primaryMerchant = isPlausibleReceiptMerchant(p.merchant) ? normalizeThaiMerchantName(p.merchant) : "";
+  const ocrMerchant = isPlausibleReceiptMerchant(o.merchant) ? normalizeThaiMerchantName(o.merchant) : "";
+  const merchant = receiptMerchantQuality(ocrMerchant) >= receiptMerchantQuality(primaryMerchant) ? ocrMerchant : primaryMerchant;
   const merged = {
     ...p,
     kind: (p.kind === "expense" || o.kind === "expense") && amount > 0 ? "expense" : p.kind,
@@ -5220,6 +5234,15 @@ function mergeImageAnalyses(primary, ocr) {
   };
   const summary = merged.kind === "expense" ? `\u0E2D\u0E48\u0E32\u0E19${merged.documentType === "bank_slip" ? "\u0E2A\u0E25\u0E34\u0E1B" : "\u0E43\u0E1A\u0E40\u0E2A\u0E23\u0E47\u0E08"}\u0E44\u0E14\u0E49 \u0E22\u0E2D\u0E14 ${merged.amount.toLocaleString("th-TH")} \u0E1A\u0E32\u0E17${merged.dateText ? ` \u0E27\u0E31\u0E19\u0E17\u0E35\u0E48 ${merged.dateText}` : " \u0E41\u0E15\u0E48\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E0A\u0E31\u0E14"}` : primary.summary || ocr.summary;
   return { summary, confidence: Math.max(primary.confidence, ocr.confidence), proposals: [merged, ...primary.proposals.slice(1)] };
+}
+function sanitizeAnalysisMerchants(analysis) {
+  return {
+    ...analysis,
+    proposals: analysis.proposals.map((proposal) => ({
+      ...proposal,
+      merchant: isPlausibleReceiptMerchant(proposal.merchant) ? normalizeThaiMerchantName(proposal.merchant) : ""
+    }))
+  };
 }
 async function analyzeImage(dataUrl, options = {}) {
   let providerError;
@@ -5274,7 +5297,7 @@ async function analyzeImage(dataUrl, options = {}) {
         }
       }
       if (gatewayKey) selected2 = await refineReceiptDetails(selected2, dataUrl, gatewayKey);
-      return selected2;
+      return sanitizeAnalysisMerchants(selected2);
     }
     const score = (analysis) => analysis.proposals.reduce((total, item) => total + (item.kind === "expense" && item.amount > 0 ? 6 : 0) + (item.kind === "reminder" && item.dateText ? 5 : 0) + (item.documentType !== "unknown" ? 1 : 0) + (item.dateText ? 1 : 0) + (item.merchant ? 0.5 : 0), analysis.confidence);
     let merged = mergeImageAnalyses(providerAnalysis, ocrAnalysis);
@@ -5298,10 +5321,13 @@ async function analyzeImage(dataUrl, options = {}) {
       }
     }
     if (gatewayKey) selected = await refineReceiptDetails(selected, dataUrl, gatewayKey);
-    return selected;
+    return sanitizeAnalysisMerchants(selected);
   } catch (ocrError) {
     console.error("[Milo Image] OCR fallback failed", { error: ocrError instanceof Error ? ocrError.message : "unknown" });
-    if (providerAnalysis) return gatewayKey ? refineReceiptDetails(providerAnalysis, dataUrl, gatewayKey) : providerAnalysis;
+    if (providerAnalysis) {
+      const fallback = gatewayKey ? await refineReceiptDetails(providerAnalysis, dataUrl, gatewayKey) : providerAnalysis;
+      return sanitizeAnalysisMerchants(fallback);
+    }
     if (providerError) {
       const providerMessage = providerError instanceof Error ? providerError.message : "unknown provider error";
       const ocrMessage = ocrError instanceof Error ? ocrError.message : "unknown OCR error";
@@ -7230,7 +7256,7 @@ var healthHandler = async (req, res) => {
   res.status(200).json({
     status: runtime.authenticated && voice.configured && Boolean(process.env.LINE_CHANNEL_SECRET?.trim()) && Boolean(process.env.LINE_CHANNEL_ACCESS_TOKEN?.trim()) && Boolean(process.env.DATABASE_URL?.trim()) ? "ok" : "degraded",
     service: "milo",
-    release: "image-save-card-v3-2026-09-16",
+    release: "receipt-merchant-guard-v1-2026-09-16",
     visionConfigured: runtime.authenticated,
     imageAnalysisMode: mode,
     visionModel: mode === "ocr-fallback" ? "tesseract-tha+eng" : process.env.MILO_VISION_MODEL || (mode.startsWith("vercel-ai-gateway") ? "google/gemini-2.5-flash" : mode.startsWith("forge-vision") ? "gemini-3-flash-preview" : "unconfigured"),

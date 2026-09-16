@@ -48,6 +48,17 @@ describe("image analysis merge", () => {
     });
   });
 
+  it("rejects a corrupted provider merchant and keeps the readable OCR coffee shop", () => {
+    const primary = analysis({ merchant: "ะ ภ% 7 oo WAT", amount: 40, dateText: "2026-09-16", timeText: "10:34", category: "อาหาร" });
+    const ocr = analysis({ merchant: "INDI Coffee", amount: 16, dateText: "2026-09-16", timeText: "10:34", category: "อาหาร" });
+    expect(mergeImageAnalyses(primary, ocr).proposals[0]).toMatchObject({
+      merchant: "INDI Coffee",
+      amount: 16,
+      dateText: "2026-09-16",
+      timeText: "10:34",
+    });
+  });
+
   it("keeps the fuller cleaned OCR merchant for a multi-line K+ CJ slip", () => {
     const primary = analysis({ documentType: "bank_slip", title: "กาแฟ", merchant: "= CJ 1685 เพชรเกษม1 06 บจก. ซี.เจ. เอกซ์เพรส กรุ๊ป 2รอ", amount: 40, dateText: "2026-09-14", timeText: "11:02", paymentMethod: "โอนเงิน" });
     const ocr = analysis({ documentType: "bank_slip", title: "รายการโอนเงิน", merchant: "CJ 1685 เพชรเกษม106 บจก. ซี.เจ. เอ็กซ์เพรส กรุ๊ป", amount: 40, dateText: "2026-09-14", timeText: "11:02", receiptNumber: "016257110259CQR07995", paymentMethod: "โอนเงิน" });
