@@ -73,6 +73,11 @@ describe("Milo command parser", () => {
     expect(parseMiloCommand("ผู้ช่วยกลุ่ม", now)).toEqual({ type: "groupGuide" });
     expect(parseMiloCommand("สถานะคลัง", now)).toEqual({ type: "vaultStatus" });
   });
+  it("recognizes document packet and issue review commands", () => {
+    expect(parseMiloCommand("สรุปเอกสารเดือนนี้", now)).toEqual({ type: "documentPacket" });
+    expect(parseMiloCommand("เอกสารเดือนนี้ครบไหม", now)).toEqual({ type: "documentPacket" });
+    expect(parseMiloCommand("ไฟล์ที่ต้องตรวจ", now)).toEqual({ type: "documentIssues" });
+  });
   it("recognizes recurring transaction commands from LINE", () => {
     const monthly = parseMiloCommand("ตั้งจดอัตโนมัติ ค่าเช่า 5000 ทุกเดือนวันที่ 1 09:00", now);
     expect(monthly).toMatchObject({ type: "recurringCreate", transactionType: "expense", amount: 5000, recurrenceType: "month", recurrenceDayOfMonth: 1 });

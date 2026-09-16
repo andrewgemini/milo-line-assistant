@@ -396,6 +396,70 @@ export async function findVaultItemByLineMessageId(lineMessageId: string, lineUs
     .limit(1))[0];
 }
 
+export async function findVaultItemByFingerprint(lineChatId: string, fingerprint: string) {
+  const db = await requireDb();
+  return (await db.select({
+    id: vaultItems.id,
+    title: vaultItems.title,
+    storageKey: vaultItems.storageKey,
+    lineMessageId: vaultItems.lineMessageId,
+  }).from(vaultItems).where(and(
+    eq(vaultItems.lineChatId, lineChatId),
+    eq(vaultItems.status, "active"),
+    like(vaultItems.tagsText, `%#sha256:${fingerprint}%`),
+  )).orderBy(desc(vaultItems.createdAt)).limit(1))[0];
+}
+
+export async function listVaultDocumentsForChat(
+  lineUserId: string,
+  lineChatId: string,
+  scope: "user" | "group" | "room",
+  start: Date,
+  end: Date,
+) {
+  const db = await requireDb();
+  const access = scope === "user"
+    ? and(eq(vaultItems.createdByLineUserId, lineUserId), eq(vaultItems.lineChatId, lineChatId))
+    : eq(vaultItems.lineChatId, lineChatId);
+  return db.select().from(vaultItems).where(and(
+    access,
+    eq(vaultItems.status, "active"),
+    or(eq(vaultItems.itemType, "image"), eq(vaultItems.itemType, "file")),
+    gte(vaultItems.capturedAt, start),
+    lte(vaultItems.capturedAt, end),
+  )).orderBy(desc(vaultItems.capturedAt)).limit(250);
+}
+
+export async function updateVaultIntelligence(input: {
+  id: number;
+  lineUserId: string;
+  lineChatId: string;
+  title: string;
+  searchableText: string;
+  tagsText: string;
+  workflowStatus: string;
+  documentKind: string;
+}) {
+  const db = await requireDb();
+  const result = await db.update(vaultItems).set({
+    title: input.title.slice(0, 255),
+    searchableText: input.searchableText.slice(0, 8_000),
+    tagsText: input.tagsText.slice(0, 512),
+  }).where(and(eq(vaultItems.id, input.id), eq(vaultItems.lineChatId, input.lineChatId)));
+  if (result[0].affectedRows > 0) {
+    await writeAuditLog({
+      action: "vault.document.classify",
+      entityType: "vault_item",
+      entityId: input.id,
+      actorLineUserId: input.lineUserId,
+      lineChatId: input.lineChatId,
+      details: { workflowStatus: input.workflowStatus, documentKind: input.documentKind },
+    });
+    return true;
+  }
+  return false;
+}
+
 export async function searchVault(lineUserId: string, term = "") {
   const db = await requireDb();
   const base = and(eq(vaultItems.createdByLineUserId, lineUserId), eq(vaultItems.status, "active"));

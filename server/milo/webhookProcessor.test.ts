@@ -23,6 +23,9 @@ vi.mock("../db", () => ({
   completeTodoForChat: vi.fn(),
   createVaultItem: vi.fn(),
   findVaultItemByLineMessageId: vi.fn(),
+  findVaultItemByFingerprint: vi.fn(),
+  listVaultDocumentsForChat: vi.fn(),
+  updateVaultIntelligence: vi.fn(),
   searchVault: vi.fn(),
   searchVaultForChat: vi.fn(),
   vaultStorageStatus: vi.fn(),
@@ -79,6 +82,41 @@ describe("LINE webhook processor", () => {
     vi.mocked(db.financeBudgetCycleReport).mockResolvedValue({ key: "2026-09", categories: {}, income: 0, expense: 0, balance: 0, rows: [] } as never);
     vi.mocked(db.getFinanceAccountBudgetCycleStartDay).mockResolvedValue(1 as never);
     vi.mocked(db.listRecurringTransactions).mockResolvedValue([] as never);
+    vi.mocked(db.findVaultItemByFingerprint).mockResolvedValue(undefined as never);
+    vi.mocked(db.listVaultDocumentsForChat).mockResolvedValue([] as never);
+    vi.mocked(db.updateVaultIntelligence).mockResolvedValue(true as never);
+  });
+
+  it("summarizes this month's document packet from the current chat", async () => {
+    vi.mocked(db.registerWebhookEvent).mockResolvedValue(true);
+    vi.mocked(getProfile).mockResolvedValue({ displayName: "ผู้ส่ง" });
+    vi.mocked(sourceIdentity).mockReturnValueOnce({ lineChatId: "U1", lineUserId: "U1", scope: "user" });
+    vi.mocked(db.listVaultDocumentsForChat).mockResolvedValue([
+      { id: 41, title: "ใบเสร็จ INDI Coffee", itemType: "image", storageKey: "db/a", tagsText: "#doc:ready #kind:receipt" },
+      { id: 42, title: "Statement KBank", itemType: "file", storageKey: "db/b", tagsText: "#doc:password_required #kind:bank_statement" },
+    ] as never);
+    vi.mocked(replyText).mockResolvedValue(new Response());
+
+    await processEvent({ type: "message", webhookEventId: "evt-doc-packet", timestamp: Date.now(), replyToken: "token", source: { type: "user", userId: "U1" }, message: { id: "doc-packet", type: "text", text: "สรุปเอกสารเดือนนี้" } }, "{}");
+
+    expect(db.listVaultDocumentsForChat).toHaveBeenCalledWith("U1", "U1", "user", expect.any(Date), expect.any(Date));
+    expect(replyText).toHaveBeenCalledWith("token", expect.stringContaining("ต้องตรวจ 1"));
+  });
+
+  it("stops duplicate media before storing or analyzing it again", async () => {
+    vi.mocked(db.registerWebhookEvent).mockResolvedValue(true);
+    vi.mocked(getProfile).mockResolvedValue({ displayName: "ผู้ส่ง" });
+    vi.mocked(sourceIdentity).mockReturnValueOnce({ lineChatId: "U1", lineUserId: "U1", scope: "user" });
+    vi.mocked(getMessageContent).mockResolvedValue(Buffer.from("same-receipt"));
+    vi.mocked(db.findVaultItemByFingerprint).mockResolvedValue({ id: 88, title: "ใบเสร็จเดิม", storageKey: "db/existing", lineMessageId: "old" } as never);
+    vi.mocked(replyText).mockResolvedValue(new Response());
+
+    await processEvent({ type: "message", webhookEventId: "evt-media-duplicate", timestamp: Date.now(), replyToken: "token", source: { type: "user", userId: "U1" }, message: { id: "new-image", type: "image" } }, "{}");
+
+    expect(storagePut).not.toHaveBeenCalled();
+    expect(analyzeImage).not.toHaveBeenCalled();
+    expect(replyText).toHaveBeenCalledWith("token", expect.stringContaining("ไม่เก็บซ้ำ"));
+    expect(db.writeAuditLog).toHaveBeenCalledWith(expect.objectContaining({ action: "vault.duplicate.detected", entityId: 88 }));
   });
 
   it("skips a redelivered webhook event that was already registered", async () => {

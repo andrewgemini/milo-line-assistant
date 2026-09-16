@@ -19,11 +19,12 @@ import { entitlementMessage, hasMiloEntitlement, resolveMiloPlan } from "./entit
 import { deliverFinanceDigest, type FinanceDigestType } from "./financeDigest";
 import { buildExpenseNote, formatImageProposal, normalizeExpenseCategory, parseExtractedDate, resolveReceiptOccurredAt, selectImageProposal } from "./receiptUtils";
 import { applyImageExpenseEdit } from "./imageProposalEdit";
+import { bangkokMonthRange, buildDocumentIntelligence, classifyDocumentKind, documentKindLabel, documentStatusLabel, fingerprintMedia, mergeVaultTags, readDocumentStatus, summarizeVaultDocuments, type DocumentAnalysis } from "./documentIntelligence";
 import { STANDARD_EXPENSE_CATEGORIES, STANDARD_INCOME_CATEGORIES } from "./financeCategories";
 import { financeReportCardText, getMessageContent, getProfile, lineCredentials, postSaveSummaryText, pushText, pushTextWithQuickReplies, replyFinanceReportCard, replyFinanceReportCardFallback, replyGreetingHome, replyMention, replyPostSaveSummary, replyPostSaveSummaryFallback, replyPostSaveSummaryImage, replyText, replyTextWithQuickReplies, replyVoiceCategoryChoices, replyVoiceProposal, replyVoiceProposalFallback, sourceIdentity, type LineEvent, type VoiceTransactionProposal, verifyLineSignature } from "./line";
 
 function helpText() {
-  return "Milo ช่วยคุณจบงานใน LINE แชทเดียวครับ\n🔔 เตือน: เตือนประชุมพรุ่งนี้ 10:00 / เตือนดื่มน้ำทุก 30 นาที / รายการเตือน\n🗂️ เก็บ: เก็บ https://example.com #งาน / ค้นหา ใบเสนอราคา / สถานะคลัง\n📅 ปฏิทิน: ลงปฏิทิน ประชุมทีมพรุ่งนี้ 10:00 / ดูปฏิทิน\n👥 กลุ่ม LINE: @ไมโล ผู้ช่วยกลุ่ม / @ไมโล แจ้งส่งงานด้วยถึง @สมชาย\n✅ งาน: งาน ส่งสรุปรายสัปดาห์ / ดูงาน / เสร็จงาน #12 / โน้ต รหัส Wi-Fi\n💰 การเงิน: กินกาแฟ 80 / เงินเดือนเข้า 35000 / ตั้งงบ อาหาร 5000 / สรุปเดือนนี้\n📷🎙️ ส่งรูปใบเสร็จหรือเสียงให้ไมโลอ่าน แล้วตรวจและยืนยันก่อนบันทึก\n\nพิมพ์ “ช่วย” ได้ทุกเมื่อครับ";
+  return "Milo ช่วยคุณจบงานใน LINE แชทเดียวครับ\n🔔 เตือน: เตือนประชุมพรุ่งนี้ 10:00 / เตือนดื่มน้ำทุก 30 นาที / รายการเตือน\n🗂️ เก็บ: เก็บ https://example.com #งาน / ค้นหา ใบเสนอราคา / สถานะคลัง\n📦 เอกสาร: สรุปเอกสารเดือนนี้ / ไฟล์ที่ต้องตรวจ\n📅 ปฏิทิน: ลงปฏิทิน ประชุมทีมพรุ่งนี้ 10:00 / ดูปฏิทิน\n👥 กลุ่ม LINE: @ไมโล ผู้ช่วยกลุ่ม / @ไมโล แจ้งส่งงานด้วยถึง @สมชาย\n✅ งาน: งาน ส่งสรุปรายสัปดาห์ / ดูงาน / เสร็จงาน #12 / โน้ต รหัส Wi-Fi\n💰 การเงิน: กินกาแฟ 80 / เงินเดือนเข้า 35000 / ตั้งงบ อาหาร 5000 / สรุปเดือนนี้\n📷🎙️ ส่งรูปใบเสร็จหรือเสียงให้ไมโลอ่าน แล้วตรวจและยืนยันก่อนบันทึก\n\nพิมพ์ “ช่วย” ได้ทุกเมื่อครับ";
 }
 
 function contextualFallback(text: string) {
@@ -50,6 +51,54 @@ function formatFinancialInsight(insight: Awaited<ReturnType<typeof generateFinan
   const highlights = insight.highlights.map(item => `• ${item}`).join("\n");
   const actions = insight.suggestedActions.map(item => `• ${item}`).join("\n");
   return `สรุปวิเคราะห์การเงิน\n${quality}\n${insight.summary}${highlights ? `\n\nข้อสังเกต\n${highlights}` : ""}${actions ? `\n\nแนวทางจัดการ\n${actions}` : ""}`;
+}
+
+function formatDocumentPacket(reference: Date, rows: Awaited<ReturnType<typeof db.listVaultDocumentsForChat>>, issuesOnly = false) {
+  const packet = summarizeVaultDocuments(rows);
+  const monthLabel = new Intl.DateTimeFormat("th-TH", { timeZone: "Asia/Bangkok", month: "long", year: "numeric" }).format(reference);
+  const kinds = packet.byKind.length
+    ? packet.byKind.map(([kind, count]) => `• ${documentKindLabel(kind)} ${count} ไฟล์`).join("\n")
+    : "• ยังไม่มีเอกสาร";
+  const issueRows = packet.issues.slice(0, 8).map(item => `#${item.id} • ${item.title} • ${documentStatusLabel(readDocumentStatus(item.tagsText))}`).join("\n");
+  if (issuesOnly) {
+    return issueRows
+      ? `⚠️ เอกสารที่ต้องตรวจ เดือน${monthLabel}\n${issueRows}\n\nพิมพ์ชื่อร้าน วันที่ หรือคำสำคัญหลังคำว่า “ค้นหา” เพื่อเปิดหาไฟล์ได้เร็วขึ้น`
+      : `✅ เดือน${monthLabel} ไม่มีเอกสารที่ค้างตรวจครับ`;
+  }
+  return `📦 ชุดเอกสารเดือน${monthLabel}\nทั้งหมด ${packet.total} ไฟล์ • พร้อมใช้ ${packet.ready} • ต้องตรวจ ${packet.issues.length}\nไฟล์ซ้ำ ${packet.duplicates} • ต้องอัปโหลดซ้ำ ${packet.storageMissing}\n\nแยกตามประเภท\n${kinds}${issueRows ? `\n\nรายการที่ต้องตรวจ\n${issueRows}` : "\n\n✅ ไม่มีรายการค้างตรวจ"}`;
+}
+
+async function persistDocumentIntelligence(input: {
+  vaultId: number;
+  lineUserId: string;
+  lineChatId: string;
+  filename?: string;
+  mimeType: string;
+  storageReady: boolean;
+  fingerprint: string;
+  senderDisplayName?: string;
+  analysis?: DocumentAnalysis;
+  error?: unknown;
+}) {
+  const intelligence = buildDocumentIntelligence(input);
+  try {
+    await db.updateVaultIntelligence({
+      id: input.vaultId,
+      lineUserId: input.lineUserId,
+      lineChatId: input.lineChatId,
+      title: intelligence.title,
+      searchableText: intelligence.searchableText,
+      tagsText: intelligence.tagsText,
+      workflowStatus: intelligence.status,
+      documentKind: intelligence.kind,
+    });
+  } catch (error) {
+    console.warn("[Milo Documents] metadata update failed", {
+      vaultId: input.vaultId,
+      error: error instanceof Error ? error.message : "unknown",
+    });
+  }
+  return intelligence;
 }
 
 async function buildVoiceProposal(transcript: string, lineUserId: string, financeAccountId?: number): Promise<VoiceTransactionProposal> {
@@ -197,6 +246,10 @@ async function handleText(event: LineEvent, lineChatId: string, lineUserId: stri
   } else if (command.type === "vaultStatus") {
     const status = await db.vaultStorageStatus(lineUserId, lineChatId, scope);
     message = `🗂️ สถานะคลังในแชทนี้\nทั้งหมด ${status.total} รายการ\nเก็บถาวร ${status.durable} รายการ\nไฟล์สื่อที่ต้องอัปโหลดซ้ำ ${status.mediaMissing} รายการ\n\nข้อความ/ลิงก์เก็บในฐานข้อมูล และรูป/ไฟล์ที่มีสำเนา storage จะเก็บไว้จนกว่าคุณจะลบครับ`;
+  } else if (command.type === "documentPacket" || command.type === "documentIssues") {
+    const range = bangkokMonthRange(new Date());
+    const rows = await db.listVaultDocumentsForChat(lineUserId, lineChatId, scope, range.start, new Date(range.end.getTime() - 1));
+    message = formatDocumentPacket(new Date(), rows, command.type === "documentIssues");
   } else if (command.type === "reminder") {
     const id = await db.createReminder({ lineChatId, createdByLineUserId: lineUserId, ...command.data, sourceMessageId: event.message?.id });
     message = `ตั้งเตือน #${id} เรียบร้อย\n${command.data.title}\nครั้งถัดไป: ${formatDate(command.data.nextRunAt)}`;
@@ -491,7 +544,7 @@ async function handleText(event: LineEvent, lineChatId: string, lineUserId: stri
   }
 }
 
-type MediaRuntimeContext = { gatewayToken?: string };
+type MediaRuntimeContext = { gatewayToken?: string; senderDisplayName?: string };
 
 class MediaProcessingError extends Error {
   constructor(message: string, readonly userNotified: boolean) {
@@ -542,6 +595,25 @@ async function handleMedia(event: LineEvent, lineChatId: string, lineUserId: str
     throw new MediaProcessingError(mediaErrorMessage(error), userNotified);
   }
 
+  const fingerprint = fingerprintMedia(bytes);
+  const duplicate = await db.findVaultItemByFingerprint(lineChatId, fingerprint).catch(() => undefined);
+  if (duplicate) {
+    try {
+      await db.writeAuditLog({
+        action: "vault.duplicate.detected",
+        entityType: "vault_item",
+        entityId: duplicate.id,
+        actorLineUserId: lineUserId,
+        lineChatId,
+        details: { duplicateLineMessageId: message.id, fingerprint },
+      });
+    } catch { /* duplicate handling must still reply even if audit logging is unavailable */ }
+    const duplicateMessage = `ไฟล์นี้มีอยู่ในคลังแล้วครับ • #${duplicate.id} ${duplicate.title}\nไมโลจึงไม่เก็บซ้ำและไม่สร้างรายการการเงินซ้ำ`;
+    if (event.replyToken) await replyText(event.replyToken, duplicateMessage);
+    else await pushText(lineChatId, duplicateMessage);
+    return;
+  }
+
   let stored: Awaited<ReturnType<typeof storagePut>> | undefined;
   try {
     stored = await storagePut(`milo/${lineChatId}/${message.id}`, bytes, mimeType);
@@ -559,7 +631,12 @@ async function handleMedia(event: LineEvent, lineChatId: string, lineUserId: str
         createdByLineUserId: lineUserId,
         itemType: isImage ? "image" : "file",
         title: message.fileName ?? (isImage ? "รูปจาก LINE" : isAudio ? "ข้อความเสียงจาก LINE" : "ไฟล์จาก LINE"),
-        searchableText: message.fileName,
+        searchableText: [message.fileName, runtime.senderDisplayName].filter(Boolean).join(" "),
+        tagsText: mergeVaultTags(
+          `#doc:${isImage || isAudio || isPdf ? "processing" : stored?.key ? "stored" : "storage_missing"}`,
+          `#kind:${classifyDocumentKind({ filename: message.fileName, mimeType })}`,
+          `#sha256:${fingerprint}`,
+        ),
         originalFilename: message.fileName,
         mimeType,
         storageKey: stored?.key,
@@ -599,6 +676,11 @@ async function handleMedia(event: LineEvent, lineChatId: string, lineUserId: str
       const financeScope = await resolveFinanceScope(lineUserId, lineChatId, scope);
       const proposal = await buildVoiceProposal(transcript.text, lineUserId, financeScope?.financeAccountId);
       await db.saveVoiceTranscription({ vaultItemId: vaultId, lineChatId, lineUserId, transcript: transcript.text, language: transcript.language, durationSeconds: transcript.duration, proposalJson: JSON.stringify(proposal) });
+      await persistDocumentIntelligence({
+        vaultId, lineUserId, lineChatId, filename: message.fileName, mimeType,
+        storageReady: Boolean(stored?.key), fingerprint, senderDisplayName: runtime.senderDisplayName,
+        analysis: { summary: transcript.text, confidence: 1, proposals: [{ documentType: "audio", title: transcript.text }] },
+      });
       const proposalLine = proposal.transactionType && proposal.amount
         ? `เสนอ${proposal.transactionType === "expense" ? "รายจ่าย" : "รายรับ"} ${proposal.amount.toLocaleString("th-TH")} บาท • หมวด${proposal.category ?? "ทั่วไป"}`
         : "ยังไม่พบรูปแบบรายรับ/รายจ่ายที่แน่ชัด";
@@ -608,6 +690,10 @@ async function handleMedia(event: LineEvent, lineChatId: string, lineUserId: str
       await pushTextWithQuickReplies(lineChatId, `ถอดเสียงได้ว่า\n“${proposal.transcript.slice(0, 900)}”\n${proposalLine}\n${nextStep}${storageNote}`, [...(canConfirm ? [{ label: "ยืนยันบันทึก", text: "ยืนยันเสียง" }] : []), { label: "แก้ไขข้อความ", text: "แก้ไขข้อความเสียง" }]);
     } catch (error) {
       console.error("[Milo Voice] transcription failed", { messageId: message.id, error: error instanceof Error ? error.message : "unknown" });
+      await persistDocumentIntelligence({
+        vaultId, lineUserId, lineChatId, filename: message.fileName, mimeType,
+        storageReady: Boolean(stored?.key), fingerprint, senderDisplayName: runtime.senderDisplayName, error,
+      });
       const runtimeMissing = error instanceof Error && /not configured|valid credit card|payment required|insufficient.*(?:credit|quota)|billing/i.test(error.message);
       const fallback = runtimeMissing
         ? "รับข้อความเสียงแล้ว แต่บริการถอดเสียงยังไม่พร้อมใช้งาน ต้องแก้การตั้งค่าบริการก่อน ตอนนี้กรุณาพิมพ์รายการแทน เช่น “ค่ากาแฟ 40 บาท” น่ะจ๊ะ"
@@ -623,12 +709,20 @@ async function handleMedia(event: LineEvent, lineChatId: string, lineUserId: str
     try {
       const analysis = await analyzePdfBuffer(bytes);
       await db.saveImageExtraction(vaultId, "expense", JSON.stringify(analysis), analysis.confidence);
+      await persistDocumentIntelligence({
+        vaultId, lineUserId, lineChatId, filename: message.fileName, mimeType,
+        storageReady: Boolean(stored?.key), fingerprint, senderDisplayName: runtime.senderDisplayName, analysis,
+      });
       const preview = analysis.proposals.slice(0, 5).map(item => `• ${formatImageProposal(item)}`).join("\n");
       const more = analysis.proposals.length > 5 ? `\n…และอีก ${analysis.proposals.length - 5} รายการ` : "";
       const storageNote = stored?.key ? "" : "\n⚠️ PDF ต้นฉบับยังสำรองถาวรไม่สำเร็จ กรุณาส่งไฟล์ใหม่หากต้องการเก็บต้นฉบับ";
       if (event.replyToken) await replyText(event.replyToken, `อ่าน PDF แล้ว พบรายการที่เสนอได้ ${analysis.proposals.length} รายการ\n${preview || "ยังไม่พบรายจ่ายที่อ่านได้ชัด"}${more}\nตรวจข้อมูลก่อน แล้วพิมพ์ “ยืนยัน PDF” เพื่อบันทึกเฉพาะรายการที่วันที่และยอดชัดเจน${storageNote}`);
     } catch (error) {
       console.error("[Milo PDF] analysis failed", { messageId: message.id, error: error instanceof Error ? error.message : "unknown" });
+      await persistDocumentIntelligence({
+        vaultId, lineUserId, lineChatId, filename: message.fileName, mimeType,
+        storageReady: Boolean(stored?.key), fingerprint, senderDisplayName: runtime.senderDisplayName, error,
+      });
       const fallback = "เก็บ PDF ไว้แล้ว แต่ยังอ่านธุรกรรมจากไฟล์นี้ไม่ได้ กรุณาลองไฟล์ที่ไม่ล็อกรหัสและมีข้อความอ่านได้ครับ";
       let userNotified = false;
       if (event.replyToken) {
@@ -642,6 +736,10 @@ async function handleMedia(event: LineEvent, lineChatId: string, lineUserId: str
     return;
   }
   if (!isImage) {
+    await persistDocumentIntelligence({
+      vaultId, lineUserId, lineChatId, filename: message.fileName, mimeType,
+      storageReady: Boolean(stored?.key), fingerprint, senderDisplayName: runtime.senderDisplayName,
+    });
     if (event.replyToken) await replyText(event.replyToken, stored?.key ? "เก็บไฟล์นี้ไว้ในคลังถาวรจนกว่าคุณจะลบแล้ว" : "รับไฟล์แล้ว แต่พื้นที่เก็บถาวรยังสำรองไฟล์ต้นฉบับไม่สำเร็จ กรุณาส่งไฟล์นี้ใหม่อีกครั้งครับ");
     return;
   }
@@ -653,12 +751,21 @@ async function handleMedia(event: LineEvent, lineChatId: string, lineUserId: str
   try {
     const analysis = await analyzeImage(`data:${mimeType};base64,${bytes.toString("base64")}`, { gatewayToken: runtime.gatewayToken });
     await db.saveImageExtraction(vaultId, analysis.proposals.some(item => item.kind === "expense") ? "expense" : "reminder", JSON.stringify(analysis), analysis.confidence);
+    await persistDocumentIntelligence({
+      vaultId, lineUserId, lineChatId, filename: message.fileName, mimeType,
+      storageReady: Boolean(stored?.key), fingerprint, senderDisplayName: runtime.senderDisplayName, analysis,
+    });
     const proposals = analysis.proposals.slice(0, 2).map(item => `• ${formatImageProposal(item)}`).join("\n");
     const hasExpense = analysis.proposals.some(item => item.kind === "expense" && item.amount > 0);
     const storageNote = stored?.key ? "" : "\n⚠️ รูปต้นฉบับยังสำรองถาวรไม่สำเร็จ กรุณาส่งใหม่หากต้องการเก็บต้นฉบับ";
     await pushTextWithQuickReplies(lineChatId, `อ่านรูปเรียบร้อยแล้ว\n${analysis.summary}\n${proposals || "ยังไม่พบรายการที่ควรบันทึกอัตโนมัติ"}\nตรวจยอด หมวด และวันที่ให้ถูกต้อง แล้วกดปุ่มยืนยันได้เลยครับ${storageNote}`, hasExpense ? [{ label: "ยืนยันบันทึก", text: "ยืนยันค่าใช้จ่าย" }, { label: "สรุปวันนี้", text: "สรุปวันนี้" }] : [{ label: "ยืนยันรูป", text: "ยืนยันรูป" }]);
   } catch (error) {
     console.error("[Milo Image] analysis failed", { messageId: message.id, error: error instanceof Error ? error.message : "unknown" });
+    await persistDocumentIntelligence({
+      vaultId, lineUserId, lineChatId, filename: message.fileName, mimeType,
+      storageReady: Boolean(stored?.key), fingerprint, senderDisplayName: runtime.senderDisplayName,
+      error: error instanceof Error ? new Error(`OCR อ่านภาพไม่ชัด: ${error.message}`) : error,
+    });
     let userNotified = false;
     try {
       await pushText(lineChatId, "เก็บรูปไว้แล้ว แต่ระบบอ่านสลิป/ใบเสร็จครั้งนี้ไม่สำเร็จ กรุณาลองส่งภาพที่คมชัดและเห็นยอด วันที่ เวลา และผู้รับครบถ้วนอีกครั้งน่ะจ๊ะ");
@@ -684,7 +791,7 @@ export async function processEvent(event: LineEvent, rawPayload: string, runtime
     const isMention = event.message.mention?.mentionees?.some(item => item.isSelf) || event.message.text?.trim().startsWith("@ไมโล");
     if (isGroup && event.message.type === "text" && !isMention) { await db.finishWebhookEvent(event.webhookEventId, "ignored"); return; }
     if (event.message.type === "text") await handleText(event, identity.lineChatId, identity.lineUserId, identity.scope);
-    else if (event.message.type === "image" || event.message.type === "file" || event.message.type === "audio") await handleMedia(event, identity.lineChatId, identity.lineUserId, identity.scope, runtime);
+    else if (event.message.type === "image" || event.message.type === "file" || event.message.type === "audio") await handleMedia(event, identity.lineChatId, identity.lineUserId, identity.scope, { ...runtime, senderDisplayName: profile?.displayName });
     await db.finishWebhookEvent(event.webhookEventId, "processed");
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : "unknown error";

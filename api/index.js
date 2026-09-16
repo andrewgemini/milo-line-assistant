@@ -790,6 +790,50 @@ async function findVaultItemByLineMessageId(lineMessageId, lineUserId, lineChatI
     eq(vaultItems.status, "active")
   )).limit(1))[0];
 }
+async function findVaultItemByFingerprint(lineChatId, fingerprint) {
+  const db = await requireDb();
+  return (await db.select({
+    id: vaultItems.id,
+    title: vaultItems.title,
+    storageKey: vaultItems.storageKey,
+    lineMessageId: vaultItems.lineMessageId
+  }).from(vaultItems).where(and(
+    eq(vaultItems.lineChatId, lineChatId),
+    eq(vaultItems.status, "active"),
+    like(vaultItems.tagsText, `%#sha256:${fingerprint}%`)
+  )).orderBy(desc(vaultItems.createdAt)).limit(1))[0];
+}
+async function listVaultDocumentsForChat(lineUserId, lineChatId, scope, start, end) {
+  const db = await requireDb();
+  const access = scope === "user" ? and(eq(vaultItems.createdByLineUserId, lineUserId), eq(vaultItems.lineChatId, lineChatId)) : eq(vaultItems.lineChatId, lineChatId);
+  return db.select().from(vaultItems).where(and(
+    access,
+    eq(vaultItems.status, "active"),
+    or(eq(vaultItems.itemType, "image"), eq(vaultItems.itemType, "file")),
+    gte(vaultItems.capturedAt, start),
+    lte(vaultItems.capturedAt, end)
+  )).orderBy(desc(vaultItems.capturedAt)).limit(250);
+}
+async function updateVaultIntelligence(input) {
+  const db = await requireDb();
+  const result = await db.update(vaultItems).set({
+    title: input.title.slice(0, 255),
+    searchableText: input.searchableText.slice(0, 8e3),
+    tagsText: input.tagsText.slice(0, 512)
+  }).where(and(eq(vaultItems.id, input.id), eq(vaultItems.lineChatId, input.lineChatId)));
+  if (result[0].affectedRows > 0) {
+    await writeAuditLog({
+      action: "vault.document.classify",
+      entityType: "vault_item",
+      entityId: input.id,
+      actorLineUserId: input.lineUserId,
+      lineChatId: input.lineChatId,
+      details: { workflowStatus: input.workflowStatus, documentKind: input.documentKind }
+    });
+    return true;
+  }
+  return false;
+}
 async function searchVault(lineUserId, term = "") {
   const db = await requireDb();
   const base = and(eq(vaultItems.createdByLineUserId, lineUserId), eq(vaultItems.status, "active"));
@@ -3755,9 +3799,9 @@ function localVoiceRuntimeStatus() {
   };
 }
 function transcriptQualityIssue(text2, durationSeconds = 0) {
-  const clean2 = text2.normalize("NFKC").replace(/[“”"'….,!?;:ฯๆ()[\]{}]/g, " ").replace(/\s+/g, " ").trim();
-  if (!clean2) return "empty-transcript";
-  const tokens = clean2.split(" ").filter(Boolean);
+  const clean3 = text2.normalize("NFKC").replace(/[“”"'….,!?;:ฯๆ()[\]{}]/g, " ").replace(/\s+/g, " ").trim();
+  if (!clean3) return "empty-transcript";
+  const tokens = clean3.split(" ").filter(Boolean);
   if (tokens.length >= 6) {
     const counts = /* @__PURE__ */ new Map();
     let longestRun = 1;
@@ -3777,7 +3821,7 @@ function transcriptQualityIssue(text2, durationSeconds = 0) {
     if (tokens.length >= 8 && dominantShare >= 0.5 && uniqueShare <= 0.4) return "dominant-repeated-token";
   }
   const duration = Math.max(0.5, Number.isFinite(durationSeconds) ? durationSeconds : 0.5);
-  const nonSpaceCharacters = clean2.replace(/\s/g, "").length;
+  const nonSpaceCharacters = clean3.replace(/\s/g, "").length;
   if (duration <= 15 && tokens.length > Math.max(24, Math.ceil(duration * 7))) return "too-many-tokens-for-duration";
   if (duration <= 15 && nonSpaceCharacters / duration > 28) return "too-many-characters-for-duration";
   return void 0;
@@ -5675,6 +5719,8 @@ function parseMiloCommand(text2, now = /* @__PURE__ */ new Date()) {
   if (calendar?.type === "cancel") return { type: "calendarCancel", id: calendar.id };
   if (/^(?:ผู้ช่วยกลุ่ม|กลุ่ม\s*LINE|กลุ่มช่วยอะไร|วิธีใช้กลุ่ม)$/i.test(value)) return { type: "groupGuide" };
   if (/^(?:สถานะคลัง|คลังไฟล์|คลังถาวร)$/i.test(value)) return { type: "vaultStatus" };
+  if (/^(?:สรุป(?:ชุด)?(?:เอกสาร|ไฟล์)(?:เดือนนี้)?|(?:ชุด)?เอกสารเดือนนี้(?:ครบไหม|ครบหรือยัง)?|เช็กเอกสารเดือนนี้)$/i.test(value)) return { type: "documentPacket" };
+  if (/^(?:(?:เอกสาร|ไฟล์)(?:ที่)?(?:มีปัญหา|ต้องตรวจ|รอตรวจ|รอตัดสิน|อ่านไม่ได้)|ตรวจเอกสารที่มีปัญหา)$/i.test(value)) return { type: "documentIssues" };
   const recurring = recurringFrom(value, now);
   if (recurring) return recurring;
   if (/^(?:ดู)?(?:รายการประจำ|จดอัตโนมัติ)$/i.test(value)) return { type: "recurringList" };
@@ -6046,9 +6092,162 @@ function applyImageExpenseEdit(analysis, edit) {
   return { ...analysis, proposals, editedProposal: proposal };
 }
 
+// server/milo/documentIntelligence.ts
+import { createHash } from "node:crypto";
+var KIND_LABELS = {
+  receipt: "\u0E43\u0E1A\u0E40\u0E2A\u0E23\u0E47\u0E08",
+  tax_invoice: "\u0E43\u0E1A\u0E01\u0E33\u0E01\u0E31\u0E1A\u0E20\u0E32\u0E29\u0E35",
+  bank_slip: "\u0E2A\u0E25\u0E34\u0E1B\u0E42\u0E2D\u0E19\u0E40\u0E07\u0E34\u0E19",
+  bank_statement: "Statement",
+  invoice: "\u0E43\u0E1A\u0E41\u0E08\u0E49\u0E07\u0E2B\u0E19\u0E35\u0E49",
+  quotation: "\u0E43\u0E1A\u0E40\u0E2A\u0E19\u0E2D\u0E23\u0E32\u0E04\u0E32",
+  purchase_order: "\u0E43\u0E1A\u0E2A\u0E31\u0E48\u0E07\u0E0B\u0E37\u0E49\u0E2D",
+  contract: "\u0E2A\u0E31\u0E0D\u0E0D\u0E32",
+  audio: "\u0E02\u0E49\u0E2D\u0E04\u0E27\u0E32\u0E21\u0E40\u0E2A\u0E35\u0E22\u0E07",
+  image: "\u0E23\u0E39\u0E1B\u0E20\u0E32\u0E1E",
+  pdf: "PDF",
+  file: "\u0E44\u0E1F\u0E25\u0E4C"
+};
+var STATUS_LABELS = {
+  processing: "\u0E01\u0E33\u0E25\u0E31\u0E07\u0E1B\u0E23\u0E30\u0E21\u0E27\u0E25\u0E1C\u0E25",
+  stored: "\u0E08\u0E31\u0E14\u0E40\u0E01\u0E47\u0E1A\u0E41\u0E25\u0E49\u0E27",
+  ready: "\u0E1E\u0E23\u0E49\u0E2D\u0E21\u0E43\u0E0A\u0E49\u0E07\u0E32\u0E19",
+  needs_review: "\u0E23\u0E2D\u0E15\u0E23\u0E27\u0E08\u0E2A\u0E2D\u0E1A",
+  blurry: "\u0E20\u0E32\u0E1E\u0E44\u0E21\u0E48\u0E0A\u0E31\u0E14",
+  password_required: "\u0E44\u0E1F\u0E25\u0E4C\u0E15\u0E34\u0E14\u0E23\u0E2B\u0E31\u0E2A",
+  storage_missing: "\u0E15\u0E49\u0E2D\u0E07\u0E2D\u0E31\u0E1B\u0E42\u0E2B\u0E25\u0E14\u0E0B\u0E49\u0E33",
+  duplicate: "\u0E44\u0E1F\u0E25\u0E4C\u0E0B\u0E49\u0E33",
+  failed: "\u0E1B\u0E23\u0E30\u0E21\u0E27\u0E25\u0E1C\u0E25\u0E44\u0E21\u0E48\u0E2A\u0E33\u0E40\u0E23\u0E47\u0E08"
+};
+function fingerprintMedia(bytes) {
+  return createHash("sha256").update(bytes).digest("hex");
+}
+function clean2(value) {
+  return typeof value === "string" ? value.replace(/\s+/g, " ").trim() : "";
+}
+function proposalText(proposal) {
+  const lineItems = (proposal.lineItems ?? []).flatMap((item) => typeof item === "string" ? [clean2(item)] : [clean2(item.name), item.quantity, item.unitPrice, item.total]);
+  return [
+    proposal.documentType,
+    proposal.title,
+    proposal.merchant,
+    proposal.dateText,
+    proposal.timeText,
+    proposal.amount,
+    proposal.currency,
+    proposal.category,
+    proposal.paymentMethod,
+    proposal.receiptNumber,
+    proposal.note,
+    ...lineItems
+  ].filter((value) => value !== void 0 && value !== null && String(value).trim()).join(" ");
+}
+function classifyDocumentKind(input) {
+  const firstType = clean2(input.analysis?.proposals?.[0]?.documentType).toLowerCase();
+  const corpus = [input.filename, input.mimeType, input.analysis?.summary, firstType, ...(input.analysis?.proposals ?? []).map(proposalText)].filter(Boolean).join(" ").toLowerCase();
+  if (/bank[_\s-]?slip|สลิป|พร้อมเพย์|promptpay/.test(corpus)) return "bank_slip";
+  if (/bank[_\s-]?statement|statement|รายการเดินบัญชี/.test(corpus)) return "bank_statement";
+  if (/tax[_\s-]?invoice|ใบกำกับภาษี/.test(corpus)) return "tax_invoice";
+  if (/receipt|ใบเสร็จ|บิลเงินสด/.test(corpus)) return "receipt";
+  if (/quotation|ใบเสนอราคา/.test(corpus)) return "quotation";
+  if (/purchase[_\s-]?order|ใบสั่งซื้อ|\bpo\b/.test(corpus)) return "purchase_order";
+  if (/invoice|ใบแจ้งหนี้|ใบวางบิล/.test(corpus)) return "invoice";
+  if (/contract|สัญญา/.test(corpus)) return "contract";
+  if (/audio\//.test(corpus)) return "audio";
+  if (/application\/pdf|\.pdf\b/.test(corpus)) return "pdf";
+  if (/image\//.test(corpus)) return "image";
+  return "file";
+}
+function deriveDocumentStatus(input) {
+  if (input.duplicateOf) return "duplicate";
+  const errorText = input.error instanceof Error ? input.error.message : String(input.error ?? "");
+  if (/password|encrypted|locked|รหัส|เข้ารหัส/i.test(errorText)) return "password_required";
+  if (input.error) return /blur|blurry|ไม่ชัด|อ่าน.*ไม่ได้|ocr/i.test(errorText) ? "blurry" : "failed";
+  if (!input.storageReady) return "storage_missing";
+  if (!input.analysis) return "stored";
+  const proposals = input.analysis.proposals ?? [];
+  const confidence = Number(input.analysis.confidence ?? 0);
+  if (!proposals.length || confidence < 0.45) return "needs_review";
+  return "ready";
+}
+function mergeVaultTags(...values) {
+  return Array.from(new Set(values.flatMap((value) => (value ?? "").split(/\s+/)).map((value) => value.trim()).filter(Boolean))).join(" ").slice(0, 512);
+}
+function buildDocumentIntelligence(input) {
+  const kind = classifyDocumentKind(input);
+  const status = deriveDocumentStatus(input);
+  const proposals = input.analysis?.proposals ?? [];
+  const first = proposals[0];
+  const merchant = clean2(first?.merchant);
+  const title = merchant ? `${KIND_LABELS[kind]} \u2022 ${merchant}` : clean2(input.filename) || KIND_LABELS[kind];
+  const searchableText = [
+    input.filename,
+    input.senderDisplayName,
+    input.analysis?.summary,
+    ...proposals.map(proposalText),
+    KIND_LABELS[kind],
+    STATUS_LABELS[status]
+  ].map(clean2).filter(Boolean).join(" ").slice(0, 8e3);
+  const confidence = Number(input.analysis?.confidence);
+  const tagsText = mergeVaultTags(
+    `#doc:${status}`,
+    `#kind:${kind}`,
+    input.fingerprint ? `#sha256:${input.fingerprint}` : void 0,
+    input.duplicateOf ? `#duplicate:${input.duplicateOf}` : void 0,
+    Number.isFinite(confidence) ? `#confidence:${Math.round(confidence * 100)}` : void 0
+  );
+  return { kind, status, title, searchableText, tagsText };
+}
+function readDocumentStatus(tagsText) {
+  const match = tagsText?.match(/#doc:([a-z_]+)/i)?.[1];
+  return match && match in STATUS_LABELS ? match : "stored";
+}
+function readDocumentKind(tagsText, fallback = "file") {
+  const match = tagsText?.match(/#kind:([a-z_]+)/i)?.[1];
+  return match && match in KIND_LABELS ? match : fallback;
+}
+function documentStatusLabel(status) {
+  return STATUS_LABELS[status];
+}
+function documentKindLabel(kind) {
+  return KIND_LABELS[kind];
+}
+function bangkokMonthRange(reference = /* @__PURE__ */ new Date()) {
+  const parts = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Bangkok", year: "numeric", month: "2-digit" }).formatToParts(reference);
+  const year = Number(parts.find((part) => part.type === "year")?.value);
+  const month = Number(parts.find((part) => part.type === "month")?.value);
+  const start = new Date(Date.UTC(year, month - 1, 1, -7));
+  const end = new Date(Date.UTC(year, month, 1, -7));
+  return { year, month, key: `${year}-${String(month).padStart(2, "0")}`, start, end };
+}
+function summarizeVaultDocuments(rows) {
+  const byKind = /* @__PURE__ */ new Map();
+  const issues = [];
+  let ready = 0;
+  let duplicates = 0;
+  let storageMissing = 0;
+  for (const row of rows) {
+    const kind = readDocumentKind(row.tagsText, row.mimeType === "application/pdf" ? "pdf" : row.itemType === "image" ? "image" : "file");
+    const status = readDocumentStatus(row.tagsText);
+    byKind.set(kind, (byKind.get(kind) ?? 0) + 1);
+    if (status === "ready" || status === "stored") ready += 1;
+    if (status === "duplicate") duplicates += 1;
+    if (status === "storage_missing") storageMissing += 1;
+    if (["needs_review", "blurry", "password_required", "storage_missing", "failed", "processing"].includes(status)) issues.push(row);
+  }
+  return {
+    total: rows.length,
+    ready,
+    issues,
+    duplicates,
+    storageMissing,
+    byKind: Array.from(byKind.entries()).sort((a, b) => b[1] - a[1])
+  };
+}
+
 // server/milo/routes.ts
 function helpText() {
-  return "Milo \u0E0A\u0E48\u0E27\u0E22\u0E04\u0E38\u0E13\u0E08\u0E1A\u0E07\u0E32\u0E19\u0E43\u0E19 LINE \u0E41\u0E0A\u0E17\u0E40\u0E14\u0E35\u0E22\u0E27\u0E04\u0E23\u0E31\u0E1A\n\u{1F514} \u0E40\u0E15\u0E37\u0E2D\u0E19: \u0E40\u0E15\u0E37\u0E2D\u0E19\u0E1B\u0E23\u0E30\u0E0A\u0E38\u0E21\u0E1E\u0E23\u0E38\u0E48\u0E07\u0E19\u0E35\u0E49 10:00 / \u0E40\u0E15\u0E37\u0E2D\u0E19\u0E14\u0E37\u0E48\u0E21\u0E19\u0E49\u0E33\u0E17\u0E38\u0E01 30 \u0E19\u0E32\u0E17\u0E35 / \u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E40\u0E15\u0E37\u0E2D\u0E19\n\u{1F5C2}\uFE0F \u0E40\u0E01\u0E47\u0E1A: \u0E40\u0E01\u0E47\u0E1A https://example.com #\u0E07\u0E32\u0E19 / \u0E04\u0E49\u0E19\u0E2B\u0E32 \u0E43\u0E1A\u0E40\u0E2A\u0E19\u0E2D\u0E23\u0E32\u0E04\u0E32 / \u0E2A\u0E16\u0E32\u0E19\u0E30\u0E04\u0E25\u0E31\u0E07\n\u{1F4C5} \u0E1B\u0E0F\u0E34\u0E17\u0E34\u0E19: \u0E25\u0E07\u0E1B\u0E0F\u0E34\u0E17\u0E34\u0E19 \u0E1B\u0E23\u0E30\u0E0A\u0E38\u0E21\u0E17\u0E35\u0E21\u0E1E\u0E23\u0E38\u0E48\u0E07\u0E19\u0E35\u0E49 10:00 / \u0E14\u0E39\u0E1B\u0E0F\u0E34\u0E17\u0E34\u0E19\n\u{1F465} \u0E01\u0E25\u0E38\u0E48\u0E21 LINE: @\u0E44\u0E21\u0E42\u0E25 \u0E1C\u0E39\u0E49\u0E0A\u0E48\u0E27\u0E22\u0E01\u0E25\u0E38\u0E48\u0E21 / @\u0E44\u0E21\u0E42\u0E25 \u0E41\u0E08\u0E49\u0E07\u0E2A\u0E48\u0E07\u0E07\u0E32\u0E19\u0E14\u0E49\u0E27\u0E22\u0E16\u0E36\u0E07 @\u0E2A\u0E21\u0E0A\u0E32\u0E22\n\u2705 \u0E07\u0E32\u0E19: \u0E07\u0E32\u0E19 \u0E2A\u0E48\u0E07\u0E2A\u0E23\u0E38\u0E1B\u0E23\u0E32\u0E22\u0E2A\u0E31\u0E1B\u0E14\u0E32\u0E2B\u0E4C / \u0E14\u0E39\u0E07\u0E32\u0E19 / \u0E40\u0E2A\u0E23\u0E47\u0E08\u0E07\u0E32\u0E19 #12 / \u0E42\u0E19\u0E49\u0E15 \u0E23\u0E2B\u0E31\u0E2A Wi-Fi\n\u{1F4B0} \u0E01\u0E32\u0E23\u0E40\u0E07\u0E34\u0E19: \u0E01\u0E34\u0E19\u0E01\u0E32\u0E41\u0E1F 80 / \u0E40\u0E07\u0E34\u0E19\u0E40\u0E14\u0E37\u0E2D\u0E19\u0E40\u0E02\u0E49\u0E32 35000 / \u0E15\u0E31\u0E49\u0E07\u0E07\u0E1A \u0E2D\u0E32\u0E2B\u0E32\u0E23 5000 / \u0E2A\u0E23\u0E38\u0E1B\u0E40\u0E14\u0E37\u0E2D\u0E19\u0E19\u0E35\u0E49\n\u{1F4F7}\u{1F399}\uFE0F \u0E2A\u0E48\u0E07\u0E23\u0E39\u0E1B\u0E43\u0E1A\u0E40\u0E2A\u0E23\u0E47\u0E08\u0E2B\u0E23\u0E37\u0E2D\u0E40\u0E2A\u0E35\u0E22\u0E07\u0E43\u0E2B\u0E49\u0E44\u0E21\u0E42\u0E25\u0E2D\u0E48\u0E32\u0E19 \u0E41\u0E25\u0E49\u0E27\u0E15\u0E23\u0E27\u0E08\u0E41\u0E25\u0E30\u0E22\u0E37\u0E19\u0E22\u0E31\u0E19\u0E01\u0E48\u0E2D\u0E19\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\n\n\u0E1E\u0E34\u0E21\u0E1E\u0E4C \u201C\u0E0A\u0E48\u0E27\u0E22\u201D \u0E44\u0E14\u0E49\u0E17\u0E38\u0E01\u0E40\u0E21\u0E37\u0E48\u0E2D\u0E04\u0E23\u0E31\u0E1A";
+  return "Milo \u0E0A\u0E48\u0E27\u0E22\u0E04\u0E38\u0E13\u0E08\u0E1A\u0E07\u0E32\u0E19\u0E43\u0E19 LINE \u0E41\u0E0A\u0E17\u0E40\u0E14\u0E35\u0E22\u0E27\u0E04\u0E23\u0E31\u0E1A\n\u{1F514} \u0E40\u0E15\u0E37\u0E2D\u0E19: \u0E40\u0E15\u0E37\u0E2D\u0E19\u0E1B\u0E23\u0E30\u0E0A\u0E38\u0E21\u0E1E\u0E23\u0E38\u0E48\u0E07\u0E19\u0E35\u0E49 10:00 / \u0E40\u0E15\u0E37\u0E2D\u0E19\u0E14\u0E37\u0E48\u0E21\u0E19\u0E49\u0E33\u0E17\u0E38\u0E01 30 \u0E19\u0E32\u0E17\u0E35 / \u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E40\u0E15\u0E37\u0E2D\u0E19\n\u{1F5C2}\uFE0F \u0E40\u0E01\u0E47\u0E1A: \u0E40\u0E01\u0E47\u0E1A https://example.com #\u0E07\u0E32\u0E19 / \u0E04\u0E49\u0E19\u0E2B\u0E32 \u0E43\u0E1A\u0E40\u0E2A\u0E19\u0E2D\u0E23\u0E32\u0E04\u0E32 / \u0E2A\u0E16\u0E32\u0E19\u0E30\u0E04\u0E25\u0E31\u0E07\n\u{1F4E6} \u0E40\u0E2D\u0E01\u0E2A\u0E32\u0E23: \u0E2A\u0E23\u0E38\u0E1B\u0E40\u0E2D\u0E01\u0E2A\u0E32\u0E23\u0E40\u0E14\u0E37\u0E2D\u0E19\u0E19\u0E35\u0E49 / \u0E44\u0E1F\u0E25\u0E4C\u0E17\u0E35\u0E48\u0E15\u0E49\u0E2D\u0E07\u0E15\u0E23\u0E27\u0E08\n\u{1F4C5} \u0E1B\u0E0F\u0E34\u0E17\u0E34\u0E19: \u0E25\u0E07\u0E1B\u0E0F\u0E34\u0E17\u0E34\u0E19 \u0E1B\u0E23\u0E30\u0E0A\u0E38\u0E21\u0E17\u0E35\u0E21\u0E1E\u0E23\u0E38\u0E48\u0E07\u0E19\u0E35\u0E49 10:00 / \u0E14\u0E39\u0E1B\u0E0F\u0E34\u0E17\u0E34\u0E19\n\u{1F465} \u0E01\u0E25\u0E38\u0E48\u0E21 LINE: @\u0E44\u0E21\u0E42\u0E25 \u0E1C\u0E39\u0E49\u0E0A\u0E48\u0E27\u0E22\u0E01\u0E25\u0E38\u0E48\u0E21 / @\u0E44\u0E21\u0E42\u0E25 \u0E41\u0E08\u0E49\u0E07\u0E2A\u0E48\u0E07\u0E07\u0E32\u0E19\u0E14\u0E49\u0E27\u0E22\u0E16\u0E36\u0E07 @\u0E2A\u0E21\u0E0A\u0E32\u0E22\n\u2705 \u0E07\u0E32\u0E19: \u0E07\u0E32\u0E19 \u0E2A\u0E48\u0E07\u0E2A\u0E23\u0E38\u0E1B\u0E23\u0E32\u0E22\u0E2A\u0E31\u0E1B\u0E14\u0E32\u0E2B\u0E4C / \u0E14\u0E39\u0E07\u0E32\u0E19 / \u0E40\u0E2A\u0E23\u0E47\u0E08\u0E07\u0E32\u0E19 #12 / \u0E42\u0E19\u0E49\u0E15 \u0E23\u0E2B\u0E31\u0E2A Wi-Fi\n\u{1F4B0} \u0E01\u0E32\u0E23\u0E40\u0E07\u0E34\u0E19: \u0E01\u0E34\u0E19\u0E01\u0E32\u0E41\u0E1F 80 / \u0E40\u0E07\u0E34\u0E19\u0E40\u0E14\u0E37\u0E2D\u0E19\u0E40\u0E02\u0E49\u0E32 35000 / \u0E15\u0E31\u0E49\u0E07\u0E07\u0E1A \u0E2D\u0E32\u0E2B\u0E32\u0E23 5000 / \u0E2A\u0E23\u0E38\u0E1B\u0E40\u0E14\u0E37\u0E2D\u0E19\u0E19\u0E35\u0E49\n\u{1F4F7}\u{1F399}\uFE0F \u0E2A\u0E48\u0E07\u0E23\u0E39\u0E1B\u0E43\u0E1A\u0E40\u0E2A\u0E23\u0E47\u0E08\u0E2B\u0E23\u0E37\u0E2D\u0E40\u0E2A\u0E35\u0E22\u0E07\u0E43\u0E2B\u0E49\u0E44\u0E21\u0E42\u0E25\u0E2D\u0E48\u0E32\u0E19 \u0E41\u0E25\u0E49\u0E27\u0E15\u0E23\u0E27\u0E08\u0E41\u0E25\u0E30\u0E22\u0E37\u0E19\u0E22\u0E31\u0E19\u0E01\u0E48\u0E2D\u0E19\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\n\n\u0E1E\u0E34\u0E21\u0E1E\u0E4C \u201C\u0E0A\u0E48\u0E27\u0E22\u201D \u0E44\u0E14\u0E49\u0E17\u0E38\u0E01\u0E40\u0E21\u0E37\u0E48\u0E2D\u0E04\u0E23\u0E31\u0E1A";
 }
 function contextualFallback(text2) {
   const value = text2.trim().replace(/^@?ไมโล\s*/i, "").slice(0, 80);
@@ -6085,6 +6284,48 @@ ${highlights}` : ""}${actions ? `
 
 \u0E41\u0E19\u0E27\u0E17\u0E32\u0E07\u0E08\u0E31\u0E14\u0E01\u0E32\u0E23
 ${actions}` : ""}`;
+}
+function formatDocumentPacket(reference, rows, issuesOnly = false) {
+  const packet = summarizeVaultDocuments(rows);
+  const monthLabel = new Intl.DateTimeFormat("th-TH", { timeZone: "Asia/Bangkok", month: "long", year: "numeric" }).format(reference);
+  const kinds = packet.byKind.length ? packet.byKind.map(([kind, count]) => `\u2022 ${documentKindLabel(kind)} ${count} \u0E44\u0E1F\u0E25\u0E4C`).join("\n") : "\u2022 \u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E21\u0E35\u0E40\u0E2D\u0E01\u0E2A\u0E32\u0E23";
+  const issueRows = packet.issues.slice(0, 8).map((item) => `#${item.id} \u2022 ${item.title} \u2022 ${documentStatusLabel(readDocumentStatus(item.tagsText))}`).join("\n");
+  if (issuesOnly) {
+    return issueRows ? `\u26A0\uFE0F \u0E40\u0E2D\u0E01\u0E2A\u0E32\u0E23\u0E17\u0E35\u0E48\u0E15\u0E49\u0E2D\u0E07\u0E15\u0E23\u0E27\u0E08 \u0E40\u0E14\u0E37\u0E2D\u0E19${monthLabel}
+${issueRows}
+
+\u0E1E\u0E34\u0E21\u0E1E\u0E4C\u0E0A\u0E37\u0E48\u0E2D\u0E23\u0E49\u0E32\u0E19 \u0E27\u0E31\u0E19\u0E17\u0E35\u0E48 \u0E2B\u0E23\u0E37\u0E2D\u0E04\u0E33\u0E2A\u0E33\u0E04\u0E31\u0E0D\u0E2B\u0E25\u0E31\u0E07\u0E04\u0E33\u0E27\u0E48\u0E32 \u201C\u0E04\u0E49\u0E19\u0E2B\u0E32\u201D \u0E40\u0E1E\u0E37\u0E48\u0E2D\u0E40\u0E1B\u0E34\u0E14\u0E2B\u0E32\u0E44\u0E1F\u0E25\u0E4C\u0E44\u0E14\u0E49\u0E40\u0E23\u0E47\u0E27\u0E02\u0E36\u0E49\u0E19` : `\u2705 \u0E40\u0E14\u0E37\u0E2D\u0E19${monthLabel} \u0E44\u0E21\u0E48\u0E21\u0E35\u0E40\u0E2D\u0E01\u0E2A\u0E32\u0E23\u0E17\u0E35\u0E48\u0E04\u0E49\u0E32\u0E07\u0E15\u0E23\u0E27\u0E08\u0E04\u0E23\u0E31\u0E1A`;
+  }
+  return `\u{1F4E6} \u0E0A\u0E38\u0E14\u0E40\u0E2D\u0E01\u0E2A\u0E32\u0E23\u0E40\u0E14\u0E37\u0E2D\u0E19${monthLabel}
+\u0E17\u0E31\u0E49\u0E07\u0E2B\u0E21\u0E14 ${packet.total} \u0E44\u0E1F\u0E25\u0E4C \u2022 \u0E1E\u0E23\u0E49\u0E2D\u0E21\u0E43\u0E0A\u0E49 ${packet.ready} \u2022 \u0E15\u0E49\u0E2D\u0E07\u0E15\u0E23\u0E27\u0E08 ${packet.issues.length}
+\u0E44\u0E1F\u0E25\u0E4C\u0E0B\u0E49\u0E33 ${packet.duplicates} \u2022 \u0E15\u0E49\u0E2D\u0E07\u0E2D\u0E31\u0E1B\u0E42\u0E2B\u0E25\u0E14\u0E0B\u0E49\u0E33 ${packet.storageMissing}
+
+\u0E41\u0E22\u0E01\u0E15\u0E32\u0E21\u0E1B\u0E23\u0E30\u0E40\u0E20\u0E17
+${kinds}${issueRows ? `
+
+\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E17\u0E35\u0E48\u0E15\u0E49\u0E2D\u0E07\u0E15\u0E23\u0E27\u0E08
+${issueRows}` : "\n\n\u2705 \u0E44\u0E21\u0E48\u0E21\u0E35\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E04\u0E49\u0E32\u0E07\u0E15\u0E23\u0E27\u0E08"}`;
+}
+async function persistDocumentIntelligence(input) {
+  const intelligence = buildDocumentIntelligence(input);
+  try {
+    await updateVaultIntelligence({
+      id: input.vaultId,
+      lineUserId: input.lineUserId,
+      lineChatId: input.lineChatId,
+      title: intelligence.title,
+      searchableText: intelligence.searchableText,
+      tagsText: intelligence.tagsText,
+      workflowStatus: intelligence.status,
+      documentKind: intelligence.kind
+    });
+  } catch (error) {
+    console.warn("[Milo Documents] metadata update failed", {
+      vaultId: input.vaultId,
+      error: error instanceof Error ? error.message : "unknown"
+    });
+  }
+  return intelligence;
 }
 async function buildVoiceProposal(transcript, lineUserId, financeAccountId) {
   const command = parseMiloCommand(transcript);
@@ -6243,6 +6484,10 @@ ${items.map((item) => `#${item.id} \u2022 ${item.title} \u2022 ${formatDate(item
 \u0E44\u0E1F\u0E25\u0E4C\u0E2A\u0E37\u0E48\u0E2D\u0E17\u0E35\u0E48\u0E15\u0E49\u0E2D\u0E07\u0E2D\u0E31\u0E1B\u0E42\u0E2B\u0E25\u0E14\u0E0B\u0E49\u0E33 ${status.mediaMissing} \u0E23\u0E32\u0E22\u0E01\u0E32\u0E23
 
 \u0E02\u0E49\u0E2D\u0E04\u0E27\u0E32\u0E21/\u0E25\u0E34\u0E07\u0E01\u0E4C\u0E40\u0E01\u0E47\u0E1A\u0E43\u0E19\u0E10\u0E32\u0E19\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25 \u0E41\u0E25\u0E30\u0E23\u0E39\u0E1B/\u0E44\u0E1F\u0E25\u0E4C\u0E17\u0E35\u0E48\u0E21\u0E35\u0E2A\u0E33\u0E40\u0E19\u0E32 storage \u0E08\u0E30\u0E40\u0E01\u0E47\u0E1A\u0E44\u0E27\u0E49\u0E08\u0E19\u0E01\u0E27\u0E48\u0E32\u0E04\u0E38\u0E13\u0E08\u0E30\u0E25\u0E1A\u0E04\u0E23\u0E31\u0E1A`;
+  } else if (command.type === "documentPacket" || command.type === "documentIssues") {
+    const range = bangkokMonthRange(/* @__PURE__ */ new Date());
+    const rows = await listVaultDocumentsForChat(lineUserId, lineChatId, scope, range.start, new Date(range.end.getTime() - 1));
+    message = formatDocumentPacket(/* @__PURE__ */ new Date(), rows, command.type === "documentIssues");
   } else if (command.type === "reminder") {
     const id = await createReminder({ lineChatId, createdByLineUserId: lineUserId, ...command.data, sourceMessageId: event.message?.id });
     message = `\u0E15\u0E31\u0E49\u0E07\u0E40\u0E15\u0E37\u0E2D\u0E19 #${id} \u0E40\u0E23\u0E35\u0E22\u0E1A\u0E23\u0E49\u0E2D\u0E22
@@ -6702,6 +6947,26 @@ async function handleMedia(event, lineChatId, lineUserId, scope, runtime = {}) {
     }
     throw new MediaProcessingError(mediaErrorMessage(error), userNotified);
   }
+  const fingerprint = fingerprintMedia(bytes);
+  const duplicate = await findVaultItemByFingerprint(lineChatId, fingerprint).catch(() => void 0);
+  if (duplicate) {
+    try {
+      await writeAuditLog({
+        action: "vault.duplicate.detected",
+        entityType: "vault_item",
+        entityId: duplicate.id,
+        actorLineUserId: lineUserId,
+        lineChatId,
+        details: { duplicateLineMessageId: message.id, fingerprint }
+      });
+    } catch {
+    }
+    const duplicateMessage = `\u0E44\u0E1F\u0E25\u0E4C\u0E19\u0E35\u0E49\u0E21\u0E35\u0E2D\u0E22\u0E39\u0E48\u0E43\u0E19\u0E04\u0E25\u0E31\u0E07\u0E41\u0E25\u0E49\u0E27\u0E04\u0E23\u0E31\u0E1A \u2022 #${duplicate.id} ${duplicate.title}
+\u0E44\u0E21\u0E42\u0E25\u0E08\u0E36\u0E07\u0E44\u0E21\u0E48\u0E40\u0E01\u0E47\u0E1A\u0E0B\u0E49\u0E33\u0E41\u0E25\u0E30\u0E44\u0E21\u0E48\u0E2A\u0E23\u0E49\u0E32\u0E07\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E01\u0E32\u0E23\u0E40\u0E07\u0E34\u0E19\u0E0B\u0E49\u0E33`;
+    if (event.replyToken) await replyText(event.replyToken, duplicateMessage);
+    else await pushText(lineChatId, duplicateMessage);
+    return;
+  }
   let stored;
   try {
     stored = await storagePut(`milo/${lineChatId}/${message.id}`, bytes, mimeType);
@@ -6720,7 +6985,12 @@ async function handleMedia(event, lineChatId, lineUserId, scope, runtime = {}) {
       createdByLineUserId: lineUserId,
       itemType: isImage ? "image" : "file",
       title: message.fileName ?? (isImage ? "\u0E23\u0E39\u0E1B\u0E08\u0E32\u0E01 LINE" : isAudio ? "\u0E02\u0E49\u0E2D\u0E04\u0E27\u0E32\u0E21\u0E40\u0E2A\u0E35\u0E22\u0E07\u0E08\u0E32\u0E01 LINE" : "\u0E44\u0E1F\u0E25\u0E4C\u0E08\u0E32\u0E01 LINE"),
-      searchableText: message.fileName,
+      searchableText: [message.fileName, runtime.senderDisplayName].filter(Boolean).join(" "),
+      tagsText: mergeVaultTags(
+        `#doc:${isImage || isAudio || isPdf ? "processing" : stored?.key ? "stored" : "storage_missing"}`,
+        `#kind:${classifyDocumentKind({ filename: message.fileName, mimeType })}`,
+        `#sha256:${fingerprint}`
+      ),
       originalFilename: message.fileName,
       mimeType,
       storageKey: stored?.key,
@@ -6760,6 +7030,17 @@ async function handleMedia(event, lineChatId, lineUserId, scope, runtime = {}) {
       const financeScope = await resolveFinanceScope(lineUserId, lineChatId, scope);
       const proposal = await buildVoiceProposal(transcript.text, lineUserId, financeScope?.financeAccountId);
       await saveVoiceTranscription({ vaultItemId: vaultId, lineChatId, lineUserId, transcript: transcript.text, language: transcript.language, durationSeconds: transcript.duration, proposalJson: JSON.stringify(proposal) });
+      await persistDocumentIntelligence({
+        vaultId,
+        lineUserId,
+        lineChatId,
+        filename: message.fileName,
+        mimeType,
+        storageReady: Boolean(stored?.key),
+        fingerprint,
+        senderDisplayName: runtime.senderDisplayName,
+        analysis: { summary: transcript.text, confidence: 1, proposals: [{ documentType: "audio", title: transcript.text }] }
+      });
       const proposalLine = proposal.transactionType && proposal.amount ? `\u0E40\u0E2A\u0E19\u0E2D${proposal.transactionType === "expense" ? "\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22" : "\u0E23\u0E32\u0E22\u0E23\u0E31\u0E1A"} ${proposal.amount.toLocaleString("th-TH")} \u0E1A\u0E32\u0E17 \u2022 \u0E2B\u0E21\u0E27\u0E14${proposal.category ?? "\u0E17\u0E31\u0E48\u0E27\u0E44\u0E1B"}` : "\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E1E\u0E1A\u0E23\u0E39\u0E1B\u0E41\u0E1A\u0E1A\u0E23\u0E32\u0E22\u0E23\u0E31\u0E1A/\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22\u0E17\u0E35\u0E48\u0E41\u0E19\u0E48\u0E0A\u0E31\u0E14";
       const canConfirm = Boolean(proposal.transactionType && proposal.amount);
       const nextStep = canConfirm ? "\u0E15\u0E23\u0E27\u0E08\u0E23\u0E32\u0E22\u0E25\u0E30\u0E40\u0E2D\u0E35\u0E22\u0E14\u0E41\u0E25\u0E49\u0E27\u0E01\u0E14 \u201C\u0E22\u0E37\u0E19\u0E22\u0E31\u0E19\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u201D \u0E44\u0E14\u0E49\u0E40\u0E25\u0E22\u0E19\u0E48\u0E30\u0E08\u0E4A\u0E30" : "\u0E22\u0E31\u0E07\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E44\u0E21\u0E48\u0E44\u0E14\u0E49 \u0E01\u0E23\u0E38\u0E13\u0E32\u0E01\u0E14\u0E41\u0E01\u0E49\u0E44\u0E02\u0E02\u0E49\u0E2D\u0E04\u0E27\u0E32\u0E21\u0E43\u0E2B\u0E49\u0E21\u0E35\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E41\u0E25\u0E30\u0E08\u0E33\u0E19\u0E27\u0E19\u0E40\u0E07\u0E34\u0E19 \u0E40\u0E0A\u0E48\u0E19 \u201C\u0E04\u0E48\u0E32\u0E01\u0E32\u0E41\u0E1F 40 \u0E1A\u0E32\u0E17\u201D \u0E19\u0E48\u0E30\u0E08\u0E4A\u0E30";
@@ -6770,6 +7051,17 @@ ${proposalLine}
 ${nextStep}${storageNote}`, [...canConfirm ? [{ label: "\u0E22\u0E37\u0E19\u0E22\u0E31\u0E19\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01", text: "\u0E22\u0E37\u0E19\u0E22\u0E31\u0E19\u0E40\u0E2A\u0E35\u0E22\u0E07" }] : [], { label: "\u0E41\u0E01\u0E49\u0E44\u0E02\u0E02\u0E49\u0E2D\u0E04\u0E27\u0E32\u0E21", text: "\u0E41\u0E01\u0E49\u0E44\u0E02\u0E02\u0E49\u0E2D\u0E04\u0E27\u0E32\u0E21\u0E40\u0E2A\u0E35\u0E22\u0E07" }]);
     } catch (error) {
       console.error("[Milo Voice] transcription failed", { messageId: message.id, error: error instanceof Error ? error.message : "unknown" });
+      await persistDocumentIntelligence({
+        vaultId,
+        lineUserId,
+        lineChatId,
+        filename: message.fileName,
+        mimeType,
+        storageReady: Boolean(stored?.key),
+        fingerprint,
+        senderDisplayName: runtime.senderDisplayName,
+        error
+      });
       const runtimeMissing = error instanceof Error && /not configured|valid credit card|payment required|insufficient.*(?:credit|quota)|billing/i.test(error.message);
       const fallback = runtimeMissing ? "\u0E23\u0E31\u0E1A\u0E02\u0E49\u0E2D\u0E04\u0E27\u0E32\u0E21\u0E40\u0E2A\u0E35\u0E22\u0E07\u0E41\u0E25\u0E49\u0E27 \u0E41\u0E15\u0E48\u0E1A\u0E23\u0E34\u0E01\u0E32\u0E23\u0E16\u0E2D\u0E14\u0E40\u0E2A\u0E35\u0E22\u0E07\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E1E\u0E23\u0E49\u0E2D\u0E21\u0E43\u0E0A\u0E49\u0E07\u0E32\u0E19 \u0E15\u0E49\u0E2D\u0E07\u0E41\u0E01\u0E49\u0E01\u0E32\u0E23\u0E15\u0E31\u0E49\u0E07\u0E04\u0E48\u0E32\u0E1A\u0E23\u0E34\u0E01\u0E32\u0E23\u0E01\u0E48\u0E2D\u0E19 \u0E15\u0E2D\u0E19\u0E19\u0E35\u0E49\u0E01\u0E23\u0E38\u0E13\u0E32\u0E1E\u0E34\u0E21\u0E1E\u0E4C\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E41\u0E17\u0E19 \u0E40\u0E0A\u0E48\u0E19 \u201C\u0E04\u0E48\u0E32\u0E01\u0E32\u0E41\u0E1F 40 \u0E1A\u0E32\u0E17\u201D \u0E19\u0E48\u0E30\u0E08\u0E4A\u0E30" : "\u0E23\u0E31\u0E1A\u0E02\u0E49\u0E2D\u0E04\u0E27\u0E32\u0E21\u0E40\u0E2A\u0E35\u0E22\u0E07\u0E41\u0E25\u0E49\u0E27 \u0E41\u0E15\u0E48\u0E22\u0E31\u0E07\u0E16\u0E2D\u0E14\u0E40\u0E2A\u0E35\u0E22\u0E07\u0E44\u0E21\u0E48\u0E44\u0E14\u0E49\u0E43\u0E19\u0E04\u0E23\u0E31\u0E49\u0E07\u0E19\u0E35\u0E49 \u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E21\u0E35\u0E01\u0E32\u0E23\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23 \u0E01\u0E23\u0E38\u0E13\u0E32\u0E1E\u0E34\u0E21\u0E1E\u0E4C\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E41\u0E17\u0E19\u0E0A\u0E31\u0E48\u0E27\u0E04\u0E23\u0E32\u0E27\u0E19\u0E48\u0E30\u0E08\u0E4A\u0E30";
       let userNotified = false;
@@ -6787,6 +7079,17 @@ ${nextStep}${storageNote}`, [...canConfirm ? [{ label: "\u0E22\u0E37\u0E19\u0E22
     try {
       const analysis = await analyzePdfBuffer(bytes);
       await saveImageExtraction(vaultId, "expense", JSON.stringify(analysis), analysis.confidence);
+      await persistDocumentIntelligence({
+        vaultId,
+        lineUserId,
+        lineChatId,
+        filename: message.fileName,
+        mimeType,
+        storageReady: Boolean(stored?.key),
+        fingerprint,
+        senderDisplayName: runtime.senderDisplayName,
+        analysis
+      });
       const preview = analysis.proposals.slice(0, 5).map((item) => `\u2022 ${formatImageProposal(item)}`).join("\n");
       const more = analysis.proposals.length > 5 ? `
 \u2026\u0E41\u0E25\u0E30\u0E2D\u0E35\u0E01 ${analysis.proposals.length - 5} \u0E23\u0E32\u0E22\u0E01\u0E32\u0E23` : "";
@@ -6796,6 +7099,17 @@ ${preview || "\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E1E\u0E1A\u0E23\u0E32\u0E22
 \u0E15\u0E23\u0E27\u0E08\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E01\u0E48\u0E2D\u0E19 \u0E41\u0E25\u0E49\u0E27\u0E1E\u0E34\u0E21\u0E1E\u0E4C \u201C\u0E22\u0E37\u0E19\u0E22\u0E31\u0E19 PDF\u201D \u0E40\u0E1E\u0E37\u0E48\u0E2D\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E40\u0E09\u0E1E\u0E32\u0E30\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E17\u0E35\u0E48\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48\u0E41\u0E25\u0E30\u0E22\u0E2D\u0E14\u0E0A\u0E31\u0E14\u0E40\u0E08\u0E19${storageNote}`);
     } catch (error) {
       console.error("[Milo PDF] analysis failed", { messageId: message.id, error: error instanceof Error ? error.message : "unknown" });
+      await persistDocumentIntelligence({
+        vaultId,
+        lineUserId,
+        lineChatId,
+        filename: message.fileName,
+        mimeType,
+        storageReady: Boolean(stored?.key),
+        fingerprint,
+        senderDisplayName: runtime.senderDisplayName,
+        error
+      });
       const fallback = "\u0E40\u0E01\u0E47\u0E1A PDF \u0E44\u0E27\u0E49\u0E41\u0E25\u0E49\u0E27 \u0E41\u0E15\u0E48\u0E22\u0E31\u0E07\u0E2D\u0E48\u0E32\u0E19\u0E18\u0E38\u0E23\u0E01\u0E23\u0E23\u0E21\u0E08\u0E32\u0E01\u0E44\u0E1F\u0E25\u0E4C\u0E19\u0E35\u0E49\u0E44\u0E21\u0E48\u0E44\u0E14\u0E49 \u0E01\u0E23\u0E38\u0E13\u0E32\u0E25\u0E2D\u0E07\u0E44\u0E1F\u0E25\u0E4C\u0E17\u0E35\u0E48\u0E44\u0E21\u0E48\u0E25\u0E47\u0E2D\u0E01\u0E23\u0E2B\u0E31\u0E2A\u0E41\u0E25\u0E30\u0E21\u0E35\u0E02\u0E49\u0E2D\u0E04\u0E27\u0E32\u0E21\u0E2D\u0E48\u0E32\u0E19\u0E44\u0E14\u0E49\u0E04\u0E23\u0E31\u0E1A";
       let userNotified = false;
       if (event.replyToken) {
@@ -6821,6 +7135,16 @@ ${preview || "\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E1E\u0E1A\u0E23\u0E32\u0E22
     return;
   }
   if (!isImage) {
+    await persistDocumentIntelligence({
+      vaultId,
+      lineUserId,
+      lineChatId,
+      filename: message.fileName,
+      mimeType,
+      storageReady: Boolean(stored?.key),
+      fingerprint,
+      senderDisplayName: runtime.senderDisplayName
+    });
     if (event.replyToken) await replyText(event.replyToken, stored?.key ? "\u0E40\u0E01\u0E47\u0E1A\u0E44\u0E1F\u0E25\u0E4C\u0E19\u0E35\u0E49\u0E44\u0E27\u0E49\u0E43\u0E19\u0E04\u0E25\u0E31\u0E07\u0E16\u0E32\u0E27\u0E23\u0E08\u0E19\u0E01\u0E27\u0E48\u0E32\u0E04\u0E38\u0E13\u0E08\u0E30\u0E25\u0E1A\u0E41\u0E25\u0E49\u0E27" : "\u0E23\u0E31\u0E1A\u0E44\u0E1F\u0E25\u0E4C\u0E41\u0E25\u0E49\u0E27 \u0E41\u0E15\u0E48\u0E1E\u0E37\u0E49\u0E19\u0E17\u0E35\u0E48\u0E40\u0E01\u0E47\u0E1A\u0E16\u0E32\u0E27\u0E23\u0E22\u0E31\u0E07\u0E2A\u0E33\u0E23\u0E2D\u0E07\u0E44\u0E1F\u0E25\u0E4C\u0E15\u0E49\u0E19\u0E09\u0E1A\u0E31\u0E1A\u0E44\u0E21\u0E48\u0E2A\u0E33\u0E40\u0E23\u0E47\u0E08 \u0E01\u0E23\u0E38\u0E13\u0E32\u0E2A\u0E48\u0E07\u0E44\u0E1F\u0E25\u0E4C\u0E19\u0E35\u0E49\u0E43\u0E2B\u0E21\u0E48\u0E2D\u0E35\u0E01\u0E04\u0E23\u0E31\u0E49\u0E07\u0E04\u0E23\u0E31\u0E1A");
     return;
   }
@@ -6834,6 +7158,17 @@ ${preview || "\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E1E\u0E1A\u0E23\u0E32\u0E22
   try {
     const analysis = await analyzeImage(`data:${mimeType};base64,${bytes.toString("base64")}`, { gatewayToken: runtime.gatewayToken });
     await saveImageExtraction(vaultId, analysis.proposals.some((item) => item.kind === "expense") ? "expense" : "reminder", JSON.stringify(analysis), analysis.confidence);
+    await persistDocumentIntelligence({
+      vaultId,
+      lineUserId,
+      lineChatId,
+      filename: message.fileName,
+      mimeType,
+      storageReady: Boolean(stored?.key),
+      fingerprint,
+      senderDisplayName: runtime.senderDisplayName,
+      analysis
+    });
     const proposals = analysis.proposals.slice(0, 2).map((item) => `\u2022 ${formatImageProposal(item)}`).join("\n");
     const hasExpense = analysis.proposals.some((item) => item.kind === "expense" && item.amount > 0);
     const storageNote = stored?.key ? "" : "\n\u26A0\uFE0F \u0E23\u0E39\u0E1B\u0E15\u0E49\u0E19\u0E09\u0E1A\u0E31\u0E1A\u0E22\u0E31\u0E07\u0E2A\u0E33\u0E23\u0E2D\u0E07\u0E16\u0E32\u0E27\u0E23\u0E44\u0E21\u0E48\u0E2A\u0E33\u0E40\u0E23\u0E47\u0E08 \u0E01\u0E23\u0E38\u0E13\u0E32\u0E2A\u0E48\u0E07\u0E43\u0E2B\u0E21\u0E48\u0E2B\u0E32\u0E01\u0E15\u0E49\u0E2D\u0E07\u0E01\u0E32\u0E23\u0E40\u0E01\u0E47\u0E1A\u0E15\u0E49\u0E19\u0E09\u0E1A\u0E31\u0E1A";
@@ -6843,6 +7178,17 @@ ${proposals || "\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E1E\u0E1A\u0E23\u0E32\u0E
 \u0E15\u0E23\u0E27\u0E08\u0E22\u0E2D\u0E14 \u0E2B\u0E21\u0E27\u0E14 \u0E41\u0E25\u0E30\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48\u0E43\u0E2B\u0E49\u0E16\u0E39\u0E01\u0E15\u0E49\u0E2D\u0E07 \u0E41\u0E25\u0E49\u0E27\u0E01\u0E14\u0E1B\u0E38\u0E48\u0E21\u0E22\u0E37\u0E19\u0E22\u0E31\u0E19\u0E44\u0E14\u0E49\u0E40\u0E25\u0E22\u0E04\u0E23\u0E31\u0E1A${storageNote}`, hasExpense ? [{ label: "\u0E22\u0E37\u0E19\u0E22\u0E31\u0E19\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01", text: "\u0E22\u0E37\u0E19\u0E22\u0E31\u0E19\u0E04\u0E48\u0E32\u0E43\u0E0A\u0E49\u0E08\u0E48\u0E32\u0E22" }, { label: "\u0E2A\u0E23\u0E38\u0E1B\u0E27\u0E31\u0E19\u0E19\u0E35\u0E49", text: "\u0E2A\u0E23\u0E38\u0E1B\u0E27\u0E31\u0E19\u0E19\u0E35\u0E49" }] : [{ label: "\u0E22\u0E37\u0E19\u0E22\u0E31\u0E19\u0E23\u0E39\u0E1B", text: "\u0E22\u0E37\u0E19\u0E22\u0E31\u0E19\u0E23\u0E39\u0E1B" }]);
   } catch (error) {
     console.error("[Milo Image] analysis failed", { messageId: message.id, error: error instanceof Error ? error.message : "unknown" });
+    await persistDocumentIntelligence({
+      vaultId,
+      lineUserId,
+      lineChatId,
+      filename: message.fileName,
+      mimeType,
+      storageReady: Boolean(stored?.key),
+      fingerprint,
+      senderDisplayName: runtime.senderDisplayName,
+      error: error instanceof Error ? new Error(`OCR \u0E2D\u0E48\u0E32\u0E19\u0E20\u0E32\u0E1E\u0E44\u0E21\u0E48\u0E0A\u0E31\u0E14: ${error.message}`) : error
+    });
     let userNotified = false;
     try {
       await pushText(lineChatId, "\u0E40\u0E01\u0E47\u0E1A\u0E23\u0E39\u0E1B\u0E44\u0E27\u0E49\u0E41\u0E25\u0E49\u0E27 \u0E41\u0E15\u0E48\u0E23\u0E30\u0E1A\u0E1A\u0E2D\u0E48\u0E32\u0E19\u0E2A\u0E25\u0E34\u0E1B/\u0E43\u0E1A\u0E40\u0E2A\u0E23\u0E47\u0E08\u0E04\u0E23\u0E31\u0E49\u0E07\u0E19\u0E35\u0E49\u0E44\u0E21\u0E48\u0E2A\u0E33\u0E40\u0E23\u0E47\u0E08 \u0E01\u0E23\u0E38\u0E13\u0E32\u0E25\u0E2D\u0E07\u0E2A\u0E48\u0E07\u0E20\u0E32\u0E1E\u0E17\u0E35\u0E48\u0E04\u0E21\u0E0A\u0E31\u0E14\u0E41\u0E25\u0E30\u0E40\u0E2B\u0E47\u0E19\u0E22\u0E2D\u0E14 \u0E27\u0E31\u0E19\u0E17\u0E35\u0E48 \u0E40\u0E27\u0E25\u0E32 \u0E41\u0E25\u0E30\u0E1C\u0E39\u0E49\u0E23\u0E31\u0E1A\u0E04\u0E23\u0E1A\u0E16\u0E49\u0E27\u0E19\u0E2D\u0E35\u0E01\u0E04\u0E23\u0E31\u0E49\u0E07\u0E19\u0E48\u0E30\u0E08\u0E4A\u0E30");
@@ -6873,7 +7219,7 @@ async function processEvent(event, rawPayload, runtime = {}) {
       return;
     }
     if (event.message.type === "text") await handleText(event, identity.lineChatId, identity.lineUserId, identity.scope);
-    else if (event.message.type === "image" || event.message.type === "file" || event.message.type === "audio") await handleMedia(event, identity.lineChatId, identity.lineUserId, identity.scope, runtime);
+    else if (event.message.type === "image" || event.message.type === "file" || event.message.type === "audio") await handleMedia(event, identity.lineChatId, identity.lineUserId, identity.scope, { ...runtime, senderDisplayName: profile?.displayName });
     await finishWebhookEvent(event.webhookEventId, "processed");
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : "unknown error";
