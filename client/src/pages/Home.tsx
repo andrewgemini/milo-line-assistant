@@ -2,9 +2,9 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/
 import { Button } from "@/components/ui/button";
 import { MiloMascot } from "@/components/MiloMascot";
 import {
-  ArrowRight, BarChart3, BellRing, BriefcaseBusiness, Check, CheckCircle2, FileText,
-  Globe2, LockKeyhole, MessageCircle, MousePointer2, ReceiptText, Search, ShieldCheck,
-  Sparkles, UsersRound, WalletCards, Zap,
+  ArrowRight, BellRing, BriefcaseBusiness, CalendarClock, Check, CheckCircle2, FileText,
+  Globe2, ListChecks, LockKeyhole, MousePointer2, ReceiptText, Search,
+  Sparkles, UsersRound, WalletCards,
   type LucideIcon,
 } from "lucide-react";
 import { Link } from "wouter";
@@ -12,33 +12,34 @@ import { Link } from "wouter";
 const lineUrl = "https://line.me/R/ti/p/%40684bxtsi";
 
 const featureCards = [
-  { icon: BellRing, title: "ตั้งเตือนแบบคุยกับเพื่อน", detail: "ครั้งเดียว รายวัน สัปดาห์ เดือน ทุก N นาที และตั้งจากรูปได้" },
+  { icon: Sparkles, title: "บอกครั้งเดียว จัดการหลายอย่าง", detail: "พิมพ์ประโยคเดียว แล้ว Milo แยกนัดหมาย เตือน บิล และงานให้พร้อมยืนยัน" },
+  { icon: CalendarClock, title: "วันนี้มีอะไรบ้าง", detail: "ดูไทม์ไลน์วันนี้รวม Calendar, To-do, Reminder, บิลรอจ่าย และภาพรวมการเงิน" },
+  { icon: ReceiptText, title: "บิลรอจ่ายไม่ปนกับค่าใช้จ่าย", detail: "Milo เก็บบิลไว้ก่อน และค่อยบันทึกเป็นค่าใช้จ่ายจริงเมื่อคุณสั่งจ่าย" },
+  { icon: ListChecks, title: "Smart Follow-up", detail: "บอกงานที่อยากให้ตามต่อ แล้ว Milo สร้างงานและเตือนติดตามให้อัตโนมัติ" },
+  { icon: BellRing, title: "Morning Brief · Evening Summary", detail: "สรุปส่วนตัวเข้า LINE เวลา 07:00 และ 20:00 ครอบคลุมงาน นัด เตือน บิล และการเงิน" },
   { icon: FileText, title: "คลังข้อความและไฟล์", detail: "เก็บข้อความ ลิงก์ รูป และไฟล์ไว้ค้นคืนในแชทเดิมได้ทุกเมื่อ" },
   { icon: UsersRound, title: "ผู้ช่วยประจำกลุ่ม LINE", detail: "เตือน ค้นไฟล์ ทำงานร่วมกัน และแท็กสมาชิกในกลุ่มด้วย @ไมโล" },
-  { icon: CheckCircle2, title: "To-do · Calendar · Search", detail: "จดงาน นัดหมาย ปฏิทิน โน้ต และค้นข้อมูลได้โดยไม่ต้องสลับแอป" },
-  { icon: WalletCards, title: "จดรายรับรายจ่าย", detail: "พิมพ์ พูด หรือส่งใบเสร็จ พร้อมหมวด งบ และสรุปการเงิน" },
-];
-
-const capabilities: Array<[LucideIcon, string, string, string]> = [
-  [BellRing, "เตือน", "บอกไมโลเหมือนบอกเพื่อนว่าอยากให้เตือนอะไร เมื่อไหร่", "bg-emerald-50 text-emerald-600"],
-  [FileText, "เก็บ", "ส่งข้อความ ลิงก์ รูป หรือไฟล์มา แล้วค้นคืนในแชทได้", "bg-sky-50 text-sky-600"],
-  [UsersRound, "จัดการในกลุ่ม", "เรียก @ไมโล ให้ช่วยเตือน แท็ก เก็บ และค้นข้อมูลของกลุ่ม", "bg-violet-50 text-violet-600"],
-  [WalletCards, "จดเงิน", "พิมพ์ พูด หรือส่งใบเสร็จ แล้วไมโลช่วยจัดหมวดและสรุปให้", "bg-orange-50 text-orange-500"],
+  { icon: WalletCards, title: "การเงินแบบสนทนา", detail: "จดรายรับรายจ่ายด้วยภาษาคน พร้อมหมวด งบ สรุป และการวิเคราะห์" },
 ];
 
 const useCases: Array<[LucideIcon, string, string, string]> = [
-  [BellRing, "ตั้งเตือน", "เตือนส่งรายงานพรุ่งนี้ 9:00", "bg-sky-50 text-sky-600"],
-  [FileText, "เก็บและค้น", "เก็บลิงก์นี้ #งาน แล้วหาให้ทีหลัง", "bg-rose-50 text-rose-500"],
-  [CheckCircle2, "To-do", "งาน โทรหาลูกค้าพรุ่งนี้", "bg-emerald-50 text-emerald-600"],
-  [Search, "Quick Search", "ค้นหา ใบเสนอราคา", "bg-emerald-50 text-emerald-600"],
-  [ReceiptText, "จดรายรับรายจ่าย", "กินกาแฟ 80", "bg-sky-50 text-sky-600"],
+  [Sparkles, "บันทึกชุดรายการ", "พรุ่งนี้ 14:00 ประชุมลูกค้า ค่าแท็กซี่ 300 ช่วยเตือนก่อนประชุม", "bg-violet-50 text-violet-600"],
+  [CalendarClock, "วันนี้มีอะไร", "วันนี้มีอะไรบ้าง", "bg-sky-50 text-sky-600"],
+  [BellRing, "Morning Brief", "สรุปเช้านี้ให้หน่อย", "bg-amber-50 text-amber-600"],
+  [ListChecks, "Smart Follow-up", "ช่วยตามงานใบเสนอราคากับลูกค้าด้วย", "bg-emerald-50 text-emerald-600"],
+  [ReceiptText, "บิลรอจ่าย", "ค่าแท็กซี่ 300 บาท รอจ่ายก่อน", "bg-orange-50 text-orange-500"],
+  [WalletCards, "จดรายรับรายจ่าย", "กินกาแฟ 80 บาท", "bg-sky-50 text-sky-600"],
+  [Search, "Quick Search", "ค้นหา ใบเสนอราคา", "bg-rose-50 text-rose-500"],
   [UsersRound, "ใช้ในกลุ่ม LINE", "@ไมโล แจ้งส่งงานด้วยถึง @สมชาย", "bg-amber-50 text-amber-500"],
 ];
 
 const faq = [
-  ["ไมโลคืออะไร?", "ไมโลคือผู้ช่วยบน LINE สำหรับเตือน เก็บไฟล์ ปฏิทิน To-do ค้นข้อมูล งานกลุ่ม และจดรายรับรายจ่ายในแชทเดียว"],
+  ["ไมโลคืออะไร?", "ไมโลคือผู้ช่วยส่วนตัวบน LINE ที่ช่วยจำ จัดการ และติดตามเรื่องต่าง ๆ ในแชทเดียว ทั้งนัดหมาย เตือน To-do บิลรอจ่าย การเงิน และสรุปประจำวัน"],
+  ["บอกเรื่องเดียวแล้วให้ไมโลจัดการหลายอย่างได้ไหม?", "ได้ครับ เช่น บอกวันเวลา นัดหมาย ค่าใช้จ่าย และคำขอเตือนในประโยคเดียว Milo จะรวมเป็นรายการเดียวให้ตรวจสอบและยืนยันก่อนบันทึก"],
+  ["บิลรอจ่ายต่างจากรายจ่ายอย่างไร?", "บิลรอจ่ายยังไม่ถูกนับเป็นค่าใช้จ่ายจริงจนกว่าคุณจะสั่งจ่ายบิล จึงช่วยแยกภาระที่ยังค้างจากเงินที่จ่ายแล้วได้"],
+  ["Morning Brief และ Evening Summary ทำงานอย่างไร?", "Milo สามารถส่งสรุปส่วนตัวเข้า LINE ทุกวัน โดย Morning Brief เวลา 07:00 และ Evening Summary เวลา 20:00 รวมข้อมูลที่มีอยู่ในวันนั้น เช่น นัดหมาย งาน เตือน บิล และการเงิน"],
+  ["Smart Follow-up คืออะไร?", "บอก Milo ว่างานไหนต้องตามต่อ เช่น ตามใบเสนอราคากับลูกค้า แล้ว Milo จะสร้างงานติดตามและตั้งเตือนให้โดยไม่ต้องจัดการหลายขั้นตอนเอง"],
   ["เริ่มใช้งานไมโลอย่างไร?", "กดปุ่มเชิญใช้งานหรือสแกน QR Code เพื่อเพิ่มเพื่อน Milo บน LINE แล้วเริ่มแชทได้ทันที ไม่ต้องติดตั้งแอปเพิ่ม"],
-  ["ไมโลใช้งานได้ตลอดเวลาหรือไม่?", "ใช้งานได้ตลอด 24 ชั่วโมงตามความพร้อมของระบบ และสามารถคุยกับไมโลได้เหมือนคุยกับผู้ช่วยส่วนตัว"],
   ["ข้อมูลของฉันปลอดภัยไหม?", "ไมโลออกแบบโดยคำนึงถึงความเป็นส่วนตัวและความปลอดภัยของข้อมูล พร้อมการเชื่อมต่อผ่านมาตรฐาน HTTPS/TLS"],
 ];
 
@@ -64,9 +65,9 @@ export default function Home() {
           </Link>
           <nav className="hidden items-center gap-8 text-[14px] font-semibold text-[#355f58] xl:flex">
             <a href="#home" className="border-b-2 border-[#12b77c] py-6 text-[#07996a]">หน้าหลัก</a>
-            <a href="#news" className="transition hover:text-[#07996a]">ข่าวสาร</a>
-            <a href="#features" className="transition hover:text-[#07996a]">สินค้า/บริการ</a>
-            <a href="#business" className="transition hover:text-[#07996a]">เอกสาร</a>
+            <a href="#news" className="transition hover:text-[#07996a]">ความสามารถใหม่</a>
+            <a href="#features" className="transition hover:text-[#07996a]">ฟีเจอร์ทั้งหมด</a>
+            <a href="#business" className="transition hover:text-[#07996a]">การใช้งาน</a>
             <a href="#faq" className="transition hover:text-[#07996a]">คำถามที่พบบ่อย</a>
             <a href="#about" className="transition hover:text-[#07996a]">เกี่ยวกับเรา</a>
           </nav>
@@ -87,9 +88,9 @@ export default function Home() {
               <span className="inline-flex items-center gap-2 rounded-full border border-[#d8eee7] bg-white px-4 py-2 text-xs font-bold text-[#247f6b] shadow-sm"><span className="grid size-5 place-items-center rounded-full bg-[#0bb575] text-[8px] text-white">LINE</span> LINE Official Account</span>
               <h1 className="font-display mt-5 text-6xl font-black leading-[.95] tracking-tight text-[#075b4b] sm:text-7xl">Milo<span className="text-[#08b475]">✣</span><br /><span className="text-[#10ae78]">LINE Assistant</span></h1>
               <h2 className="font-display mt-3 text-2xl font-black text-[#075b4b] sm:text-3xl">ผู้ช่วยส่วนตัวที่จบทุกอย่างใน LINE แชทเดียว</h2>
-              <p className="mt-3 max-w-xl text-base leading-7 text-[#3d6c64]">เตือน · เก็บไฟล์ · จัดการงาน · ปฏิทิน · กลุ่ม LINE · รายรับรายจ่าย ทั้งแชทส่วนตัวและแชทกลุ่ม</p>
+              <p className="mt-3 max-w-xl text-base leading-7 text-[#3d6c64]">ผู้ช่วยส่วนตัวบน LINE ที่จำ จัดการ และติดตามเรื่องให้คุณ ตั้งแต่นัดหมาย เตือน To-do บิลรอจ่าย ไปจนถึงสรุปเช้า–เย็น</p>
               <div className="mt-5 flex flex-wrap gap-2">
-                {["ตั้งเตือน", "เก็บไฟล์", "ผู้ช่วยกลุ่ม LINE", "จดรายรับรายจ่าย"].map((x, i) => <span key={x} className="inline-flex items-center gap-1.5 rounded-full border border-[#d9eee7] bg-white px-3 py-2 text-xs font-semibold text-[#387168] shadow-sm"><span className="text-[#0aae76]">{["♧", "▣", "●", "▥"][i]}</span>{x}</span>)}
+                {["บันทึกหลายรายการในครั้งเดียว", "วันนี้มีอะไร", "Smart Follow-up", "Morning 07:00 · Evening 20:00"].map((x, i) => <span key={x} className="inline-flex items-center gap-1.5 rounded-full border border-[#d9eee7] bg-white px-3 py-2 text-xs font-semibold text-[#387168] shadow-sm"><span className="text-[#0aae76]">{["✦", "◷", "✓", "☀"][i]}</span>{x}</span>)}
               </div>
             </div>
 
@@ -113,8 +114,35 @@ export default function Home() {
 
         <section id="features" className="mx-auto max-w-[1500px] px-5 py-5 lg:px-10">
           <div className="mb-4 flex items-end justify-between"><div><h2 className="font-display text-2xl font-black text-[#0c5c4d]">✦ ฟีเจอร์เด่นของ Milo</h2><p className="mt-1 text-sm text-[#6a9189]">ครบ จบ ในที่เดียว เพื่อธุรกิจของคุณ</p></div><a href="#business" className="hidden text-sm font-bold text-[#078e68] sm:block">ดูรายละเอียดทั้งหมด →</a></div>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             {featureCards.map(({ icon: Icon, title, detail }) => <article key={title} className="rounded-2xl border border-[#e1efeb] bg-white p-5 shadow-sm transition hover:-translate-y-1 hover:shadow-lg"><span className="grid size-11 place-items-center rounded-full bg-[#e6faf2] text-[#079c70]"><Icon className="size-6" /></span><h3 className="mt-4 font-display font-bold text-[#1d5a50]">{title}</h3><p className="mt-1 text-xs leading-5 text-[#72938d]">{detail}</p></article>)}
+          </div>
+        </section>
+
+        <section id="assistant" className="mx-auto max-w-[1500px] px-5 py-6 lg:px-10">
+          <div className="overflow-hidden rounded-[28px] border border-[#d8eee6] bg-[#f7fffb] shadow-sm">
+            <div className="grid gap-6 p-6 lg:grid-cols-[1.05fr_.95fr] lg:p-8">
+              <div>
+                <span className="inline-flex items-center gap-2 rounded-full bg-white px-3 py-1.5 text-xs font-bold text-[#0a9b70] shadow-sm"><Sparkles className="size-4" /> Personal Assistant Layer</span>
+                <h2 className="font-display mt-4 text-3xl font-black leading-tight text-[#14584b]">จาก “แชท” กลายเป็นผู้ช่วยที่จำและตามงานให้</h2>
+                <p className="mt-3 text-sm leading-6 text-[#648a82]">Milo ไม่ได้แค่ตอบข้อความ แต่ช่วยเปลี่ยนข้อความเดียวให้เป็นรายการที่ทำต่อได้ พร้อมภาพรวมของวันนี้และสรุปประจำวัน</p>
+                <div className="mt-6 grid gap-3 sm:grid-cols-2">
+                  {[
+                    [CalendarClock, "Today Overview", "ไทม์ไลน์เดียวรวม นัดหมาย · เตือน · To-do · บิลรอจ่าย · การเงิน"],
+                    [Sparkles, "Compound Capture", "ประโยคเดียวแยกเป็นหลายรายการ แล้วให้คุณตรวจสอบก่อนยืนยัน"],
+                    [ListChecks, "Smart Follow-up", "สร้างงานติดตามพร้อมเตือนจากคำสั่งภาษาธรรมชาติ"],
+                    [BellRing, "Daily Digest", "Morning Brief 07:00 และ Evening Summary 20:00 ส่งเข้า LINE ส่วนตัว"],
+                  ].map(([Icon, title, detail]) => <div key={title as string} className="rounded-2xl border border-[#dceee8] bg-white p-4"><span className="grid size-9 place-items-center rounded-full bg-[#e7f9f1] text-[#0aa773]"><Icon className="size-4" /></span><p className="mt-3 text-sm font-bold text-[#2a5e54]">{title as string}</p><p className="mt-1 text-[11px] leading-5 text-[#76968f]">{detail as string}</p></div>)}
+                </div>
+              </div>
+              <div className="rounded-3xl border border-[#dceee8] bg-white p-5 shadow-sm">
+                <div className="flex items-center justify-between"><div><p className="text-xs font-bold text-[#0b9d72]">ตัวอย่างการทำงาน</p><p className="font-display text-lg font-black text-[#1c5148]">หนึ่งข้อความ → หลายงานที่พร้อมทำต่อ</p></div><span className="rounded-full bg-[#e9faf3] px-3 py-1 text-[10px] font-bold text-[#0a9d72]">พร้อมยืนยัน</span></div>
+                <div className="mt-5 rounded-2xl bg-[#f3faf7] p-4 text-xs leading-6 text-[#426d64]">“พรุ่งนี้ 14:00 ประชุมกับลูกค้า ค่าแท็กซี่ 300 บาท ช่วยเตือนก่อนประชุมด้วยนะ”</div>
+                <div className="mt-4 space-y-2 text-xs">
+                  {[[CalendarClock,"นัดหมาย","ประชุมกับลูกค้า · 14:00"],[ReceiptText,"บิลรอจ่าย","ค่าแท็กซี่ 300 บาท · ยังไม่เป็นรายจ่าย"],[BellRing,"เตือน","เตือนก่อนประชุม · 13:45"]].map(([Icon,title,detail]) => <div key={title as string} className="flex items-center gap-3 rounded-xl border border-[#e5f1ed] px-3 py-2.5"><span className="grid size-8 place-items-center rounded-full bg-[#effaf6] text-[#0ba876]"><Icon className="size-4" /></span><div><p className="font-bold text-[#3b675e]">{title as string}</p><p className="text-[10px] text-[#7b9993]">{detail as string}</p></div><Check className="ml-auto size-4 text-[#0aa773]" /></div>)}
+                </div>
+              </div>
+            </div>
           </div>
         </section>
 
@@ -125,12 +153,12 @@ export default function Home() {
         <section id="news" className="border-y border-[#e1f1ec] bg-[#fbfffd] py-10">
           <div className="mx-auto grid max-w-[1500px] items-center gap-10 px-5 lg:grid-cols-2 lg:px-10">
             <div className="flex min-h-[330px] items-end justify-center rounded-[28px] bg-gradient-to-br from-[#effcf7] to-[#e1f7ef] p-6"><MiloMascot size="lg" /></div>
-            <div><span className="rounded-full bg-[#e7f8f2] px-3 py-1 text-xs font-bold text-[#0b9c70]">ตัวอย่างการใช้งาน</span><h2 className="font-display mt-4 text-4xl font-black leading-tight text-[#163f39] sm:text-5xl">ไมโลช่วยคุณได้ในทุกวัน</h2><p className="mt-2 text-base font-semibold text-[#0b9f72]">ไม่ว่าจะเรื่องเล็กหรือเรื่องใหญ่ ก็ถามไมโลได้เลย</p><div className="mt-6 grid gap-3 sm:grid-cols-2">{useCases.map(([Icon,title,detail,tone]) => <div key={title} className="flex items-center gap-3 rounded-2xl border border-[#e4f0ed] bg-white p-3 shadow-sm"><span className={`grid size-10 shrink-0 place-items-center rounded-full ${tone}`}><Icon className="size-5" /></span><div><p className="text-sm font-bold text-[#295a51]">{title}</p><p className="text-[10px] text-[#789690]">“{detail}”</p></div></div>)}</div><div className="mt-5 flex justify-end font-display text-sm font-bold text-[#244f48]">แล้วเจอกันนะครับ<br />– ไมโล 🐾</div></div>
+            <div><span className="rounded-full bg-[#e7f8f2] px-3 py-1 text-xs font-bold text-[#0b9c70]">ความสามารถใหม่ที่ใช้ได้จริง</span><h2 className="font-display mt-4 text-4xl font-black leading-tight text-[#163f39] sm:text-5xl">ให้ Milo จำ จัดการ และตามต่อให้คุณ</h2><p className="mt-2 text-base font-semibold text-[#0b9f72]">พิมพ์ตามธรรมชาติ แล้วให้ระบบเปลี่ยนเป็นงานที่พร้อมทำต่อ</p><div className="mt-6 grid gap-3 sm:grid-cols-2">{useCases.map(([Icon,title,detail,tone]) => <div key={title} className="flex items-center gap-3 rounded-2xl border border-[#e4f0ed] bg-white p-3 shadow-sm"><span className={`grid size-10 shrink-0 place-items-center rounded-full ${tone}`}><Icon className="size-5" /></span><div><p className="text-sm font-bold text-[#295a51]">{title}</p><p className="text-[10px] text-[#789690]">“{detail}”</p></div></div>)}</div><div className="mt-5 flex justify-end font-display text-sm font-bold text-[#244f48]">แล้วเจอกันนะครับ<br />– ไมโล 🐾</div></div>
           </div>
         </section>
 
         <section id="business" className="border-b border-[#e1f1ec] bg-[#effaf6] py-12">
-          <div className="mx-auto max-w-[1500px] px-5 lg:px-10"><div className="mx-auto max-w-3xl text-center"><span className="inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-xs font-bold text-[#15936f] shadow-sm"><BriefcaseBusiness className="size-4" /> สำหรับธุรกิจ & ฟรีแลนซ์</span><h2 className="font-display mt-4 text-3xl font-black text-[#165448]">ชีวิต งาน และการเงิน — จัดการจาก LINE</h2><p className="mt-2 text-sm leading-6 text-[#668c84]">ตั้งเตือน เก็บไฟล์ นัดหมาย ทำ To-do ค้นข้อมูล และจดรายรับรายจ่าย โดยไม่ต้องออกจาก LINE</p></div><div className="mt-8 grid gap-5 md:grid-cols-3"><div className="rounded-3xl bg-white p-6 shadow-sm"><ReceiptText className="size-8 text-[#0ca974]" /><h3 className="mt-4 font-bold">เตือนและปฏิทิน</h3><p className="mt-2 text-sm leading-6 text-[#718e89]">พิมพ์นัดหรือสิ่งที่ต้องจำ แล้วให้ Milo เตือนและเก็บลงปฏิทินให้</p></div><div className="rounded-3xl bg-white p-6 shadow-sm"><BarChart3 className="size-8 text-[#278ac0]" /><h3 className="mt-4 font-bold">คลังและ Quick Search</h3><p className="mt-2 text-sm leading-6 text-[#718e89]">เก็บข้อความ ลิงก์ รูป และไฟล์ แล้วเรียกคืนจากแชทได้อย่างรวดเร็ว</p></div><div className="rounded-3xl bg-white p-6 shadow-sm"><Zap className="size-8 text-[#e28d29]" /><h3 className="mt-4 font-bold">การเงินแบบสนทนา</h3><p className="mt-2 text-sm leading-6 text-[#718e89]">จดเงินด้วยภาษาคน รูป หรือเสียง พร้อมหมวด งบ รายงาน และการวิเคราะห์</p></div></div></div>
+          <div className="mx-auto max-w-[1500px] px-5 lg:px-10"><div className="mx-auto max-w-3xl text-center"><span className="inline-flex items-center gap-2 rounded-full bg-white px-4 py-2 text-xs font-bold text-[#15936f] shadow-sm"><BriefcaseBusiness className="size-4" /> สำหรับธุรกิจ & ฟรีแลนซ์</span><h2 className="font-display mt-4 text-3xl font-black text-[#165448]">ชีวิต งาน และการเงิน — จัดการจาก LINE</h2><p className="mt-2 text-sm leading-6 text-[#668c84]">ตั้งแต่ข้อความเดียวที่สร้างหลายรายการ ไปจนถึงสรุปประจำวัน ทุกอย่างยังอยู่ใน LINE แชทเดียว</p></div><div className="mt-8 grid gap-5 md:grid-cols-2 lg:grid-cols-4"><div className="rounded-3xl bg-white p-6 shadow-sm"><CalendarClock className="size-8 text-[#0ca974]" /><h3 className="mt-4 font-bold">Today Overview</h3><p className="mt-2 text-sm leading-6 text-[#718e89]">รวมปฏิทิน To-do เตือน บิลรอจ่าย และภาพรวมการเงินไว้ในไทม์ไลน์เดียว</p></div><div className="rounded-3xl bg-white p-6 shadow-sm"><ListChecks className="size-8 text-[#278ac0]" /><h3 className="mt-4 font-bold">Smart Follow-up</h3><p className="mt-2 text-sm leading-6 text-[#718e89]">บอกงานที่ต้องตามต่อ แล้ว Milo ช่วยสร้างงานและเตือนติดตามให้</p></div><div className="rounded-3xl bg-white p-6 shadow-sm"><ReceiptText className="size-8 text-[#e28d29]" /><h3 className="mt-4 font-bold">Pending Bill</h3><p className="mt-2 text-sm leading-6 text-[#718e89]">แยกบิลที่ยังไม่จ่ายออกจากรายจ่ายจริง และบันทึกเมื่อชำระแล้ว</p></div><div className="rounded-3xl bg-white p-6 shadow-sm"><BellRing className="size-8 text-[#0ca974]" /><h3 className="mt-4 font-bold">Daily Digest</h3><p className="mt-2 text-sm leading-6 text-[#718e89]">Morning Brief 07:00 และ Evening Summary 20:00 ส่งเข้า LINE ส่วนตัว</p></div></div></div>
         </section>
 
         <section id="faq" className="py-12"><div className="mx-auto grid max-w-5xl gap-8 px-5 lg:grid-cols-[.7fr_1.3fr] lg:px-10"><div><p className="text-sm font-bold text-[#0b9c70]">คำถามที่พบบ่อย</p><h2 className="font-display mt-2 text-3xl font-black text-[#184d43]">อยากรู้เรื่องไหน<br />ถามไมโลได้เลย</h2><div className="mt-5 rounded-2xl bg-[#effaf6] p-4 text-sm text-[#61877f]"><MousePointer2 className="mb-2 size-5 text-[#0ca974]" />กดคำถามเพื่อดูคำตอบ</div></div><Accordion type="single" collapsible className="rounded-3xl border border-[#dceee8] bg-white px-5 shadow-sm">{faq.map(([q,a],i) => <AccordionItem key={q} value={`q-${i}`}><AccordionTrigger className="text-left font-semibold text-[#2b5b52]">{q}</AccordionTrigger><AccordionContent className="text-sm leading-7 text-[#708d87]">{a}</AccordionContent></AccordionItem>)}</Accordion></div></section>
