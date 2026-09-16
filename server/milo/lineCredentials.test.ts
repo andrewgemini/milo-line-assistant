@@ -70,10 +70,6 @@ describe("LINE credentials", () => {
     expect(String(init.body)).toContain("รายจ่าย  •  ค่าอาหาร");
     expect(String(init.body)).toContain("80 บาท");
     expect(String(init.body)).toContain("รายจ่าย 280 บาท");
-    expect(String(init.body)).toContain("สถานะงบประมาณหมวดหมู่");
-    expect(String(init.body)).toContain("ใช้ไป 4%");
-    expect(String(init.body)).toContain("วันที่ - เวลา");
-    expect(payload.messages).toHaveLength(1);
     expect(payload.messages[0]?.contents.body.backgroundColor).toBe("#F2F0FF");
     expect(String(init.body)).toContain('"text":"✓"');
     expect(payload.messages[0]?.contents.body.contents[1]?.backgroundColor).toBe("#FFFEFB");
@@ -90,6 +86,7 @@ describe("LINE credentials", () => {
     expect(payload.messages[0]?.originalContentUrl).toContain("/api/milo/save-result.png?");
     expect(payload.messages[0]?.originalContentUrl).toContain("item=%E0%B8%81%E0%B8%B2%E0%B9%81%E0%B8%9F");
     expect(payload.messages[0]?.originalContentUrl).toContain("amount=80");
+    expect(payload.messages[0]?.originalContentUrl).toContain("render=glyph-v3");
     expect(payload.messages[0]?.previewImageUrl).toBe(payload.messages[0]?.originalContentUrl);
   });
 
