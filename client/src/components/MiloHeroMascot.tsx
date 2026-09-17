@@ -3,7 +3,7 @@ type MiloHeroMascotProps = { className?: string };
 /** Hero-only standing maneki-neko. Other MiloMascot placements keep the original artwork. */
 export function MiloHeroMascot({ className = "" }: MiloHeroMascotProps) {
   return (
-    <div className={`relative h-80 w-80 ${className}`} aria-label="ไมโล แมวกวักญี่ปุ่นยืนโบกมือเรียกแขก">
+    <div className={`relative h-[350px] w-[350px] ${className}`} aria-label="ไมโล แมวกวักญี่ปุ่นยืนโบกมือเรียกแขก">
       <style>{`
         @keyframes miloHeroFloat { 0%,100% { transform: translate3d(0,0,0); } 50% { transform: translate3d(0,-5px,0); } }
         @keyframes miloHeroGlow { 0%,100% { opacity:.16; transform:scale(.98); } 50% { opacity:.28; transform:scale(1.03); } }
@@ -23,11 +23,12 @@ export function MiloHeroMascot({ className = "" }: MiloHeroMascotProps) {
           </defs>
           <circle cx="210" cy="210" r="190" fill="url(#miloHeroCircle)" stroke="#73d79b" strokeWidth="8" />
           <circle cx="210" cy="210" r="177" fill="none" stroke="#effff5" strokeWidth="5" />
-          <g>
+          <g transform="rotate(-3 210 245) scale(1.04 1.04) translate(-8 -10)">
             <ellipse cx="210" cy="386" rx="105" ry="13" fill="#7bcf99" opacity=".35" />
             <path d="M300 285 C365 263 374 329 341 351 C319 366 297 344 306 326 C315 308 339 315 347 329" fill="#aaa49e" stroke="#3c2925" strokeWidth="6" />
             <path d="M145 242 C132 274 127 320 134 351 C139 376 161 381 184 367 L238 367 C261 382 285 371 289 346 C293 312 283 271 268 242 Z" fill="url(#miloHeroBody)" stroke="#3c2925" strokeWidth="7" />
             <path d="M153 258 C176 279 237 279 261 255 L267 288 C244 305 176 304 150 286 Z" fill="url(#miloHeroScarf)" stroke="#3c2925" strokeWidth="5" />
+            <circle cx="208" cy="277" r="8" fill="#fffdfb" /><circle cx="196" cy="269" r="4" fill="#fffdfb" /><circle cx="205" cy="266" r="4" fill="#fffdfb" /><circle cx="214" cy="267" r="4" fill="#fffdfb" /><circle cx="221" cy="271" r="4" fill="#fffdfb" />
             <path d="M168 353 C164 376 173 389 190 389 C205 389 211 378 207 353 Z" fill="#fffdfb" stroke="#3c2925" strokeWidth="6" />
             <path d="M228 353 C224 378 233 390 249 389 C267 388 272 375 267 352 Z" fill="#fffdfb" stroke="#3c2925" strokeWidth="6" />
             <path d="M145 242 C126 216 120 187 128 159 C136 129 165 112 205 111 C247 110 278 129 286 160 C293 190 284 219 267 242 C243 268 169 269 145 242 Z" fill="#fffdfb" stroke="#3c2925" strokeWidth="7" />
