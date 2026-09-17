@@ -5,8 +5,8 @@ export function MiloHeroMascot({ className = "" }: MiloHeroMascotProps) {
   return (
     <div
       className={`relative h-[350px] w-[350px] ${className}`}
-      aria-label="ไมโล แมวญี่ปุ่นกวักมือเรียกลูกค้า"
-      data-milo-hero-reference="uploaded-maneki-cat"
+      aria-label="ไมโล แมวยืนกวักมือเรียกลูกค้า"
+      data-milo-hero-reference="uploaded-milo-standing-cat"
     >
       <style>{`
         @keyframes miloHeroFloat { 0%,100% { transform:translate3d(0,0,0); } 50% { transform:translate3d(0,-4px,0); } }
@@ -24,7 +24,7 @@ export function MiloHeroMascot({ className = "" }: MiloHeroMascotProps) {
       `}</style>
       <div className="milo-hero-float relative h-full w-full">
         <div className="milo-hero-glow pointer-events-none absolute inset-[4%] rounded-full bg-[#8ee6b8] blur-2xl" aria-hidden="true" />
-        <svg viewBox="0 0 420 420" className="relative z-10 h-full w-full overflow-visible drop-shadow-xl" role="img" aria-label="ไมโล แมวญี่ปุ่นกวักมือเรียกลูกค้า">
+        <svg viewBox="0 0 420 420" className="relative z-10 h-full w-full overflow-visible drop-shadow-xl" role="img" aria-label="ไมโล แมวยืนกวักมือเรียกลูกค้า">
           <defs>
             <radialGradient id="miloRefCircle" cx="50%" cy="42%" r="60%"><stop offset="0" stopColor="#effff5"/><stop offset=".78" stopColor="#d8f8e2"/><stop offset="1" stopColor="#b7edc9"/></radialGradient>
             <linearGradient id="miloRefBody" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#fffdfb"/><stop offset="1" stopColor="#eeeae7"/></linearGradient>
@@ -73,13 +73,15 @@ export function MiloHeroMascot({ className = "" }: MiloHeroMascotProps) {
             <path d="M148 145 C166 130 178 112 185 92" fill="none" stroke="#b8b2ad" strokeWidth="15" strokeLinecap="round" />
             <path d="M225 119 C231 103 243 101 252 119 M250 122 C258 106 269 108 275 124" fill="none" stroke="#b8b2ad" strokeWidth="14" strokeLinecap="round" />
 
-            {/* happy face */}
-            <path d="M166 177 C177 161 196 162 205 177" fill="none" stroke="#3b2925" strokeWidth="10" strokeLinecap="round" />
-            <path d="M231 176 C244 162 260 164 270 177" fill="none" stroke="#3b2925" strokeWidth="10" strokeLinecap="round" />
-            <ellipse cx="157" cy="211" rx="25" ry="17" fill="#ff9fa5" opacity=".72" />
-            <ellipse cx="269" cy="211" rx="25" ry="17" fill="#ff9fa5" opacity=".72" />
-            <path d="M207 192 C198 202 198 213 209 217 C219 213 220 203 211 192 Z" fill="#ef5e64" stroke="#3b2925" strokeWidth="4" />
-            <path d="M209 217 C204 230 190 230 184 218 M209 217 C214 230 228 230 234 218" fill="none" stroke="#3b2925" strokeWidth="5" strokeLinecap="round" />
+            {/* Milo reference face: one bright open eye + one friendly wink */}
+            <ellipse cx="171" cy="183" rx="27" ry="34" fill="#4a2b24" stroke="#3b2925" strokeWidth="5" />
+            <ellipse cx="178" cy="174" rx="9" ry="12" fill="#fffdfb" />
+            <circle cx="165" cy="194" r="5" fill="#9a5b3b" />
+            <path d="M232 183 C245 171 260 174 269 184" fill="none" stroke="#3b2925" strokeWidth="10" strokeLinecap="round" />
+            <ellipse cx="150" cy="218" rx="27" ry="18" fill="#ff9fa5" opacity=".72" />
+            <ellipse cx="271" cy="218" rx="27" ry="18" fill="#ff9fa5" opacity=".72" />
+            <path d="M209 192 C200 202 200 213 210 217 C220 213 220 202 211 192 Z" fill="#ef5e64" stroke="#3b2925" strokeWidth="4" />
+            <path d="M210 217 C205 230 191 230 185 218 M210 217 C215 230 229 230 235 218" fill="none" stroke="#3b2925" strokeWidth="5" strokeLinecap="round" />
 
             {/* beckoning arm: isolated so the whole arm visibly waves like a Japanese lucky cat */}
             <g className="milo-hero-beckon">
