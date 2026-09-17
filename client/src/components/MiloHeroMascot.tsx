@@ -7,7 +7,7 @@ export function MiloHeroMascot({ className = "" }: MiloHeroMascotProps) {
       <style>{`
         @keyframes miloHeroFloat { 0%,100% { transform: translate3d(0,0,0); } 50% { transform: translate3d(0,-5px,0); } }
         @keyframes miloHeroGlow { 0%,100% { opacity:.16; transform:scale(.98); } 50% { opacity:.28; transform:scale(1.03); } }
-        @keyframes miloHeroWave { 0%,100% { transform:rotate(-24deg) translateY(2px); } 50% { transform:rotate(34deg) translateY(-3px); } }
+        @keyframes miloHeroWave { 0%,100% { transform:rotate(-32deg) translateY(2px); } 50% { transform:rotate(42deg) translateY(-4px); } }
         .milo-hero-float { animation:miloHeroFloat 3.2s ease-in-out infinite; transform-origin:center bottom; }
         .milo-hero-glow { animation:miloHeroGlow 3.2s ease-in-out infinite; }
         .milo-hero-paw { animation:miloHeroWave .82s ease-in-out infinite; transform-box:fill-box; transform-origin:50% 92%; will-change:transform; }
