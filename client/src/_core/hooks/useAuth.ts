@@ -46,7 +46,14 @@ export function useAuth(options?: UseAuthOptions) {
         sessionStorage.removeItem("manus-cookie");
       } catch {}
       utils.auth.me.setData(undefined, null);
-      await utils.auth.me.invalidate();
+      try {
+        localStorage.removeItem("manus-runtime-user-info");
+      } catch {}
+      // Do not await invalidation here: navigation must not depend on a network
+      // refetch completing. The cookie is already cleared, and the public home
+      // route can render immediately even if the old query is still settling.
+      void utils.auth.me.invalidate();
+      if (typeof window !== "undefined") window.location.replace("/");
     }
   }, [logoutMutation, utils]);
 
