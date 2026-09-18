@@ -2,27 +2,56 @@ import { MILO_MASCOT_SRC } from "@/lib/miloMascotAsset";
 
 type MiloHeroMascotProps = { className?: string };
 
+/**
+ * Hero mascot uses the supplied Milo artwork directly.
+ * Do not redraw, crop, trace, recolor, or replace the mascot artwork.
+ */
 export function MiloHeroMascot({ className = "" }: MiloHeroMascotProps) {
   return (
     <div
-      className={`relative h-[440px] w-[360px] ${className}`}
+      className={`relative h-[400px] w-[320px] ${className}`}
       aria-label="ไมโล แมวยืนกวักมือ"
-      data-milo-hero-reference="supplied-mascot-artwork"
+      data-milo-hero-reference="exact-supplied-artwork"
     >
-      <div className="absolute left-1/2 top-0 z-20 w-[270px] -translate-x-1/2 rounded-[22px] border border-[#dceee8] bg-white/95 px-5 py-3 text-center shadow-xl backdrop-blur">
-        <p className="text-sm font-black leading-6 text-[#12604f]">สวัสดีครับ!</p>
-        <p className="text-[11px] font-semibold leading-5 text-[#3f766b]">Milo พร้อมดูแลคุณ</p>
-        <p className="text-[11px] font-semibold leading-5 text-[#3f766b]">จัดการร้านค้าได้แล้ว</p>
-        <p className="text-[11px] font-semibold leading-5 text-[#3f766b]">วันนี้มีอะไรให้ช่วยบ้าง?</p>
-        <span className="mt-2 inline-flex rounded-full bg-[#12b77c] px-4 py-1 text-[10px] font-black text-white">เริ่มใช้งานเลย! ♥</span>
+      <style>{`
+        @keyframes miloHeroFloat {
+          0%, 100% { transform: translate3d(0, 0, 0); }
+          50% { transform: translate3d(0, -5px, 0); }
+        }
+        @keyframes miloHeroBlink {
+          0%, 91%, 96%, 100% { opacity: 1; }
+          93.5%, 94.5% { opacity: .72; }
+        }
+        .milo-hero-float {
+          animation: miloHeroFloat 3.2s ease-in-out infinite;
+          transform-origin: center bottom;
+        }
+        .milo-hero-blink {
+          animation: miloHeroBlink 4.2s ease-in-out infinite;
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .milo-hero-float,
+          .milo-hero-blink { animation: none; }
+        }
+      `}</style>
+
+      <div className="milo-hero-float relative h-full w-full">
+        <div className="absolute -left-3 -top-1 z-20 whitespace-nowrap rounded-2xl rounded-bl-md border border-[#c8eddf] bg-white px-4 py-2 text-center text-sm font-bold text-[#246357] shadow-lg">
+          <span>สวัสดีครับ 👋</span>
+          <br />
+          <span className="font-normal text-[#5e837b]">ผมไมโล ยินดีต้อนรับ!</span>
+        </div>
+
+        <div className="milo-hero-blink h-full w-full">
+          <img
+            key={MILO_MASCOT_SRC}
+            src={`${MILO_MASCOT_SRC}?v=1817e71`}
+            alt="ไมโล แมวผู้ช่วย AI"
+            className="h-full w-full object-contain"
+            draggable={false}
+          />
+        </div>
       </div>
-      <img
-        key={MILO_MASCOT_SRC}
-        src={`${MILO_MASCOT_SRC}?v=1817e71`}
-        alt="ไมโล แมวผู้ช่วย AI"
-        className="h-full w-full object-contain"
-        draggable={false}
-      />
     </div>
   );
 }
