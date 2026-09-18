@@ -4713,6 +4713,20 @@ var monthNumbers = {
   "\u0E1E\u0E24\u0E28\u0E08\u0E34\u0E01\u0E32\u0E22\u0E19": 11,
   "\u0E18\u0E31\u0E19\u0E27\u0E32\u0E04\u0E21": 12
 };
+var monthNumbersWithoutDots = {
+  "\u0E21\u0E04": 1,
+  "\u0E01\u0E1E": 2,
+  "\u0E21\u0E35\u0E04": 3,
+  "\u0E40\u0E21\u0E22": 4,
+  "\u0E1E\u0E04": 5,
+  "\u0E21\u0E34\u0E22": 6,
+  "\u0E01\u0E04": 7,
+  "\u0E2A\u0E04": 8,
+  "\u0E01\u0E22": 9,
+  "\u0E15\u0E04": 10,
+  "\u0E1E\u0E22": 11,
+  "\u0E18\u0E04": 12
+};
 var thaiDigits = {
   "\u0E50": "0",
   "\u0E51": "1",
@@ -4791,7 +4805,7 @@ function extractThaiSlipDateTime(text2) {
     }
   }
   if (!dateText) {
-    for (const [name, month] of Object.entries(monthNumbers)) {
+    for (const [name, month] of Object.entries({ ...monthNumbers, ...monthNumbersWithoutDots })) {
       const escaped = name.split("").map((char) => char === "." ? "\\s*\\.?\\s*" : char.replace(/[.*+?^$()|[\]\\{}]/g, "\\$&") + "\\s*").join("");
       const pattern = new RegExp("(?:^|\\s)([0-3]?\\s*\\d)\\s*" + escaped + "(2\\s*[05]\\s*\\d\\s*\\d|\\d\\s*\\d)(?=\\s|$)");
       const match = flat.match(pattern);
@@ -5217,8 +5231,9 @@ async function analyzeImageWithOcr(dataUrl) {
   const trimmed = await sharp3(input).rotate().trim({ threshold: 12 }).png().toBuffer({ resolveWithObject: true });
   const trimmedHeaderHeight = Math.max(1, Math.floor(trimmed.info.height * 0.62));
   const trimmedHeader = sharp3(trimmed.data).extract({ left: 0, top: 0, width: trimmed.info.width, height: trimmedHeaderHeight }).resize({ width: 3200, fit: "inside", withoutEnlargement: false, kernel: sharp3.kernel.lanczos3 }).grayscale().normalize().sharpen({ sigma: 1.2 });
-  const dateBandHeight = Math.max(1, Math.floor(trimmed.info.height * 0.32));
-  const dateBand = sharp3(trimmed.data).extract({ left: 0, top: 0, width: trimmed.info.width, height: dateBandHeight }).resize({ width: 3600, fit: "inside", withoutEnlargement: false, kernel: sharp3.kernel.lanczos3 }).grayscale().normalize().sharpen({ sigma: 1.35 });
+  const dateBandTop = Math.floor(trimmed.info.height * 0.12);
+  const dateBandHeight = Math.max(1, Math.floor(trimmed.info.height * 0.14));
+  const dateBand = sharp3(trimmed.data).extract({ left: 0, top: dateBandTop, width: trimmed.info.width, height: dateBandHeight }).resize({ width: 3600, fit: "inside", withoutEnlargement: false, kernel: sharp3.kernel.lanczos3 }).grayscale().normalize().sharpen({ sigma: 1.35 });
   const variants = [
     { label: "date-band-sparse", bytes: await dateBand.clone().linear(1.22, -18).png().toBuffer(), psm: "7" },
     { label: "date-band-threshold", bytes: await dateBand.clone().threshold(176).png().toBuffer(), psm: "7" },

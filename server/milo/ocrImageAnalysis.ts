@@ -341,9 +341,10 @@ export async function analyzeImageWithOcr(dataUrl: string): Promise<ImageAnalysi
     .resize({ width: 3200, fit: "inside", withoutEnlargement: false, kernel: sharp.kernel.lanczos3 })
     .grayscale().normalize().sharpen({ sigma: 1.2 });
 
-  const dateBandHeight = Math.max(1, Math.floor(trimmed.info.height * 0.32));
+  const dateBandTop = Math.floor(trimmed.info.height * 0.12);
+  const dateBandHeight = Math.max(1, Math.floor(trimmed.info.height * 0.14));
   const dateBand = sharp(trimmed.data)
-    .extract({ left: 0, top: 0, width: trimmed.info.width, height: dateBandHeight })
+    .extract({ left: 0, top: dateBandTop, width: trimmed.info.width, height: dateBandHeight })
     .resize({ width: 3600, fit: "inside", withoutEnlargement: false, kernel: sharp.kernel.lanczos3 })
     .grayscale().normalize().sharpen({ sigma: 1.35 });
 

@@ -7,6 +7,11 @@ const monthNumbers: Record<string, number> = {
   "กรกฎาคม": 7, "สิงหาคม": 8, "กันยายน": 9, "ตุลาคม": 10, "พฤศจิกายน": 11, "ธันวาคม": 12,
 };
 
+const monthNumbersWithoutDots: Record<string, number> = {
+  "มค": 1, "กพ": 2, "มีค": 3, "เมย": 4, "พค": 5, "มิย": 6,
+  "กค": 7, "สค": 8, "กย": 9, "ตค": 10, "พย": 11, "ธค": 12,
+};
+
 const thaiDigits: Record<string, string> = {
   "๐": "0", "๑": "1", "๒": "2", "๓": "3", "๔": "4",
   "๕": "5", "๖": "6", "๗": "7", "๘": "8", "๙": "9",
@@ -91,7 +96,7 @@ export function extractThaiSlipDateTime(text: string) {
   }
 
   if (!dateText) {
-    for (const [name, month] of Object.entries(monthNumbers)) {
+    for (const [name, month] of Object.entries({ ...monthNumbers, ...monthNumbersWithoutDots })) {
       const escaped = name
         .split("")
         .map(char => char === "." ? "\\s*\\.?\\s*" : char.replace(/[.*+?^$()|[\]\\{}]/g, "\\$&") + "\\s*")

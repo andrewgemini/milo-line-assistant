@@ -61,6 +61,7 @@ CJ 1685 เพชรเกษม106
     expect(extractThaiSlipDateTime("วันที่ 14.09.69 10:57")).toEqual({ dateText: "2026-09-14", timeText: "10:57" });
     expect(extractThaiSlipDateTime("14 กันยายน 2569 10:57 น.")).toEqual({ dateText: "2026-09-14", timeText: "10:57" });
     expect(extractThaiSlipDateTime("17 ก.ย. 2569 10:58")).toEqual({ dateText: "2026-09-17", timeText: "10:58" });
+    expect(extractThaiSlipDateTime("16 กย 2569 10:34 น.")).toEqual({ dateText: "2026-09-16", timeText: "10:34" });
   });
 
   it("cleans the noisy merchant line from the welfare receipt", () => {
