@@ -379,13 +379,25 @@ export async function analyzeImage(dataUrl: string, options: { gatewayToken?: st
           providerAnalysis = mergeImageAnalyses(analysis, detail);
           if (!providerAnalysis.proposals[0]?.dateText) {
             try {
-              const dateRepair = await repairReceiptDateWithGoogle(dataUrl);
+              // The Thai date line on POS receipts is often tiny. Give Gemini an
+              // enlarged header crop first, then fall back to the original image.
+              const headerDataUrl = await buildReceiptHeaderDataUrl(dataUrl).catch(() => dataUrl);
+              const dateRepair = await repairReceiptDateWithGoogle(headerDataUrl);
               providerAnalysis = mergeDedicatedDateRepair(providerAnalysis, dateRepair);
-              console.info("[Milo Image] Google Gemini dedicated receipt date repair", {
+              console.info("[Milo Image] Google Gemini focused receipt date repair", {
                 dateText: dateRepair.dateText,
                 timeText: dateRepair.timeText,
                 evidence: dateRepair.evidence.slice(0, 120),
               });
+              if (!providerAnalysis.proposals[0]?.dateText && headerDataUrl !== dataUrl) {
+                const fullRepair = await repairReceiptDateWithGoogle(dataUrl);
+                providerAnalysis = mergeDedicatedDateRepair(providerAnalysis, fullRepair);
+                console.info("[Milo Image] Google Gemini full-image receipt date repair", {
+                  dateText: fullRepair.dateText,
+                  timeText: fullRepair.timeText,
+                  evidence: fullRepair.evidence.slice(0, 120),
+                });
+              }
             } catch (dateError) {
               console.warn("[Milo Image] Google Gemini dedicated receipt date repair failed", {
                 error: dateError instanceof Error ? dateError.message : "unknown",
