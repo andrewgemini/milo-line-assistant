@@ -218,6 +218,47 @@ async function receiptDateRepairRequest(dataUrl: string, token: string): Promise
   }
 }
 
+async function receiptDateRepairWithForge(dataUrl: string): Promise<ReceiptDateRepair> {
+  const response = await invokeLLM({
+    model: ENV.visionModel,
+    messages: [
+      { role: "system", content: "คุณคือ OCR verifier สำหรับใบเสร็จไทย งานเดียวคืออ่านวันที่ทำรายการและเวลาที่พิมพ์อยู่ในภาพจริง ห้ามเดาจากเวลาส่งรูป วันที่ปัจจุบัน หรือบริบทอื่น ถ้าอ่านวันเดือนปีไม่ชัดให้ dateText เป็นสตริงว่าง และ dateText ต้องเป็น YYYY-MM-DD เท่านั้น evidence ต้องคัดข้อความสั้นๆ ที่เห็นจริง" },
+      {
+        role: "user",
+        content: [
+          { type: "text", text: "อ่านเฉพาะบรรทัดวันที่และเวลาในใบเสร็จนี้ โดยขยายดูหัวใบเสร็จและบริเวณใกล้ยอดเงิน วันที่อาจเป็น พ.ศ. เช่น 16 ก.ย. 2569 10:34 ห้ามเดา ถ้าเห็นให้แปลงเป็น ค.ศ." },
+          { type: "image_url", image_url: { url: dataUrl, detail: "high" } },
+        ],
+      },
+    ],
+    response_format: { type: "json_schema", json_schema: { name: "milo_receipt_date_repair_forge", strict: true, schema: receiptDateSchema } },
+  });
+  return parseReceiptDateRepairContent(response.choices[0]?.message.content);
+}
+
+async function repairMissingReceiptDate(analysis: ImageAnalysis, dataUrl: string, gatewayKey?: string) {
+  const proposal = analysis.proposals[0];
+  if (!proposal || proposal.documentType !== "receipt" || proposal.kind !== "expense" || proposal.dateText) return analysis;
+  const headerDataUrl = await buildReceiptHeaderDataUrl(dataUrl).catch(() => dataUrl);
+  try {
+    if (ENV.forgeApiKey) {
+      const repair = await receiptDateRepairWithForge(headerDataUrl);
+      if (repair.dateText) return mergeDedicatedDateRepair(analysis, repair);
+    }
+  } catch (error) {
+    console.warn("[Milo Image] Forge focused date repair failed", { error: error instanceof Error ? error.message : "unknown" });
+  }
+  if (gatewayKey) {
+    try {
+      const repair = await receiptDateRepairRequest(headerDataUrl, gatewayKey);
+      return mergeDedicatedDateRepair(analysis, repair);
+    } catch (error) {
+      console.warn("[Milo Image] Gateway focused date repair failed", { error: error instanceof Error ? error.message : "unknown" });
+    }
+  }
+  return analysis;
+}
+
 function mergeDedicatedDateRepair(base: ImageAnalysis, repair: ReceiptDateRepair) {
   const b = base.proposals[0];
   if (!b || !repair.dateText) return base;
@@ -370,6 +411,7 @@ export async function analyzeImage(dataUrl: string, options: { gatewayToken?: st
     const ocrAnalysis = await analyzeImageWithOcr(dataUrl);
     if (!providerAnalysis) {
       let selected = ocrAnalysis;
+      selected = await repairMissingReceiptDate(selected, dataUrl, gatewayKey);
       const proposal = selected.proposals[0];
       if (gatewayKey && proposal?.kind === "expense" && !proposal.dateText && proposal.timeText) {
         try {
@@ -405,6 +447,7 @@ export async function analyzeImage(dataUrl: string, options: { gatewayToken?: st
       : (score(ocrAnalysis) > score(providerAnalysis) ? ocrAnalysis : providerAnalysis);
 
     const selectedProposal = selected.proposals[0];
+    selected = await repairMissingReceiptDate(selected, dataUrl, gatewayKey);
     if (gatewayKey && selectedProposal?.kind === "expense" && !selectedProposal.dateText && selectedProposal.timeText) {
       try {
         const headerDataUrl = await buildReceiptHeaderDataUrl(dataUrl).catch(() => dataUrl);

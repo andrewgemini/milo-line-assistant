@@ -5461,6 +5461,45 @@ async function receiptDateRepairRequest(dataUrl, token) {
     throw error;
   }
 }
+async function receiptDateRepairWithForge(dataUrl) {
+  const response = await invokeLLM({
+    model: ENV.visionModel,
+    messages: [
+      { role: "system", content: "\u0E04\u0E38\u0E13\u0E04\u0E37\u0E2D OCR verifier \u0E2A\u0E33\u0E2B\u0E23\u0E31\u0E1A\u0E43\u0E1A\u0E40\u0E2A\u0E23\u0E47\u0E08\u0E44\u0E17\u0E22 \u0E07\u0E32\u0E19\u0E40\u0E14\u0E35\u0E22\u0E27\u0E04\u0E37\u0E2D\u0E2D\u0E48\u0E32\u0E19\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48\u0E17\u0E33\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E41\u0E25\u0E30\u0E40\u0E27\u0E25\u0E32\u0E17\u0E35\u0E48\u0E1E\u0E34\u0E21\u0E1E\u0E4C\u0E2D\u0E22\u0E39\u0E48\u0E43\u0E19\u0E20\u0E32\u0E1E\u0E08\u0E23\u0E34\u0E07 \u0E2B\u0E49\u0E32\u0E21\u0E40\u0E14\u0E32\u0E08\u0E32\u0E01\u0E40\u0E27\u0E25\u0E32\u0E2A\u0E48\u0E07\u0E23\u0E39\u0E1B \u0E27\u0E31\u0E19\u0E17\u0E35\u0E48\u0E1B\u0E31\u0E08\u0E08\u0E38\u0E1A\u0E31\u0E19 \u0E2B\u0E23\u0E37\u0E2D\u0E1A\u0E23\u0E34\u0E1A\u0E17\u0E2D\u0E37\u0E48\u0E19 \u0E16\u0E49\u0E32\u0E2D\u0E48\u0E32\u0E19\u0E27\u0E31\u0E19\u0E40\u0E14\u0E37\u0E2D\u0E19\u0E1B\u0E35\u0E44\u0E21\u0E48\u0E0A\u0E31\u0E14\u0E43\u0E2B\u0E49 dateText \u0E40\u0E1B\u0E47\u0E19\u0E2A\u0E15\u0E23\u0E34\u0E07\u0E27\u0E48\u0E32\u0E07 \u0E41\u0E25\u0E30 dateText \u0E15\u0E49\u0E2D\u0E07\u0E40\u0E1B\u0E47\u0E19 YYYY-MM-DD \u0E40\u0E17\u0E48\u0E32\u0E19\u0E31\u0E49\u0E19 evidence \u0E15\u0E49\u0E2D\u0E07\u0E04\u0E31\u0E14\u0E02\u0E49\u0E2D\u0E04\u0E27\u0E32\u0E21\u0E2A\u0E31\u0E49\u0E19\u0E46 \u0E17\u0E35\u0E48\u0E40\u0E2B\u0E47\u0E19\u0E08\u0E23\u0E34\u0E07" },
+      {
+        role: "user",
+        content: [
+          { type: "text", text: "\u0E2D\u0E48\u0E32\u0E19\u0E40\u0E09\u0E1E\u0E32\u0E30\u0E1A\u0E23\u0E23\u0E17\u0E31\u0E14\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48\u0E41\u0E25\u0E30\u0E40\u0E27\u0E25\u0E32\u0E43\u0E19\u0E43\u0E1A\u0E40\u0E2A\u0E23\u0E47\u0E08\u0E19\u0E35\u0E49 \u0E42\u0E14\u0E22\u0E02\u0E22\u0E32\u0E22\u0E14\u0E39\u0E2B\u0E31\u0E27\u0E43\u0E1A\u0E40\u0E2A\u0E23\u0E47\u0E08\u0E41\u0E25\u0E30\u0E1A\u0E23\u0E34\u0E40\u0E27\u0E13\u0E43\u0E01\u0E25\u0E49\u0E22\u0E2D\u0E14\u0E40\u0E07\u0E34\u0E19 \u0E27\u0E31\u0E19\u0E17\u0E35\u0E48\u0E2D\u0E32\u0E08\u0E40\u0E1B\u0E47\u0E19 \u0E1E.\u0E28. \u0E40\u0E0A\u0E48\u0E19 16 \u0E01.\u0E22. 2569 10:34 \u0E2B\u0E49\u0E32\u0E21\u0E40\u0E14\u0E32 \u0E16\u0E49\u0E32\u0E40\u0E2B\u0E47\u0E19\u0E43\u0E2B\u0E49\u0E41\u0E1B\u0E25\u0E07\u0E40\u0E1B\u0E47\u0E19 \u0E04.\u0E28." },
+          { type: "image_url", image_url: { url: dataUrl, detail: "high" } }
+        ]
+      }
+    ],
+    response_format: { type: "json_schema", json_schema: { name: "milo_receipt_date_repair_forge", strict: true, schema: receiptDateSchema } }
+  });
+  return parseReceiptDateRepairContent(response.choices[0]?.message.content);
+}
+async function repairMissingReceiptDate(analysis, dataUrl, gatewayKey) {
+  const proposal = analysis.proposals[0];
+  if (!proposal || proposal.documentType !== "receipt" || proposal.kind !== "expense" || proposal.dateText) return analysis;
+  const headerDataUrl = await buildReceiptHeaderDataUrl(dataUrl).catch(() => dataUrl);
+  try {
+    if (ENV.forgeApiKey) {
+      const repair = await receiptDateRepairWithForge(headerDataUrl);
+      if (repair.dateText) return mergeDedicatedDateRepair(analysis, repair);
+    }
+  } catch (error) {
+    console.warn("[Milo Image] Forge focused date repair failed", { error: error instanceof Error ? error.message : "unknown" });
+  }
+  if (gatewayKey) {
+    try {
+      const repair = await receiptDateRepairRequest(headerDataUrl, gatewayKey);
+      return mergeDedicatedDateRepair(analysis, repair);
+    } catch (error) {
+      console.warn("[Milo Image] Gateway focused date repair failed", { error: error instanceof Error ? error.message : "unknown" });
+    }
+  }
+  return analysis;
+}
 function mergeDedicatedDateRepair(base, repair) {
   const b = base.proposals[0];
   if (!b || !repair.dateText) return base;
@@ -5592,6 +5631,7 @@ async function analyzeImage(dataUrl, options = {}) {
     const ocrAnalysis = await analyzeImageWithOcr(dataUrl);
     if (!providerAnalysis) {
       let selected2 = ocrAnalysis;
+      selected2 = await repairMissingReceiptDate(selected2, dataUrl, gatewayKey);
       const proposal = selected2.proposals[0];
       if (gatewayKey && proposal?.kind === "expense" && !proposal.dateText && proposal.timeText) {
         try {
@@ -5617,6 +5657,7 @@ async function analyzeImage(dataUrl, options = {}) {
     let merged = mergeImageAnalyses(providerAnalysis, ocrAnalysis);
     let selected = score(merged) >= Math.max(score(ocrAnalysis), score(providerAnalysis)) ? merged : score(ocrAnalysis) > score(providerAnalysis) ? ocrAnalysis : providerAnalysis;
     const selectedProposal = selected.proposals[0];
+    selected = await repairMissingReceiptDate(selected, dataUrl, gatewayKey);
     if (gatewayKey && selectedProposal?.kind === "expense" && !selectedProposal.dateText && selectedProposal.timeText) {
       try {
         const headerDataUrl = await buildReceiptHeaderDataUrl(dataUrl).catch(() => dataUrl);
