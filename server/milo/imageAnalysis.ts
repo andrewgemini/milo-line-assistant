@@ -1,5 +1,6 @@
 ﻿import { invokeLLM } from "../_core/llm";
 import { ENV } from "../_core/env";
+import { generateGoogleGeminiJson, googleGeminiConfigured } from "../_core/googleGemini";
 import { analyzeImageWithOcr, buildReceiptHeaderDataUrl, ocrAssetsReady } from "./ocrImageAnalysis";
 import { extractThaiSlipDateTime, isPlausibleReceiptMerchant, normalizeThaiMerchantName, receiptMerchantQuality } from "./thaiReceiptParser";
 
@@ -71,6 +72,17 @@ function parseAnalysisContent(content: unknown): ImageAnalysis {
   const parsed = JSON.parse(json) as ImageAnalysis;
   if (!parsed || !Array.isArray(parsed.proposals) || typeof parsed.summary !== "string") throw new Error("Image model returned an invalid analysis");
   return parsed;
+}
+
+async function analyzeImageWithGoogle(dataUrl: string): Promise<ImageAnalysis> {
+  const result = await generateGoogleGeminiJson<ImageAnalysis>({
+    kind: "vision",
+    imageDataUrl: dataUrl,
+    system: SYSTEM_PROMPT,
+    prompt: USER_PROMPT,
+    schema,
+  });
+  return parseAnalysisContent(JSON.stringify(result));
 }
 
 async function analyzeImageWithForge(dataUrl: string): Promise<ImageAnalysis> {
@@ -241,6 +253,7 @@ function imageGatewayMode(env: NodeJS.ProcessEnv = process.env, requestToken?: s
 }
 
 export function imageAnalysisMode(requestToken?: string) {
+  if (googleGeminiConfigured()) return ocrAssetsReady() ? "google-gemini-vision+ocr-fallback" : "google-gemini-vision";
   if (ENV.forgeApiKey) return ocrAssetsReady() ? "forge-vision+ocr-fallback" : "forge-vision";
   const gatewayMode = imageGatewayMode(process.env, requestToken);
   if (gatewayMode) return ocrAssetsReady() ? `${gatewayMode}+ocr-fallback` : gatewayMode;
@@ -251,7 +264,7 @@ export async function imageAnalysisRuntimeStatus(requestToken?: string) {
   const mode = imageAnalysisMode(requestToken);
   return {
     mode,
-    authenticated: Boolean(ENV.forgeApiKey || imageGatewayToken(process.env, requestToken) || ocrAssetsReady()),
+    authenticated: Boolean(googleGeminiConfigured() || ENV.forgeApiKey || imageGatewayToken(process.env, requestToken) || ocrAssetsReady()),
     ocrAssetsReady: ocrAssetsReady(),
   };
 }
@@ -336,6 +349,22 @@ function sanitizeAnalysisMerchants(analysis: ImageAnalysis): ImageAnalysis {
 export async function analyzeImage(dataUrl: string, options: { gatewayToken?: string } = {}): Promise<ImageAnalysis> {
   let providerError: unknown;
   let providerAnalysis: ImageAnalysis | undefined;
+
+  if (googleGeminiConfigured()) {
+    try {
+      const analysis = await analyzeImageWithGoogle(dataUrl);
+      providerAnalysis = analysis;
+      console.info("[Milo Image] Google Gemini vision provider", {
+        model: process.env.MILO_GOOGLE_VISION_MODEL || process.env.MILO_VISION_MODEL || "gemini-2.5-flash",
+      });
+      if (analysis.proposals.some(item => item.kind === "reminder" && Boolean(item.dateText))) return sanitizeAnalysisMerchants(analysis);
+    } catch (error) {
+      providerError = error;
+      console.warn("[Milo Image] Google Gemini vision failed; trying configured fallback", {
+        error: error instanceof Error ? error.message : "unknown",
+      });
+    }
+  }
 
   if (ENV.forgeApiKey) {
     try {

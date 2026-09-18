@@ -4027,6 +4027,72 @@ import express from "express";
 import { transcribe as gatewayTranscribe } from "ai";
 import { createGateway, gateway } from "@ai-sdk/gateway";
 
+// server/_core/googleGemini.ts
+function googleGeminiApiKey(env = process.env) {
+  return (env.GEMINI_API_KEY || env.GOOGLE_GEMINI_API_KEY || env.GOOGLE_API_KEY || env.GOOGLE_GENERATIVE_AI_API_KEY || "").trim();
+}
+function googleGeminiConfigured(env = process.env) {
+  return Boolean(googleGeminiApiKey(env));
+}
+function modelFor(kind, env = process.env) {
+  return (kind === "vision" ? env.MILO_GOOGLE_VISION_MODEL || env.MILO_VISION_MODEL || "gemini-2.5-flash" : env.MILO_GOOGLE_STT_MODEL || "gemini-2.5-flash").trim();
+}
+async function generateGoogleGeminiJson(args) {
+  const apiKey = googleGeminiApiKey();
+  if (!apiKey) throw new Error("Google Gemini API key is not configured");
+  const model = modelFor(args.kind);
+  const parts = [{ text: args.prompt }];
+  if (args.imageDataUrl) {
+    const match = args.imageDataUrl.match(/^data:([^;]+);base64,([\s\S]+)$/);
+    if (!match) throw new Error("Invalid image data URL");
+    parts.push({
+      inlineData: {
+        mimeType: match[1],
+        data: match[2]
+      }
+    });
+  }
+  if (args.audioBuffer) {
+    parts.push({
+      inlineData: {
+        mimeType: args.audioMimeType || "audio/m4a",
+        data: args.audioBuffer.toString("base64")
+      }
+    });
+  }
+  const body = {
+    systemInstruction: args.system ? { parts: [{ text: args.system }] } : void 0,
+    contents: [{ role: "user", parts }],
+    generationConfig: {
+      temperature: 0,
+      responseMimeType: "application/json",
+      responseSchema: args.schema
+    }
+  };
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), args.kind === "audio" ? 6e4 : 45e3);
+  try {
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+        signal: controller.signal
+      }
+    );
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      throw new Error(payload.error?.message || `Google Gemini returned HTTP ${response.status}`);
+    }
+    const text2 = payload.candidates?.[0]?.content?.parts?.map((part) => part.text || "").join("").trim();
+    if (!text2) throw new Error("Google Gemini returned empty content");
+    return JSON.parse(text2);
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 // server/_core/localVoiceTranscription.ts
 import { spawn } from "node:child_process";
 import fs from "node:fs";
@@ -4236,9 +4302,10 @@ function voiceTranscriptionRuntimeStatus(requestToken) {
   const openai = Boolean((process.env.OPENAI_API_KEY || "").trim());
   const gatewayAvailable = gatewayAuthAvailable(process.env, requestToken);
   const local = localVoiceRuntimeStatus();
+  const google = googleGeminiConfigured();
   return {
-    configured: groq || local.enabled || forge || openai || gatewayAvailable,
-    mode: groq ? "groq-whisper-large-v3" : gatewayAvailable ? local.enabled ? "vercel-ai-gateway-stt+local-fallback" : "vercel-ai-gateway-stt" : forge ? local.enabled ? "forge-whisper+local-fallback" : "forge-whisper" : openai ? local.enabled ? "openai-whisper+local-fallback" : "openai-whisper" : local.enabled ? "local-whisper-onnx" : "unconfigured",
+    configured: google || groq || local.enabled || forge || openai || gatewayAvailable,
+    mode: google ? "google-gemini-audio" : groq ? "groq-whisper-large-v3" : gatewayAvailable ? local.enabled ? "vercel-ai-gateway-stt+local-fallback" : "vercel-ai-gateway-stt" : forge ? local.enabled ? "forge-whisper+local-fallback" : "forge-whisper" : openai ? local.enabled ? "openai-whisper+local-fallback" : "openai-whisper" : local.enabled ? "local-whisper-onnx" : "unconfigured",
     local
   };
 }
@@ -4311,6 +4378,48 @@ async function callTranscriptionProvider(url, apiKey, audioBuffer, mimeType, opt
     body: makeFormData(audioBuffer, mimeType, options)
   }, 6e4);
 }
+var googleTranscriptSchema = {
+  type: "object",
+  properties: {
+    text: { type: "string" },
+    language: { type: "string" },
+    duration: { type: "number" }
+  },
+  required: ["text", "language", "duration"],
+  additionalProperties: false
+};
+async function transcribeWithGoogleGemini(audioBuffer, options) {
+  const result = await generateGoogleGeminiJson({
+    kind: "audio",
+    audioBuffer,
+    audioMimeType: options.mimeType || "audio/m4a",
+    language: options.language || "th",
+    schema: googleTranscriptSchema,
+    system: "\u0E04\u0E38\u0E13\u0E04\u0E37\u0E2D\u0E23\u0E30\u0E1A\u0E1A\u0E16\u0E2D\u0E14\u0E40\u0E2A\u0E35\u0E22\u0E07\u0E02\u0E2D\u0E07 Milo \u0E2A\u0E33\u0E2B\u0E23\u0E31\u0E1A\u0E02\u0E49\u0E2D\u0E04\u0E27\u0E32\u0E21\u0E40\u0E2A\u0E35\u0E22\u0E07\u0E08\u0E32\u0E01 LINE \u0E43\u0E2B\u0E49\u0E16\u0E2D\u0E14\u0E04\u0E33\u0E1E\u0E39\u0E14\u0E40\u0E1B\u0E47\u0E19\u0E02\u0E49\u0E2D\u0E04\u0E27\u0E32\u0E21\u0E20\u0E32\u0E29\u0E32\u0E44\u0E17\u0E22\u0E2D\u0E22\u0E48\u0E32\u0E07\u0E41\u0E21\u0E48\u0E19\u0E22\u0E33 \u0E2B\u0E49\u0E32\u0E21\u0E41\u0E15\u0E48\u0E07\u0E02\u0E49\u0E2D\u0E04\u0E27\u0E32\u0E21\u0E2B\u0E23\u0E37\u0E2D\u0E40\u0E15\u0E34\u0E21\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E17\u0E35\u0E48\u0E44\u0E21\u0E48\u0E44\u0E14\u0E49\u0E1E\u0E39\u0E14 \u0E16\u0E49\u0E32\u0E40\u0E1B\u0E47\u0E19\u0E04\u0E33\u0E2A\u0E31\u0E48\u0E07\u0E23\u0E32\u0E22\u0E23\u0E31\u0E1A\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22\u0E43\u0E2B\u0E49\u0E23\u0E31\u0E01\u0E29\u0E32\u0E15\u0E31\u0E27\u0E40\u0E25\u0E02 \u0E08\u0E33\u0E19\u0E27\u0E19\u0E40\u0E07\u0E34\u0E19 \u0E1A\u0E32\u0E17 \u0E41\u0E25\u0E30\u0E0A\u0E37\u0E48\u0E2D\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E15\u0E32\u0E21\u0E40\u0E2A\u0E35\u0E22\u0E07\u0E08\u0E23\u0E34\u0E07",
+    prompt: options.prompt || "\u0E16\u0E2D\u0E14\u0E40\u0E2A\u0E35\u0E22\u0E07\u0E44\u0E1F\u0E25\u0E4C\u0E19\u0E35\u0E49\u0E40\u0E1B\u0E47\u0E19\u0E02\u0E49\u0E2D\u0E04\u0E27\u0E32\u0E21\u0E41\u0E1A\u0E1A\u0E04\u0E23\u0E1A\u0E16\u0E49\u0E27\u0E19 \u0E20\u0E32\u0E29\u0E32\u0E2B\u0E25\u0E31\u0E01\u0E04\u0E37\u0E2D\u0E44\u0E17\u0E22 \u0E2B\u0E32\u0E01\u0E21\u0E35\u0E20\u0E32\u0E29\u0E32\u0E2D\u0E37\u0E48\u0E19\u0E43\u0E2B\u0E49\u0E04\u0E07\u0E44\u0E27\u0E49\u0E15\u0E32\u0E21\u0E17\u0E35\u0E48\u0E1E\u0E39\u0E14\u0E08\u0E23\u0E34\u0E07"
+  });
+  const response = {
+    task: "transcribe",
+    language: result.language || options.language || "th",
+    duration: Number(result.duration || 0),
+    text: result.text || "",
+    segments: [{
+      id: 0,
+      seek: 0,
+      start: 0,
+      end: Number(result.duration || 0),
+      text: result.text || "",
+      tokens: [],
+      temperature: 0,
+      avg_logprob: 0,
+      compression_ratio: 0,
+      no_speech_prob: 0
+    }]
+  };
+  const validated = validateTranscript(response, "Google Gemini");
+  if ("error" in validated) throw new Error(validated.details || validated.error);
+  return validated;
+}
 function validateTranscript(response, provider) {
   const text2 = String(response.text || "").trim();
   if (!text2) return { error: "Invalid transcription response", code: "SERVICE_ERROR", details: `${provider} returned empty text` };
@@ -4376,11 +4485,13 @@ async function transcribeWithGateway(audioBuffer, options) {
 async function transcribeAudio(options) {
   try {
     const groqKey = (process.env.GROQ_API_KEY || "").trim();
+    const googleConfigured = googleGeminiConfigured();
     const forgeConfigured2 = Boolean(ENV.forgeApiUrl && ENV.forgeApiKey);
     const openAIKey = (process.env.OPENAI_API_KEY || "").trim();
     const gatewayConfigured = gatewayAuthAvailable(process.env, options.gatewayToken);
     const localConfigured = localVoiceRuntimeStatus().enabled;
-    if (!groqKey && !localConfigured && !forgeConfigured2 && !openAIKey && !gatewayConfigured) {
+    const failures = [];
+    if (!groqKey && !localConfigured && !forgeConfigured2 && !openAIKey && !gatewayConfigured && !googleConfigured) {
       return {
         error: "Voice transcription service is not configured",
         code: "SERVICE_ERROR",
@@ -4410,6 +4521,16 @@ async function transcribeAudio(options) {
     if (sizeMB > 16) {
       return { error: "Audio file exceeds maximum size limit", code: "FILE_TOO_LARGE", details: `File size is ${sizeMB.toFixed(2)}MB, maximum allowed is 16MB` };
     }
+    if (googleGeminiConfigured()) {
+      try {
+        const result = await transcribeWithGoogleGemini(audioBuffer, options);
+        console.info("[Milo Voice] transcription provider", { provider: "google-gemini", chars: result.text.length });
+        return result;
+      } catch (error) {
+        failures.push(`google-gemini: ${error instanceof Error ? error.message : "failed"}`);
+        console.warn("[Milo Voice] Google Gemini transcription failed; trying configured fallback", { error: error instanceof Error ? error.message : "unknown" });
+      }
+    }
     if (groqKey) {
       const form = makeFormData(audioBuffer, mimeType, options, "whisper-large-v3");
       form.set("temperature", "0");
@@ -4421,7 +4542,6 @@ async function transcribeAudio(options) {
       }, 6e4);
       return await parseProviderResponse(response, "groq");
     }
-    const failures = [];
     if (gatewayConfigured) {
       try {
         const result = await transcribeWithGateway(audioBuffer, options);
@@ -5328,6 +5448,16 @@ function parseAnalysisContent(content) {
   if (!parsed || !Array.isArray(parsed.proposals) || typeof parsed.summary !== "string") throw new Error("Image model returned an invalid analysis");
   return parsed;
 }
+async function analyzeImageWithGoogle(dataUrl) {
+  const result = await generateGoogleGeminiJson({
+    kind: "vision",
+    imageDataUrl: dataUrl,
+    system: SYSTEM_PROMPT,
+    prompt: USER_PROMPT,
+    schema: schema2
+  });
+  return parseAnalysisContent(JSON.stringify(result));
+}
 async function analyzeImageWithForge(dataUrl) {
   const response = await invokeLLM({
     model: ENV.visionModel,
@@ -5480,6 +5610,7 @@ function imageGatewayMode(env = process.env, requestToken) {
   return void 0;
 }
 function imageAnalysisMode(requestToken) {
+  if (googleGeminiConfigured()) return ocrAssetsReady() ? "google-gemini-vision+ocr-fallback" : "google-gemini-vision";
   if (ENV.forgeApiKey) return ocrAssetsReady() ? "forge-vision+ocr-fallback" : "forge-vision";
   const gatewayMode = imageGatewayMode(process.env, requestToken);
   if (gatewayMode) return ocrAssetsReady() ? `${gatewayMode}+ocr-fallback` : gatewayMode;
@@ -5489,7 +5620,7 @@ async function imageAnalysisRuntimeStatus(requestToken) {
   const mode = imageAnalysisMode(requestToken);
   return {
     mode,
-    authenticated: Boolean(ENV.forgeApiKey || imageGatewayToken(process.env, requestToken) || ocrAssetsReady()),
+    authenticated: Boolean(googleGeminiConfigured() || ENV.forgeApiKey || imageGatewayToken(process.env, requestToken) || ocrAssetsReady()),
     ocrAssetsReady: ocrAssetsReady()
   };
 }
@@ -5561,6 +5692,21 @@ function sanitizeAnalysisMerchants(analysis) {
 async function analyzeImage(dataUrl, options = {}) {
   let providerError;
   let providerAnalysis;
+  if (googleGeminiConfigured()) {
+    try {
+      const analysis = await analyzeImageWithGoogle(dataUrl);
+      providerAnalysis = analysis;
+      console.info("[Milo Image] Google Gemini vision provider", {
+        model: process.env.MILO_GOOGLE_VISION_MODEL || process.env.MILO_VISION_MODEL || "gemini-2.5-flash"
+      });
+      if (analysis.proposals.some((item) => item.kind === "reminder" && Boolean(item.dateText))) return sanitizeAnalysisMerchants(analysis);
+    } catch (error) {
+      providerError = error;
+      console.warn("[Milo Image] Google Gemini vision failed; trying configured fallback", {
+        error: error instanceof Error ? error.message : "unknown"
+      });
+    }
+  }
   if (ENV.forgeApiKey) {
     try {
       const analysis = await analyzeImageWithForge(dataUrl);
