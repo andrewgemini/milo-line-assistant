@@ -6,6 +6,16 @@ describe("OCR slip parser", () => {
     const result = analyzeOcrText("โบเสร็จ\nทานหราน\nข่าวเหนีย\nน่าแข็่งแก้าว 2 4 00\nยปารวมมีตรทะเล 1 129.04\nบอดรวาม 9 123 nn\nทั้งหมด B423.00\nเง่นสศ 8423.00");
     expect(result.proposals[0]).toMatchObject({ documentType: "receipt", amount: 423, category: "อาหาร" });
   });
+  it("recovers a Thai receipt date when Tesseract drops month punctuation", () => {
+    const result = analyzeOcrText("ทำรายการสำเร็จ\n16 กย 2569 10:34 น.\nINDI Coffee\nจำนวนเงินที่ชำระ 16 บาท");
+    expect(result.proposals[0]).toMatchObject({
+      documentType: "receipt",
+      amount: 16,
+      dateText: "2026-09-16",
+      timeText: "10:34",
+    });
+  });
+
   it("uses the Ocha receipt payable total instead of the quantity column", () => {
     const result = analyzeOcrText(`ใบเสร็จ
 เลขที่: 03000728

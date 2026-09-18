@@ -163,8 +163,22 @@ function extractDateTime(text: string) {
   const iso = normalized.match(/\b(20\d{2})[-\/]([01]?\d)[-\/]([0-3]?\d)\b/);
   if (iso) dateText = formatIsoDate(Number(iso[1]), Number(iso[2]), Number(iso[3]));
   if (!dateText) {
+    const punctuationFree = normalized.match(/(?:^|\s)([0-3]?\d)\s*(มค|กพ|มีค|เมย|พค|มิย|กค|สค|กย|ตค|พย|ธค)\s*(\d{4})(?=\s|$)/);
+    if (punctuationFree) {
+      const month = thaiMonths[punctuationFree[2]] ?? 0;
+      dateText = formatIsoDate(normalizeYear(Number(punctuationFree[3])), month, Number(punctuationFree[1]));
+    }
+  }
+  if (!dateText) {
     const numeric = normalized.match(/\b([0-3]?\d)[\/-]([01]?\d)[\/-](\d{2,4})\b/);
     if (numeric) dateText = formatIsoDate(normalizeYear(Number(numeric[3])), Number(numeric[2]), Number(numeric[1]));
+  }
+  if (!dateText) {
+    const punctuationFree = normalized.match(/(?:^|\s)([0-3]?\d)\s*(มค|กพ|มีค|เมย|พค|มิย|กค|สค|กย|ตค|พย|ธค)\s*(\d{4})(?=\s|$)/);
+    if (punctuationFree) {
+      const month = thaiMonths[punctuationFree[2]] ?? 0;
+      dateText = formatIsoDate(normalizeYear(Number(punctuationFree[3])), month, Number(punctuationFree[1]));
+    }
   }
   if (!dateText) {
     for (const [monthName, month] of Object.entries(thaiMonths)) {
