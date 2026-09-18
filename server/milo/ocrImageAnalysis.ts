@@ -45,7 +45,8 @@ function decodeDataUrl(dataUrl: string) {
 export async function buildReceiptHeaderDataUrl(dataUrl: string) {
   const input = decodeDataUrl(dataUrl);
   const trimmed = await sharp(input).rotate().trim({ threshold: 10 }).png().toBuffer({ resolveWithObject: true });
-  const headerHeight = Math.max(1, Math.floor(trimmed.info.height * 0.75));
+  // Date/time is printed near the top of POS receipts; isolating the top 45% gives the legacy vision/OCR provider much larger glyphs instead of diluting them with the whole receipt.
+  const headerHeight = Math.max(1, Math.floor(trimmed.info.height * 0.45));
   const header = await sharp(trimmed.data)
     .extract({ left: 0, top: 0, width: trimmed.info.width, height: headerHeight })
     .resize({ width: 3200, fit: "inside", withoutEnlargement: false, kernel: sharp.kernel.lanczos3 })
