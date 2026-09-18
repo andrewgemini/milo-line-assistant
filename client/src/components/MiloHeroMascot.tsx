@@ -14,35 +14,31 @@ export function MiloHeroMascot({ className = "" }: MiloHeroMascotProps) {
       data-milo-hero-reference="exact-supplied-artwork"
     >
       <style>{`
-        @keyframes miloHeroFloat {
-          0%, 100% { transform: translate3d(0, 0, 0); }
-          50% { transform: translate3d(0, -5px, 0); }
+        @keyframes miloHello {
+          0%, 100% {
+            opacity: 0;
+            transform: translateY(8px) scale(.94);
+          }
+          15%, 80% {
+            opacity: 1;
+            transform: translateY(0) scale(1);
+          }
         }
-        @keyframes miloHeroBlink {
-          0%, 91%, 96%, 100% { opacity: 1; }
-          93.5%, 94.5% { opacity: .72; }
-        }
-        .milo-hero-float {
-          animation: miloHeroFloat 3.2s ease-in-out infinite;
-          transform-origin: center bottom;
-        }
-        .milo-hero-blink {
-          animation: miloHeroBlink 4.2s ease-in-out infinite;
+        .milo-hero-hello {
+          animation: miloHello 4.8s ease-in-out infinite;
         }
         @media (prefers-reduced-motion: reduce) {
-          .milo-hero-float,
-          .milo-hero-blink { animation: none; }
+          .milo-hero-hello { animation: none; }
         }
       `}</style>
 
-      <div className="milo-hero-float relative h-full w-full">
-        <div className="absolute -left-3 -top-1 z-20 whitespace-nowrap rounded-2xl rounded-bl-md border border-[#c8eddf] bg-white px-4 py-2 text-center text-sm font-bold text-[#246357] shadow-lg">
-          <span>สวัสดีครับ 👋</span>
-          <br />
+      <div className="relative h-full w-full">
+        <div className="milo-hero-hello absolute -left-3 -top-1 z-20 whitespace-nowrap rounded-2xl rounded-bl-md border border-[#c8eddf] bg-white px-4 py-2 text-center text-sm font-bold text-[#246357] shadow-lg">
+          สวัสดีครับ 👋<br />
           <span className="font-normal text-[#5e837b]">ผมไมโล ยินดีต้อนรับ!</span>
         </div>
 
-        <div className="milo-hero-blink h-full w-full">
+        <div className="relative h-full w-full">
           <img
             key={MILO_MASCOT_SRC}
             src={`${MILO_MASCOT_SRC}?v=1817e71`}
