@@ -1,21 +1,16 @@
-import { MILO_MASCOT_SRC } from "@/lib/miloMascotAsset";
+import { MiloStandingHero } from "@/components/MiloStandingHero";
 
 type MiloHeroMascotProps = { className?: string };
 
-/** Hero mascot: always render the exact supplied Milo reference artwork. */
+/** Hero mascot: standing, waving Milo matching the supplied hero reference. */
 export function MiloHeroMascot({ className = "" }: MiloHeroMascotProps) {
   return (
     <div
-      className={`relative h-[350px] w-[350px] ${className}`}
-      aria-label="ไมโล แมวผู้ช่วย"
-      data-milo-hero-reference="exact-uploaded-milo"
+      className={`relative h-[400px] w-[300px] ${className}`}
+      aria-label="ไมโล แมวยืนกวักมือ"
+      data-milo-hero-reference="standing-waving"
     >
-      <img
-        src={MILO_MASCOT_SRC}
-        alt="ไมโล แมวผู้ช่วย"
-        className="h-full w-full object-contain"
-        draggable={false}
-      />
+      <MiloStandingHero className="h-full w-full" />
     </div>
   );
 }
