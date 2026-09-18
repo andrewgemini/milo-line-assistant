@@ -22,6 +22,40 @@ function modelFor(kind: "vision" | "audio", env: NodeJS.ProcessEnv = process.env
   ).trim();
 }
 
+function chatModel(env: NodeJS.ProcessEnv = process.env) {
+  return (env.MILO_GOOGLE_CHAT_MODEL || env.MILO_GEMINI_CHAT_MODEL || "gemini-3.8-flash").trim();
+}
+
+export async function generateGoogleGeminiText(args: { prompt: string; system: string; timeoutMs?: number }): Promise<string> {
+  const apiKey = googleGeminiApiKey();
+  if (!apiKey) throw new Error("Google Gemini API key is not configured");
+  const model = chatModel();
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), args.timeoutMs ?? 20_000);
+  try {
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          systemInstruction: { parts: [{ text: args.system }] },
+          contents: [{ role: "user", parts: [{ text: args.prompt.slice(0, 4000) }] }],
+          generationConfig: { temperature: 0.7, maxOutputTokens: 700 },
+        }),
+        signal: controller.signal,
+      },
+    );
+    const payload = await response.json().catch(() => ({})) as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>; error?: { message?: string } };
+    if (!response.ok) throw new Error(payload.error?.message || `Google Gemini returned HTTP ${response.status}`);
+    const text = payload.candidates?.[0]?.content?.parts?.map(part => part.text || "").join("").trim() || "";
+    if (!text) throw new Error("Google Gemini returned empty content");
+    return text.slice(0, 5000);
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 export async function generateGoogleGeminiJson<T>(args: {
   prompt: string;
   system?: string;

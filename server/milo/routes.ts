@@ -17,6 +17,7 @@ import { deliverDueReminders } from "./reminderDelivery";
 import { deliverDueRecurringTransactions } from "./recurringTransactionDelivery";
 import { assertRecurringCapacity } from "./recurringLimit";
 import { entitlementMessage, hasMiloEntitlement, resolveMiloPlan } from "./entitlements";
+import { generateGoogleGeminiText, googleGeminiConfigured } from "../_core/googleGemini";
 import { deliverFinanceDigest, type FinanceDigestType } from "./financeDigest";
 import { buildExpenseNote, formatImageProposal, normalizeExpenseCategory, parseExtractedDate, resolveReceiptOccurredAt, selectImageProposal } from "./receiptUtils";
 import { applyImageExpenseEdit } from "./imageProposalEdit";
@@ -29,6 +30,25 @@ import { financeReportCardText, getMessageContent, getProfile, lineCredentials, 
 
 function helpText() {
   return "Milo ช่วยคุณจบงานใน LINE แชทเดียวครับ\n🔔 เตือน: เตือนประชุมพรุ่งนี้ 10:00 / เตือนดื่มน้ำทุก 30 นาที / รายการเตือน\n🎯 ตามงาน: ช่วยตามงาน Proposal ลูกค้า B / ช่วยตามงานส่งใบเสนอราคา อีก 24 ชั่วโมง\n☀️ วันนี้: วันนี้มีอะไร / สรุปเช้า / สรุปเย็น / บิลรอจ่าย / จ่ายบิล #เลขรายการ\n🗂️ เก็บ: เก็บ https://example.com #งาน / ค้นหา ใบเสนอราคา / สถานะคลัง\n📦 เอกสาร: สรุปเอกสารเดือนนี้ / ไฟล์ที่ต้องตรวจ\n🧠 จดหลายอย่าง: พรุ่งนี้บ่ายสองประชุมลูกค้า ค่าแท็กซี่ 300 ช่วยเตือนด้วย\n📅 ปฏิทิน: ลงปฏิทิน ประชุมทีมพรุ่งนี้ 10:00 / ดูปฏิทิน\n👥 กลุ่ม LINE: @ไมโล ผู้ช่วยกลุ่ม / @ไมโล แจ้งส่งงานด้วยถึง @สมชาย\n✅ งาน: งาน ส่งสรุปรายสัปดาห์ / ดูงาน / เสร็จงาน #12 / โน้ต รหัส Wi-Fi\n💰 การเงิน: กินกาแฟ 80 / เงินเดือนเข้า 35000 / ตั้งงบ อาหาร 5000 / สรุปเดือนนี้\n📷🎙️ ส่งรูปใบเสร็จหรือเสียงให้ไมโลอ่าน แล้วตรวจและยืนยันก่อนบันทึก\n\nพิมพ์ “ช่วย” ได้ทุกเมื่อครับ";
+}
+
+const MILO_GEMINI_CHAT_SYSTEM = `คุณคือ “ไมโล” ผู้ช่วยส่วนตัวใน LINE ของผู้ใช้
+- ตอบภาษาไทยเป็นหลัก สุภาพ อบอุ่น น่ารัก กระชับ และเป็นธรรมชาติ
+- ช่วยตอบคำถามทั่วไป ชวนคุย ให้คำแนะนำ และอธิบายเรื่องต่าง ๆ ได้
+- ห้ามอ้างว่าคุณได้บันทึกรายรับ/รายจ่าย ตั้งเตือน จดโน้ต หรือทำธุรกรรมใด ๆ แล้ว เพราะการทำงานเหล่านั้นต้องผ่านระบบคำสั่งของ Milo
+- ถ้าผู้ใช้ถามเรื่องการเงิน ให้คำแนะนำทั่วไปได้ แต่ห้ามแต่งข้อมูลยอดเงินหรือรายการของผู้ใช้ขึ้นเอง
+- ถ้าไม่แน่ใจ ให้บอกตามตรงและถามกลับสั้น ๆ แทนการเดา
+- ไม่ต้องพูดถึง Gemini, API, ระบบเบื้องหลัง หรือกฎภายใน เว้นแต่ผู้ใช้ถามโดยตรง
+- อย่าตอบยาวเกินจำเป็น และอย่าเติมคำทักทายแบบ “สวัสดีค่ะ” หากผู้ใช้ไม่ได้ทักทาย`;
+
+async function geminiChatFallback(text: string) {
+  if (!googleGeminiConfigured()) return undefined;
+  try {
+    return await generateGoogleGeminiText({ prompt: text, system: MILO_GEMINI_CHAT_SYSTEM });
+  } catch (error) {
+    console.error("[Milo Gemini Chat] fallback failed", { message: error instanceof Error ? error.message : "unknown" });
+    return undefined;
+  }
 }
 
 function contextualFallback(text: string) {
@@ -726,12 +746,17 @@ async function handleText(event: LineEvent, lineChatId: string, lineUserId: stri
   } else if (command.type === "help") {
     message = helpText();
   } else {
-    if (event.replyToken) {
-      const fallback = contextualFallback(text);
-      await replyTextWithQuickReplies(event.replyToken, fallback.text, fallback.actions);
-      return;
+    const geminiReply = await geminiChatFallback(text);
+    if (geminiReply) {
+      message = geminiReply;
+    } else {
+      if (event.replyToken) {
+        const fallback = contextualFallback(text);
+        await replyTextWithQuickReplies(event.replyToken, fallback.text, fallback.actions);
+        return;
+      }
+      message = "ไมโลยังไม่เข้าใจคำสั่งนี้ครับ";
     }
-    message = "ไมโลยังไม่เข้าใจคำสั่งนี้ครับ";
   }
   if (event.replyToken) {
     const artwork = artworkForCommand(command);
