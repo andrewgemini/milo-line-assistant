@@ -1,4 +1,5 @@
 ﻿import { invokeLLM } from "../_core/llm";
+import { generateGoogleGeminiJson, googleGeminiConfigured } from "../_core/googleGemini";
 import { ENV } from "../_core/env";
 import { analyzeImageWithOcr, buildReceiptHeaderDataUrl, ocrAssetsReady } from "./ocrImageAnalysis";
 import { extractThaiSlipDateTime, isPlausibleReceiptMerchant, normalizeThaiMerchantName, receiptMerchantQuality } from "./thaiReceiptParser";
@@ -132,6 +133,16 @@ async function gatewayRequest(dataUrl: string, token: string, structured: boolea
   }
 }
 
+async function analyzeImageWithGoogle(dataUrl: string, userPrompt = USER_PROMPT): Promise<ImageAnalysis> {
+  return generateGoogleGeminiJson<ImageAnalysis>({
+    kind: "vision",
+    imageDataUrl: dataUrl,
+    system: SYSTEM_PROMPT,
+    prompt: userPrompt,
+    schema,
+  });
+}
+
 async function analyzeImageWithGatewayKey(dataUrl: string, token: string, userPrompt = USER_PROMPT): Promise<ImageAnalysis> {
   try {
     return await gatewayRequest(dataUrl, token, true, userPrompt);
@@ -239,6 +250,22 @@ async function receiptDateRepairWithForge(dataUrl: string): Promise<ReceiptDateR
 async function repairMissingReceiptDate(analysis: ImageAnalysis, dataUrl: string, gatewayKey?: string) {
   const proposal = analysis.proposals[0];
   if (!proposal || proposal.documentType !== "receipt" || proposal.kind !== "expense" || proposal.dateText) return analysis;
+  if (googleGeminiConfigured()) {
+    try {
+      const header = await buildReceiptHeaderDataUrl(dataUrl).catch(() => dataUrl);
+      const repair = await generateGoogleGeminiJson<ReceiptDateRepair>({
+        kind: "vision",
+        imageDataUrl: header,
+        system: "คุณเป็นตัวตรวจวันที่ใบเสร็จไทย อ่านเฉพาะวันที่และเวลาในภาพจริง ห้ามใช้วันที่ปัจจุบันหรือวันที่ส่งรูป ห้ามเดา",
+        prompt: "อ่านบรรทัดวันที่และเวลาที่พิมพ์บนใบเสร็จจริงจากพิกเซล ถ้าเห็นวันที่แบบ 17 ก.ย. 2569 10:58 ให้คืน dateText=2026-09-17 และ timeText=10:58",
+        schema: receiptDateSchema,
+      });
+      const normalized = parseReceiptDateRepairContent(JSON.stringify(repair));
+      if (normalized.dateText) return mergeDedicatedDateRepair(analysis, normalized);
+    } catch (error) {
+      console.warn("[Milo Image] Google focused date repair failed", { error: error instanceof Error ? error.message : "unknown" });
+    }
+  }
   const headerDataUrl = await buildReceiptHeaderDataUrl(dataUrl).catch(() => dataUrl);
   try {
     if (ENV.forgeApiKey) {
@@ -282,6 +309,7 @@ function imageGatewayMode(env: NodeJS.ProcessEnv = process.env, requestToken?: s
 }
 
 export function imageAnalysisMode(requestToken?: string) {
+  if (googleGeminiConfigured()) return ocrAssetsReady() ? "google-gemini-vision+ocr-fallback" : "google-gemini-vision";
   if (ENV.forgeApiKey) return ocrAssetsReady() ? "forge-vision+ocr-fallback" : "forge-vision";
   const gatewayMode = imageGatewayMode(process.env, requestToken);
   if (gatewayMode) return ocrAssetsReady() ? `${gatewayMode}+ocr-fallback` : gatewayMode;
@@ -292,7 +320,7 @@ export async function imageAnalysisRuntimeStatus(requestToken?: string) {
   const mode = imageAnalysisMode(requestToken);
   return {
     mode,
-    authenticated: Boolean(ENV.forgeApiKey || imageGatewayToken(process.env, requestToken) || ocrAssetsReady()),
+    authenticated: Boolean(googleGeminiConfigured() || ENV.forgeApiKey || imageGatewayToken(process.env, requestToken) || ocrAssetsReady()),
     ocrAssetsReady: ocrAssetsReady(),
   };
 }
@@ -377,6 +405,21 @@ function sanitizeAnalysisMerchants(analysis: ImageAnalysis): ImageAnalysis {
 export async function analyzeImage(dataUrl: string, options: { gatewayToken?: string } = {}): Promise<ImageAnalysis> {
   let providerError: unknown;
   let providerAnalysis: ImageAnalysis | undefined;
+  let directVisionAnalysis: ImageAnalysis | undefined;
+
+  if (googleGeminiConfigured()) {
+    try {
+      const analysis = await analyzeImageWithGoogle(dataUrl);
+      directVisionAnalysis = analysis;
+      providerAnalysis = analysis;
+      console.info("[Milo Image] Google Gemini direct vision selected");
+    } catch (error) {
+      providerError = error;
+      console.warn("[Milo Image] Google Gemini direct vision failed; using fallbacks", {
+        error: error instanceof Error ? error.message : "unknown",
+      });
+    }
+  }
 
   if (ENV.forgeApiKey) {
     try {
@@ -408,6 +451,19 @@ export async function analyzeImage(dataUrl: string, options: { gatewayToken?: st
   }
 
   try {
+    if (googleGeminiConfigured()) {
+      try {
+        const direct = await analyzeImageWithGoogle(dataUrl);
+        providerAnalysis = direct;
+        directVisionAnalysis = direct;
+        console.info("[Milo Image] Google Gemini direct vision applied before OCR merge");
+      } catch (error) {
+        console.warn("[Milo Image] Google Gemini direct vision retry failed", {
+          error: error instanceof Error ? error.message : "unknown",
+        });
+      }
+    }
+
     const ocrAnalysis = await analyzeImageWithOcr(dataUrl);
     if (!providerAnalysis) {
       let selected = ocrAnalysis;
