@@ -28,6 +28,9 @@ const thaiDigitMap: Record<string, string> = {
 const thaiMonths: Record<string, number> = {
   "ม.ค.": 1, "ก.พ.": 2, "มี.ค.": 3, "เม.ย.": 4, "พ.ค.": 5, "มิ.ย.": 6,
   "ก.ค.": 7, "ส.ค.": 8, "ก.ย.": 9, "ต.ค.": 10, "พ.ย.": 11, "ธ.ค.": 12,
+  // Tesseract frequently drops punctuation from Thai month abbreviations.
+  "มค": 1, "กพ": 2, "มีค": 3, "เมย": 4, "พค": 5, "มิย": 6,
+  "กค": 7, "สค": 8, "กย": 9, "ตค": 10, "พย": 11, "ธค": 12,
 };
 
 export function ocrAssetsReady() {
