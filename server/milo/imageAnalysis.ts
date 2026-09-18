@@ -277,6 +277,17 @@ function receiptNeedsDetailRepair(analysis: ImageAnalysis) {
   return merchantLooksOperational || !proposal.lineItems?.length || proposal.lineItems.length < 2 || !proposal.receiptNumber;
 }
 
+async function repairReceiptDateWithGoogle(dataUrl: string): Promise<ReceiptDateRepair> {
+  const result = await generateGoogleGeminiJson<ReceiptDateRepair>({
+    kind: "vision",
+    imageDataUrl: dataUrl,
+    system: "คุณคือ OCR verifier สำหรับใบเสร็จไทย งานเดียวคืออ่านวันที่ทำรายการและเวลาที่พิมพ์อยู่ในภาพจริง ห้ามใช้วันที่ปัจจุบัน วันที่ส่งรูป หรือบริบทอื่นแทนวันที่บนเอกสาร. วันที่อาจเป็น พ.ศ. เช่น 17 ก.ย. 2569 และต้องแปลงเป็น ค.ศ. 2026-09-17. ถ้าอ่านวันเดือนปีจริงไม่ได้ให้ dateText เป็นสตริงว่าง. ถ้าอ่านเวลาไม่ได้ให้ timeText เป็นสตริงว่าง. evidence ต้องคัดข้อความสั้นๆ ที่มองเห็นจริงเพื่อใช้ตรวจสอบ.",
+    prompt: "อ่านเฉพาะบรรทัดวันที่/เวลาในใบเสร็จนี้จากพิกเซลจริง โดยมองทั้งส่วนบนของใบเสร็จและบริเวณใกล้ยอดเงิน. ห้ามเดา. ถ้าเห็น '17 ก.ย. 2569 10:58' ให้คืน dateText='2026-09-17', timeText='10:58'.",
+    schema: receiptDateSchema,
+  });
+  return parseReceiptDateRepairContent(JSON.stringify(result));
+}
+
 async function refineReceiptDetails(analysis: ImageAnalysis, dataUrl: string, gatewayKey: string) {
   if (!receiptNeedsDetailRepair(analysis)) return analysis;
   try {
@@ -366,6 +377,21 @@ export async function analyzeImage(dataUrl: string, options: { gatewayToken?: st
         try {
           const detail = await analyzeImageWithGoogle(dataUrl, RECEIPT_DETAIL_PROMPT);
           providerAnalysis = mergeImageAnalyses(analysis, detail);
+          if (!providerAnalysis.proposals[0]?.dateText) {
+            try {
+              const dateRepair = await repairReceiptDateWithGoogle(dataUrl);
+              providerAnalysis = mergeDedicatedDateRepair(providerAnalysis, dateRepair);
+              console.info("[Milo Image] Google Gemini dedicated receipt date repair", {
+                dateText: dateRepair.dateText,
+                timeText: dateRepair.timeText,
+                evidence: dateRepair.evidence.slice(0, 120),
+              });
+            } catch (dateError) {
+              console.warn("[Milo Image] Google Gemini dedicated receipt date repair failed", {
+                error: dateError instanceof Error ? dateError.message : "unknown",
+              });
+            }
+          }
           console.info("[Milo Image] Google Gemini receipt detail verification", {
             dateText: providerAnalysis.proposals[0]?.dateText,
             timeText: providerAnalysis.proposals[0]?.timeText,

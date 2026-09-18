@@ -528,7 +528,7 @@ describe("LINE webhook processor", () => {
     expect(replyText).toHaveBeenCalledWith("token", expect.stringContaining("จึงยังไม่บันทึก"));
   });
 
-  it("uses the image upload date when only the receipt time is readable, so one-tap confirmation still saves", async () => {
+  it("does not silently replace a missing receipt date with the upload date", async () => {
     const timeOnlyReceipt = {
       summary: "พบยอดชำระ 30 บาท แต่วันที่ไม่ชัด",
       confidence: 0.79,
@@ -545,9 +545,9 @@ describe("LINE webhook processor", () => {
 
     await processEvent({ type: "message", webhookEventId: "evt-time-only-confirm", timestamp: new Date("2026-09-14T06:39:00.000Z").getTime(), replyToken: "token", source: { type: "user", userId: "U1" }, message: { id: "txt-time-only", type: "text", text: "ยืนยันค่าใช้จ่าย" } }, "{}");
 
-    expect(db.createTransaction).toHaveBeenCalledWith(expect.objectContaining({ amount: 30, category: "อาหาร", occurredAt: new Date("2026-09-14T03:57:00.000Z"), note: expect.stringContaining("วันที่อ้างอิงจากวันที่ส่งรูป") }));
-    expect(db.setImageExtractionStatus).toHaveBeenCalledWith(44, "accepted");
-    expect(replyPostSaveSummaryImage).toHaveBeenCalledWith("token", expect.objectContaining({ amount: 30, occurredAt: new Date("2026-09-14T03:57:00.000Z") }));
+    expect(db.createTransaction).not.toHaveBeenCalled();
+    expect(db.setImageExtractionStatus).not.toHaveBeenCalledWith(44, "accepted");
+    expect(replyText).toHaveBeenCalledWith("token", expect.stringContaining("จึงยังไม่บันทึก"));
   });
 
   it("stores a PDF proposal and confirms multiple valid expense rows with the PDF linked as evidence", async () => {

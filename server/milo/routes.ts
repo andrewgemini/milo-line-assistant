@@ -673,7 +673,10 @@ async function handleText(event: LineEvent, lineChatId: string, lineUserId: stri
         const referenceDate = latest.vault.createdAt
           ? new Date(latest.vault.createdAt)
           : (Number.isFinite(event.timestamp) ? new Date(event.timestamp) : undefined);
-        const resolvedDate = resolveReceiptOccurredAt(command.dateText ?? proposal.dateText, proposal.timeText, referenceDate);
+        const documentDate = command.dateText ?? proposal.dateText;
+        const resolvedDate = proposal.documentType === "receipt" && !documentDate
+          ? undefined
+          : resolveReceiptOccurredAt(documentDate, proposal.timeText, referenceDate);
         const occurredAt = resolvedDate?.occurredAt;
         if (!occurredAt) {
           message = `อ่านยอด ${amount.toLocaleString("th-TH")} บาทได้ แต่วันที่ใน${proposal.documentType === "bank_slip" ? "สลิป" : "ใบเสร็จ"}ไม่ชัด และไม่มีเวลาที่น่าเชื่อถือพอสำหรับอ้างอิงวันที่ส่งรูป จึงยังไม่บันทึก\nกรุณาพิมพ์ “ยืนยันค่าใช้จ่าย วันที่ 27/08/2569” โดยแทนวันที่จริง`;

@@ -5631,6 +5631,16 @@ function receiptNeedsDetailRepair(analysis) {
   const merchantLooksOperational = !isPlausibleReceiptMerchant(merchant) || /^(?:ประเภท|พนักงาน|เวลา|วันที่|สินค้า|qty|ราคา|รวม)/i.test(merchant);
   return merchantLooksOperational || !proposal.lineItems?.length || proposal.lineItems.length < 2 || !proposal.receiptNumber;
 }
+async function repairReceiptDateWithGoogle(dataUrl) {
+  const result = await generateGoogleGeminiJson({
+    kind: "vision",
+    imageDataUrl: dataUrl,
+    system: "\u0E04\u0E38\u0E13\u0E04\u0E37\u0E2D OCR verifier \u0E2A\u0E33\u0E2B\u0E23\u0E31\u0E1A\u0E43\u0E1A\u0E40\u0E2A\u0E23\u0E47\u0E08\u0E44\u0E17\u0E22 \u0E07\u0E32\u0E19\u0E40\u0E14\u0E35\u0E22\u0E27\u0E04\u0E37\u0E2D\u0E2D\u0E48\u0E32\u0E19\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48\u0E17\u0E33\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E41\u0E25\u0E30\u0E40\u0E27\u0E25\u0E32\u0E17\u0E35\u0E48\u0E1E\u0E34\u0E21\u0E1E\u0E4C\u0E2D\u0E22\u0E39\u0E48\u0E43\u0E19\u0E20\u0E32\u0E1E\u0E08\u0E23\u0E34\u0E07 \u0E2B\u0E49\u0E32\u0E21\u0E43\u0E0A\u0E49\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48\u0E1B\u0E31\u0E08\u0E08\u0E38\u0E1A\u0E31\u0E19 \u0E27\u0E31\u0E19\u0E17\u0E35\u0E48\u0E2A\u0E48\u0E07\u0E23\u0E39\u0E1B \u0E2B\u0E23\u0E37\u0E2D\u0E1A\u0E23\u0E34\u0E1A\u0E17\u0E2D\u0E37\u0E48\u0E19\u0E41\u0E17\u0E19\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48\u0E1A\u0E19\u0E40\u0E2D\u0E01\u0E2A\u0E32\u0E23. \u0E27\u0E31\u0E19\u0E17\u0E35\u0E48\u0E2D\u0E32\u0E08\u0E40\u0E1B\u0E47\u0E19 \u0E1E.\u0E28. \u0E40\u0E0A\u0E48\u0E19 17 \u0E01.\u0E22. 2569 \u0E41\u0E25\u0E30\u0E15\u0E49\u0E2D\u0E07\u0E41\u0E1B\u0E25\u0E07\u0E40\u0E1B\u0E47\u0E19 \u0E04.\u0E28. 2026-09-17. \u0E16\u0E49\u0E32\u0E2D\u0E48\u0E32\u0E19\u0E27\u0E31\u0E19\u0E40\u0E14\u0E37\u0E2D\u0E19\u0E1B\u0E35\u0E08\u0E23\u0E34\u0E07\u0E44\u0E21\u0E48\u0E44\u0E14\u0E49\u0E43\u0E2B\u0E49 dateText \u0E40\u0E1B\u0E47\u0E19\u0E2A\u0E15\u0E23\u0E34\u0E07\u0E27\u0E48\u0E32\u0E07. \u0E16\u0E49\u0E32\u0E2D\u0E48\u0E32\u0E19\u0E40\u0E27\u0E25\u0E32\u0E44\u0E21\u0E48\u0E44\u0E14\u0E49\u0E43\u0E2B\u0E49 timeText \u0E40\u0E1B\u0E47\u0E19\u0E2A\u0E15\u0E23\u0E34\u0E07\u0E27\u0E48\u0E32\u0E07. evidence \u0E15\u0E49\u0E2D\u0E07\u0E04\u0E31\u0E14\u0E02\u0E49\u0E2D\u0E04\u0E27\u0E32\u0E21\u0E2A\u0E31\u0E49\u0E19\u0E46 \u0E17\u0E35\u0E48\u0E21\u0E2D\u0E07\u0E40\u0E2B\u0E47\u0E19\u0E08\u0E23\u0E34\u0E07\u0E40\u0E1E\u0E37\u0E48\u0E2D\u0E43\u0E0A\u0E49\u0E15\u0E23\u0E27\u0E08\u0E2A\u0E2D\u0E1A.",
+    prompt: "\u0E2D\u0E48\u0E32\u0E19\u0E40\u0E09\u0E1E\u0E32\u0E30\u0E1A\u0E23\u0E23\u0E17\u0E31\u0E14\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48/\u0E40\u0E27\u0E25\u0E32\u0E43\u0E19\u0E43\u0E1A\u0E40\u0E2A\u0E23\u0E47\u0E08\u0E19\u0E35\u0E49\u0E08\u0E32\u0E01\u0E1E\u0E34\u0E01\u0E40\u0E0B\u0E25\u0E08\u0E23\u0E34\u0E07 \u0E42\u0E14\u0E22\u0E21\u0E2D\u0E07\u0E17\u0E31\u0E49\u0E07\u0E2A\u0E48\u0E27\u0E19\u0E1A\u0E19\u0E02\u0E2D\u0E07\u0E43\u0E1A\u0E40\u0E2A\u0E23\u0E47\u0E08\u0E41\u0E25\u0E30\u0E1A\u0E23\u0E34\u0E40\u0E27\u0E13\u0E43\u0E01\u0E25\u0E49\u0E22\u0E2D\u0E14\u0E40\u0E07\u0E34\u0E19. \u0E2B\u0E49\u0E32\u0E21\u0E40\u0E14\u0E32. \u0E16\u0E49\u0E32\u0E40\u0E2B\u0E47\u0E19 '17 \u0E01.\u0E22. 2569 10:58' \u0E43\u0E2B\u0E49\u0E04\u0E37\u0E19 dateText='2026-09-17', timeText='10:58'.",
+    schema: receiptDateSchema
+  });
+  return parseReceiptDateRepairContent(JSON.stringify(result));
+}
 async function refineReceiptDetails(analysis, dataUrl, gatewayKey) {
   if (!receiptNeedsDetailRepair(analysis)) return analysis;
   try {
@@ -5704,6 +5714,21 @@ async function analyzeImage(dataUrl, options = {}) {
         try {
           const detail = await analyzeImageWithGoogle(dataUrl, RECEIPT_DETAIL_PROMPT);
           providerAnalysis = mergeImageAnalyses(analysis, detail);
+          if (!providerAnalysis.proposals[0]?.dateText) {
+            try {
+              const dateRepair = await repairReceiptDateWithGoogle(dataUrl);
+              providerAnalysis = mergeDedicatedDateRepair(providerAnalysis, dateRepair);
+              console.info("[Milo Image] Google Gemini dedicated receipt date repair", {
+                dateText: dateRepair.dateText,
+                timeText: dateRepair.timeText,
+                evidence: dateRepair.evidence.slice(0, 120)
+              });
+            } catch (dateError) {
+              console.warn("[Milo Image] Google Gemini dedicated receipt date repair failed", {
+                error: dateError instanceof Error ? dateError.message : "unknown"
+              });
+            }
+          }
           console.info("[Milo Image] Google Gemini receipt detail verification", {
             dateText: providerAnalysis.proposals[0]?.dateText,
             timeText: providerAnalysis.proposals[0]?.timeText,
@@ -7660,7 +7685,8 @@ ${incomeSection}
         const amount = Number(proposal.amount ?? 0);
         const category = normalizeExpenseCategory(proposal.category, `${proposal.title ?? ""} ${proposal.merchant ?? ""} ${proposal.note ?? ""}`);
         const referenceDate = latest.vault.createdAt ? new Date(latest.vault.createdAt) : Number.isFinite(event.timestamp) ? new Date(event.timestamp) : void 0;
-        const resolvedDate = resolveReceiptOccurredAt(command.dateText ?? proposal.dateText, proposal.timeText, referenceDate);
+        const documentDate = command.dateText ?? proposal.dateText;
+        const resolvedDate = proposal.documentType === "receipt" && !documentDate ? void 0 : resolveReceiptOccurredAt(documentDate, proposal.timeText, referenceDate);
         const occurredAt = resolvedDate?.occurredAt;
         if (!occurredAt) {
           message = `\u0E2D\u0E48\u0E32\u0E19\u0E22\u0E2D\u0E14 ${amount.toLocaleString("th-TH")} \u0E1A\u0E32\u0E17\u0E44\u0E14\u0E49 \u0E41\u0E15\u0E48\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48\u0E43\u0E19${proposal.documentType === "bank_slip" ? "\u0E2A\u0E25\u0E34\u0E1B" : "\u0E43\u0E1A\u0E40\u0E2A\u0E23\u0E47\u0E08"}\u0E44\u0E21\u0E48\u0E0A\u0E31\u0E14 \u0E41\u0E25\u0E30\u0E44\u0E21\u0E48\u0E21\u0E35\u0E40\u0E27\u0E25\u0E32\u0E17\u0E35\u0E48\u0E19\u0E48\u0E32\u0E40\u0E0A\u0E37\u0E48\u0E2D\u0E16\u0E37\u0E2D\u0E1E\u0E2D\u0E2A\u0E33\u0E2B\u0E23\u0E31\u0E1A\u0E2D\u0E49\u0E32\u0E07\u0E2D\u0E34\u0E07\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48\u0E2A\u0E48\u0E07\u0E23\u0E39\u0E1B \u0E08\u0E36\u0E07\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01
