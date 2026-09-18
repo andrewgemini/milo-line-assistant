@@ -5717,7 +5717,29 @@ async function analyzeImage(dataUrl, options = {}) {
       const analysis = await analyzeImageWithGoogle(dataUrl);
       directVisionAnalysis2 = analysis;
       providerAnalysis = analysis;
-      console.info("[Milo Image] Google Gemini direct vision selected");
+      console.info("[Milo Image] Google Gemini direct vision selected", {
+        proposals: analysis.proposals.length,
+        firstDate: analysis.proposals[0]?.dateText || "",
+        firstTime: analysis.proposals[0]?.timeText || ""
+      });
+      const first = analysis.proposals[0];
+      if (first?.kind === "expense" && first.documentType === "receipt" && !first.dateText) {
+        try {
+          const headerDataUrl = await buildReceiptHeaderDataUrl(dataUrl).catch(() => dataUrl);
+          const repair = await repairReceiptDateWithGoogle(headerDataUrl);
+          providerAnalysis = mergeDedicatedDateRepair(providerAnalysis, repair);
+          console.info("[Milo Image] Google Gemini focused date repair", {
+            dateText: repair.dateText,
+            timeText: repair.timeText,
+            evidence: repair.evidence.slice(0, 120)
+          });
+        } catch (repairError) {
+          console.warn("[Milo Image] Google Gemini focused date repair failed", {
+            error: repairError instanceof Error ? repairError.message : "unknown"
+          });
+        }
+      }
+      return sanitizeAnalysisMerchants(providerAnalysis);
     } catch (error) {
       providerError = error;
       console.warn("[Milo Image] Google Gemini direct vision failed; using fallbacks", {
