@@ -268,14 +268,14 @@ async function repairMissingReceiptDate(analysis: ImageAnalysis, dataUrl: string
   }
   const headerDataUrl = await buildReceiptHeaderDataUrl(dataUrl).catch(() => dataUrl);
   try {
-    if (ENV.forgeApiKey) {
+    if (ENV.forgeApiKey && !directVisionAnalysis) {
       const repair = await receiptDateRepairWithForge(headerDataUrl);
       if (repair.dateText) return mergeDedicatedDateRepair(analysis, repair);
     }
   } catch (error) {
     console.warn("[Milo Image] Forge focused date repair failed", { error: error instanceof Error ? error.message : "unknown" });
   }
-  if (gatewayKey) {
+  if (gatewayKey && !directVisionAnalysis) {
     try {
       const repair = await receiptDateRepairRequest(headerDataUrl, gatewayKey);
       return mergeDedicatedDateRepair(analysis, repair);
@@ -421,7 +421,7 @@ export async function analyzeImage(dataUrl: string, options: { gatewayToken?: st
     }
   }
 
-  if (ENV.forgeApiKey) {
+  if (ENV.forgeApiKey && !directVisionAnalysis) {
     try {
       const analysis = await analyzeImageWithForge(dataUrl);
       if (analysis.proposals.some(item => item.kind === "reminder" && Boolean(item.dateText))) return analysis;
@@ -436,7 +436,7 @@ export async function analyzeImage(dataUrl: string, options: { gatewayToken?: st
   }
 
   const gatewayKey = imageGatewayToken(process.env, options.gatewayToken);
-  if (gatewayKey) {
+  if (gatewayKey && !directVisionAnalysis) {
     try {
       const analysis = await analyzeImageWithGatewayKey(dataUrl, gatewayKey);
       if (analysis.proposals.some(item => item.kind === "reminder" && Boolean(item.dateText))) return analysis;

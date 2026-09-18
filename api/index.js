@@ -5593,14 +5593,14 @@ async function repairMissingReceiptDate(analysis, dataUrl, gatewayKey) {
   }
   const headerDataUrl = await buildReceiptHeaderDataUrl(dataUrl).catch(() => dataUrl);
   try {
-    if (ENV.forgeApiKey) {
+    if (ENV.forgeApiKey && !directVisionAnalysis) {
       const repair = await receiptDateRepairWithForge(headerDataUrl);
       if (repair.dateText) return mergeDedicatedDateRepair(analysis, repair);
     }
   } catch (error) {
     console.warn("[Milo Image] Forge focused date repair failed", { error: error instanceof Error ? error.message : "unknown" });
   }
-  if (gatewayKey) {
+  if (gatewayKey && !directVisionAnalysis) {
     try {
       const repair = await receiptDateRepairRequest(headerDataUrl, gatewayKey);
       return mergeDedicatedDateRepair(analysis, repair);
@@ -5711,11 +5711,11 @@ function sanitizeAnalysisMerchants(analysis) {
 async function analyzeImage(dataUrl, options = {}) {
   let providerError;
   let providerAnalysis;
-  let directVisionAnalysis;
+  let directVisionAnalysis2;
   if (googleGeminiConfigured()) {
     try {
       const analysis = await analyzeImageWithGoogle(dataUrl);
-      directVisionAnalysis = analysis;
+      directVisionAnalysis2 = analysis;
       providerAnalysis = analysis;
       console.info("[Milo Image] Google Gemini direct vision selected");
     } catch (error) {
@@ -5725,7 +5725,7 @@ async function analyzeImage(dataUrl, options = {}) {
       });
     }
   }
-  if (ENV.forgeApiKey) {
+  if (ENV.forgeApiKey && !directVisionAnalysis2) {
     try {
       const analysis = await analyzeImageWithForge(dataUrl);
       if (analysis.proposals.some((item) => item.kind === "reminder" && Boolean(item.dateText))) return analysis;
@@ -5739,7 +5739,7 @@ async function analyzeImage(dataUrl, options = {}) {
     }
   }
   const gatewayKey = imageGatewayToken(process.env, options.gatewayToken);
-  if (gatewayKey) {
+  if (gatewayKey && !directVisionAnalysis2) {
     try {
       const analysis = await analyzeImageWithGatewayKey(dataUrl, gatewayKey);
       if (analysis.proposals.some((item) => item.kind === "reminder" && Boolean(item.dateText))) return analysis;
@@ -5757,7 +5757,7 @@ async function analyzeImage(dataUrl, options = {}) {
       try {
         const direct = await analyzeImageWithGoogle(dataUrl);
         providerAnalysis = direct;
-        directVisionAnalysis = direct;
+        directVisionAnalysis2 = direct;
         console.info("[Milo Image] Google Gemini direct vision applied before OCR merge");
       } catch (error) {
         console.warn("[Milo Image] Google Gemini direct vision retry failed", {
