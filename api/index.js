@@ -5217,7 +5217,11 @@ async function analyzeImageWithOcr(dataUrl) {
   const trimmed = await sharp3(input).rotate().trim({ threshold: 12 }).png().toBuffer({ resolveWithObject: true });
   const trimmedHeaderHeight = Math.max(1, Math.floor(trimmed.info.height * 0.62));
   const trimmedHeader = sharp3(trimmed.data).extract({ left: 0, top: 0, width: trimmed.info.width, height: trimmedHeaderHeight }).resize({ width: 3200, fit: "inside", withoutEnlargement: false, kernel: sharp3.kernel.lanczos3 }).grayscale().normalize().sharpen({ sigma: 1.2 });
+  const dateBandHeight = Math.max(1, Math.floor(trimmed.info.height * 0.32));
+  const dateBand = sharp3(trimmed.data).extract({ left: 0, top: 0, width: trimmed.info.width, height: dateBandHeight }).resize({ width: 3600, fit: "inside", withoutEnlargement: false, kernel: sharp3.kernel.lanczos3 }).grayscale().normalize().sharpen({ sigma: 1.35 });
   const variants = [
+    { label: "date-band-sparse", bytes: await dateBand.clone().linear(1.22, -18).png().toBuffer(), psm: "7" },
+    { label: "date-band-threshold", bytes: await dateBand.clone().threshold(176).png().toBuffer(), psm: "7" },
     { label: "normalized-upscaled", bytes: await base.clone().png().toBuffer(), psm: "6" },
     { label: "trimmed-header-sparse", bytes: await trimmedHeader.clone().linear(1.18, -12).png().toBuffer(), psm: "11" },
     { label: "trimmed-header-threshold", bytes: await trimmedHeader.clone().threshold(170).png().toBuffer(), psm: "11" },
