@@ -60,13 +60,14 @@ export function gatewayTranscriptionModel(env: NodeJS.ProcessEnv = process.env) 
 
 export function voiceTranscriptionRuntimeStatus(requestToken?: string) {
   const forge = Boolean(ENV.forgeApiUrl && ENV.forgeApiKey);
+  const gemini = Boolean((process.env.GEMINI_API_KEY || "").trim());
   const groq = Boolean((process.env.GROQ_API_KEY || "").trim());
   const openai = Boolean((process.env.OPENAI_API_KEY || "").trim());
   const gatewayAvailable = gatewayAuthAvailable(process.env, requestToken);
   const local = localVoiceRuntimeStatus();
   return {
-    configured: groq || local.enabled || forge || openai || gatewayAvailable,
-    mode: groq ? "groq-whisper-large-v3" : gatewayAvailable
+    configured: gemini || groq || local.enabled || forge || openai || gatewayAvailable,
+    mode: gemini ? "google-gemini-audio" : groq ? "groq-whisper-large-v3" : gatewayAvailable
       ? (local.enabled ? "vercel-ai-gateway-stt+local-fallback" : "vercel-ai-gateway-stt")
       : forge
         ? (local.enabled ? "forge-whisper+local-fallback" : "forge-whisper")
@@ -181,6 +182,23 @@ async function parseProviderResponse(response: Response, provider: string): Prom
   return validateTranscript(whisperResponse, provider);
 }
 
+async function transcribeWithGemini(audioBuffer: Buffer, mimeType: string, apiKey: string): Promise<TranscriptionResponse> {
+  const model = process.env.MILO_GEMINI_STT_MODEL || "gemini-1.5-flash";
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey.trim()}`;
+  const promptText = "ถอดเสียงภาษาไทยตามที่ผู้ใช้พูดจริงแบบคำต่อคำ ห้ามสรุป ห้ามตอบกลับ ห้ามเติมคำทักทายหรือคำที่ไม่ได้ยิน ต้องรักษาตัวเลข จำนวนเงิน บาท สตางค์ ชื่อรายการ และคำว่า รายรับ/รายจ่ายตามเสียงจริง";
+  const resp = await fetchWithTimeout(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
+    contents: [{ parts: [{ text: promptText }, { inlineData: { mimeType: mimeType.split(";")[0], data: audioBuffer.toString("base64") } }] }],
+    generationConfig: { temperature: 0.0 },
+  }) }, 60_000);
+  if (!resp.ok) throw new Error(`Gemini Audio API error (${resp.status})`);
+  const data = await resp.json() as any;
+  const text = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "";
+  const result: TranscriptionResponse = { task: "transcribe", language: "th", duration: 0, text, segments: [] };
+  const validated = validateTranscript(result, "Google Gemini");
+  if ("error" in validated) throw new Error(validated.details || validated.error);
+  return validated;
+}
+
 async function transcribeWithGateway(
   audioBuffer: Buffer,
   options: TranscribeOptions,
@@ -220,13 +238,14 @@ async function transcribeWithGateway(
 
 export async function transcribeAudio(options: TranscribeOptions): Promise<TranscriptionResponse | TranscriptionError> {
   try {
+    const geminiKey = (process.env.GEMINI_API_KEY || "").trim();
     const groqKey = (process.env.GROQ_API_KEY || "").trim();
     const forgeConfigured = Boolean(ENV.forgeApiUrl && ENV.forgeApiKey);
     const openAIKey = (process.env.OPENAI_API_KEY || "").trim();
     const gatewayConfigured = gatewayAuthAvailable(process.env, options.gatewayToken);
     const localConfigured = localVoiceRuntimeStatus().enabled;
 
-    if (!groqKey && !localConfigured && !forgeConfigured && !openAIKey && !gatewayConfigured) {
+    if (!geminiKey && !groqKey && !localConfigured && !forgeConfigured && !openAIKey && !gatewayConfigured) {
       return {
         error: "Voice transcription service is not configured",
         code: "SERVICE_ERROR",
@@ -261,6 +280,18 @@ export async function transcribeAudio(options: TranscribeOptions): Promise<Trans
 
     // Use the explicitly configured Groq provider directly. Do not route a
     // failed request to another provider with different billing or data handling.
+    if (geminiKey) {
+      try {
+        const result = await transcribeWithGemini(audioBuffer, mimeType, geminiKey);
+        console.info("[Milo Voice] transcription provider", { provider: "google-gemini", chars: result.text.length });
+        return result;
+      } catch (error) {
+        console.warn("[Milo Voice] Google Gemini transcription failed; trying fallback", {
+          error: error instanceof Error ? error.message : "unknown",
+        });
+      }
+    }
+
     if (groqKey) {
       const form = makeFormData(audioBuffer, mimeType, options, "whisper-large-v3");
       form.set("temperature", "0");
