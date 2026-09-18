@@ -5739,6 +5739,31 @@ async function analyzeImage(dataUrl, options = {}) {
           });
         }
       }
+      if (analysis.proposals.some((item) => item.documentType === "receipt" && item.kind === "expense")) {
+        try {
+          const ocrDate = await analyzeImageWithOcr(dataUrl);
+          const gp = providerAnalysis.proposals[0];
+          const op = ocrDate.proposals[0];
+          if (gp && op?.documentType === "receipt" && op.dateText) {
+            providerAnalysis = {
+              ...providerAnalysis,
+              summary: gp.amount > 0 ? `\u0E2D\u0E48\u0E32\u0E19\u0E43\u0E1A\u0E40\u0E2A\u0E23\u0E47\u0E08\u0E44\u0E14\u0E49 \u0E22\u0E2D\u0E14 ${gp.amount.toLocaleString("th-TH")} \u0E1A\u0E32\u0E17 \u0E27\u0E31\u0E19\u0E17\u0E35\u0E48 ${op.dateText}` : providerAnalysis.summary,
+              proposals: [{ ...gp, dateText: op.dateText, timeText: op.timeText || gp.timeText }, ...providerAnalysis.proposals.slice(1)]
+            };
+            console.info("[Milo Image] OCR date verified Gemini receipt", {
+              geminiDate: gp.dateText,
+              ocrDate: op.dateText,
+              ocrTime: op.timeText
+            });
+          } else {
+            console.info("[Milo Image] OCR date verifier found no usable receipt date");
+          }
+        } catch (ocrVerifyError) {
+          console.warn("[Milo Image] OCR date verification skipped", {
+            error: ocrVerifyError instanceof Error ? ocrVerifyError.message : "unknown"
+          });
+        }
+      }
       return sanitizeAnalysisMerchants(providerAnalysis);
     } catch (error) {
       providerError = error;
