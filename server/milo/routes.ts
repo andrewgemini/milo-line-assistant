@@ -866,7 +866,7 @@ async function handleMedia(event: LineEvent, lineChatId: string, lineUserId: str
       catch (error) { console.error("[Milo Voice] acknowledgement reply failed", { messageId: message.id, error: error instanceof Error ? error.message : "unknown" }); }
     }
     try {
-      const transcript = await transcribeAudio({ audioBuffer: bytes, mimeType, language: "th", prompt: "ถอดข้อความภาษาไทยเกี่ยวกับรายรับ รายจ่าย จำนวนเงิน และหมวดหมู่", gatewayToken: runtime.gatewayToken });
+      const transcript = await transcribeAudio({ audioBuffer: bytes, mimeType, language: "th", prompt: "ถอดเสียงภาษาไทยตามที่พูดจริงแบบคำต่อคำ ห้ามสรุป ห้ามตอบกลับ ห้ามเติมคำทักทายหรือคำที่ไม่ได้ยิน และต้องรักษาตัวเลข จำนวนเงิน บาท สตางค์ ชื่อรายการ และคำว่า รายรับ/รายจ่ายตามเสียงจริง", gatewayToken: runtime.gatewayToken });
       if ("error" in transcript) throw new Error(`${transcript.error}${transcript.details ? `: ${transcript.details}` : ""}`);
       const financeScope = await resolveFinanceScope(lineUserId, lineChatId, scope);
       const proposal = await buildVoiceProposal(transcript.text, lineUserId, financeScope?.financeAccountId);
