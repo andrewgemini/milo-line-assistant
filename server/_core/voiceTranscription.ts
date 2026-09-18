@@ -183,7 +183,7 @@ async function parseProviderResponse(response: Response, provider: string): Prom
 }
 
 async function transcribeWithGemini(audioBuffer: Buffer, mimeType: string, apiKey: string): Promise<TranscriptionResponse> {
-  const model = process.env.MILO_GEMINI_STT_MODEL || "gemini-1.5-flash";
+  const model = process.env.MILO_GEMINI_STT_MODEL || "gemini-3.5-transcribe";
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey.trim()}`;
   const promptText = "ถอดเสียงภาษาไทยตามที่ผู้ใช้พูดจริงแบบคำต่อคำ ห้ามสรุป ห้ามตอบกลับ ห้ามเติมคำทักทายหรือคำที่ไม่ได้ยิน ต้องรักษาตัวเลข จำนวนเงิน บาท สตางค์ ชื่อรายการ และคำว่า รายรับ/รายจ่ายตามเสียงจริง";
   const resp = await fetchWithTimeout(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({

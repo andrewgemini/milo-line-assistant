@@ -17,8 +17,8 @@ export function googleGeminiConfigured(env: NodeJS.ProcessEnv = process.env) {
 function modelFor(kind: "vision" | "audio", env: NodeJS.ProcessEnv = process.env) {
   return (
     kind === "vision"
-      ? env.MILO_GOOGLE_VISION_MODEL || env.MILO_VISION_MODEL || "gemini-2.5-flash"
-      : env.MILO_GOOGLE_STT_MODEL || "gemini-2.5-flash"
+      ? env.MILO_GOOGLE_VISION_MODEL || env.MILO_VISION_MODEL || "gemini-3.8-flash"
+      : env.MILO_GOOGLE_STT_MODEL || "gemini-3.5-transcribe"
   ).trim();
 }
 
