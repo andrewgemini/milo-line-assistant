@@ -6,7 +6,6 @@
 import { transcribe as gatewayTranscribe } from "ai";
 import { createGateway, gateway } from "@ai-sdk/gateway";
 import { ENV } from "./env";
-import { generateGoogleGeminiJson, googleGeminiConfigured } from "./googleGemini";
 import { localVoiceRuntimeStatus, transcriptQualityIssue, transcribeAudioLocal } from "./localVoiceTranscription";
 
 export type TranscribeOptions = {
@@ -65,10 +64,9 @@ export function voiceTranscriptionRuntimeStatus(requestToken?: string) {
   const openai = Boolean((process.env.OPENAI_API_KEY || "").trim());
   const gatewayAvailable = gatewayAuthAvailable(process.env, requestToken);
   const local = localVoiceRuntimeStatus();
-  const google = googleGeminiConfigured();
   return {
-    configured: google || groq || local.enabled || forge || openai || gatewayAvailable,
-    mode: google ? "google-gemini-audio" : groq ? "groq-whisper-large-v3" : gatewayAvailable
+    configured: groq || local.enabled || forge || openai || gatewayAvailable,
+    mode: groq ? "groq-whisper-large-v3" : gatewayAvailable
       ? (local.enabled ? "vercel-ai-gateway-stt+local-fallback" : "vercel-ai-gateway-stt")
       : forge
         ? (local.enabled ? "forge-whisper+local-fallback" : "forge-whisper")
@@ -149,54 +147,6 @@ async function callTranscriptionProvider(
   }, 60_000);
 }
 
-const googleTranscriptSchema = {
-  type: "object",
-  properties: {
-    text: { type: "string" },
-    language: { type: "string" },
-    duration: { type: "number" },
-  },
-  required: ["text", "language", "duration"],
-  additionalProperties: false,
-} as const;
-
-async function transcribeWithGoogleGemini(audioBuffer: Buffer, options: TranscribeOptions): Promise<TranscriptionResponse> {
-  const result = await generateGoogleGeminiJson<{
-    text: string;
-    language: string;
-    duration: number;
-  }>({
-    kind: "audio",
-    audioBuffer,
-    audioMimeType: options.mimeType || "audio/m4a",
-    language: options.language || "th",
-    schema: googleTranscriptSchema,
-    system: "คุณคือระบบถอดเสียงภาษาไทยของ Milo สำหรับคลิปเสียงจาก LINE. งานของคุณคือถอดคำพูดตามเสียงจริงแบบ verbatim ไม่ใช่สรุปความ ไม่ใช่ตอบกลับผู้พูด และไม่ใช่แก้ประโยคให้สวย. ห้ามแต่งคำ ห้ามเติมคำทักทาย ห้ามเปลี่ยนคำลงท้าย และห้ามเดาคำที่ไม่ได้ยิน. ต้องรักษาตัวเลข จำนวนเงิน หน่วย 'บาท/สตางค์' ชื่อรายการ และคำว่า รายรับ/รายจ่าย ตามเสียงจริง. ถ้าผู้พูดพูดว่า 'ค่ากาแฟ 40 บาท' ให้คืนข้อความนั้น ไม่ใช่ 'สวัสดีค่ะ' หรือข้อความอื่น. ถ้ามีเสียงรบกวนให้ถอดเฉพาะคำที่ได้ยินจริงและไม่สร้างประโยคขึ้นมาเอง.",
-    prompt: options.prompt || "ถอดเสียงคลิปนี้แบบคำต่อคำ ภาษาหลักคือไทย. ห้ามสรุป ห้ามตอบกลับ และห้ามเติมข้อความ. สำหรับคำสั่งการเงิน ให้คงตัวเลขและหน่วยเงินบาทตามที่พูดจริง",
-  });
-  const response: TranscriptionResponse = {
-    task: "transcribe",
-    language: result.language || options.language || "th",
-    duration: Number(result.duration || 0),
-    text: result.text || "",
-    segments: [{
-      id: 0,
-      seek: 0,
-      start: 0,
-      end: Number(result.duration || 0),
-      text: result.text || "",
-      tokens: [],
-      temperature: 0,
-      avg_logprob: 0,
-      compression_ratio: 0,
-      no_speech_prob: 0,
-    }],
-  };
-  const validated = validateTranscript(response, "Google Gemini");
-  if ("error" in validated) throw new Error(validated.details || validated.error);
-  return validated;
-}
-
 function validateTranscript(response: TranscriptionResponse, provider: string): TranscriptionResponse | TranscriptionError {
   const text = String(response.text || "").trim();
   if (!text) return { error: "Invalid transcription response", code: "SERVICE_ERROR", details: `${provider} returned empty text` };
@@ -271,14 +221,12 @@ async function transcribeWithGateway(
 export async function transcribeAudio(options: TranscribeOptions): Promise<TranscriptionResponse | TranscriptionError> {
   try {
     const groqKey = (process.env.GROQ_API_KEY || "").trim();
-    const googleConfigured = googleGeminiConfigured();
     const forgeConfigured = Boolean(ENV.forgeApiUrl && ENV.forgeApiKey);
     const openAIKey = (process.env.OPENAI_API_KEY || "").trim();
     const gatewayConfigured = gatewayAuthAvailable(process.env, options.gatewayToken);
     const localConfigured = localVoiceRuntimeStatus().enabled;
-    const failures: string[] = [];
 
-    if (!groqKey && !localConfigured && !forgeConfigured && !openAIKey && !gatewayConfigured && !googleConfigured) {
+    if (!groqKey && !localConfigured && !forgeConfigured && !openAIKey && !gatewayConfigured) {
       return {
         error: "Voice transcription service is not configured",
         code: "SERVICE_ERROR",
@@ -313,17 +261,6 @@ export async function transcribeAudio(options: TranscribeOptions): Promise<Trans
 
     // Use the explicitly configured Groq provider directly. Do not route a
     // failed request to another provider with different billing or data handling.
-    if (googleGeminiConfigured()) {
-      try {
-        const result = await transcribeWithGoogleGemini(audioBuffer, options);
-        console.info("[Milo Voice] transcription provider", { provider: "google-gemini", chars: result.text.length });
-        return result;
-      } catch (error) {
-        failures.push(`google-gemini: ${error instanceof Error ? error.message : "failed"}`);
-        console.warn("[Milo Voice] Google Gemini transcription failed; trying configured fallback", { error: error instanceof Error ? error.message : "unknown" });
-      }
-    }
-
     if (groqKey) {
       const form = makeFormData(audioBuffer, mimeType, options, "whisper-large-v3");
       form.set("temperature", "0");
@@ -333,6 +270,8 @@ export async function transcribeAudio(options: TranscribeOptions): Promise<Trans
       }, 60_000);
       return await parseProviderResponse(response, "groq");
     }
+
+    const failures: string[] = [];
 
     // Prefer Gateway for short Thai LINE voice clips; tiny local Whisper remains
     // the offline fallback. This prevents known repetition hallucinations from

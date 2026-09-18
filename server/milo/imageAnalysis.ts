@@ -1,6 +1,5 @@
 ﻿import { invokeLLM } from "../_core/llm";
 import { ENV } from "../_core/env";
-import { generateGoogleGeminiJson, googleGeminiConfigured } from "../_core/googleGemini";
 import { analyzeImageWithOcr, buildReceiptHeaderDataUrl, ocrAssetsReady } from "./ocrImageAnalysis";
 import { extractThaiSlipDateTime, isPlausibleReceiptMerchant, normalizeThaiMerchantName, receiptMerchantQuality } from "./thaiReceiptParser";
 
@@ -61,7 +60,7 @@ const schema = {
 
 const SYSTEM_PROMPT = "คุณคือไมโล ผู้ช่วยภาษาไทย อ่านภาพใบนัด ตาราง สลิปโอนเงิน และใบเสร็จอย่างระมัดระวัง คืน JSON ตาม schema เท่านั้น ห้ามเดาหรือแต่งข้อความ/ตัวเลขที่อ่านไม่ชัด สำหรับสลิปให้ใช้ยอดโอนจริง ไม่ใช้ยอดคงเหลือหรือค่าธรรมเนียม สำหรับใบเสร็จ POS ให้ตรวจตั้งแต่หัวใบเสร็จถึงท้ายใบ: merchant ต้องเป็นชื่อร้านจริงที่พิมพ์ข้างโลโก้หรือข้อมูลร้านเท่านั้น (เช่น INDI Coffee) ห้ามใช้หัวข้อสถานะ รหัส Wallet เลขอ้างอิง หรือข้อความที่มีอักขระเพี้ยน, receiptNumber ต้องอ่านจากเลขที่ใบเสร็จ, dateText/timeText ต้องมาจากวันที่และเวลาที่พิมพ์บนเอกสาร, paymentMethod ให้อ่านจากเงินสด/QR/บัตร/โอนเงิน และ lineItems ต้องถอดทุกรายการในตารางสินค้าเท่าที่อ่านได้ โดยเก็บชื่อสินค้า จำนวน และยอดของแถวนั้น ไม่เอาหัวตาราง ยอดรวม เงินสด เงินทอน หรือ footer มาเป็นสินค้า สำหรับยอด amount ให้ใช้ยอดที่จ่ายจริงหลังส่วนลดหรือสิทธิช่วยเหลือ โดยให้ความสำคัญกับ จำนวนเงินที่ชำระ, ยอดที่ชำระ, ยอดสุทธิ, ทั้งหมด, Grand Total มากกว่าค่าสินค้า/บริการก่อนส่วนลด หากวันที่อ่านได้แน่ชัดให้ส่ง dateText รูปแบบ YYYY-MM-DD มิฉะนั้นเป็นสตริงว่าง สำหรับค่าใช้จ่ายให้เลือก category ภาษาไทยจาก อาหาร, เดินทาง, ค่าสาธารณูปโภค, สุขภาพ, การศึกษา, บันเทิง, ช้อปปิ้ง, ท่องเที่ยว, ทั่วไป หากไม่พบข้อมูลที่บันทึกได้ให้ใช้ kind=unknown และ amount=0";
 const USER_PROMPT = "วิเคราะห์ภาพเพื่อหาใบนัดหรือธุรกรรมค่าใช้จ่ายจากสลิป/ใบเสร็จ โดยเสนอข้อมูลเพื่อให้ผู้ใช้ยืนยันก่อนบันทึกเท่านั้น";
-const RECEIPT_DETAIL_PROMPT = "ตรวจใบเสร็จนี้ซ้ำแบบละเอียดจากภาพจริง โดยให้ความสำคัญกับข้อมูลที่พิมพ์บนเอกสารมากกว่าการคาดเดา: อ่านชื่อร้านจากหัวเอกสาร, เลขที่ใบเสร็จ, ประเภทการซื้อ, พนักงานถ้ามี, วันที่/เวลา, วิธีชำระ, ยอดสุทธิที่ลูกค้าจ่ายจริง และรายการสินค้าในตารางทุกแถวที่มองเห็น. สำคัญมาก: วันที่/เวลาต้องอ่านจากตัวอักษรในภาพจริงเท่านั้น เช่น '18 ก.ย. 2569 11:02' ต้องคืน dateText='2026-09-18' และ timeText='11:02'; ห้ามตอบว่าวันที่ไม่ชัดถ้าตัวเลขหรือเดือนยังมองเห็นได้. lineItems แต่ละรายการควรมีชื่อสินค้า ×จำนวน และยอดบาท. ห้ามเอา Qty/ราคา/ยอดรวม/ทั้งหมด/เงินสด/เงินทอน/สิทธิช่วยเหลือ/Powered by/รหัสอ้างอิง/Wallet ID มาเป็นสินค้า. ถ้าตัวอักษรส่วนใดอ่านไม่ชัด ให้เว้นเฉพาะส่วนนั้นแทนการเดา. ห้ามสรุปหรือเปลี่ยนข้อมูลที่เห็นในภาพ";
+const RECEIPT_DETAIL_PROMPT = "ตรวจใบเสร็จนี้ซ้ำแบบละเอียดเหมือนผู้ตรวจเอกสาร POS: อ่านชื่อร้านจากหัวเอกสาร, เลขที่ใบเสร็จ, ประเภทการซื้อ, พนักงานถ้ามี, วันที่/เวลา, วิธีชำระ, ยอดทั้งหมดที่จ่ายจริง และถอดรายการสินค้าในตารางให้ครบทุกแถวที่มองเห็น โดย lineItems แต่ละรายการควรมีชื่อสินค้า ×จำนวน ยอดบาท ห้ามเอา Qty/ราคา/ยอดรวม/ทั้งหมด/เงินสด/Powered by มาเป็นสินค้า ถ้าตัวอักษรแถวใดอ่านไม่ชัดให้เว้นส่วนนั้นแทนการเดา";
 
 function parseAnalysisContent(content: unknown): ImageAnalysis {
   if (typeof content !== "string" || !content.trim()) throw new Error("Image model did not return JSON");
@@ -72,17 +71,6 @@ function parseAnalysisContent(content: unknown): ImageAnalysis {
   const parsed = JSON.parse(json) as ImageAnalysis;
   if (!parsed || !Array.isArray(parsed.proposals) || typeof parsed.summary !== "string") throw new Error("Image model returned an invalid analysis");
   return parsed;
-}
-
-async function analyzeImageWithGoogle(dataUrl: string, prompt = USER_PROMPT): Promise<ImageAnalysis> {
-  const result = await generateGoogleGeminiJson<ImageAnalysis>({
-    kind: "vision",
-    imageDataUrl: dataUrl,
-    system: SYSTEM_PROMPT,
-    prompt,
-    schema,
-  });
-  return parseAnalysisContent(JSON.stringify(result));
 }
 
 async function analyzeImageWithForge(dataUrl: string): Promise<ImageAnalysis> {
@@ -253,7 +241,6 @@ function imageGatewayMode(env: NodeJS.ProcessEnv = process.env, requestToken?: s
 }
 
 export function imageAnalysisMode(requestToken?: string) {
-  if (googleGeminiConfigured()) return ocrAssetsReady() ? "google-gemini-vision+ocr-fallback" : "google-gemini-vision";
   if (ENV.forgeApiKey) return ocrAssetsReady() ? "forge-vision+ocr-fallback" : "forge-vision";
   const gatewayMode = imageGatewayMode(process.env, requestToken);
   if (gatewayMode) return ocrAssetsReady() ? `${gatewayMode}+ocr-fallback` : gatewayMode;
@@ -264,7 +251,7 @@ export async function imageAnalysisRuntimeStatus(requestToken?: string) {
   const mode = imageAnalysisMode(requestToken);
   return {
     mode,
-    authenticated: Boolean(googleGeminiConfigured() || ENV.forgeApiKey || imageGatewayToken(process.env, requestToken) || ocrAssetsReady()),
+    authenticated: Boolean(ENV.forgeApiKey || imageGatewayToken(process.env, requestToken) || ocrAssetsReady()),
     ocrAssetsReady: ocrAssetsReady(),
   };
 }
@@ -275,17 +262,6 @@ function receiptNeedsDetailRepair(analysis: ImageAnalysis) {
   const merchant = normalizeThaiMerchantName(proposal.merchant);
   const merchantLooksOperational = !isPlausibleReceiptMerchant(merchant) || /^(?:ประเภท|พนักงาน|เวลา|วันที่|สินค้า|qty|ราคา|รวม)/i.test(merchant);
   return merchantLooksOperational || !proposal.lineItems?.length || proposal.lineItems.length < 2 || !proposal.receiptNumber;
-}
-
-async function repairReceiptDateWithGoogle(dataUrl: string): Promise<ReceiptDateRepair> {
-  const result = await generateGoogleGeminiJson<ReceiptDateRepair>({
-    kind: "vision",
-    imageDataUrl: dataUrl,
-    system: "คุณคือ OCR verifier สำหรับใบเสร็จไทย งานเดียวคืออ่านวันที่ทำรายการและเวลาที่พิมพ์อยู่ในภาพจริง ห้ามใช้วันที่ปัจจุบัน วันที่ส่งรูป หรือบริบทอื่นแทนวันที่บนเอกสาร. วันที่อาจเป็น พ.ศ. เช่น 17 ก.ย. 2569 และต้องแปลงเป็น ค.ศ. 2026-09-17. ถ้าอ่านวันเดือนปีจริงไม่ได้ให้ dateText เป็นสตริงว่าง. ถ้าอ่านเวลาไม่ได้ให้ timeText เป็นสตริงว่าง. evidence ต้องคัดข้อความสั้นๆ ที่มองเห็นจริงเพื่อใช้ตรวจสอบ.",
-    prompt: "อ่านเฉพาะบรรทัดวันที่/เวลาในใบเสร็จนี้จากพิกเซลจริง โดยมองทั้งส่วนบนของใบเสร็จและบริเวณใกล้ยอดเงิน. ห้ามเดา. ถ้าเห็น '17 ก.ย. 2569 10:58' ให้คืน dateText='2026-09-17', timeText='10:58'.",
-    schema: receiptDateSchema,
-  });
-  return parseReceiptDateRepairContent(JSON.stringify(result));
 }
 
 async function refineReceiptDetails(analysis: ImageAnalysis, dataUrl: string, gatewayKey: string) {
@@ -360,71 +336,6 @@ function sanitizeAnalysisMerchants(analysis: ImageAnalysis): ImageAnalysis {
 export async function analyzeImage(dataUrl: string, options: { gatewayToken?: string } = {}): Promise<ImageAnalysis> {
   let providerError: unknown;
   let providerAnalysis: ImageAnalysis | undefined;
-
-  if (googleGeminiConfigured()) {
-    try {
-      const analysis = await analyzeImageWithGoogle(dataUrl);
-      providerAnalysis = analysis;
-      console.info("[Milo Image] Google Gemini vision provider", {
-        model: process.env.MILO_GOOGLE_VISION_MODEL || process.env.MILO_VISION_MODEL || "gemini-2.5-flash",
-      });
-
-      // A second focused Gemini pass is intentional for POS receipts. The first
-      // pass may correctly find the amount but miss the tiny Thai date/time line.
-      // Re-read the same pixels and merge only the higher-confidence fields.
-      const googleProposal = analysis.proposals[0];
-      if (googleProposal?.documentType === "receipt" && googleProposal.kind === "expense") {
-        try {
-          const detail = await analyzeImageWithGoogle(dataUrl, RECEIPT_DETAIL_PROMPT);
-          providerAnalysis = mergeImageAnalyses(analysis, detail);
-          if (!providerAnalysis.proposals[0]?.dateText) {
-            try {
-              // The Thai date line on POS receipts is often tiny. Give Gemini an
-              // enlarged header crop first, then fall back to the original image.
-              const headerDataUrl = await buildReceiptHeaderDataUrl(dataUrl).catch(() => dataUrl);
-              const dateRepair = await repairReceiptDateWithGoogle(headerDataUrl);
-              providerAnalysis = mergeDedicatedDateRepair(providerAnalysis, dateRepair);
-              console.info("[Milo Image] Google Gemini focused receipt date repair", {
-                dateText: dateRepair.dateText,
-                timeText: dateRepair.timeText,
-                evidence: dateRepair.evidence.slice(0, 120),
-              });
-              if (!providerAnalysis.proposals[0]?.dateText && headerDataUrl !== dataUrl) {
-                const fullRepair = await repairReceiptDateWithGoogle(dataUrl);
-                providerAnalysis = mergeDedicatedDateRepair(providerAnalysis, fullRepair);
-                console.info("[Milo Image] Google Gemini full-image receipt date repair", {
-                  dateText: fullRepair.dateText,
-                  timeText: fullRepair.timeText,
-                  evidence: fullRepair.evidence.slice(0, 120),
-                });
-              }
-            } catch (dateError) {
-              console.warn("[Milo Image] Google Gemini dedicated receipt date repair failed", {
-                error: dateError instanceof Error ? dateError.message : "unknown",
-              });
-            }
-          }
-          console.info("[Milo Image] Google Gemini receipt detail verification", {
-            dateText: providerAnalysis.proposals[0]?.dateText,
-            timeText: providerAnalysis.proposals[0]?.timeText,
-            amount: providerAnalysis.proposals[0]?.amount,
-            lineItems: providerAnalysis.proposals[0]?.lineItems?.length ?? 0,
-          });
-        } catch (detailError) {
-          console.warn("[Milo Image] Google Gemini receipt detail verification failed", {
-            error: detailError instanceof Error ? detailError.message : "unknown",
-          });
-        }
-      }
-
-      if (providerAnalysis.proposals.some(item => item.kind === "reminder" && Boolean(item.dateText))) return sanitizeAnalysisMerchants(providerAnalysis);
-    } catch (error) {
-      providerError = error;
-      console.warn("[Milo Image] Google Gemini vision failed; trying configured fallback", {
-        error: error instanceof Error ? error.message : "unknown",
-      });
-    }
-  }
 
   if (ENV.forgeApiKey) {
     try {

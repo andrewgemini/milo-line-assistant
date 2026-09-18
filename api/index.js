@@ -4027,72 +4027,6 @@ import express from "express";
 import { transcribe as gatewayTranscribe } from "ai";
 import { createGateway, gateway } from "@ai-sdk/gateway";
 
-// server/_core/googleGemini.ts
-function googleGeminiApiKey(env = process.env) {
-  return (env.GEMINI_API_KEY || env.GOOGLE_GEMINI_API_KEY || env.GOOGLE_API_KEY || env.GOOGLE_GENERATIVE_AI_API_KEY || "").trim();
-}
-function googleGeminiConfigured(env = process.env) {
-  return Boolean(googleGeminiApiKey(env));
-}
-function modelFor(kind, env = process.env) {
-  return (kind === "vision" ? env.MILO_GOOGLE_VISION_MODEL || env.MILO_VISION_MODEL || "gemini-2.5-flash" : env.MILO_GOOGLE_STT_MODEL || "gemini-2.5-flash").trim();
-}
-async function generateGoogleGeminiJson(args) {
-  const apiKey = googleGeminiApiKey();
-  if (!apiKey) throw new Error("Google Gemini API key is not configured");
-  const model = modelFor(args.kind);
-  const parts = [{ text: args.prompt }];
-  if (args.imageDataUrl) {
-    const match = args.imageDataUrl.match(/^data:([^;]+);base64,([\s\S]+)$/);
-    if (!match) throw new Error("Invalid image data URL");
-    parts.push({
-      inlineData: {
-        mimeType: match[1],
-        data: match[2]
-      }
-    });
-  }
-  if (args.audioBuffer) {
-    parts.push({
-      inlineData: {
-        mimeType: args.audioMimeType || "audio/m4a",
-        data: args.audioBuffer.toString("base64")
-      }
-    });
-  }
-  const body = {
-    systemInstruction: args.system ? { parts: [{ text: args.system }] } : void 0,
-    contents: [{ role: "user", parts }],
-    generationConfig: {
-      temperature: 0,
-      responseMimeType: "application/json",
-      responseSchema: args.schema
-    }
-  };
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), args.kind === "audio" ? 6e4 : 45e3);
-  try {
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-        signal: controller.signal
-      }
-    );
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      throw new Error(payload.error?.message || `Google Gemini returned HTTP ${response.status}`);
-    }
-    const text2 = payload.candidates?.[0]?.content?.parts?.map((part) => part.text || "").join("").trim();
-    if (!text2) throw new Error("Google Gemini returned empty content");
-    return JSON.parse(text2);
-  } finally {
-    clearTimeout(timeout);
-  }
-}
-
 // server/_core/localVoiceTranscription.ts
 import { spawn } from "node:child_process";
 import fs from "node:fs";
@@ -4302,10 +4236,9 @@ function voiceTranscriptionRuntimeStatus(requestToken) {
   const openai = Boolean((process.env.OPENAI_API_KEY || "").trim());
   const gatewayAvailable = gatewayAuthAvailable(process.env, requestToken);
   const local = localVoiceRuntimeStatus();
-  const google = googleGeminiConfigured();
   return {
-    configured: google || groq || local.enabled || forge || openai || gatewayAvailable,
-    mode: google ? "google-gemini-audio" : groq ? "groq-whisper-large-v3" : gatewayAvailable ? local.enabled ? "vercel-ai-gateway-stt+local-fallback" : "vercel-ai-gateway-stt" : forge ? local.enabled ? "forge-whisper+local-fallback" : "forge-whisper" : openai ? local.enabled ? "openai-whisper+local-fallback" : "openai-whisper" : local.enabled ? "local-whisper-onnx" : "unconfigured",
+    configured: groq || local.enabled || forge || openai || gatewayAvailable,
+    mode: groq ? "groq-whisper-large-v3" : gatewayAvailable ? local.enabled ? "vercel-ai-gateway-stt+local-fallback" : "vercel-ai-gateway-stt" : forge ? local.enabled ? "forge-whisper+local-fallback" : "forge-whisper" : openai ? local.enabled ? "openai-whisper+local-fallback" : "openai-whisper" : local.enabled ? "local-whisper-onnx" : "unconfigured",
     local
   };
 }
@@ -4378,48 +4311,6 @@ async function callTranscriptionProvider(url, apiKey, audioBuffer, mimeType, opt
     body: makeFormData(audioBuffer, mimeType, options)
   }, 6e4);
 }
-var googleTranscriptSchema = {
-  type: "object",
-  properties: {
-    text: { type: "string" },
-    language: { type: "string" },
-    duration: { type: "number" }
-  },
-  required: ["text", "language", "duration"],
-  additionalProperties: false
-};
-async function transcribeWithGoogleGemini(audioBuffer, options) {
-  const result = await generateGoogleGeminiJson({
-    kind: "audio",
-    audioBuffer,
-    audioMimeType: options.mimeType || "audio/m4a",
-    language: options.language || "th",
-    schema: googleTranscriptSchema,
-    system: "\u0E04\u0E38\u0E13\u0E04\u0E37\u0E2D\u0E23\u0E30\u0E1A\u0E1A\u0E16\u0E2D\u0E14\u0E40\u0E2A\u0E35\u0E22\u0E07\u0E20\u0E32\u0E29\u0E32\u0E44\u0E17\u0E22\u0E02\u0E2D\u0E07 Milo \u0E2A\u0E33\u0E2B\u0E23\u0E31\u0E1A\u0E04\u0E25\u0E34\u0E1B\u0E40\u0E2A\u0E35\u0E22\u0E07\u0E08\u0E32\u0E01 LINE. \u0E07\u0E32\u0E19\u0E02\u0E2D\u0E07\u0E04\u0E38\u0E13\u0E04\u0E37\u0E2D\u0E16\u0E2D\u0E14\u0E04\u0E33\u0E1E\u0E39\u0E14\u0E15\u0E32\u0E21\u0E40\u0E2A\u0E35\u0E22\u0E07\u0E08\u0E23\u0E34\u0E07\u0E41\u0E1A\u0E1A verbatim \u0E44\u0E21\u0E48\u0E43\u0E0A\u0E48\u0E2A\u0E23\u0E38\u0E1B\u0E04\u0E27\u0E32\u0E21 \u0E44\u0E21\u0E48\u0E43\u0E0A\u0E48\u0E15\u0E2D\u0E1A\u0E01\u0E25\u0E31\u0E1A\u0E1C\u0E39\u0E49\u0E1E\u0E39\u0E14 \u0E41\u0E25\u0E30\u0E44\u0E21\u0E48\u0E43\u0E0A\u0E48\u0E41\u0E01\u0E49\u0E1B\u0E23\u0E30\u0E42\u0E22\u0E04\u0E43\u0E2B\u0E49\u0E2A\u0E27\u0E22. \u0E2B\u0E49\u0E32\u0E21\u0E41\u0E15\u0E48\u0E07\u0E04\u0E33 \u0E2B\u0E49\u0E32\u0E21\u0E40\u0E15\u0E34\u0E21\u0E04\u0E33\u0E17\u0E31\u0E01\u0E17\u0E32\u0E22 \u0E2B\u0E49\u0E32\u0E21\u0E40\u0E1B\u0E25\u0E35\u0E48\u0E22\u0E19\u0E04\u0E33\u0E25\u0E07\u0E17\u0E49\u0E32\u0E22 \u0E41\u0E25\u0E30\u0E2B\u0E49\u0E32\u0E21\u0E40\u0E14\u0E32\u0E04\u0E33\u0E17\u0E35\u0E48\u0E44\u0E21\u0E48\u0E44\u0E14\u0E49\u0E22\u0E34\u0E19. \u0E15\u0E49\u0E2D\u0E07\u0E23\u0E31\u0E01\u0E29\u0E32\u0E15\u0E31\u0E27\u0E40\u0E25\u0E02 \u0E08\u0E33\u0E19\u0E27\u0E19\u0E40\u0E07\u0E34\u0E19 \u0E2B\u0E19\u0E48\u0E27\u0E22 '\u0E1A\u0E32\u0E17/\u0E2A\u0E15\u0E32\u0E07\u0E04\u0E4C' \u0E0A\u0E37\u0E48\u0E2D\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23 \u0E41\u0E25\u0E30\u0E04\u0E33\u0E27\u0E48\u0E32 \u0E23\u0E32\u0E22\u0E23\u0E31\u0E1A/\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22 \u0E15\u0E32\u0E21\u0E40\u0E2A\u0E35\u0E22\u0E07\u0E08\u0E23\u0E34\u0E07. \u0E16\u0E49\u0E32\u0E1C\u0E39\u0E49\u0E1E\u0E39\u0E14\u0E1E\u0E39\u0E14\u0E27\u0E48\u0E32 '\u0E04\u0E48\u0E32\u0E01\u0E32\u0E41\u0E1F 40 \u0E1A\u0E32\u0E17' \u0E43\u0E2B\u0E49\u0E04\u0E37\u0E19\u0E02\u0E49\u0E2D\u0E04\u0E27\u0E32\u0E21\u0E19\u0E31\u0E49\u0E19 \u0E44\u0E21\u0E48\u0E43\u0E0A\u0E48 '\u0E2A\u0E27\u0E31\u0E2A\u0E14\u0E35\u0E04\u0E48\u0E30' \u0E2B\u0E23\u0E37\u0E2D\u0E02\u0E49\u0E2D\u0E04\u0E27\u0E32\u0E21\u0E2D\u0E37\u0E48\u0E19. \u0E16\u0E49\u0E32\u0E21\u0E35\u0E40\u0E2A\u0E35\u0E22\u0E07\u0E23\u0E1A\u0E01\u0E27\u0E19\u0E43\u0E2B\u0E49\u0E16\u0E2D\u0E14\u0E40\u0E09\u0E1E\u0E32\u0E30\u0E04\u0E33\u0E17\u0E35\u0E48\u0E44\u0E14\u0E49\u0E22\u0E34\u0E19\u0E08\u0E23\u0E34\u0E07\u0E41\u0E25\u0E30\u0E44\u0E21\u0E48\u0E2A\u0E23\u0E49\u0E32\u0E07\u0E1B\u0E23\u0E30\u0E42\u0E22\u0E04\u0E02\u0E36\u0E49\u0E19\u0E21\u0E32\u0E40\u0E2D\u0E07.",
-    prompt: options.prompt || "\u0E16\u0E2D\u0E14\u0E40\u0E2A\u0E35\u0E22\u0E07\u0E04\u0E25\u0E34\u0E1B\u0E19\u0E35\u0E49\u0E41\u0E1A\u0E1A\u0E04\u0E33\u0E15\u0E48\u0E2D\u0E04\u0E33 \u0E20\u0E32\u0E29\u0E32\u0E2B\u0E25\u0E31\u0E01\u0E04\u0E37\u0E2D\u0E44\u0E17\u0E22. \u0E2B\u0E49\u0E32\u0E21\u0E2A\u0E23\u0E38\u0E1B \u0E2B\u0E49\u0E32\u0E21\u0E15\u0E2D\u0E1A\u0E01\u0E25\u0E31\u0E1A \u0E41\u0E25\u0E30\u0E2B\u0E49\u0E32\u0E21\u0E40\u0E15\u0E34\u0E21\u0E02\u0E49\u0E2D\u0E04\u0E27\u0E32\u0E21. \u0E2A\u0E33\u0E2B\u0E23\u0E31\u0E1A\u0E04\u0E33\u0E2A\u0E31\u0E48\u0E07\u0E01\u0E32\u0E23\u0E40\u0E07\u0E34\u0E19 \u0E43\u0E2B\u0E49\u0E04\u0E07\u0E15\u0E31\u0E27\u0E40\u0E25\u0E02\u0E41\u0E25\u0E30\u0E2B\u0E19\u0E48\u0E27\u0E22\u0E40\u0E07\u0E34\u0E19\u0E1A\u0E32\u0E17\u0E15\u0E32\u0E21\u0E17\u0E35\u0E48\u0E1E\u0E39\u0E14\u0E08\u0E23\u0E34\u0E07"
-  });
-  const response = {
-    task: "transcribe",
-    language: result.language || options.language || "th",
-    duration: Number(result.duration || 0),
-    text: result.text || "",
-    segments: [{
-      id: 0,
-      seek: 0,
-      start: 0,
-      end: Number(result.duration || 0),
-      text: result.text || "",
-      tokens: [],
-      temperature: 0,
-      avg_logprob: 0,
-      compression_ratio: 0,
-      no_speech_prob: 0
-    }]
-  };
-  const validated = validateTranscript(response, "Google Gemini");
-  if ("error" in validated) throw new Error(validated.details || validated.error);
-  return validated;
-}
 function validateTranscript(response, provider) {
   const text2 = String(response.text || "").trim();
   if (!text2) return { error: "Invalid transcription response", code: "SERVICE_ERROR", details: `${provider} returned empty text` };
@@ -4485,13 +4376,11 @@ async function transcribeWithGateway(audioBuffer, options) {
 async function transcribeAudio(options) {
   try {
     const groqKey = (process.env.GROQ_API_KEY || "").trim();
-    const googleConfigured = googleGeminiConfigured();
     const forgeConfigured2 = Boolean(ENV.forgeApiUrl && ENV.forgeApiKey);
     const openAIKey = (process.env.OPENAI_API_KEY || "").trim();
     const gatewayConfigured = gatewayAuthAvailable(process.env, options.gatewayToken);
     const localConfigured = localVoiceRuntimeStatus().enabled;
-    const failures = [];
-    if (!groqKey && !localConfigured && !forgeConfigured2 && !openAIKey && !gatewayConfigured && !googleConfigured) {
+    if (!groqKey && !localConfigured && !forgeConfigured2 && !openAIKey && !gatewayConfigured) {
       return {
         error: "Voice transcription service is not configured",
         code: "SERVICE_ERROR",
@@ -4521,16 +4410,6 @@ async function transcribeAudio(options) {
     if (sizeMB > 16) {
       return { error: "Audio file exceeds maximum size limit", code: "FILE_TOO_LARGE", details: `File size is ${sizeMB.toFixed(2)}MB, maximum allowed is 16MB` };
     }
-    if (googleGeminiConfigured()) {
-      try {
-        const result = await transcribeWithGoogleGemini(audioBuffer, options);
-        console.info("[Milo Voice] transcription provider", { provider: "google-gemini", chars: result.text.length });
-        return result;
-      } catch (error) {
-        failures.push(`google-gemini: ${error instanceof Error ? error.message : "failed"}`);
-        console.warn("[Milo Voice] Google Gemini transcription failed; trying configured fallback", { error: error instanceof Error ? error.message : "unknown" });
-      }
-    }
     if (groqKey) {
       const form = makeFormData(audioBuffer, mimeType, options, "whisper-large-v3");
       form.set("temperature", "0");
@@ -4542,6 +4421,7 @@ async function transcribeAudio(options) {
       }, 6e4);
       return await parseProviderResponse(response, "groq");
     }
+    const failures = [];
     if (gatewayConfigured) {
       try {
         const result = await transcribeWithGateway(audioBuffer, options);
@@ -5437,7 +5317,7 @@ var schema2 = {
 };
 var SYSTEM_PROMPT = "\u0E04\u0E38\u0E13\u0E04\u0E37\u0E2D\u0E44\u0E21\u0E42\u0E25 \u0E1C\u0E39\u0E49\u0E0A\u0E48\u0E27\u0E22\u0E20\u0E32\u0E29\u0E32\u0E44\u0E17\u0E22 \u0E2D\u0E48\u0E32\u0E19\u0E20\u0E32\u0E1E\u0E43\u0E1A\u0E19\u0E31\u0E14 \u0E15\u0E32\u0E23\u0E32\u0E07 \u0E2A\u0E25\u0E34\u0E1B\u0E42\u0E2D\u0E19\u0E40\u0E07\u0E34\u0E19 \u0E41\u0E25\u0E30\u0E43\u0E1A\u0E40\u0E2A\u0E23\u0E47\u0E08\u0E2D\u0E22\u0E48\u0E32\u0E07\u0E23\u0E30\u0E21\u0E31\u0E14\u0E23\u0E30\u0E27\u0E31\u0E07 \u0E04\u0E37\u0E19 JSON \u0E15\u0E32\u0E21 schema \u0E40\u0E17\u0E48\u0E32\u0E19\u0E31\u0E49\u0E19 \u0E2B\u0E49\u0E32\u0E21\u0E40\u0E14\u0E32\u0E2B\u0E23\u0E37\u0E2D\u0E41\u0E15\u0E48\u0E07\u0E02\u0E49\u0E2D\u0E04\u0E27\u0E32\u0E21/\u0E15\u0E31\u0E27\u0E40\u0E25\u0E02\u0E17\u0E35\u0E48\u0E2D\u0E48\u0E32\u0E19\u0E44\u0E21\u0E48\u0E0A\u0E31\u0E14 \u0E2A\u0E33\u0E2B\u0E23\u0E31\u0E1A\u0E2A\u0E25\u0E34\u0E1B\u0E43\u0E2B\u0E49\u0E43\u0E0A\u0E49\u0E22\u0E2D\u0E14\u0E42\u0E2D\u0E19\u0E08\u0E23\u0E34\u0E07 \u0E44\u0E21\u0E48\u0E43\u0E0A\u0E49\u0E22\u0E2D\u0E14\u0E04\u0E07\u0E40\u0E2B\u0E25\u0E37\u0E2D\u0E2B\u0E23\u0E37\u0E2D\u0E04\u0E48\u0E32\u0E18\u0E23\u0E23\u0E21\u0E40\u0E19\u0E35\u0E22\u0E21 \u0E2A\u0E33\u0E2B\u0E23\u0E31\u0E1A\u0E43\u0E1A\u0E40\u0E2A\u0E23\u0E47\u0E08 POS \u0E43\u0E2B\u0E49\u0E15\u0E23\u0E27\u0E08\u0E15\u0E31\u0E49\u0E07\u0E41\u0E15\u0E48\u0E2B\u0E31\u0E27\u0E43\u0E1A\u0E40\u0E2A\u0E23\u0E47\u0E08\u0E16\u0E36\u0E07\u0E17\u0E49\u0E32\u0E22\u0E43\u0E1A: merchant \u0E15\u0E49\u0E2D\u0E07\u0E40\u0E1B\u0E47\u0E19\u0E0A\u0E37\u0E48\u0E2D\u0E23\u0E49\u0E32\u0E19\u0E08\u0E23\u0E34\u0E07\u0E17\u0E35\u0E48\u0E1E\u0E34\u0E21\u0E1E\u0E4C\u0E02\u0E49\u0E32\u0E07\u0E42\u0E25\u0E42\u0E01\u0E49\u0E2B\u0E23\u0E37\u0E2D\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E23\u0E49\u0E32\u0E19\u0E40\u0E17\u0E48\u0E32\u0E19\u0E31\u0E49\u0E19 (\u0E40\u0E0A\u0E48\u0E19 INDI Coffee) \u0E2B\u0E49\u0E32\u0E21\u0E43\u0E0A\u0E49\u0E2B\u0E31\u0E27\u0E02\u0E49\u0E2D\u0E2A\u0E16\u0E32\u0E19\u0E30 \u0E23\u0E2B\u0E31\u0E2A Wallet \u0E40\u0E25\u0E02\u0E2D\u0E49\u0E32\u0E07\u0E2D\u0E34\u0E07 \u0E2B\u0E23\u0E37\u0E2D\u0E02\u0E49\u0E2D\u0E04\u0E27\u0E32\u0E21\u0E17\u0E35\u0E48\u0E21\u0E35\u0E2D\u0E31\u0E01\u0E02\u0E23\u0E30\u0E40\u0E1E\u0E35\u0E49\u0E22\u0E19, receiptNumber \u0E15\u0E49\u0E2D\u0E07\u0E2D\u0E48\u0E32\u0E19\u0E08\u0E32\u0E01\u0E40\u0E25\u0E02\u0E17\u0E35\u0E48\u0E43\u0E1A\u0E40\u0E2A\u0E23\u0E47\u0E08, dateText/timeText \u0E15\u0E49\u0E2D\u0E07\u0E21\u0E32\u0E08\u0E32\u0E01\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48\u0E41\u0E25\u0E30\u0E40\u0E27\u0E25\u0E32\u0E17\u0E35\u0E48\u0E1E\u0E34\u0E21\u0E1E\u0E4C\u0E1A\u0E19\u0E40\u0E2D\u0E01\u0E2A\u0E32\u0E23, paymentMethod \u0E43\u0E2B\u0E49\u0E2D\u0E48\u0E32\u0E19\u0E08\u0E32\u0E01\u0E40\u0E07\u0E34\u0E19\u0E2A\u0E14/QR/\u0E1A\u0E31\u0E15\u0E23/\u0E42\u0E2D\u0E19\u0E40\u0E07\u0E34\u0E19 \u0E41\u0E25\u0E30 lineItems \u0E15\u0E49\u0E2D\u0E07\u0E16\u0E2D\u0E14\u0E17\u0E38\u0E01\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E43\u0E19\u0E15\u0E32\u0E23\u0E32\u0E07\u0E2A\u0E34\u0E19\u0E04\u0E49\u0E32\u0E40\u0E17\u0E48\u0E32\u0E17\u0E35\u0E48\u0E2D\u0E48\u0E32\u0E19\u0E44\u0E14\u0E49 \u0E42\u0E14\u0E22\u0E40\u0E01\u0E47\u0E1A\u0E0A\u0E37\u0E48\u0E2D\u0E2A\u0E34\u0E19\u0E04\u0E49\u0E32 \u0E08\u0E33\u0E19\u0E27\u0E19 \u0E41\u0E25\u0E30\u0E22\u0E2D\u0E14\u0E02\u0E2D\u0E07\u0E41\u0E16\u0E27\u0E19\u0E31\u0E49\u0E19 \u0E44\u0E21\u0E48\u0E40\u0E2D\u0E32\u0E2B\u0E31\u0E27\u0E15\u0E32\u0E23\u0E32\u0E07 \u0E22\u0E2D\u0E14\u0E23\u0E27\u0E21 \u0E40\u0E07\u0E34\u0E19\u0E2A\u0E14 \u0E40\u0E07\u0E34\u0E19\u0E17\u0E2D\u0E19 \u0E2B\u0E23\u0E37\u0E2D footer \u0E21\u0E32\u0E40\u0E1B\u0E47\u0E19\u0E2A\u0E34\u0E19\u0E04\u0E49\u0E32 \u0E2A\u0E33\u0E2B\u0E23\u0E31\u0E1A\u0E22\u0E2D\u0E14 amount \u0E43\u0E2B\u0E49\u0E43\u0E0A\u0E49\u0E22\u0E2D\u0E14\u0E17\u0E35\u0E48\u0E08\u0E48\u0E32\u0E22\u0E08\u0E23\u0E34\u0E07\u0E2B\u0E25\u0E31\u0E07\u0E2A\u0E48\u0E27\u0E19\u0E25\u0E14\u0E2B\u0E23\u0E37\u0E2D\u0E2A\u0E34\u0E17\u0E18\u0E34\u0E0A\u0E48\u0E27\u0E22\u0E40\u0E2B\u0E25\u0E37\u0E2D \u0E42\u0E14\u0E22\u0E43\u0E2B\u0E49\u0E04\u0E27\u0E32\u0E21\u0E2A\u0E33\u0E04\u0E31\u0E0D\u0E01\u0E31\u0E1A \u0E08\u0E33\u0E19\u0E27\u0E19\u0E40\u0E07\u0E34\u0E19\u0E17\u0E35\u0E48\u0E0A\u0E33\u0E23\u0E30, \u0E22\u0E2D\u0E14\u0E17\u0E35\u0E48\u0E0A\u0E33\u0E23\u0E30, \u0E22\u0E2D\u0E14\u0E2A\u0E38\u0E17\u0E18\u0E34, \u0E17\u0E31\u0E49\u0E07\u0E2B\u0E21\u0E14, Grand Total \u0E21\u0E32\u0E01\u0E01\u0E27\u0E48\u0E32\u0E04\u0E48\u0E32\u0E2A\u0E34\u0E19\u0E04\u0E49\u0E32/\u0E1A\u0E23\u0E34\u0E01\u0E32\u0E23\u0E01\u0E48\u0E2D\u0E19\u0E2A\u0E48\u0E27\u0E19\u0E25\u0E14 \u0E2B\u0E32\u0E01\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48\u0E2D\u0E48\u0E32\u0E19\u0E44\u0E14\u0E49\u0E41\u0E19\u0E48\u0E0A\u0E31\u0E14\u0E43\u0E2B\u0E49\u0E2A\u0E48\u0E07 dateText \u0E23\u0E39\u0E1B\u0E41\u0E1A\u0E1A YYYY-MM-DD \u0E21\u0E34\u0E09\u0E30\u0E19\u0E31\u0E49\u0E19\u0E40\u0E1B\u0E47\u0E19\u0E2A\u0E15\u0E23\u0E34\u0E07\u0E27\u0E48\u0E32\u0E07 \u0E2A\u0E33\u0E2B\u0E23\u0E31\u0E1A\u0E04\u0E48\u0E32\u0E43\u0E0A\u0E49\u0E08\u0E48\u0E32\u0E22\u0E43\u0E2B\u0E49\u0E40\u0E25\u0E37\u0E2D\u0E01 category \u0E20\u0E32\u0E29\u0E32\u0E44\u0E17\u0E22\u0E08\u0E32\u0E01 \u0E2D\u0E32\u0E2B\u0E32\u0E23, \u0E40\u0E14\u0E34\u0E19\u0E17\u0E32\u0E07, \u0E04\u0E48\u0E32\u0E2A\u0E32\u0E18\u0E32\u0E23\u0E13\u0E39\u0E1B\u0E42\u0E20\u0E04, \u0E2A\u0E38\u0E02\u0E20\u0E32\u0E1E, \u0E01\u0E32\u0E23\u0E28\u0E36\u0E01\u0E29\u0E32, \u0E1A\u0E31\u0E19\u0E40\u0E17\u0E34\u0E07, \u0E0A\u0E49\u0E2D\u0E1B\u0E1B\u0E34\u0E49\u0E07, \u0E17\u0E48\u0E2D\u0E07\u0E40\u0E17\u0E35\u0E48\u0E22\u0E27, \u0E17\u0E31\u0E48\u0E27\u0E44\u0E1B \u0E2B\u0E32\u0E01\u0E44\u0E21\u0E48\u0E1E\u0E1A\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E17\u0E35\u0E48\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E44\u0E14\u0E49\u0E43\u0E2B\u0E49\u0E43\u0E0A\u0E49 kind=unknown \u0E41\u0E25\u0E30 amount=0";
 var USER_PROMPT = "\u0E27\u0E34\u0E40\u0E04\u0E23\u0E32\u0E30\u0E2B\u0E4C\u0E20\u0E32\u0E1E\u0E40\u0E1E\u0E37\u0E48\u0E2D\u0E2B\u0E32\u0E43\u0E1A\u0E19\u0E31\u0E14\u0E2B\u0E23\u0E37\u0E2D\u0E18\u0E38\u0E23\u0E01\u0E23\u0E23\u0E21\u0E04\u0E48\u0E32\u0E43\u0E0A\u0E49\u0E08\u0E48\u0E32\u0E22\u0E08\u0E32\u0E01\u0E2A\u0E25\u0E34\u0E1B/\u0E43\u0E1A\u0E40\u0E2A\u0E23\u0E47\u0E08 \u0E42\u0E14\u0E22\u0E40\u0E2A\u0E19\u0E2D\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E40\u0E1E\u0E37\u0E48\u0E2D\u0E43\u0E2B\u0E49\u0E1C\u0E39\u0E49\u0E43\u0E0A\u0E49\u0E22\u0E37\u0E19\u0E22\u0E31\u0E19\u0E01\u0E48\u0E2D\u0E19\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E40\u0E17\u0E48\u0E32\u0E19\u0E31\u0E49\u0E19";
-var RECEIPT_DETAIL_PROMPT = "\u0E15\u0E23\u0E27\u0E08\u0E43\u0E1A\u0E40\u0E2A\u0E23\u0E47\u0E08\u0E19\u0E35\u0E49\u0E0B\u0E49\u0E33\u0E41\u0E1A\u0E1A\u0E25\u0E30\u0E40\u0E2D\u0E35\u0E22\u0E14\u0E08\u0E32\u0E01\u0E20\u0E32\u0E1E\u0E08\u0E23\u0E34\u0E07 \u0E42\u0E14\u0E22\u0E43\u0E2B\u0E49\u0E04\u0E27\u0E32\u0E21\u0E2A\u0E33\u0E04\u0E31\u0E0D\u0E01\u0E31\u0E1A\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E17\u0E35\u0E48\u0E1E\u0E34\u0E21\u0E1E\u0E4C\u0E1A\u0E19\u0E40\u0E2D\u0E01\u0E2A\u0E32\u0E23\u0E21\u0E32\u0E01\u0E01\u0E27\u0E48\u0E32\u0E01\u0E32\u0E23\u0E04\u0E32\u0E14\u0E40\u0E14\u0E32: \u0E2D\u0E48\u0E32\u0E19\u0E0A\u0E37\u0E48\u0E2D\u0E23\u0E49\u0E32\u0E19\u0E08\u0E32\u0E01\u0E2B\u0E31\u0E27\u0E40\u0E2D\u0E01\u0E2A\u0E32\u0E23, \u0E40\u0E25\u0E02\u0E17\u0E35\u0E48\u0E43\u0E1A\u0E40\u0E2A\u0E23\u0E47\u0E08, \u0E1B\u0E23\u0E30\u0E40\u0E20\u0E17\u0E01\u0E32\u0E23\u0E0B\u0E37\u0E49\u0E2D, \u0E1E\u0E19\u0E31\u0E01\u0E07\u0E32\u0E19\u0E16\u0E49\u0E32\u0E21\u0E35, \u0E27\u0E31\u0E19\u0E17\u0E35\u0E48/\u0E40\u0E27\u0E25\u0E32, \u0E27\u0E34\u0E18\u0E35\u0E0A\u0E33\u0E23\u0E30, \u0E22\u0E2D\u0E14\u0E2A\u0E38\u0E17\u0E18\u0E34\u0E17\u0E35\u0E48\u0E25\u0E39\u0E01\u0E04\u0E49\u0E32\u0E08\u0E48\u0E32\u0E22\u0E08\u0E23\u0E34\u0E07 \u0E41\u0E25\u0E30\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E2A\u0E34\u0E19\u0E04\u0E49\u0E32\u0E43\u0E19\u0E15\u0E32\u0E23\u0E32\u0E07\u0E17\u0E38\u0E01\u0E41\u0E16\u0E27\u0E17\u0E35\u0E48\u0E21\u0E2D\u0E07\u0E40\u0E2B\u0E47\u0E19. \u0E2A\u0E33\u0E04\u0E31\u0E0D\u0E21\u0E32\u0E01: \u0E27\u0E31\u0E19\u0E17\u0E35\u0E48/\u0E40\u0E27\u0E25\u0E32\u0E15\u0E49\u0E2D\u0E07\u0E2D\u0E48\u0E32\u0E19\u0E08\u0E32\u0E01\u0E15\u0E31\u0E27\u0E2D\u0E31\u0E01\u0E29\u0E23\u0E43\u0E19\u0E20\u0E32\u0E1E\u0E08\u0E23\u0E34\u0E07\u0E40\u0E17\u0E48\u0E32\u0E19\u0E31\u0E49\u0E19 \u0E40\u0E0A\u0E48\u0E19 '18 \u0E01.\u0E22. 2569 11:02' \u0E15\u0E49\u0E2D\u0E07\u0E04\u0E37\u0E19 dateText='2026-09-18' \u0E41\u0E25\u0E30 timeText='11:02'; \u0E2B\u0E49\u0E32\u0E21\u0E15\u0E2D\u0E1A\u0E27\u0E48\u0E32\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48\u0E44\u0E21\u0E48\u0E0A\u0E31\u0E14\u0E16\u0E49\u0E32\u0E15\u0E31\u0E27\u0E40\u0E25\u0E02\u0E2B\u0E23\u0E37\u0E2D\u0E40\u0E14\u0E37\u0E2D\u0E19\u0E22\u0E31\u0E07\u0E21\u0E2D\u0E07\u0E40\u0E2B\u0E47\u0E19\u0E44\u0E14\u0E49. lineItems \u0E41\u0E15\u0E48\u0E25\u0E30\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E04\u0E27\u0E23\u0E21\u0E35\u0E0A\u0E37\u0E48\u0E2D\u0E2A\u0E34\u0E19\u0E04\u0E49\u0E32 \xD7\u0E08\u0E33\u0E19\u0E27\u0E19 \u0E41\u0E25\u0E30\u0E22\u0E2D\u0E14\u0E1A\u0E32\u0E17. \u0E2B\u0E49\u0E32\u0E21\u0E40\u0E2D\u0E32 Qty/\u0E23\u0E32\u0E04\u0E32/\u0E22\u0E2D\u0E14\u0E23\u0E27\u0E21/\u0E17\u0E31\u0E49\u0E07\u0E2B\u0E21\u0E14/\u0E40\u0E07\u0E34\u0E19\u0E2A\u0E14/\u0E40\u0E07\u0E34\u0E19\u0E17\u0E2D\u0E19/\u0E2A\u0E34\u0E17\u0E18\u0E34\u0E0A\u0E48\u0E27\u0E22\u0E40\u0E2B\u0E25\u0E37\u0E2D/Powered by/\u0E23\u0E2B\u0E31\u0E2A\u0E2D\u0E49\u0E32\u0E07\u0E2D\u0E34\u0E07/Wallet ID \u0E21\u0E32\u0E40\u0E1B\u0E47\u0E19\u0E2A\u0E34\u0E19\u0E04\u0E49\u0E32. \u0E16\u0E49\u0E32\u0E15\u0E31\u0E27\u0E2D\u0E31\u0E01\u0E29\u0E23\u0E2A\u0E48\u0E27\u0E19\u0E43\u0E14\u0E2D\u0E48\u0E32\u0E19\u0E44\u0E21\u0E48\u0E0A\u0E31\u0E14 \u0E43\u0E2B\u0E49\u0E40\u0E27\u0E49\u0E19\u0E40\u0E09\u0E1E\u0E32\u0E30\u0E2A\u0E48\u0E27\u0E19\u0E19\u0E31\u0E49\u0E19\u0E41\u0E17\u0E19\u0E01\u0E32\u0E23\u0E40\u0E14\u0E32. \u0E2B\u0E49\u0E32\u0E21\u0E2A\u0E23\u0E38\u0E1B\u0E2B\u0E23\u0E37\u0E2D\u0E40\u0E1B\u0E25\u0E35\u0E48\u0E22\u0E19\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E17\u0E35\u0E48\u0E40\u0E2B\u0E47\u0E19\u0E43\u0E19\u0E20\u0E32\u0E1E";
+var RECEIPT_DETAIL_PROMPT = "\u0E15\u0E23\u0E27\u0E08\u0E43\u0E1A\u0E40\u0E2A\u0E23\u0E47\u0E08\u0E19\u0E35\u0E49\u0E0B\u0E49\u0E33\u0E41\u0E1A\u0E1A\u0E25\u0E30\u0E40\u0E2D\u0E35\u0E22\u0E14\u0E40\u0E2B\u0E21\u0E37\u0E2D\u0E19\u0E1C\u0E39\u0E49\u0E15\u0E23\u0E27\u0E08\u0E40\u0E2D\u0E01\u0E2A\u0E32\u0E23 POS: \u0E2D\u0E48\u0E32\u0E19\u0E0A\u0E37\u0E48\u0E2D\u0E23\u0E49\u0E32\u0E19\u0E08\u0E32\u0E01\u0E2B\u0E31\u0E27\u0E40\u0E2D\u0E01\u0E2A\u0E32\u0E23, \u0E40\u0E25\u0E02\u0E17\u0E35\u0E48\u0E43\u0E1A\u0E40\u0E2A\u0E23\u0E47\u0E08, \u0E1B\u0E23\u0E30\u0E40\u0E20\u0E17\u0E01\u0E32\u0E23\u0E0B\u0E37\u0E49\u0E2D, \u0E1E\u0E19\u0E31\u0E01\u0E07\u0E32\u0E19\u0E16\u0E49\u0E32\u0E21\u0E35, \u0E27\u0E31\u0E19\u0E17\u0E35\u0E48/\u0E40\u0E27\u0E25\u0E32, \u0E27\u0E34\u0E18\u0E35\u0E0A\u0E33\u0E23\u0E30, \u0E22\u0E2D\u0E14\u0E17\u0E31\u0E49\u0E07\u0E2B\u0E21\u0E14\u0E17\u0E35\u0E48\u0E08\u0E48\u0E32\u0E22\u0E08\u0E23\u0E34\u0E07 \u0E41\u0E25\u0E30\u0E16\u0E2D\u0E14\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E2A\u0E34\u0E19\u0E04\u0E49\u0E32\u0E43\u0E19\u0E15\u0E32\u0E23\u0E32\u0E07\u0E43\u0E2B\u0E49\u0E04\u0E23\u0E1A\u0E17\u0E38\u0E01\u0E41\u0E16\u0E27\u0E17\u0E35\u0E48\u0E21\u0E2D\u0E07\u0E40\u0E2B\u0E47\u0E19 \u0E42\u0E14\u0E22 lineItems \u0E41\u0E15\u0E48\u0E25\u0E30\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E04\u0E27\u0E23\u0E21\u0E35\u0E0A\u0E37\u0E48\u0E2D\u0E2A\u0E34\u0E19\u0E04\u0E49\u0E32 \xD7\u0E08\u0E33\u0E19\u0E27\u0E19 \u0E22\u0E2D\u0E14\u0E1A\u0E32\u0E17 \u0E2B\u0E49\u0E32\u0E21\u0E40\u0E2D\u0E32 Qty/\u0E23\u0E32\u0E04\u0E32/\u0E22\u0E2D\u0E14\u0E23\u0E27\u0E21/\u0E17\u0E31\u0E49\u0E07\u0E2B\u0E21\u0E14/\u0E40\u0E07\u0E34\u0E19\u0E2A\u0E14/Powered by \u0E21\u0E32\u0E40\u0E1B\u0E47\u0E19\u0E2A\u0E34\u0E19\u0E04\u0E49\u0E32 \u0E16\u0E49\u0E32\u0E15\u0E31\u0E27\u0E2D\u0E31\u0E01\u0E29\u0E23\u0E41\u0E16\u0E27\u0E43\u0E14\u0E2D\u0E48\u0E32\u0E19\u0E44\u0E21\u0E48\u0E0A\u0E31\u0E14\u0E43\u0E2B\u0E49\u0E40\u0E27\u0E49\u0E19\u0E2A\u0E48\u0E27\u0E19\u0E19\u0E31\u0E49\u0E19\u0E41\u0E17\u0E19\u0E01\u0E32\u0E23\u0E40\u0E14\u0E32";
 function parseAnalysisContent(content) {
   if (typeof content !== "string" || !content.trim()) throw new Error("Image model did not return JSON");
   const cleaned = content.trim().replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/i, "");
@@ -5447,16 +5327,6 @@ function parseAnalysisContent(content) {
   const parsed = JSON.parse(json);
   if (!parsed || !Array.isArray(parsed.proposals) || typeof parsed.summary !== "string") throw new Error("Image model returned an invalid analysis");
   return parsed;
-}
-async function analyzeImageWithGoogle(dataUrl, prompt = USER_PROMPT) {
-  const result = await generateGoogleGeminiJson({
-    kind: "vision",
-    imageDataUrl: dataUrl,
-    system: SYSTEM_PROMPT,
-    prompt,
-    schema: schema2
-  });
-  return parseAnalysisContent(JSON.stringify(result));
 }
 async function analyzeImageWithForge(dataUrl) {
   const response = await invokeLLM({
@@ -5610,7 +5480,6 @@ function imageGatewayMode(env = process.env, requestToken) {
   return void 0;
 }
 function imageAnalysisMode(requestToken) {
-  if (googleGeminiConfigured()) return ocrAssetsReady() ? "google-gemini-vision+ocr-fallback" : "google-gemini-vision";
   if (ENV.forgeApiKey) return ocrAssetsReady() ? "forge-vision+ocr-fallback" : "forge-vision";
   const gatewayMode = imageGatewayMode(process.env, requestToken);
   if (gatewayMode) return ocrAssetsReady() ? `${gatewayMode}+ocr-fallback` : gatewayMode;
@@ -5620,7 +5489,7 @@ async function imageAnalysisRuntimeStatus(requestToken) {
   const mode = imageAnalysisMode(requestToken);
   return {
     mode,
-    authenticated: Boolean(googleGeminiConfigured() || ENV.forgeApiKey || imageGatewayToken(process.env, requestToken) || ocrAssetsReady()),
+    authenticated: Boolean(ENV.forgeApiKey || imageGatewayToken(process.env, requestToken) || ocrAssetsReady()),
     ocrAssetsReady: ocrAssetsReady()
   };
 }
@@ -5630,16 +5499,6 @@ function receiptNeedsDetailRepair(analysis) {
   const merchant = normalizeThaiMerchantName(proposal.merchant);
   const merchantLooksOperational = !isPlausibleReceiptMerchant(merchant) || /^(?:ประเภท|พนักงาน|เวลา|วันที่|สินค้า|qty|ราคา|รวม)/i.test(merchant);
   return merchantLooksOperational || !proposal.lineItems?.length || proposal.lineItems.length < 2 || !proposal.receiptNumber;
-}
-async function repairReceiptDateWithGoogle(dataUrl) {
-  const result = await generateGoogleGeminiJson({
-    kind: "vision",
-    imageDataUrl: dataUrl,
-    system: "\u0E04\u0E38\u0E13\u0E04\u0E37\u0E2D OCR verifier \u0E2A\u0E33\u0E2B\u0E23\u0E31\u0E1A\u0E43\u0E1A\u0E40\u0E2A\u0E23\u0E47\u0E08\u0E44\u0E17\u0E22 \u0E07\u0E32\u0E19\u0E40\u0E14\u0E35\u0E22\u0E27\u0E04\u0E37\u0E2D\u0E2D\u0E48\u0E32\u0E19\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48\u0E17\u0E33\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E41\u0E25\u0E30\u0E40\u0E27\u0E25\u0E32\u0E17\u0E35\u0E48\u0E1E\u0E34\u0E21\u0E1E\u0E4C\u0E2D\u0E22\u0E39\u0E48\u0E43\u0E19\u0E20\u0E32\u0E1E\u0E08\u0E23\u0E34\u0E07 \u0E2B\u0E49\u0E32\u0E21\u0E43\u0E0A\u0E49\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48\u0E1B\u0E31\u0E08\u0E08\u0E38\u0E1A\u0E31\u0E19 \u0E27\u0E31\u0E19\u0E17\u0E35\u0E48\u0E2A\u0E48\u0E07\u0E23\u0E39\u0E1B \u0E2B\u0E23\u0E37\u0E2D\u0E1A\u0E23\u0E34\u0E1A\u0E17\u0E2D\u0E37\u0E48\u0E19\u0E41\u0E17\u0E19\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48\u0E1A\u0E19\u0E40\u0E2D\u0E01\u0E2A\u0E32\u0E23. \u0E27\u0E31\u0E19\u0E17\u0E35\u0E48\u0E2D\u0E32\u0E08\u0E40\u0E1B\u0E47\u0E19 \u0E1E.\u0E28. \u0E40\u0E0A\u0E48\u0E19 17 \u0E01.\u0E22. 2569 \u0E41\u0E25\u0E30\u0E15\u0E49\u0E2D\u0E07\u0E41\u0E1B\u0E25\u0E07\u0E40\u0E1B\u0E47\u0E19 \u0E04.\u0E28. 2026-09-17. \u0E16\u0E49\u0E32\u0E2D\u0E48\u0E32\u0E19\u0E27\u0E31\u0E19\u0E40\u0E14\u0E37\u0E2D\u0E19\u0E1B\u0E35\u0E08\u0E23\u0E34\u0E07\u0E44\u0E21\u0E48\u0E44\u0E14\u0E49\u0E43\u0E2B\u0E49 dateText \u0E40\u0E1B\u0E47\u0E19\u0E2A\u0E15\u0E23\u0E34\u0E07\u0E27\u0E48\u0E32\u0E07. \u0E16\u0E49\u0E32\u0E2D\u0E48\u0E32\u0E19\u0E40\u0E27\u0E25\u0E32\u0E44\u0E21\u0E48\u0E44\u0E14\u0E49\u0E43\u0E2B\u0E49 timeText \u0E40\u0E1B\u0E47\u0E19\u0E2A\u0E15\u0E23\u0E34\u0E07\u0E27\u0E48\u0E32\u0E07. evidence \u0E15\u0E49\u0E2D\u0E07\u0E04\u0E31\u0E14\u0E02\u0E49\u0E2D\u0E04\u0E27\u0E32\u0E21\u0E2A\u0E31\u0E49\u0E19\u0E46 \u0E17\u0E35\u0E48\u0E21\u0E2D\u0E07\u0E40\u0E2B\u0E47\u0E19\u0E08\u0E23\u0E34\u0E07\u0E40\u0E1E\u0E37\u0E48\u0E2D\u0E43\u0E0A\u0E49\u0E15\u0E23\u0E27\u0E08\u0E2A\u0E2D\u0E1A.",
-    prompt: "\u0E2D\u0E48\u0E32\u0E19\u0E40\u0E09\u0E1E\u0E32\u0E30\u0E1A\u0E23\u0E23\u0E17\u0E31\u0E14\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48/\u0E40\u0E27\u0E25\u0E32\u0E43\u0E19\u0E43\u0E1A\u0E40\u0E2A\u0E23\u0E47\u0E08\u0E19\u0E35\u0E49\u0E08\u0E32\u0E01\u0E1E\u0E34\u0E01\u0E40\u0E0B\u0E25\u0E08\u0E23\u0E34\u0E07 \u0E42\u0E14\u0E22\u0E21\u0E2D\u0E07\u0E17\u0E31\u0E49\u0E07\u0E2A\u0E48\u0E27\u0E19\u0E1A\u0E19\u0E02\u0E2D\u0E07\u0E43\u0E1A\u0E40\u0E2A\u0E23\u0E47\u0E08\u0E41\u0E25\u0E30\u0E1A\u0E23\u0E34\u0E40\u0E27\u0E13\u0E43\u0E01\u0E25\u0E49\u0E22\u0E2D\u0E14\u0E40\u0E07\u0E34\u0E19. \u0E2B\u0E49\u0E32\u0E21\u0E40\u0E14\u0E32. \u0E16\u0E49\u0E32\u0E40\u0E2B\u0E47\u0E19 '17 \u0E01.\u0E22. 2569 10:58' \u0E43\u0E2B\u0E49\u0E04\u0E37\u0E19 dateText='2026-09-17', timeText='10:58'.",
-    schema: receiptDateSchema
-  });
-  return parseReceiptDateRepairContent(JSON.stringify(result));
 }
 async function refineReceiptDetails(analysis, dataUrl, gatewayKey) {
   if (!receiptNeedsDetailRepair(analysis)) return analysis;
@@ -5702,63 +5561,6 @@ function sanitizeAnalysisMerchants(analysis) {
 async function analyzeImage(dataUrl, options = {}) {
   let providerError;
   let providerAnalysis;
-  if (googleGeminiConfigured()) {
-    try {
-      const analysis = await analyzeImageWithGoogle(dataUrl);
-      providerAnalysis = analysis;
-      console.info("[Milo Image] Google Gemini vision provider", {
-        model: process.env.MILO_GOOGLE_VISION_MODEL || process.env.MILO_VISION_MODEL || "gemini-2.5-flash"
-      });
-      const googleProposal = analysis.proposals[0];
-      if (googleProposal?.documentType === "receipt" && googleProposal.kind === "expense") {
-        try {
-          const detail = await analyzeImageWithGoogle(dataUrl, RECEIPT_DETAIL_PROMPT);
-          providerAnalysis = mergeImageAnalyses(analysis, detail);
-          if (!providerAnalysis.proposals[0]?.dateText) {
-            try {
-              const headerDataUrl = await buildReceiptHeaderDataUrl(dataUrl).catch(() => dataUrl);
-              const dateRepair = await repairReceiptDateWithGoogle(headerDataUrl);
-              providerAnalysis = mergeDedicatedDateRepair(providerAnalysis, dateRepair);
-              console.info("[Milo Image] Google Gemini focused receipt date repair", {
-                dateText: dateRepair.dateText,
-                timeText: dateRepair.timeText,
-                evidence: dateRepair.evidence.slice(0, 120)
-              });
-              if (!providerAnalysis.proposals[0]?.dateText && headerDataUrl !== dataUrl) {
-                const fullRepair = await repairReceiptDateWithGoogle(dataUrl);
-                providerAnalysis = mergeDedicatedDateRepair(providerAnalysis, fullRepair);
-                console.info("[Milo Image] Google Gemini full-image receipt date repair", {
-                  dateText: fullRepair.dateText,
-                  timeText: fullRepair.timeText,
-                  evidence: fullRepair.evidence.slice(0, 120)
-                });
-              }
-            } catch (dateError) {
-              console.warn("[Milo Image] Google Gemini dedicated receipt date repair failed", {
-                error: dateError instanceof Error ? dateError.message : "unknown"
-              });
-            }
-          }
-          console.info("[Milo Image] Google Gemini receipt detail verification", {
-            dateText: providerAnalysis.proposals[0]?.dateText,
-            timeText: providerAnalysis.proposals[0]?.timeText,
-            amount: providerAnalysis.proposals[0]?.amount,
-            lineItems: providerAnalysis.proposals[0]?.lineItems?.length ?? 0
-          });
-        } catch (detailError) {
-          console.warn("[Milo Image] Google Gemini receipt detail verification failed", {
-            error: detailError instanceof Error ? detailError.message : "unknown"
-          });
-        }
-      }
-      if (providerAnalysis.proposals.some((item) => item.kind === "reminder" && Boolean(item.dateText))) return sanitizeAnalysisMerchants(providerAnalysis);
-    } catch (error) {
-      providerError = error;
-      console.warn("[Milo Image] Google Gemini vision failed; trying configured fallback", {
-        error: error instanceof Error ? error.message : "unknown"
-      });
-    }
-  }
   if (ENV.forgeApiKey) {
     try {
       const analysis = await analyzeImageWithForge(dataUrl);
