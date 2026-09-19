@@ -1,0 +1,13 @@
+.git
+.github
+.env*
+.dev.vars*
+node_modules
+dist
+api/index.js
+models
+coverage
+tmp
+temp
+*.log
+docs

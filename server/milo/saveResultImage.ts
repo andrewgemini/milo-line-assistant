@@ -1,4 +1,6 @@
 import type { Express, Request, Response } from "express";
+import { readFile } from "node:fs/promises";
+import path from "node:path";
 import sharp from "sharp";
 import { budgetStatusCopy, getBudgetMetrics } from "./budgetStatus";
 import { normalizeRenderText, vectorTextSvg } from "./vectorText";
@@ -22,6 +24,25 @@ function escapeXml(value: string) {
 function parseDate(value: string | null) {
   const date = value ? new Date(value) : new Date();
   return Number.isNaN(date.getTime()) ? new Date() : date;
+}
+
+async function loadSaveResultTemplate() {
+  const candidates = [
+    path.join(process.cwd(), "dist", "public", "milo-richmenu", "save-complete.png"),
+    path.join(process.cwd(), "client", "public", "milo-richmenu", "save-complete.png"),
+  ];
+  for (const candidate of candidates) {
+    try {
+      return await readFile(candidate);
+    } catch {
+      // The hosted fallback below keeps serverless deployments compatible.
+    }
+  }
+
+  const baseUrl = (process.env.MILO_RICH_MENU_IMAGE_BASE_URL ?? "https://milo-line-app.vercel.app/milo-richmenu").replace(/\/+$/, "");
+  const response = await fetch(`${baseUrl}/save-complete.png`, { cache: "no-store" });
+  if (!response.ok) return undefined;
+  return Buffer.from(await response.arrayBuffer());
 }
 
 const renderSegmenter = new Intl.Segmenter("th", { granularity: "grapheme" });
@@ -238,10 +259,8 @@ export function registerSaveResultImageRoute(app: Express) {
 
       if (!Number.isFinite(amount) || amount <= 0) return res.status(400).type("text/plain").send("Invalid amount");
 
-      const baseUrl = (process.env.MILO_RICH_MENU_IMAGE_BASE_URL ?? "https://milo-line-app.vercel.app/milo-richmenu").replace(/\/+$/, "");
-      const templateResponse = await fetch(`${baseUrl}/save-complete.png`, { cache: "no-store" });
-      if (!templateResponse.ok) return res.status(502).type("text/plain").send("Save result template unavailable");
-      const template = Buffer.from(await templateResponse.arrayBuffer());
+      const template = await loadSaveResultTemplate();
+      if (!template) return res.status(502).type("text/plain").send("Save result template unavailable");
 
       const svg = buildSaveResultSvg({ transactionType, item, category, amount, occurredAt, budgetSpent, budgetLimit });
       const shapesOnlySvg = svg.replace(/<text\b[^>]*>[\s\S]*?<\/text>/g, "");

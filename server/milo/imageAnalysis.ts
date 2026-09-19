@@ -184,6 +184,17 @@ function parseReceiptDateRepairContent(content: unknown): ReceiptDateRepair {
   };
 }
 
+async function repairReceiptDateWithGoogle(dataUrl: string): Promise<ReceiptDateRepair> {
+  const repair = await generateGoogleGeminiJson<ReceiptDateRepair>({
+    kind: "vision",
+    imageDataUrl: dataUrl,
+    system: "คุณเป็นตัวตรวจวันที่ใบเสร็จไทย อ่านเฉพาะวันที่และเวลาในภาพจริง ห้ามใช้วันที่ปัจจุบันหรือวันที่ส่งรูป ห้ามเดา",
+    prompt: "อ่านบรรทัดวันที่และเวลาที่พิมพ์บนใบเสร็จจริงจากพิกเซล ถ้าเห็นวันที่แบบ 17 ก.ย. 2569 10:58 ให้คืน dateText=2026-09-17 และ timeText=10:58",
+    schema: receiptDateSchema,
+  });
+  return parseReceiptDateRepairContent(JSON.stringify(repair));
+}
+
 async function receiptDateRepairRequest(dataUrl: string, token: string): Promise<ReceiptDateRepair> {
   const body: Record<string, unknown> = {
     model: process.env.MILO_VISION_MODEL || "google/gemini-2.5-flash",
@@ -253,14 +264,7 @@ async function repairMissingReceiptDate(analysis: ImageAnalysis, dataUrl: string
   if (googleGeminiConfigured()) {
     try {
       const header = await buildReceiptHeaderDataUrl(dataUrl).catch(() => dataUrl);
-      const repair = await generateGoogleGeminiJson<ReceiptDateRepair>({
-        kind: "vision",
-        imageDataUrl: header,
-        system: "คุณเป็นตัวตรวจวันที่ใบเสร็จไทย อ่านเฉพาะวันที่และเวลาในภาพจริง ห้ามใช้วันที่ปัจจุบันหรือวันที่ส่งรูป ห้ามเดา",
-        prompt: "อ่านบรรทัดวันที่และเวลาที่พิมพ์บนใบเสร็จจริงจากพิกเซล ถ้าเห็นวันที่แบบ 17 ก.ย. 2569 10:58 ให้คืน dateText=2026-09-17 และ timeText=10:58",
-        schema: receiptDateSchema,
-      });
-      const normalized = parseReceiptDateRepairContent(JSON.stringify(repair));
+      const normalized = await repairReceiptDateWithGoogle(header);
       if (normalized.dateText) return mergeDedicatedDateRepair(analysis, normalized);
     } catch (error) {
       console.warn("[Milo Image] Google focused date repair failed", { error: error instanceof Error ? error.message : "unknown" });
@@ -268,14 +272,14 @@ async function repairMissingReceiptDate(analysis: ImageAnalysis, dataUrl: string
   }
   const headerDataUrl = await buildReceiptHeaderDataUrl(dataUrl).catch(() => dataUrl);
   try {
-    if (ENV.forgeApiKey && !directVisionAnalysis) {
+    if (ENV.forgeApiKey) {
       const repair = await receiptDateRepairWithForge(headerDataUrl);
       if (repair.dateText) return mergeDedicatedDateRepair(analysis, repair);
     }
   } catch (error) {
     console.warn("[Milo Image] Forge focused date repair failed", { error: error instanceof Error ? error.message : "unknown" });
   }
-  if (gatewayKey && !directVisionAnalysis) {
+  if (gatewayKey) {
     try {
       const repair = await receiptDateRepairRequest(headerDataUrl, gatewayKey);
       return mergeDedicatedDateRepair(analysis, repair);
