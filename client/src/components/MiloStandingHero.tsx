@@ -8,6 +8,20 @@ export function MiloStandingHero({ className = "" }: MiloStandingHeroProps) {
       <defs>
         <linearGradient id="miloFur" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="#fff" /><stop offset="1" stopColor="#f4f2ef" /></linearGradient>
         <linearGradient id="miloGold" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#ffd85a" /><stop offset="1" stopColor="#f2a915" /></linearGradient>
+        <style>{`
+          @keyframes miloManekiWave {
+            0%, 100% { transform: rotate(-5deg); }
+            50% { transform: rotate(15deg); }
+          }
+          .milo-maneki-wave {
+            animation: miloManekiWave 1.1s ease-in-out infinite;
+            transform-box: fill-box;
+            transform-origin: 86% 92%;
+          }
+          @media (prefers-reduced-motion: reduce) {
+            .milo-maneki-wave { animation: none; }
+          }
+        `}</style>
       </defs>
 
       {/* tail behind body */}
@@ -24,11 +38,13 @@ export function MiloStandingHero({ className = "" }: MiloStandingHeroProps) {
       <path d="M146 515 l-5 7 M160 518 l-1 7 M249 519 l-1 7 M264 518 l1 7" fill="none" stroke="#2b1818" strokeWidth="5" strokeLinecap="round"/>
 
       {/* raised waving arm */}
-      <path d="M144 345 C112 327 91 302 79 267 C72 247 62 222 70 207 C77 194 93 191 106 199 C118 207 123 223 129 237 L145 273 C157 296 168 314 181 325" fill="url(#miloFur)" {...outline}/>
-      {/* paw */}
-      <path d="M69 210 C49 208 34 194 37 177 C39 164 51 154 64 155 C70 143 82 139 94 145 C106 139 120 147 123 159 C134 165 137 180 130 191 C121 206 101 213 83 210 Z" fill="#fff" {...outline}/>
-      <ellipse cx="78" cy="181" rx="10" ry="13" fill="#ff8790"/>
-      <circle cx="62" cy="170" r="6" fill="#ff8790"/><circle cx="77" cy="163" r="6" fill="#ff8790"/><circle cx="94" cy="165" r="6" fill="#ff8790"/>
+      <g className="milo-maneki-wave">
+        <path d="M144 345 C112 327 91 302 79 267 C72 247 62 222 70 207 C77 194 93 191 106 199 C118 207 123 223 129 237 L145 273 C157 296 168 314 181 325" fill="url(#miloFur)" {...outline}/>
+        {/* paw */}
+        <path d="M69 210 C49 208 34 194 37 177 C39 164 51 154 64 155 C70 143 82 139 94 145 C106 139 120 147 123 159 C134 165 137 180 130 191 C121 206 101 213 83 210 Z" fill="#fff" {...outline}/>
+        <ellipse cx="78" cy="181" rx="10" ry="13" fill="#ff8790"/>
+        <circle cx="62" cy="170" r="6" fill="#ff8790"/><circle cx="77" cy="163" r="6" fill="#ff8790"/><circle cx="94" cy="165" r="6" fill="#ff8790"/>
+      </g>
       {/* waving motion */}
       <path d="M34 140 l-18 -13 M39 122 l-12 -20 M49 111 l-4 -21" fill="none" stroke="#08ad77" strokeWidth="8" strokeLinecap="round"/>
 
