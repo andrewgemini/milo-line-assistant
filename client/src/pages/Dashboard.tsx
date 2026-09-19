@@ -56,7 +56,7 @@ import { toast } from "sonner";
 
 const money = new Intl.NumberFormat("th-TH", { style: "currency", currency: "THB", maximumFractionDigits: 0 });
 const dateTime = new Intl.DateTimeFormat("th-TH", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Bangkok" });
-const PRODUCTION_DASHBOARD_URL = "https://milo-line-assistant.sinsaeaui.workers.dev/dashboard";
+const PRODUCTION_DASHBOARD_URL = import.meta.env.VITE_MILO_PRODUCTION_DASHBOARD_URL || "https://milo-line-assistant.onrender.com/dashboard";
 const PREVIEW_DASHBOARD_URL = "https://3000-i5wzpmy7nribffa3plzdi-532f5123.us3.manus.computer/dashboard";
 
 const navigation: Array<{ id: DashboardSectionId; label: string; icon: typeof LayoutDashboard }> = [

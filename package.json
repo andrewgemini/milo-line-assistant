@@ -7,6 +7,7 @@
     "dev": "NODE_ENV=development tsx watch server/_core/index.ts",
     "build": "vite build && esbuild server/api.ts --platform=node --packages=external --bundle --format=esm --outfile=api/index.js",
     "build:container": "vite build && esbuild server/container.ts --platform=node --packages=external --bundle --format=esm --outfile=dist/server.js",
+    "deploy:render": "pnpm build:container",
     "deploy:cloudflare": "pnpm build:container && wrangler deploy",
     "start": "NODE_ENV=production node dist/index.js",
     "start:container": "NODE_ENV=production node dist/server.js",

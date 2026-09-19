@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: milo-line-assistant
+    runtime: node
+    plan: free
+    buildCommand: pnpm install --frozen-lockfile && pnpm build:container
+    startCommand: pnpm start:container
+    healthCheckPath: /api/health
+    autoDeployTrigger: commit
