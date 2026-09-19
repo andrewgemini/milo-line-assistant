@@ -77,6 +77,10 @@ export default {
   },
 
   async scheduled(controller: ScheduledController, env: Env): Promise<void> {
+    if (controller.cron === "*/5 * * * *") {
+      await runCron(env, "/api/scheduled/reminders");
+      return;
+    }
     if (controller.cron === "0 0 * * *") {
       await runCron(env, "/api/scheduled/personal-morning");
       return;
