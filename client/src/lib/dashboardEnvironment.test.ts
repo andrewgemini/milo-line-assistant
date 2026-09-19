@@ -6,6 +6,7 @@ describe("dashboard environment", () => {
     expect(isProductionSiteHostname("miloassist-suwp6bg2.manus.space")).toBe(true);
     expect(isProductionSiteHostname("milo-line-app.vercel.app")).toBe(true);
     expect(isProductionSiteHostname("milo-line-assistant.example.workers.dev")).toBe(true);
+    expect(isProductionSiteHostname("milo-line-assistant.onrender.com")).toBe(true);
   });
 
   it("does not treat preview or local hosts as production", () => {
