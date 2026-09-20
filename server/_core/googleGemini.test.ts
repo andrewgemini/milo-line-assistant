@@ -9,7 +9,7 @@ afterEach(() => {
 describe("Google Gemini resilient routing", () => {
   it("uses the configured model first and retains free multimodal fallbacks", () => {
     expect(googleGeminiModels("vision", { MILO_GOOGLE_VISION_MODEL: "custom-model" } as NodeJS.ProcessEnv))
-      .toEqual(["custom-model", "gemini-3.8-flash", "gemini-2.5-flash"]);
+      .toEqual(["custom-model", "gemini-3.6-flash", "gemini-3.8-flash"]);
   });
 
   it("falls back for structured image extraction and keeps the API key out of the URL", async () => {
@@ -25,7 +25,7 @@ describe("Google Gemini resilient routing", () => {
     await expect(generateGoogleGeminiJson({
       prompt: "อ่านใบเสร็จ",
       imageDataUrl: "data:image/jpeg;base64,YWJj",
-      schema: { type: "object" },
+      schema: { type: "object", additionalProperties: false, properties: { proposals: { type: "array", items: { type: "object", additionalProperties: false } } } },
       kind: "vision",
     })).resolves.toMatchObject({ summary: "พบใบเสร็จ" });
 
@@ -34,7 +34,11 @@ describe("Google Gemini resilient routing", () => {
     expect(firstUrl).toContain("/models/unavailable-model:generateContent");
     expect(firstUrl).not.toContain("test-secret-key");
     expect(firstInit.headers).toMatchObject({ "x-goog-api-key": "test-secret-key" });
-    expect(String(fetchMock.mock.calls[1]?.[0])).toContain("/models/gemini-3.8-flash:generateContent");
+    const config = JSON.parse(String(firstInit.body)).generationConfig;
+    expect(config.responseSchema).toBeUndefined();
+    expect(config.responseJsonSchema.additionalProperties).toBe(false);
+    expect(config.responseJsonSchema.properties.proposals.items.additionalProperties).toBe(false);
+    expect(String(fetchMock.mock.calls[1]?.[0])).toContain("/models/gemini-3.6-flash:generateContent");
   });
 
   it("falls back when the chat model returns an empty candidate", async () => {
@@ -45,6 +49,6 @@ describe("Google Gemini resilient routing", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     await expect(generateGoogleGeminiText({ prompt: "สวัสดี", system: "ตอบภาษาไทย" })).resolves.toBe("สวัสดีครับ");
-    expect(String(fetchMock.mock.calls[1]?.[0])).toContain("/models/gemini-2.5-flash:generateContent");
+    expect(String(fetchMock.mock.calls[1]?.[0])).toContain("/models/gemini-3.8-flash:generateContent");
   });
 });

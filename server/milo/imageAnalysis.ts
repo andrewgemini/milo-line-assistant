@@ -438,11 +438,9 @@ export async function analyzeImage(dataUrl: string, options: { gatewayToken?: st
           });
         }
       }
-      // Gemini handles the document semantics, but tiny Thai POS date text is
-      // more reliable when the legacy OCR date-band reader gets a second vote.
-      // Only the date/time fields may be replaced by OCR; amount, merchant,
-      // category and line items remain Gemini-owned.
-      if (analysis.proposals.some(item => item.documentType === "receipt" && item.kind === "expense")) {
+      // OCR is a repair for missing fields. Running it for every receipt delays
+      // replies and can replace the printed time with the phone screenshot clock.
+      if (providerAnalysis.proposals.some(item => item.documentType === "receipt" && item.kind === "expense" && (!item.dateText || !item.timeText))) {
         try {
           const ocrDate = await analyzeImageWithOcr(dataUrl);
           const gp = providerAnalysis.proposals[0];
@@ -451,9 +449,9 @@ export async function analyzeImage(dataUrl: string, options: { gatewayToken?: st
             providerAnalysis = {
               ...providerAnalysis,
               summary: gp.amount > 0
-                ? `อ่านใบเสร็จได้ ยอด ${gp.amount.toLocaleString("th-TH")} บาท วันที่ ${op.dateText}`
+                ? `อ่านใบเสร็จได้ ยอด ${gp.amount.toLocaleString("th-TH")} บาท วันที่ ${gp.dateText || op.dateText}`
                 : providerAnalysis.summary,
-              proposals: [{ ...gp, dateText: op.dateText, timeText: op.timeText || gp.timeText }, ...providerAnalysis.proposals.slice(1)],
+              proposals: [{ ...gp, dateText: gp.dateText || op.dateText, timeText: gp.timeText || op.timeText }, ...providerAnalysis.proposals.slice(1)],
             };
             console.info("[Milo Image] OCR date verified Gemini receipt", {
               geminiDate: gp.dateText,

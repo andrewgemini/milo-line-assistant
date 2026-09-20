@@ -14,8 +14,8 @@ export function googleGeminiConfigured(env: NodeJS.ProcessEnv = process.env) {
   return Boolean(googleGeminiApiKey(env));
 }
 
-const PRIMARY_MULTIMODAL_MODEL = "gemini-3.8-flash";
-const FALLBACK_MULTIMODAL_MODEL = "gemini-2.5-flash";
+const PRIMARY_MULTIMODAL_MODEL = "gemini-3.6-flash";
+const FALLBACK_MULTIMODAL_MODEL = "gemini-3.8-flash";
 
 function uniqueModels(values: Array<string | undefined>) {
   return Array.from(new Set(values.map(value => value?.trim()).filter((value): value is string => Boolean(value))));
@@ -116,7 +116,7 @@ export async function generateGoogleGeminiJson<T>(args: {
     generationConfig: {
       temperature: 0,
       responseMimeType: "application/json",
-      responseSchema: args.schema,
+      responseJsonSchema: args.schema,
     },
   };
 
