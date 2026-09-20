@@ -3,11 +3,11 @@ import { parseMiloCommand } from "./commandParser";
 
 describe("Milo Rich Menu commands", () => {
   const cases: Array<[string, string]> = [
-    ["\u0e2b\u0e19\u0e49\u0e32\u0e2b\u0e25\u0e31\u0e01", "dashboardGuide"],
-    ["\u0e27\u0e34\u0e40\u0e04\u0e23\u0e32\u0e30\u0e2b\u0e4c", "aiSummary"],
-    ["\u0e08\u0e14\u0e1a\u0e31\u0e19\u0e17\u0e36\u0e01", "recordGuide"],
-    ["\u0e01\u0e23\u0e30\u0e40\u0e1b\u0e4b\u0e32\u0e40\u0e07\u0e34\u0e19", "budgetOverview"],
-    ["\u0e15\u0e31\u0e49\u0e07\u0e04\u0e48\u0e32", "settingGuide"],
+    ["หน้าหลัก", "dashboardGuide"],
+    ["วิเคราะห์", "aiSummary"],
+    ["จดบันทึก", "recordGuide"],
+    ["กระเป๋าเงิน", "budgetOverview"],
+    ["ตั้งค่า", "settingGuide"],
     ["จดบันทึก", "recordGuide"],
     ["สรุป", "financeReport"],
     ["วิเคราะห์", "aiSummary"],
@@ -18,7 +18,23 @@ describe("Milo Rich Menu commands", () => {
     ["คำสั่ง", "help"],
     ["วิธีใช้งาน", "help"],
     ["สวัสดีไมโล", "greeting"],
+    ["ใบเสร็จ", "recordGuide"],
+    ["สแกนใบเสร็จ", "recordGuide"],
+    ["บันทึกเสียง", "recordGuide"],
+    ["วันนี้มีอะไร", "todayOverview"],
+    ["สรุปการเงิน สัปดาห์นี้", "financeReport"],
+    ["สรุปการเงิน เดือนนี้", "financeReport"],
+    ["รายการเตือน", "reminderList"],
+    ["ดูปฏิทิน", "calendarList"],
+    ["ดูงาน", "todoList"],
+    ["บิลรอจ่าย", "pendingBillList"],
+    ["รายการประจำ", "recurringList"],
+    ["ส่งออก xlsx", "exportFinance"],
+    ["เอกสารเดือนนี้", "documentPacket"],
+    ["คลังไฟล์", "vaultStatus"],
+    ["ผู้ช่วยกลุ่ม", "groupGuide"],
   ];
+
   for (const [text, expectedType] of cases) {
     it(`parses ${text}`, () => expect(parseMiloCommand(text).type).toBe(expectedType));
   }

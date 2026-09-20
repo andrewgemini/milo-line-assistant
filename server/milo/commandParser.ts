@@ -202,6 +202,8 @@ export function parseMiloCommand(text: string, now = new Date()): MiloCommand {
   const openingBalance = value.match(/^(?:ตั้ง)?ยอด(?:เงิน)?เริ่มต้น\s*(\d[\d,]*(?:\.\d{1,2})?)\s*(?:บาท)?$/i); if (openingBalance) return { type: "openingBalance", amount: Number(openingBalance[1].replace(/,/g, "")) };
   if (/^(?:สวัสดี(?:ไมโล|ครับ|ค่ะ)?|หวัดดี(?:ไมโล)?|hello|hi|hey)$/i.test(value)) return { type: "greeting" };
   if (/^(?:เมนูไมโล|วิธีใช้งาน|คู่มือ(?:การใช้งาน)?|คำสั่ง|ช่วย|เมนู|help|\?)$/i.test(value)) return { type: "help" };
+  if (/^(?:ใบเสร็จ|สลิป|สแกนใบเสร็จ)$/i.test(value)) return { type: "recordGuide" };
+  if (/^(?:บันทึกเสียง|ส่งเสียง|เสียง)$/i.test(value)) return { type: "recordGuide" };
   if (/^(?:จดบันทึก|เริ่มจดบันทึก|บันทึกรายรับรายจ่าย|บันทึกรายรับ-รายจ่าย|จด)$/i.test(value)) return { type: "recordGuide" };
   if (/^(?:หมวด\s*\/?\s*งบ|งบประมาณ|คุมงบประมาณ|ดูงบ|งบ)$/i.test(value)) return { type: "budgetOverview" };
   if (/^(?:รายการ|ประวัติ|ประวัติธุรกรรม|ประวัติรายการ|รายการธุรกรรม|รายการทั้งหมด|ดูย้อนหลัง)$/i.test(value)) return { type: "transactionList" };
