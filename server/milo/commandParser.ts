@@ -144,6 +144,11 @@ export function parseMiloCommand(text: string, now = new Date()): MiloCommand {
   const value = text.trim().replace(/^@?ไมโล\s*/i, "");
   if (/^(?:ยืนยันรายการทั้งหมด|ยืนยันทั้งหมด)$/i.test(value)) return { type: "captureConfirm" };
   if (/^(?:ยกเลิกรายการทั้งหมด|ยกเลิกทั้งหมด)$/i.test(value)) return { type: "captureCancel" };
+  if (/^วันนี้$/i.test(value)) return { type: "todayOverview" };
+  if (/^สัปดาห์นี้$/i.test(value)) return { type: "financeReport", period: "week" };
+  if (/^เดือนนี้$/i.test(value)) return { type: "financeReport", period: "month" };
+  if (/^ส่งออก$/i.test(value)) return { type: "exportFinance", format: "xlsx" };
+  if (/^เมนูเพิ่ม$/i.test(value)) return { type: "help" };
   if (/^(?:วันนี้มีอะไร|วันนี้ของฉัน|สรุปวันนี้ของฉัน)$/i.test(value)) return { type: "todayOverview" };
   if (/^(?:สรุปเช้า|morning brief)$/i.test(value)) return { type: "morningBrief" };
   if (/^(?:สรุปเย็น|evening summary)$/i.test(value)) return { type: "eveningSummary" };
