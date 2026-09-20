@@ -6,15 +6,15 @@
 
 Production Dashboard
 
-`https://milo-line-app.vercel.app/dashboard`
+`https://milo-line-assistant.onrender.com/dashboard`
 
 Health Check
 
-`https://milo-line-app.vercel.app/api/health`
+`https://milo-line-assistant.onrender.com/api/health`
 
 LINE Webhook
 
-`https://milo-line-app.vercel.app/api/line/webhook`
+`https://milo-line-assistant.onrender.com/api/line/webhook`
 
 Repository
 
@@ -430,7 +430,7 @@ LINE ยังรองรับคำสั่ง
 
 เปิด
 
-`https://milo-line-app.vercel.app/api/health`
+`https://milo-line-assistant.onrender.com/api/health`
 
 ควรตรวจค่า
 

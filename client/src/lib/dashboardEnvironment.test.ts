@@ -2,9 +2,10 @@ import { describe, expect, it } from "vitest";
 import { isProductionSiteHostname } from "./dashboardEnvironment";
 
 describe("dashboard environment", () => {
-  it("allows the published Manus domain", () => {
-    expect(isProductionSiteHostname("miloassist-suwp6bg2.manus.space")).toBe(true);
-    expect(isProductionSiteHostname("milo-line-app.vercel.app")).toBe(true);
+  it("allows the Render production domain", () => {
+    expect(isProductionSiteHostname("milo-line-assistant.onrender.com")).toBe(true);
+    expect(isProductionSiteHostname("milo-line-app.vercel.app")).toBe(false);
+    expect(isProductionSiteHostname("miloassist-suwp6bg2.manus.space")).toBe(false);
   });
 
   it("does not treat preview or local hosts as production", () => {

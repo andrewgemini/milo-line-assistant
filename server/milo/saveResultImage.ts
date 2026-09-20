@@ -238,7 +238,7 @@ export function registerSaveResultImageRoute(app: Express) {
 
       if (!Number.isFinite(amount) || amount <= 0) return res.status(400).type("text/plain").send("Invalid amount");
 
-      const baseUrl = (process.env.MILO_RICH_MENU_IMAGE_BASE_URL ?? "https://milo-line-app.vercel.app/milo-richmenu").replace(/\/+$/, "");
+      const baseUrl = (process.env.MILO_RICH_MENU_IMAGE_BASE_URL ?? "https://milo-line-assistant.onrender.com/milo-richmenu").replace(/\/+$/, "");
       const templateResponse = await fetch(`${baseUrl}/save-complete.png`, { cache: "no-store" });
       if (!templateResponse.ok) return res.status(502).type("text/plain").send("Save result template unavailable");
       const template = Buffer.from(await templateResponse.arrayBuffer());

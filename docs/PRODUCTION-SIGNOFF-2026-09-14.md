@@ -8,7 +8,7 @@ This checkpoint closes the launch-hardening cycle for Milo LINE Assistant. It re
 
 ## Production
 
-- Application: `https://milo-line-app.vercel.app`
+- Application: `https://milo-line-assistant.onrender.com`
 - Health endpoint: `/api/health`
 - Release marker at sign-off: `production-hardening-v19-2026-09-14`
 - Primary branch: `main`

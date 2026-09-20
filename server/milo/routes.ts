@@ -729,7 +729,7 @@ async function handleText(event: LineEvent, lineChatId: string, lineUserId: stri
   } else if (command.type === "settingGuide") {
     message = "⚙️ ตั้งค่า Milo\nตั้งค่าการใช้งาน Milo ได้จากเมนูและคำสั่งใน LINE ครับ\n• พิมพ์ “ช่วย” เพื่อดูคำสั่งทั้งหมด\n• พิมพ์ “หมวดหมู่” เพื่อจัดการหมวดหมู่\n• พิมพ์ “งบประมาณ” เพื่อดูและจัดการงบประมาณ\n🔐 “แดชบอร์ดหลังบ้าน” เป็นเมนูสำหรับผู้ดูแลระบบโดยเฉพาะครับ";
   } else if (command.type === "dashboardGuide") {
-    message = "🔐 แดชบอร์ดหลังบ้าน Milo\nhttps://milo-line-app.vercel.app/dashboard";
+    message = "🔐 แดชบอร์ดหลังบ้าน Milo\nhttps://milo-line-assistant.onrender.com/dashboard";
   } else if (command.type === "recordGuide") {
     message = "📝 จดบันทึกได้เลย\nตัวอย่าง: กินกาแฟ 80 หรือ จ่าย ค่าอาหาร 125\nหรือ: รับเงินเดือน 30000\nส่งรูปใบเสร็จแล้วพิมพ์ “ยืนยันค่าใช้จ่าย” หรือส่งเสียงแล้วพิมพ์ “ยืนยันเสียง” หลังตรวจรายละเอียดครับ";
   } else if (command.type === "budgetOverview") {

@@ -2012,7 +2012,7 @@ function artworkForCommand(command) {
   return keys[command.type];
 }
 function artworkMessages(key) {
-  const base = process.env.MILO_PUBLIC_URL || "https://milo-line-app.vercel.app";
+  const base = process.env.MILO_PUBLIC_URL || "https://milo-line-assistant.onrender.com";
   const url = new URL("/richmenu/" + RICH_MENU_ARTWORK[key].file, base).href;
   return [{ type: "image", originalContentUrl: url, previewImageUrl: url.replace(/\.png$/, "-preview.jpg") }];
 }
@@ -2194,7 +2194,7 @@ function isDynamicRichMenuArtwork(key) {
 }
 function buildRichMenuDataImageUrl(key, text2) {
   if (!isDynamicRichMenuArtwork(key)) throw new Error(`Artwork ${key} is not data-driven`);
-  const base = (process.env.MILO_APP_BASE_URL ?? process.env.MILO_SAVE_RESULT_IMAGE_BASE_URL ?? "https://milo-line-app.vercel.app").replace(/\/+$/, "");
+  const base = (process.env.MILO_APP_BASE_URL ?? process.env.MILO_SAVE_RESULT_IMAGE_BASE_URL ?? "https://milo-line-assistant.onrender.com").replace(/\/+$/, "");
   const data = encode(key, text2);
   return `${base}/api/milo/rich-menu-card.png?data=${encodeURIComponent(data)}&sig=${sign(data)}&render=richmenu-data-v1`;
 }
@@ -2347,7 +2347,7 @@ function sign2(payload) {
   return crypto3.createHmac("sha256", secret2()).update(payload).digest("hex");
 }
 function buildFinanceReportImageUrl(input) {
-  const base = (process.env.MILO_SAVE_RESULT_IMAGE_BASE_URL ?? process.env.MILO_APP_BASE_URL ?? "https://milo-line-app.vercel.app").replace(/\/+$/, "");
+  const base = (process.env.MILO_SAVE_RESULT_IMAGE_BASE_URL ?? process.env.MILO_APP_BASE_URL ?? "https://milo-line-assistant.onrender.com").replace(/\/+$/, "");
   const data = encodePayload(input);
   return `${base}/api/milo/finance-report.png?data=${encodeURIComponent(data)}&sig=${sign2(data)}&render=summary-v4`;
 }
@@ -2551,13 +2551,13 @@ async function callLine(path4, credentials, init) {
   console.info("[Milo LINE] message delivered", { endpoint: path4, status: response.status });
   return response;
 }
-var MILO_RICH_MENU_IMAGE_BASE_URL = (process.env.MILO_RICH_MENU_IMAGE_BASE_URL ?? "https://milo-line-app.vercel.app/milo-richmenu").replace(/\/+$/, "");
+var MILO_RICH_MENU_IMAGE_BASE_URL = (process.env.MILO_RICH_MENU_IMAGE_BASE_URL ?? "https://milo-line-assistant.onrender.com/milo-richmenu").replace(/\/+$/, "");
 function miloRichMenuImageUrl(key) {
   const extension = key === "save-complete-preview" ? "jpg" : "png";
   return `${MILO_RICH_MENU_IMAGE_BASE_URL}/${key}.${extension}`;
 }
 function miloSaveResultImageUrl(summary) {
-  const appBaseUrl = (process.env.MILO_SAVE_RESULT_IMAGE_BASE_URL ?? "https://milo-line-app.vercel.app").replace(/\/+$/, "");
+  const appBaseUrl = (process.env.MILO_SAVE_RESULT_IMAGE_BASE_URL ?? "https://milo-line-assistant.onrender.com").replace(/\/+$/, "");
   const params = new URLSearchParams({
     transactionType: summary.transactionType,
     item: (summary.note?.trim() || summary.category).slice(0, 300),
@@ -2582,7 +2582,7 @@ async function replyTextWithQuickReplies(replyToken, text2, actions, credentials
   });
 }
 async function replyGreetingHome(replyToken, credentials = lineCredentials()) {
-  const base = process.env.MILO_PUBLIC_URL || "https://milo-line-app.vercel.app";
+  const base = process.env.MILO_PUBLIC_URL || "https://milo-line-assistant.onrender.com";
   const imageUrl = new URL("/richmenu/greeting-home.png", base).href;
   return callLine("/v2/bot/message/reply", credentials, {
     method: "POST",
@@ -2590,7 +2590,7 @@ async function replyGreetingHome(replyToken, credentials = lineCredentials()) {
     body: JSON.stringify({ replyToken, messages: [{ type: "image", originalContentUrl: imageUrl, previewImageUrl: imageUrl }] })
   });
 }
-var MILO_VOICE_CAT_IMAGE_URL = (process.env.MILO_VOICE_CAT_IMAGE_URL ?? "https://milo-line-app.vercel.app/milo-voice-proposal-cat.webp").trim();
+var MILO_VOICE_CAT_IMAGE_URL = (process.env.MILO_VOICE_CAT_IMAGE_URL ?? "https://milo-line-assistant.onrender.com/milo-voice-proposal-cat.webp").trim();
 function voiceQuickReply() {
   return {
     items: [
@@ -2937,7 +2937,7 @@ async function replyRichMenu(replyToken, text2, artwork, credentials = lineCrede
           { type: "action", action: { type: "message", label: "\u0E2A\u0E31\u0E1B\u0E14\u0E32\u0E2B\u0E4C\u0E19\u0E35\u0E49", text: "\u0E2A\u0E23\u0E38\u0E1B\u0E2A\u0E31\u0E1B\u0E14\u0E32\u0E2B\u0E4C\u0E19\u0E35\u0E49" } },
           { type: "action", action: { type: "message", label: "\u0E40\u0E14\u0E37\u0E2D\u0E19\u0E19\u0E35\u0E49", text: "\u0E2A\u0E23\u0E38\u0E1B\u0E40\u0E14\u0E37\u0E2D\u0E19\u0E19\u0E35\u0E49" } },
           { type: "action", action: { type: "message", label: "\u0E1B\u0E35\u0E19\u0E35\u0E49", text: "\u0E2A\u0E23\u0E38\u0E1B\u0E1B\u0E35\u0E19\u0E35\u0E49" } },
-          { type: "action", action: { type: "uri", label: "\u0E40\u0E1B\u0E34\u0E14\u0E41\u0E14\u0E0A\u0E1A\u0E2D\u0E23\u0E4C\u0E14", uri: new URL("/dashboard", process.env.MILO_PUBLIC_URL || "https://milo-line-app.vercel.app").href } }
+          { type: "action", action: { type: "uri", label: "\u0E40\u0E1B\u0E34\u0E14\u0E41\u0E14\u0E0A\u0E1A\u0E2D\u0E23\u0E4C\u0E14", uri: new URL("/dashboard", process.env.MILO_PUBLIC_URL || "https://milo-line-assistant.onrender.com").href } }
         ] }
       }]
     })
@@ -3970,7 +3970,7 @@ function safeEqual(left, right) {
   return a.length === b.length && crypto6.timingSafeEqual(a, b);
 }
 function buildCalendarIcsUrl(id, ttlSeconds = 7 * 24 * 60 * 60) {
-  const base = process.env.MILO_PUBLIC_URL?.trim() || "https://milo-line-app.vercel.app";
+  const base = process.env.MILO_PUBLIC_URL?.trim() || "https://milo-line-assistant.onrender.com";
   const expires = Math.floor(Date.now() / 1e3) + ttlSeconds;
   const sig = calendarSignature(id, expires);
   const url = new URL(`/api/milo/calendar/${id}.ics`, base);
@@ -3988,7 +3988,7 @@ function calendarEventToIcs(event) {
     "PRODID:-//Milo LINE Assistant//Calendar//TH",
     "CALSCALE:GREGORIAN",
     "BEGIN:VEVENT",
-    `UID:milo-${event.id}@milo-line-app.vercel.app`,
+    `UID:milo-${event.id}@milo-line-assistant.onrender.com`,
     `DTSTAMP:${compactUtc(event.createdAt)}`,
     `DTSTART:${compactUtc(event.startsAt)}`,
     `DTEND:${compactUtc(event.endsAt)}`,
@@ -6022,7 +6022,7 @@ function safeEqual2(a, b) {
 function buildFinanceExportUrl(input) {
   const expires = Math.floor(Date.now() / 1e3) + Math.min(Math.max(input.ttlSeconds ?? 600, 60), 3600);
   const sig = sign3(input.lineUserId, input.financeAccountId, input.format, expires);
-  const base = (process.env.MILO_APP_BASE_URL ?? process.env.MILO_SAVE_RESULT_IMAGE_BASE_URL ?? "https://milo-line-app.vercel.app").replace(/\/+$/, "");
+  const base = (process.env.MILO_APP_BASE_URL ?? process.env.MILO_SAVE_RESULT_IMAGE_BASE_URL ?? "https://milo-line-assistant.onrender.com").replace(/\/+$/, "");
   const params = new URLSearchParams({ user: input.lineUserId, account: String(input.financeAccountId), format: input.format, expires: String(expires), sig });
   return `${base}/api/milo/export?${params.toString()}`;
 }
@@ -7836,7 +7836,7 @@ ${incomeSection}
   } else if (command.type === "settingGuide") {
     message = "\u2699\uFE0F \u0E15\u0E31\u0E49\u0E07\u0E04\u0E48\u0E32 Milo\n\u0E15\u0E31\u0E49\u0E07\u0E04\u0E48\u0E32\u0E01\u0E32\u0E23\u0E43\u0E0A\u0E49\u0E07\u0E32\u0E19 Milo \u0E44\u0E14\u0E49\u0E08\u0E32\u0E01\u0E40\u0E21\u0E19\u0E39\u0E41\u0E25\u0E30\u0E04\u0E33\u0E2A\u0E31\u0E48\u0E07\u0E43\u0E19 LINE \u0E04\u0E23\u0E31\u0E1A\n\u2022 \u0E1E\u0E34\u0E21\u0E1E\u0E4C \u201C\u0E0A\u0E48\u0E27\u0E22\u201D \u0E40\u0E1E\u0E37\u0E48\u0E2D\u0E14\u0E39\u0E04\u0E33\u0E2A\u0E31\u0E48\u0E07\u0E17\u0E31\u0E49\u0E07\u0E2B\u0E21\u0E14\n\u2022 \u0E1E\u0E34\u0E21\u0E1E\u0E4C \u201C\u0E2B\u0E21\u0E27\u0E14\u0E2B\u0E21\u0E39\u0E48\u201D \u0E40\u0E1E\u0E37\u0E48\u0E2D\u0E08\u0E31\u0E14\u0E01\u0E32\u0E23\u0E2B\u0E21\u0E27\u0E14\u0E2B\u0E21\u0E39\u0E48\n\u2022 \u0E1E\u0E34\u0E21\u0E1E\u0E4C \u201C\u0E07\u0E1A\u0E1B\u0E23\u0E30\u0E21\u0E32\u0E13\u201D \u0E40\u0E1E\u0E37\u0E48\u0E2D\u0E14\u0E39\u0E41\u0E25\u0E30\u0E08\u0E31\u0E14\u0E01\u0E32\u0E23\u0E07\u0E1A\u0E1B\u0E23\u0E30\u0E21\u0E32\u0E13\n\u{1F510} \u201C\u0E41\u0E14\u0E0A\u0E1A\u0E2D\u0E23\u0E4C\u0E14\u0E2B\u0E25\u0E31\u0E07\u0E1A\u0E49\u0E32\u0E19\u201D \u0E40\u0E1B\u0E47\u0E19\u0E40\u0E21\u0E19\u0E39\u0E2A\u0E33\u0E2B\u0E23\u0E31\u0E1A\u0E1C\u0E39\u0E49\u0E14\u0E39\u0E41\u0E25\u0E23\u0E30\u0E1A\u0E1A\u0E42\u0E14\u0E22\u0E40\u0E09\u0E1E\u0E32\u0E30\u0E04\u0E23\u0E31\u0E1A";
   } else if (command.type === "dashboardGuide") {
-    message = "\u{1F510} \u0E41\u0E14\u0E0A\u0E1A\u0E2D\u0E23\u0E4C\u0E14\u0E2B\u0E25\u0E31\u0E07\u0E1A\u0E49\u0E32\u0E19 Milo\nhttps://milo-line-app.vercel.app/dashboard";
+    message = "\u{1F510} \u0E41\u0E14\u0E0A\u0E1A\u0E2D\u0E23\u0E4C\u0E14\u0E2B\u0E25\u0E31\u0E07\u0E1A\u0E49\u0E32\u0E19 Milo\nhttps://milo-line-assistant.onrender.com/dashboard";
   } else if (command.type === "recordGuide") {
     message = "\u{1F4DD} \u0E08\u0E14\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E44\u0E14\u0E49\u0E40\u0E25\u0E22\n\u0E15\u0E31\u0E27\u0E2D\u0E22\u0E48\u0E32\u0E07: \u0E01\u0E34\u0E19\u0E01\u0E32\u0E41\u0E1F 80 \u0E2B\u0E23\u0E37\u0E2D \u0E08\u0E48\u0E32\u0E22 \u0E04\u0E48\u0E32\u0E2D\u0E32\u0E2B\u0E32\u0E23 125\n\u0E2B\u0E23\u0E37\u0E2D: \u0E23\u0E31\u0E1A\u0E40\u0E07\u0E34\u0E19\u0E40\u0E14\u0E37\u0E2D\u0E19 30000\n\u0E2A\u0E48\u0E07\u0E23\u0E39\u0E1B\u0E43\u0E1A\u0E40\u0E2A\u0E23\u0E47\u0E08\u0E41\u0E25\u0E49\u0E27\u0E1E\u0E34\u0E21\u0E1E\u0E4C \u201C\u0E22\u0E37\u0E19\u0E22\u0E31\u0E19\u0E04\u0E48\u0E32\u0E43\u0E0A\u0E49\u0E08\u0E48\u0E32\u0E22\u201D \u0E2B\u0E23\u0E37\u0E2D\u0E2A\u0E48\u0E07\u0E40\u0E2A\u0E35\u0E22\u0E07\u0E41\u0E25\u0E49\u0E27\u0E1E\u0E34\u0E21\u0E1E\u0E4C \u201C\u0E22\u0E37\u0E19\u0E22\u0E31\u0E19\u0E40\u0E2A\u0E35\u0E22\u0E07\u201D \u0E2B\u0E25\u0E31\u0E07\u0E15\u0E23\u0E27\u0E08\u0E23\u0E32\u0E22\u0E25\u0E30\u0E40\u0E2D\u0E35\u0E22\u0E14\u0E04\u0E23\u0E31\u0E1A";
   } else if (command.type === "budgetOverview") {
@@ -8576,7 +8576,7 @@ function registerSaveResultImageRoute(app2) {
       const budgetLimit = Number(req.query.budgetLimit ?? 0);
       const occurredAt = parseDate(typeof req.query.occurredAt === "string" ? req.query.occurredAt : null);
       if (!Number.isFinite(amount) || amount <= 0) return res.status(400).type("text/plain").send("Invalid amount");
-      const baseUrl = (process.env.MILO_RICH_MENU_IMAGE_BASE_URL ?? "https://milo-line-app.vercel.app/milo-richmenu").replace(/\/+$/, "");
+      const baseUrl = (process.env.MILO_RICH_MENU_IMAGE_BASE_URL ?? "https://milo-line-assistant.onrender.com/milo-richmenu").replace(/\/+$/, "");
       const templateResponse = await fetch(`${baseUrl}/save-complete.png`, { cache: "no-store" });
       if (!templateResponse.ok) return res.status(502).type("text/plain").send("Save result template unavailable");
       const template = Buffer.from(await templateResponse.arrayBuffer());

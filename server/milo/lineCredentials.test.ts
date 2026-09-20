@@ -28,8 +28,8 @@ describe("LINE credentials", () => {
     expect(payload.messages).toHaveLength(1);
     expect(payload.messages[0]).toMatchObject({
       type: "image",
-      originalContentUrl: "https://milo-line-app.vercel.app/richmenu/greeting-home.png",
-      previewImageUrl: "https://milo-line-app.vercel.app/richmenu/greeting-home.png",
+      originalContentUrl: "https://milo-line-assistant.onrender.com/richmenu/greeting-home.png",
+      previewImageUrl: "https://milo-line-assistant.onrender.com/richmenu/greeting-home.png",
     });
     expect(payload.messages[0]?.quickReply).toBeUndefined();
   });
@@ -48,7 +48,7 @@ describe("LINE credentials", () => {
     const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
     const payload = JSON.parse(String(init.body)) as { messages: Array<{ type: string; contents: { hero: { type: string; url: string }; footer: { contents: Array<{ action: { text: string } }> } } }> };
     expect(payload.messages[0]?.type).toBe("flex");
-    expect(payload.messages[0]?.contents.hero).toEqual(expect.objectContaining({ type: "image", url: "https://milo-line-app.vercel.app/milo-voice-proposal-cat.webp" }));
+    expect(payload.messages[0]?.contents.hero).toEqual(expect.objectContaining({ type: "image", url: "https://milo-line-assistant.onrender.com/milo-voice-proposal-cat.webp" }));
     expect(payload.messages[0]?.contents.hero.url).not.toContain("manus.space");
     expect(payload.messages[0]?.contents.footer.contents.map(item => item.action.text)).toEqual(["ยืนยันเสียง", "แก้ไขข้อความเสียง"]);
   });

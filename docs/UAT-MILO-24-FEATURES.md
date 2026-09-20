@@ -77,10 +77,10 @@
 
 ## Production hardening รอบล่าสุด
 
-- Dashboard ใช้ Production URL `https://milo-line-app.vercel.app/dashboard`
+- Dashboard ใช้ Production URL `https://milo-line-assistant.onrender.com/dashboard`
 - Free / Pro / Pro Max ถูก gate ทั้ง backend และ Dashboard UI
 - save-result renderer ใช้ `render=glyph-v2` และ no-store เพื่อกันภาพ cache เก่า
-- การ์ด voice proposal **ไม่พึ่ง Manus storage แล้ว**; artwork ถูก self-host ที่ `https://milo-line-app.vercel.app/milo-voice-proposal-cat.webp` และมี regression test ป้องกันการย้อนกลับไปใช้ `manus.space`
+- การ์ด voice proposal **ไม่พึ่ง Manus storage แล้ว**; artwork ถูก self-host ที่ `https://milo-line-assistant.onrender.com/milo-voice-proposal-cat.webp` และมี regression test ป้องกันการย้อนกลับไปใช้ `manus.space`
 - คำสั่ง `วิเคราะห์` มี deterministic financial-analysis fallback แล้ว: ถ้า AI provider/quota ใช้งานไม่ได้ ระบบยังสรุปจากยอดจริง, จำนวนรายการ และหมวดรายจ่ายได้โดยไม่ทำให้ webhook เงียบ
 - Unknown intent ใช้ contextual fallback แบบสั้น พร้อม Quick Reply สูงสุด 3 ปุ่มตามบริบท แทนการเท help menu ยาวทุกครั้ง
 

@@ -47,8 +47,8 @@
 
 - Version: `Milo v1.0.0`
 - Release: `production-hardening-v19-2026-09-14`
-- Production Dashboard: `https://milo-line-app.vercel.app/dashboard`
-- Health: `https://milo-line-app.vercel.app/api/health`
+- Production Dashboard: `https://milo-line-assistant.onrender.com/dashboard`
+- Health: `https://milo-line-assistant.onrender.com/api/health`
 - Git tag: `v1.0.0`
 
 ห้ามใส่ password, token, database credential หรือ secret จริงลงในเอกสารคู่มือ

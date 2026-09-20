@@ -74,7 +74,7 @@ export function artworkForCommand(command: MiloCommand): RichMenuArtwork | undef
  * Any explanatory text must be used only as a fallback when LINE rejects the image reply.
  */
 export function artworkMessages(key: RichMenuArtwork) {
-  const base = process.env.MILO_PUBLIC_URL || "https://milo-line-app.vercel.app";
+  const base = process.env.MILO_PUBLIC_URL || "https://milo-line-assistant.onrender.com";
   const url = new URL("/richmenu/" + RICH_MENU_ARTWORK[key].file, base).href;
   return [{ type: "image", originalContentUrl: url, previewImageUrl: url.replace(/\.png$/, "-preview.jpg") }];
 }

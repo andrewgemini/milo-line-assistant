@@ -35,7 +35,7 @@ async function callLine(path: string, credentials: LineCredentials, init: Reques
   return response;
 }
 
-const MILO_RICH_MENU_IMAGE_BASE_URL = (process.env.MILO_RICH_MENU_IMAGE_BASE_URL ?? "https://milo-line-app.vercel.app/milo-richmenu").replace(/\/+$/, "");
+const MILO_RICH_MENU_IMAGE_BASE_URL = (process.env.MILO_RICH_MENU_IMAGE_BASE_URL ?? "https://milo-line-assistant.onrender.com/milo-richmenu").replace(/\/+$/, "");
 
 export type MiloRichMenuImageKey = "home" | "analysis" | "record" | "wallet" | "settings" | "summary" | "save-complete" | "save-complete-preview";
 
@@ -45,7 +45,7 @@ export function miloRichMenuImageUrl(key: MiloRichMenuImageKey) {
 }
 
 export function miloSaveResultImageUrl(summary: PostSaveSummary) {
-  const appBaseUrl = (process.env.MILO_SAVE_RESULT_IMAGE_BASE_URL ?? "https://milo-line-app.vercel.app").replace(/\/+$/, "");
+  const appBaseUrl = (process.env.MILO_SAVE_RESULT_IMAGE_BASE_URL ?? "https://milo-line-assistant.onrender.com").replace(/\/+$/, "");
   const params = new URLSearchParams({
     transactionType: summary.transactionType,
     item: (summary.note?.trim() || summary.category).slice(0, 300),
@@ -83,7 +83,7 @@ export async function replyTextWithQuickReplies(replyToken: string, text: string
 }
 
 export async function replyGreetingHome(replyToken: string, credentials = lineCredentials()) {
-  const base = process.env.MILO_PUBLIC_URL || "https://milo-line-app.vercel.app";
+  const base = process.env.MILO_PUBLIC_URL || "https://milo-line-assistant.onrender.com";
   const imageUrl = new URL("/richmenu/greeting-home.png", base).href;
   return callLine("/v2/bot/message/reply", credentials, {
     method: "POST",
@@ -100,7 +100,7 @@ export type VoiceTransactionProposal = {
   note?: string;
 };
 
-const MILO_VOICE_CAT_IMAGE_URL = (process.env.MILO_VOICE_CAT_IMAGE_URL ?? "https://milo-line-app.vercel.app/milo-voice-proposal-cat.webp").trim();
+const MILO_VOICE_CAT_IMAGE_URL = (process.env.MILO_VOICE_CAT_IMAGE_URL ?? "https://milo-line-assistant.onrender.com/milo-voice-proposal-cat.webp").trim();
 
 export type PostSaveSummary = {
   transactionType: "expense" | "income";
@@ -478,7 +478,7 @@ export async function replyRichMenu(replyToken: string, text: string, artwork: R
           { type: "action", action: { type: "message", label: "สัปดาห์นี้", text: "สรุปสัปดาห์นี้" } },
           { type: "action", action: { type: "message", label: "เดือนนี้", text: "สรุปเดือนนี้" } },
           { type: "action", action: { type: "message", label: "ปีนี้", text: "สรุปปีนี้" } },
-          { type: "action", action: { type: "uri", label: "เปิดแดชบอร์ด", uri: new URL("/dashboard", process.env.MILO_PUBLIC_URL || "https://milo-line-app.vercel.app").href } },
+          { type: "action", action: { type: "uri", label: "เปิดแดชบอร์ด", uri: new URL("/dashboard", process.env.MILO_PUBLIC_URL || "https://milo-line-assistant.onrender.com").href } },
         ] },
       }],
     }),

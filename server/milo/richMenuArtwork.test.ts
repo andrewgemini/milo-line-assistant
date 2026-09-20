@@ -50,7 +50,7 @@ describe("rich menu artwork and advertised commands", () => {
       expect(payload.messages).toHaveLength(1);
       expect(payload.messages[0].type).toBe("image");
       expect(payload.messages[0].text).toBeUndefined();
-      expect(payload.messages[0].originalContentUrl).toBe(`https://milo-line-app.vercel.app/richmenu/${RICH_MENU_ARTWORK[key].file}`);
+      expect(payload.messages[0].originalContentUrl).toBe(`https://milo-line-assistant.onrender.com/richmenu/${RICH_MENU_ARTWORK[key].file}`);
       expect(payload.messages[0].quickReply.items).toHaveLength(5);
     },
   );
