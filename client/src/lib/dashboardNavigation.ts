@@ -1,4 +1,4 @@
-export const dashboardSectionIds = ["overview", "analysis", "budgets", "transactions", "recurring", "vault", "tasks", "groups", "export"] as const;
+export const dashboardSectionIds = ["overview", "settings", "analysis", "budgets", "transactions", "recurring", "vault", "tasks", "groups", "export"] as const;
 
 export type DashboardSectionId = (typeof dashboardSectionIds)[number];
 
@@ -7,6 +7,7 @@ type SectionRoot = { getElementById: (id: string) => ScrollableSection | null };
 
 const sectionTargets: Record<DashboardSectionId, string> = {
   overview: "overview",
+  settings: "finance-settings",
   analysis: "finance",
   budgets: "budgets",
   transactions: "transactions-main",

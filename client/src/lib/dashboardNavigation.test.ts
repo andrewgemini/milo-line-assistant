@@ -3,7 +3,7 @@ import { dashboardSectionIds, scrollToDashboardSection } from "./dashboardNaviga
 
 describe("dashboard navigation", () => {
   it("keeps every sidebar and mobile section id in the supported navigation set", () => {
-    expect(dashboardSectionIds).toEqual(["overview", "analysis", "budgets", "transactions", "recurring", "vault", "tasks", "groups", "export"]);
+    expect(dashboardSectionIds).toEqual(["overview", "settings", "analysis", "budgets", "transactions", "recurring", "vault", "tasks", "groups", "export"]);
   });
 
   it("scrolls a resolved section into view with the intended smooth top alignment", () => {
@@ -25,6 +25,14 @@ describe("dashboard navigation", () => {
     const root = { getElementById: vi.fn((id: string) => id === "transactions-main" ? { scrollIntoView } : null) };
     expect(scrollToDashboardSection("transactions", root)).toBe(true);
     expect(root.getElementById).toHaveBeenCalledWith("transactions-main");
+    expect(scrollIntoView).toHaveBeenCalledWith({ behavior: "smooth", block: "start" });
+  });
+
+  it("sends the settings menu to the finance settings panel", () => {
+    const scrollIntoView = vi.fn();
+    const root = { getElementById: vi.fn((id: string) => id === "finance-settings" ? { scrollIntoView } : null) };
+    expect(scrollToDashboardSection("settings", root)).toBe(true);
+    expect(root.getElementById).toHaveBeenCalledWith("finance-settings");
     expect(scrollIntoView).toHaveBeenCalledWith({ behavior: "smooth", block: "start" });
   });
 

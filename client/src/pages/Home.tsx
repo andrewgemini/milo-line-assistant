@@ -78,6 +78,9 @@ export default function Home() {
             <Link href="/dashboard" className="hidden items-center gap-2 border-l border-[#e3eeea] pl-4 text-xs font-semibold text-[#35635b] lg:flex"><LockKeyhole className="size-4" /><span>สำหรับผู้ดูแลระบบ<br /><span className="font-normal text-[10px]">(Admin เท่านั้น)</span></span></Link>
           </div>
         </div>
+        <Link href="/dashboard" className="flex h-10 items-center justify-center gap-2 border-t border-[#e8f1ee] bg-[#f5fcfa] px-4 text-sm font-semibold text-[#176f5f] lg:hidden">
+          <LockKeyhole className="size-4" />ตั้งค่า / แดชบอร์ดผู้ดูแล
+        </Link>
       </header>
 
       <main id="home">

@@ -61,6 +61,7 @@ const PREVIEW_DASHBOARD_URL = "https://3000-i5wzpmy7nribffa3plzdi-532f5123.us3.m
 
 const navigation: Array<{ id: DashboardSectionId; label: string; icon: typeof LayoutDashboard }> = [
   { id: "overview", label: "ภาพรวม", icon: LayoutDashboard },
+  { id: "settings", label: "ตั้งค่า", icon: Settings },
   { id: "analysis", label: "วิเคราะห์การเงิน", icon: BarChart3 },
   { id: "budgets", label: "หมวด / งบประมาณ", icon: WalletCards },
   { id: "transactions", label: "รายการธุรกรรม", icon: Table2 },
