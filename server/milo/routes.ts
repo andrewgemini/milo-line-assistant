@@ -1119,6 +1119,8 @@ export function registerLineWebhook(app: Express) {
 export function registerMiloCron(app: Express) {
   app.all("/api/scheduled/reminders", async (req: Request, res: Response) => {
     try {
+      const sendSuccess = (payload: Record<string, unknown>) =>
+        req.headers["x-cron-compact"] === "1" ? res.status(204).end() : res.json(payload);
       const isVercelCron = req.method === "GET" && req.headers["user-agent"] === "vercel-cron/1.0";
       let taskUid: string;
       if (isVercelCron) {
@@ -1129,13 +1131,13 @@ export function registerMiloCron(app: Express) {
         const headerValid = headerSecret === secret;
         if (!secret || (!bearerValid && !headerValid)) return res.status(401).json({ error: "cron-unauthorized" });
         const schedule = await db.getAutomationSetting("reminder-delivery-primary");
-        if (!schedule?.isEnabled) return res.json({ ok: true, skipped: "disabled" });
+        if (!schedule?.isEnabled) return sendSuccess({ ok: true, skipped: "disabled" });
         taskUid = schedule.scheduleCronTaskUid ?? "vercel-cron-reminders";
       } else if (req.method === "POST") {
         const user = await sdk.authenticateRequest(req);
         if (!user.isCron || !user.taskUid) return res.status(403).json({ error: "cron-only" });
         const schedule = await db.getAutomationSettingByTaskUid(user.taskUid);
-        if (!schedule) return res.json({ ok: true, skipped: "orphan" });
+        if (!schedule) return sendSuccess({ ok: true, skipped: "orphan" });
         taskUid = user.taskUid;
       } else {
         return res.status(405).json({ error: "method-not-allowed" });
@@ -1143,7 +1145,7 @@ export function registerMiloCron(app: Express) {
       const result = await deliverDueReminders({ runner: "heartbeat", taskUid });
       const recurring = await deliverDueRecurringTransactions();
       await db.saveAutomationSetting({ settingKey: "reminder-delivery-primary", scheduleCronTaskUid: taskUid, isEnabled: true, lastRunAt: new Date() });
-      return res.json({ ok: true, ...result, recurring });
+      return sendSuccess({ ok: true, ...result, recurring });
     } catch (error) {
       return res.status(500).json({ error: error instanceof Error ? error.message : "unknown", timestamp: new Date().toISOString() });
     }
