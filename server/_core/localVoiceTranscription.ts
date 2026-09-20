@@ -76,10 +76,16 @@ export function transcriptQualityIssue(text: string, durationSeconds = 0): strin
     if (tokens.length >= 8 && dominantShare >= 0.5 && uniqueShare <= 0.4) return "dominant-repeated-token";
   }
 
-  const duration = Math.max(0.5, Number.isFinite(durationSeconds) ? durationSeconds : 0.5);
-  const nonSpaceCharacters = clean.replace(/\s/g, "").length;
-  if (duration <= 15 && tokens.length > Math.max(24, Math.ceil(duration * 7))) return "too-many-tokens-for-duration";
-  if (duration <= 15 && nonSpaceCharacters / duration > 28) return "too-many-characters-for-duration";
+  // Remote multimodal models do not always return an audio duration. Applying a
+  // 0.5-second surrogate to an unknown duration rejects normal Thai sentences.
+  // Keep repetition checks, but only apply speaking-rate checks when a provider
+  // supplied a real positive duration.
+  const duration = Number.isFinite(durationSeconds) && durationSeconds > 0 ? durationSeconds : undefined;
+  if (duration !== undefined) {
+    const nonSpaceCharacters = clean.replace(/\s/g, "").length;
+    if (duration <= 15 && tokens.length > Math.max(24, Math.ceil(duration * 7))) return "too-many-tokens-for-duration";
+    if (duration <= 15 && nonSpaceCharacters / duration > 28) return "too-many-characters-for-duration";
+  }
   return undefined;
 }
 

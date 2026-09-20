@@ -6,6 +6,7 @@
 import { transcribe as gatewayTranscribe } from "ai";
 import { createGateway, gateway } from "@ai-sdk/gateway";
 import { ENV } from "./env";
+import { googleGeminiApiKey, googleGeminiModels } from "./googleGemini";
 import { localVoiceRuntimeStatus, transcriptQualityIssue, transcribeAudioLocal } from "./localVoiceTranscription";
 
 export type TranscribeOptions = {
@@ -60,7 +61,7 @@ export function gatewayTranscriptionModel(env: NodeJS.ProcessEnv = process.env) 
 
 export function voiceTranscriptionRuntimeStatus(requestToken?: string) {
   const forge = Boolean(ENV.forgeApiUrl && ENV.forgeApiKey);
-  const gemini = Boolean((process.env.GEMINI_API_KEY || "").trim());
+  const gemini = Boolean(googleGeminiApiKey());
   const groq = Boolean((process.env.GROQ_API_KEY || "").trim());
   const openai = Boolean((process.env.OPENAI_API_KEY || "").trim());
   const gatewayAvailable = gatewayAuthAvailable(process.env, requestToken);
@@ -183,20 +184,43 @@ async function parseProviderResponse(response: Response, provider: string): Prom
 }
 
 async function transcribeWithGemini(audioBuffer: Buffer, mimeType: string, apiKey: string): Promise<TranscriptionResponse> {
-  const model = process.env.MILO_GEMINI_STT_MODEL || "gemini-3.5-transcribe";
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey.trim()}`;
   const promptText = "ถอดเสียงภาษาไทยตามที่ผู้ใช้พูดจริงแบบคำต่อคำ ห้ามสรุป ห้ามตอบกลับ ห้ามเติมคำทักทายหรือคำที่ไม่ได้ยิน ต้องรักษาตัวเลข จำนวนเงิน บาท สตางค์ ชื่อรายการ และคำว่า รายรับ/รายจ่ายตามเสียงจริง";
-  const resp = await fetchWithTimeout(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
-    contents: [{ parts: [{ text: promptText }, { inlineData: { mimeType: mimeType.split(";")[0], data: audioBuffer.toString("base64") } }] }],
-    generationConfig: { temperature: 0.0 },
-  }) }, 60_000);
-  if (!resp.ok) throw new Error(`Gemini Audio API error (${resp.status})`);
-  const data = await resp.json() as any;
-  const text = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "";
-  const result: TranscriptionResponse = { task: "transcribe", language: "th", duration: 0, text, segments: [] };
-  const validated = validateTranscript(result, "Google Gemini");
-  if ("error" in validated) throw new Error(validated.details || validated.error);
-  return validated;
+  const failures: string[] = [];
+  const cleanMimeType = mimeType.split(";")[0] || "audio/m4a";
+  for (const model of googleGeminiModels("audio")) {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`;
+    try {
+      const resp = await fetchWithTimeout(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey.trim() },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: promptText }, { inlineData: { mimeType: cleanMimeType, data: audioBuffer.toString("base64") } }] }],
+          generationConfig: { temperature: 0.0, maxOutputTokens: 1200 },
+        }),
+      }, 60_000);
+      const data = await resp.json().catch(() => ({})) as {
+        candidates?: Array<{ content?: { parts?: Array<{ text?: string }> }; finishReason?: string }>;
+        error?: { message?: string };
+        promptFeedback?: { blockReason?: string };
+      };
+      if (!resp.ok) throw new Error(data.error?.message || `HTTP ${resp.status} ${resp.statusText}`.trim());
+      const text = data.candidates?.[0]?.content?.parts?.map(part => part.text || "").join("").trim() || "";
+      if (!text) {
+        const reason = data.promptFeedback?.blockReason || data.candidates?.[0]?.finishReason || "empty text";
+        throw new Error(reason);
+      }
+      const result: TranscriptionResponse = { task: "transcribe", language: "th", duration: 0, text, segments: [] };
+      const validated = validateTranscript(result, `Google Gemini ${model}`);
+      if ("error" in validated) throw new Error(validated.details || validated.error);
+      console.info("[Milo Voice] Gemini audio model selected", { model, chars: validated.text.length });
+      return validated;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "unknown error";
+      failures.push(`${model}: ${message}`);
+      console.warn("[Milo Voice] Gemini audio model failed; trying fallback", { model, error: message });
+    }
+  }
+  throw new Error(failures.join(" | ").slice(0, 1600) || "Google Gemini returned no transcript");
 }
 
 async function transcribeWithGateway(
@@ -238,7 +262,7 @@ async function transcribeWithGateway(
 
 export async function transcribeAudio(options: TranscribeOptions): Promise<TranscriptionResponse | TranscriptionError> {
   try {
-    const geminiKey = (process.env.GEMINI_API_KEY || "").trim();
+    const geminiKey = googleGeminiApiKey();
     const groqKey = (process.env.GROQ_API_KEY || "").trim();
     const forgeConfigured = Boolean(ENV.forgeApiUrl && ENV.forgeApiKey);
     const openAIKey = (process.env.OPENAI_API_KEY || "").trim();

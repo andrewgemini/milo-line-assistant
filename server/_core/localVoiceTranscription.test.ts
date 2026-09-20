@@ -58,4 +58,8 @@ describe("local voice transcription runtime", () => {
   it("accepts a plausible short Thai finance transcript", () => {
     expect(transcriptQualityIssue("จ่ายกาแฟ 80 บาท", 2.5)).toBeUndefined();
   });
+
+  it("does not reject a normal transcript when a remote provider omits duration", () => {
+    expect(transcriptQualityIssue("จ่ายค่าอาหาร 80 บาท", 0)).toBeUndefined();
+  });
 });

@@ -14,6 +14,7 @@ import { registerMiloStorageRoute } from "./milo/storageRoute";
 import { storageRuntimeStatus } from "./storage";
 import { imageAnalysisRuntimeStatus } from "./milo/imageAnalysis";
 import { voiceTranscriptionRuntimeStatus } from "./_core/voiceTranscription";
+import { googleGeminiModel } from "./_core/googleGemini";
 import { sdk } from "./_core/sdk";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { COOKIE_NAME } from "@shared/const";
@@ -60,10 +61,11 @@ const healthHandler = async (req: express.Request, res: express.Response) => {
     release: "document-intelligence-v1-2026-09-16",
     visionConfigured: runtime.authenticated,
     imageAnalysisMode: mode,
-    visionModel: mode === "ocr-fallback" ? "tesseract-tha+eng" : process.env.MILO_VISION_MODEL || (mode.startsWith("vercel-ai-gateway") ? "google/gemini-2.5-flash" : mode.startsWith("forge-vision") ? "gemini-3-flash-preview" : "unconfigured"),
+    visionModel: mode === "ocr-fallback" ? "tesseract-tha+eng" : mode.startsWith("google-gemini") ? googleGeminiModel("vision") : process.env.MILO_VISION_MODEL || (mode.startsWith("vercel-ai-gateway") ? "google/gemini-2.5-flash" : mode.startsWith("forge-vision") ? "gemini-3-flash-preview" : "unconfigured"),
     ocrAssetsReady: runtime.ocrAssetsReady,
     voiceConfigured: voice.configured,
     voiceTranscriptionMode: voice.mode,
+    voiceTranscriptionModel: voice.mode.startsWith("google-gemini") ? googleGeminiModel("audio") : null,
     voiceLocalBundled: voice.local?.bundled ?? false,
     voiceLocalModel: voice.local?.model ?? null,
     storage: {
