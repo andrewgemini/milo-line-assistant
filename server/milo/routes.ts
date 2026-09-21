@@ -765,7 +765,7 @@ async function handleText(event: LineEvent, lineChatId: string, lineUserId: stri
       }
     }
   } else if (command.type === "settingGuide") {
-    if (event.replyToken) { await replyRichMenu(event.replyToken, text, "settings"); return; }
+    if (event.replyToken) { await replyMiloSettings(event.replyToken); return; }
     message = "⚙️ ตั้งค่า Milo: หมวดหมู่ • งบประมาณ • รายการประจำ • ปฏิทิน • เตือน และสรุปการเงิน";
   } else if (command.type === "dashboardGuide") {
     message = "🔐 แดชบอร์ดหลังบ้าน Milo\nhttps://milo-line-assistant.onrender.com/dashboard";

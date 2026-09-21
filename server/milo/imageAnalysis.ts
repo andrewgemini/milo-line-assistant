@@ -229,6 +229,16 @@ async function receiptDateRepairRequest(dataUrl: string, token: string): Promise
   }
 }
 
+async function receiptDateRepairWithGoogle(dataUrl: string): Promise<ReceiptDateRepair> {
+  return generateGoogleGeminiJson<ReceiptDateRepair>({
+    kind: "vision",
+    imageDataUrl: dataUrl,
+    system: "คุณคือ OCR verifier สำหรับใบเสร็จไทย อ่านเฉพาะวันที่ทำรายการและเวลาที่พิมพ์อยู่ในภาพจริง ห้ามเดาจากเวลาส่งรูป วันที่ปัจจุบัน หรือบริบทอื่น ถ้าอ่านวันเดือนปีไม่ชัดให้ dateText ว่าง และ evidence ต้องคัดข้อความสั้นๆ ที่เห็นจริง",
+    prompt: "อ่านเฉพาะบรรทัดวันที่และเวลาในใบเสร็จจริงจากพิกเซล ถ้าเห็นวันที่แบบ 17 ก.ย. 2569 10:58 ให้คืน dateText=2026-09-17 และ timeText=10:58",
+    schema: receiptDateSchema,
+  });
+}
+
 async function receiptDateRepairWithForge(dataUrl: string): Promise<ReceiptDateRepair> {
   const response = await invokeLLM({
     model: ENV.visionModel,
@@ -268,14 +278,14 @@ async function repairMissingReceiptDate(analysis: ImageAnalysis, dataUrl: string
   }
   const headerDataUrl = await buildReceiptHeaderDataUrl(dataUrl).catch(() => dataUrl);
   try {
-    if (ENV.forgeApiKey && !directVisionAnalysis) {
+    if (ENV.forgeApiKey) {
       const repair = await receiptDateRepairWithForge(headerDataUrl);
       if (repair.dateText) return mergeDedicatedDateRepair(analysis, repair);
     }
   } catch (error) {
     console.warn("[Milo Image] Forge focused date repair failed", { error: error instanceof Error ? error.message : "unknown" });
   }
-  if (gatewayKey && !directVisionAnalysis) {
+  if (gatewayKey) {
     try {
       const repair = await receiptDateRepairRequest(headerDataUrl, gatewayKey);
       return mergeDedicatedDateRepair(analysis, repair);
@@ -421,7 +431,7 @@ export async function analyzeImage(dataUrl: string, options: { gatewayToken?: st
       if (first?.kind === "expense" && first.documentType === "receipt" && !first.dateText) {
         try {
           const headerDataUrl = await buildReceiptHeaderDataUrl(dataUrl).catch(() => dataUrl);
-          const repair = await repairReceiptDateWithGoogle(headerDataUrl);
+          const repair = await receiptDateRepairWithGoogle(headerDataUrl);
           providerAnalysis = mergeDedicatedDateRepair(providerAnalysis, repair);
           console.info("[Milo Image] Google Gemini focused date repair", {
             dateText: repair.dateText,

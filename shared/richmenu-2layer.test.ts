@@ -19,4 +19,5 @@ function validate(config: any) {
 describe("Milo 2-layer LINE Rich Menu",()=>{
  it("validates main menu",()=>{validate(main);expect(main.areas.map((a:any)=>a.action.type)).toContain("richmenuswitch");expect(main.areas.map((a:any)=>a.action.text)).toEqual(["จดบันทึก","วิเคราะห์","งบประมาณ","รายการ","รายการเตือน","สวัสดีไมโล"]);});
  it("validates more menu",()=>{validate(more);expect(more.areas.filter((a:any)=>a.action.type==="message").map((a:any)=>a.action.text)).toEqual(["หมวดหมู่","ดูปฏิทิน","ตั้งค่า","ช่วยเหลือ"]);expect(more.areas.filter((a:any)=>a.action.type==="richmenuswitch")).toHaveLength(2);});
+ it("uses supported parser commands for every message action",()=>{for(const config of [main,more]) for(const area of config.areas.filter((a:any)=>a.action.type==="message")) expect(parseMiloCommand(area.action.text).type).not.toBe("unknown");});
 });

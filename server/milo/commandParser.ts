@@ -237,5 +237,5 @@ export function parseMiloCommand(text: string, now = new Date()): MiloCommand {
     return { type: "imageEdit", field: "note", value: raw };
   }
   const imageConfirm = value.match(/^(?:ยืนยันรูป|ยืนยันภาพ|บันทึกจากรูป|ยืนยันค่าใช้จ่าย|ยืนยันสลิป|ยืนยันใบเสร็จ|บันทึกสลิป|บันทึกใบเสร็จ)(?:\s+(?:วันที่\s*)?(\d{1,2}[\/-]\d{1,2}[\/-]\d{2,4}|\d{4}-\d{1,2}-\d{1,2}))?$/i); if (imageConfirm) return imageConfirm[1] ? { type: "imageConfirm", dateText: imageConfirm[1] } : { type: "imageConfirm" };
-  if (/^(ช่วย|เมนู|help)$/i.test(value)) return { type: "help" }; return { type: "unknown" };
+  if (/^(ช่วย|ช่วยเหลือ|เมนู|help)$/i.test(value)) return { type: "help" }; return { type: "unknown" };
 }

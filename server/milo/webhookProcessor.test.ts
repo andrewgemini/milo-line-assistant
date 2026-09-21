@@ -75,7 +75,7 @@ vi.mock("./line", () => ({
 }));
 
 import * as db from "../db";
-import { replyRichMenu, replyGreetingHome, getMessageContent, getProfile, pushTextWithQuickReplies, replyFinanceReportCard, replyMention, replyPostSaveSummary, replyPostSaveSummaryImage, replyPostSaveSummaryFallback, replyText, replyTextWithQuickReplies, replyVoiceCategoryChoices, replyVoiceProposal, sourceIdentity, verifyLineSignature } from "./line";
+import { replyRichMenu, replyGreetingHome, replyMiloSettings, getMessageContent, getProfile, pushTextWithQuickReplies, replyFinanceReportCard, replyMention, replyPostSaveSummary, replyPostSaveSummaryImage, replyPostSaveSummaryFallback, replyText, replyTextWithQuickReplies, replyVoiceCategoryChoices, replyVoiceProposal, sourceIdentity, verifyLineSignature } from "./line";
 import { storageGetSignedUrl, storagePut } from "../storage";
 import { analyzeImage } from "./imageAnalysis";
 import { analyzePdfBuffer } from "./pdfAnalysis";
@@ -847,11 +847,17 @@ describe("rich menu webhook regression", () => {
     vi.mocked(db.listTransactionCategories).mockResolvedValue([]);
   });
   const event = (text: string) => ({ type: "message", webhookEventId: "richmenu-test", timestamp: Date.now(), replyToken: "token", source: { type: "user" as const, userId: "U1" }, message: { id: "menu", type: "text" as const, text } });
-  it.each([["จดบันทึก","record"],["งบประมาณ","budget"],["รายการ","transactions"],["หมวดหมู่","categories"],["ตั้งค่า","settings"],["วิธีใช้งาน","help"]])("%s replies with %s artwork", async (text,key) => {
+  it.each([["จดบันทึก","record"],["งบประมาณ","budget"],["รายการ","transactions"],["หมวดหมู่","categories"],["วิธีใช้งาน","help"]])("%s replies with %s artwork", async (text,key) => {
     await processEvent(event(text), "{}");
     expect(replyRichMenu).toHaveBeenCalledWith("token", expect.any(String), key);
     expect(replyText).not.toHaveBeenCalled();
     expect(db.finishWebhookEvent).toHaveBeenCalledWith("richmenu-test", "processed");
+  });
+  it("ตั้งค่า opens the Milo settings hub", async () => {
+    await processEvent(event("ตั้งค่า"), "{}");
+    expect(replyMiloSettings).toHaveBeenCalledWith("token");
+    expect(replyRichMenu).not.toHaveBeenCalled();
+    expect(replyText).not.toHaveBeenCalled();
   });
   it("สวัสดีไมโล greets and opens the main action shortcuts", async () => {
     vi.mocked(replyGreetingHome).mockResolvedValue(new Response());

@@ -259,7 +259,7 @@ export async function getMiloOnboarding(lineUserId: string): Promise<MiloOnboard
   await ensureMiloOnboardingSchema();
   const db = await requireDb();
   const result = await db.execute(sql`SELECT lineUserId, status, step, settingsJson, completedAt FROM milo_onboarding WHERE lineUserId = ${lineUserId} LIMIT 1`);
-  const rows = result[0] as Array<Record<string, unknown>>;
+  const rows = result[0] as unknown as Array<Record<string, unknown>>;
   const row = rows[0];
   if (!row) return undefined;
   return { lineUserId: String(row.lineUserId), status: row.status === "completed" ? "completed" : "pending", step: String(row.step), settingsJson: String(row.settingsJson ?? "{}"), completedAt: row.completedAt instanceof Date ? row.completedAt : row.completedAt ? new Date(String(row.completedAt)) : null };

@@ -483,7 +483,6 @@ export async function getProfile(source: LineSource, credentials = lineCredentia
 }
 
 export async function replyRichMenu(replyToken: string, text: string, artwork: RichMenuArtwork, credentials = lineCredentials()) {
-  if (artwork === "settings") return replyMiloSettings(replyToken, credentials);
   const [staticImage] = artworkMessages(artwork);
   if (!staticImage) throw new Error("Milo rich-menu artwork is unavailable");
   const image = isDynamicRichMenuArtwork(artwork)

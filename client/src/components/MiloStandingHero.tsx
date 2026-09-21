@@ -1,10 +1,8 @@
-import type { CSSProperties } from "react";
-
 type MiloStandingHeroProps = { className?: string };
 
 /** Standing/waving Milo hero mascot, drawn as a transparent SVG so the hero never depends on a raster crop. */
 export function MiloStandingHero({ className = "" }: MiloStandingHeroProps) {
-  const outline: CSSProperties = { stroke: "#2b1818", strokeWidth: 8, strokeLinecap: "round", strokeLinejoin: "round" };
+  const outline = { stroke: "#2b1818", strokeWidth: 8, strokeLinecap: "round" as const, strokeLinejoin: "round" as const };
   return (
     <svg viewBox="0 0 420 560" role="img" aria-label="ไมโล แมวยืนกวักมือ" className={className} preserveAspectRatio="xMidYMid meet">
       <defs>
