@@ -821,7 +821,10 @@ async function handleMedia(event: LineEvent, lineChatId: string, lineUserId: str
 
   const fingerprint = fingerprintMedia(bytes);
   const duplicate = await db.findVaultItemByFingerprint(lineChatId, fingerprint).catch(() => undefined);
-  if (duplicate) {
+  const retryMedia = duplicate && (isImage || isAudio || isPdf)
+    ? await db.canReprocessVaultMedia(duplicate.id, lineUserId, lineChatId).catch(() => false)
+    : false;
+  if (duplicate && !retryMedia) {
     try {
       await db.writeAuditLog({
         action: "vault.duplicate.detected",
@@ -838,9 +841,11 @@ async function handleMedia(event: LineEvent, lineChatId: string, lineUserId: str
     return;
   }
 
-  let stored: Awaited<ReturnType<typeof storagePut>> | undefined;
+  let stored: Pick<Awaited<ReturnType<typeof storagePut>>, "key" | "url"> | undefined = retryMedia && duplicate?.storageKey
+    ? { key: duplicate.storageKey, url: duplicate.storageUrl || "" }
+    : undefined;
   try {
-    stored = await storagePut(`milo/${lineChatId}/${message.id}`, bytes, mimeType);
+    if (!stored) stored = await storagePut(`milo/${lineChatId}/${message.id}`, bytes, mimeType);
   } catch (error) {
     console.warn("[Milo Media] permanent storage unavailable; continuing from LINE bytes", {
       messageId: message.id, type: message.type, error: error instanceof Error ? error.message : "unknown",
@@ -850,7 +855,7 @@ async function handleMedia(event: LineEvent, lineChatId: string, lineUserId: str
   let vaultId: number;
   try {
     const existing = await db.findVaultItemByLineMessageId(message.id, lineUserId, lineChatId);
-    vaultId = existing?.id ?? await db.createVaultItem({
+    vaultId = (retryMedia ? duplicate?.id : undefined) ?? existing?.id ?? await db.createVaultItem({
         lineChatId,
         createdByLineUserId: lineUserId,
         itemType: isImage ? "image" : "file",

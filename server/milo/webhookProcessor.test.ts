@@ -34,6 +34,7 @@ vi.mock("../db", () => ({
   createVaultItem: vi.fn(),
   findVaultItemByLineMessageId: vi.fn(),
   findVaultItemByFingerprint: vi.fn(),
+  canReprocessVaultMedia: vi.fn(async () => false),
   listVaultDocumentsForChat: vi.fn(),
   updateVaultIntelligence: vi.fn(),
   searchVault: vi.fn(),
@@ -237,6 +238,23 @@ describe("LINE webhook processor", () => {
     expect(analyzeImage).not.toHaveBeenCalled();
     expect(replyText).toHaveBeenCalledWith("token", expect.stringContaining("ไม่เก็บซ้ำ"));
     expect(db.writeAuditLog).toHaveBeenCalledWith(expect.objectContaining({ action: "vault.duplicate.detected", entityId: 88 }));
+  });
+
+  it("reprocesses an unconfirmed duplicate without duplicating its file or transaction", async () => {
+    vi.mocked(db.registerWebhookEvent).mockResolvedValue(true);
+    vi.mocked(getMessageContent).mockResolvedValue(Buffer.from("same-receipt"));
+    vi.mocked(db.findVaultItemByFingerprint).mockResolvedValue({ id: 88, storageKey: "db/existing", storageUrl: "" } as never);
+    vi.mocked(db.canReprocessVaultMedia).mockResolvedValueOnce(true);
+    vi.mocked(analyzeImage).mockResolvedValueOnce({ summary: "1000", confidence: 0.99, proposals: [] } as never);
+
+    await processEvent({ type: "message", webhookEventId: "evt-media-retry", timestamp: Date.now(), replyToken: "token", source: { type: "group", groupId: "G1", userId: "U1" }, message: { id: "retry-image", type: "image" } }, "{}");
+
+    expect(db.canReprocessVaultMedia).toHaveBeenCalledWith(88, "U1", "G1");
+    expect(analyzeImage).toHaveBeenCalledTimes(1);
+    expect(db.saveImageExtraction).toHaveBeenCalledWith(88, "reminder", expect.any(String), 0.99);
+    expect(storagePut).not.toHaveBeenCalled();
+    expect(db.createVaultItem).not.toHaveBeenCalled();
+    expect(db.createTransaction).not.toHaveBeenCalled();
   });
 
   it("skips a redelivered webhook event that was already registered", async () => {

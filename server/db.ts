@@ -637,12 +637,26 @@ export async function findVaultItemByFingerprint(lineChatId: string, fingerprint
     id: vaultItems.id,
     title: vaultItems.title,
     storageKey: vaultItems.storageKey,
+    storageUrl: vaultItems.storageUrl,
+    createdByLineUserId: vaultItems.createdByLineUserId,
     lineMessageId: vaultItems.lineMessageId,
   }).from(vaultItems).where(and(
     eq(vaultItems.lineChatId, lineChatId),
     eq(vaultItems.status, "active"),
     like(vaultItems.tagsText, `%#sha256:${fingerprint}%`),
   )).orderBy(desc(vaultItems.createdAt)).limit(1))[0];
+}
+
+export async function canReprocessVaultMedia(vaultItemId: number, lineUserId: string, lineChatId: string) {
+  const db = await requireDb();
+  const [vault] = await db.select({ id: vaultItems.id }).from(vaultItems).where(and(eq(vaultItems.id, vaultItemId), eq(vaultItems.createdByLineUserId, lineUserId), eq(vaultItems.lineChatId, lineChatId), eq(vaultItems.status, "active"))).limit(1);
+  if (!vault) return false;
+  const [images, voices, attachments] = await Promise.all([
+    db.select({ id: imageExtractions.id }).from(imageExtractions).where(and(eq(imageExtractions.vaultItemId, vaultItemId), eq(imageExtractions.status, "accepted"))).limit(1),
+    db.select({ id: voiceTranscriptions.id }).from(voiceTranscriptions).where(and(eq(voiceTranscriptions.vaultItemId, vaultItemId), eq(voiceTranscriptions.status, "accepted"))).limit(1),
+    db.select({ id: transactionAttachments.id }).from(transactionAttachments).where(eq(transactionAttachments.vaultItemId, vaultItemId)).limit(1),
+  ]);
+  return !images.length && !voices.length && !attachments.length;
 }
 
 export async function listVaultDocumentsForChat(
