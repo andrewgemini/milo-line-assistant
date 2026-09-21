@@ -266,7 +266,7 @@ async function handleMiloOnboardingText(event: LineEvent, lineUserId: string, te
     if (event.replyToken) await replyTextWithQuickReplies(event.replyToken, "ส่งยอดเริ่มต้นเป็นตัวเลขได้เลยครับ เช่น 5000 หรือกดปุ่มด้านล่าง", [{ label: "เริ่มที่ 0 บาท", text: "ยอดเริ่มต้น 0" }, { label: "เปิดหน้าตั้งค่า", text: "ตั้งค่า" }]);
     return true;
   }
-  if (/^(หมวดหมู่|งบประมาณ|รายการประจำ|ปฏิทิน|เตือน|ช่วย|จดบันทึก|สรุปวันนี้|สรุปสัปดาห์นี้|สรุปเดือนนี้|วิเคราะห์)$/i.test(value)) return false;
+  if (/^(หมวดหมู่|งบประมาณ|รายการประจำ|ปฏิทิน|เตือน|รายการเตือน|ดูเตือน|ดูรายการเตือน|ช่วย|ช่วยเหลือ|เมนู|help|วิธีใช้งาน|คำสั่ง|จดบันทึก|สรุปวันนี้|สรุปสัปดาห์นี้|สรุปเดือนนี้|วิเคราะห์)$/i.test(value)) return false;
   if (event.replyToken) await replyMiloOnboarding(event.replyToken);
   return true;
 }

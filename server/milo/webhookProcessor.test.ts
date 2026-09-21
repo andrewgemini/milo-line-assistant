@@ -386,6 +386,8 @@ describe("LINE webhook processor", () => {
     await processEvent(event("income-category-add", "เพิ่มหมวดรายรับ โบนัส"), "{}");
     await processEvent(event("category-list", "ดูหมวด"), "{}");
     await processEvent(event("help", "ช่วย"), "{}");
+    await processEvent(event("help-th", "ช่วยเหลือ"), "{}");
+    await processEvent(event("rem-list-menu", "รายการเตือน"), "{}");
 
     expect(db.createReminder).toHaveBeenCalledWith(expect.objectContaining({ lineChatId: "U1", createdByLineUserId: "U1" }));
     expect(db.createTransaction).toHaveBeenCalledWith(expect.objectContaining({ transactionType: "expense", amount: 65, category: "อาหาร" }));
@@ -399,6 +401,7 @@ describe("LINE webhook processor", () => {
     expect(db.listTransactionCategories).toHaveBeenCalledWith("U1", 7);
     expect(replyPostSaveSummaryImage).toHaveBeenCalledWith("token", expect.objectContaining({ transactionType: "expense", amount: 65, category: "อาหาร", dailyExpense: 65 }));
     expect(replyRichMenu).toHaveBeenCalledWith("token", expect.stringContaining("Milo ช่วยคุณจบงานใน LINE แชทเดียวครับ"), "help");
+    expect(replyReminderList).toHaveBeenCalled();
   });
 
   it("lists transactions from the same finance account", async () => {
