@@ -283,11 +283,17 @@ async function handleText(event: LineEvent, lineChatId: string, lineUserId: stri
     return;
   }
   const command = parseMiloCommand(text);
-  const plan = resolveMiloPlan(lineUserId, process.env, await db.isAdminLinkedLineUser(lineUserId));
   let message = "";
   const financeCommands = new Set(["expense", "income", "transactionSearch", "transactionUndo", "transactionDelete", "transactionUpdate", "openingBalance", "financeReport", "aiSummary", "budgetOverview", "transactionList", "voiceConfirm", "voiceEditPrompt", "voiceCategoryChange", "voiceEdit", "budget", "budgetCycleStart", "categoryAdd", "categoryRemove", "categoryList", "imageConfirm", "imageEdit", "pdfConfirm", "recurringCreate", "recurringList", "recurringStatus", "exportFinance", "pendingBillList", "pendingBillPay", "pendingBillCancel"]);
   const captureNeedsFinance = command.type === "captureDraft" && command.plan.items.some(item => item.type === "pending_bill");
   const needsFinance = financeCommands.has(command.type) || captureNeedsFinance;
+  const needsPlan = command.type === "reminder"
+    || command.type === "followUp"
+    || command.type === "pdfConfirm"
+    || command.type === "budgetCycleStart"
+    || (command.type === "captureDraft" && (captureNeedsFinance || command.plan.items.some(item => item.type === "reminder")))
+    || (scope !== "user" && needsFinance);
+  const plan = needsPlan ? resolveMiloPlan(lineUserId, process.env, await db.isAdminLinkedLineUser(lineUserId)) : "free" as const;
   if ((command.type === "reminder" || command.type === "followUp") && !hasMiloEntitlement(plan, "reminders")) { if (event.replyToken) await replyText(event.replyToken, entitlementMessage("reminders")); return; }
   if (command.type === "pdfConfirm" && !hasMiloEntitlement(plan, "pdf")) { if (event.replyToken) await replyText(event.replyToken, entitlementMessage("pdf")); return; }
   if (command.type === "budgetCycleStart" && !hasMiloEntitlement(plan, "customBudgetCycle")) { if (event.replyToken) await replyText(event.replyToken, entitlementMessage("customBudgetCycle")); return; }
