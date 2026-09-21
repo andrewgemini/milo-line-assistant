@@ -4,6 +4,11 @@ import type { AddressInfo } from "node:net";
 
 vi.mock("../db", () => ({
   registerWebhookEvent: vi.fn(),
+  ensureMiloOnboardingSchema: vi.fn(),
+  getMiloOnboarding: vi.fn(),
+  startMiloOnboarding: vi.fn(),
+  updateMiloOnboarding: vi.fn(),
+  completeMiloOnboarding: vi.fn(),
   ensureCaptureSchema: vi.fn(),
   upsertLineChat: vi.fn(),
   upsertLineMember: vi.fn(),
@@ -64,7 +69,7 @@ vi.mock("./financeExport", () => ({ buildFinanceExportUrl: vi.fn(() => "https://
 vi.mock("../_core/voiceTranscription", () => ({ transcribeAudio: vi.fn() }));
 vi.mock("./financialAssistant", () => ({ generateFinancialInsight: vi.fn(), suggestExpenseCategory: vi.fn() }));
 vi.mock("./line", () => ({
-  replyRichMenu: vi.fn(), replyGreetingHome: vi.fn(), getMessageContent: vi.fn(), getProfile: vi.fn(), lineCredentials: vi.fn(() => ({ channelSecret: "test-secret", channelAccessToken: "test-token" })), pushText: vi.fn(), pushTextWithQuickReplies: vi.fn(), replyMention: vi.fn(), replyText: vi.fn(), replyTextWithQuickReplies: vi.fn(),
+  replyRichMenu: vi.fn(), replyGreetingHome: vi.fn(), replyMiloOnboarding: vi.fn(), replyMiloSettings: vi.fn(), getMessageContent: vi.fn(), getProfile: vi.fn(), lineCredentials: vi.fn(() => ({ channelSecret: "test-secret", channelAccessToken: "test-token" })), pushText: vi.fn(), pushTextWithQuickReplies: vi.fn(), replyMention: vi.fn(), replyText: vi.fn(), replyTextWithQuickReplies: vi.fn(),
   replyVoiceProposal: vi.fn(), replyPostSaveSummary: vi.fn(), replyPostSaveSummaryImage: vi.fn(), replyPostSaveSummaryFallback: vi.fn(), replyVoiceCategoryChoices: vi.fn(), postSaveSummaryText: vi.fn((summary: { amount: number }) => `รายจ่าย ${summary.amount} บาท`), replyFinanceReportCard: vi.fn(), replyFinanceReportCardFallback: vi.fn(), financeReportCardText: vi.fn(() => "สรุปการเงินวันนี้"),
   sourceIdentity: vi.fn(() => ({ lineChatId: "G1", lineUserId: "U1", scope: "group" })), verifyLineSignature: vi.fn(),
 }));

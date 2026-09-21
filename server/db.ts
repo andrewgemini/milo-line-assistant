@@ -241,6 +241,54 @@ export async function removeFinanceAccountMember(financeAccountId: number, lineU
   return result[0].affectedRows > 0;
 }
 
+let miloOnboardingSchemaReady: Promise<void> | undefined;
+
+export type MiloOnboardingState = { lineUserId: string; status: "pending" | "completed"; step: string; settingsJson: string; completedAt: Date | null; };
+
+export async function ensureMiloOnboardingSchema() {
+  if (!miloOnboardingSchemaReady) {
+    miloOnboardingSchemaReady = (async () => {
+      const db = await requireDb();
+      await db.execute(sql.raw("CREATE TABLE IF NOT EXISTS milo_onboarding (id INT NOT NULL AUTO_INCREMENT, lineUserId VARCHAR(128) NOT NULL, status ENUM('pending','completed') NOT NULL DEFAULT 'pending', step VARCHAR(64) NOT NULL DEFAULT 'welcome', settingsJson TEXT NOT NULL, completedAt TIMESTAMP NULL, createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, updatedAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, PRIMARY KEY (id), UNIQUE KEY milo_onboarding_user_unique (lineUserId), INDEX milo_onboarding_status_idx (status, updatedAt))"));
+    })();
+  }
+  await miloOnboardingSchemaReady;
+}
+
+export async function getMiloOnboarding(lineUserId: string): Promise<MiloOnboardingState | undefined> {
+  await ensureMiloOnboardingSchema();
+  const db = await requireDb();
+  const result = await db.execute(sql`SELECT lineUserId, status, step, settingsJson, completedAt FROM milo_onboarding WHERE lineUserId = ${lineUserId} LIMIT 1`);
+  const rows = result[0] as Array<Record<string, unknown>>;
+  const row = rows[0];
+  if (!row) return undefined;
+  return { lineUserId: String(row.lineUserId), status: row.status === "completed" ? "completed" : "pending", step: String(row.step), settingsJson: String(row.settingsJson ?? "{}"), completedAt: row.completedAt instanceof Date ? row.completedAt : row.completedAt ? new Date(String(row.completedAt)) : null };
+}
+
+export async function startMiloOnboarding(lineUserId: string) {
+  await ensureMiloOnboardingSchema();
+  const db = await requireDb();
+  await db.execute(sql`INSERT INTO milo_onboarding (lineUserId, status, step, settingsJson) VALUES (${lineUserId}, 'pending', 'welcome', '{}') ON DUPLICATE KEY UPDATE updatedAt = CURRENT_TIMESTAMP`);
+  return getMiloOnboarding(lineUserId);
+}
+
+export async function updateMiloOnboarding(lineUserId: string, input: { step?: string; settings?: Record<string, unknown> }) {
+  await ensureMiloOnboardingSchema();
+  const db = await requireDb();
+  const current = await getMiloOnboarding(lineUserId);
+  const settings = (() => { try { return JSON.parse(current?.settingsJson ?? "{}"); } catch { return {}; } })();
+  const merged = { ...settings, ...(input.settings ?? {}) };
+  await db.execute(sql`INSERT INTO milo_onboarding (lineUserId, status, step, settingsJson) VALUES (${lineUserId}, 'pending', ${input.step ?? current?.step ?? "welcome"}, ${JSON.stringify(merged)}) ON DUPLICATE KEY UPDATE step = ${input.step ?? current?.step ?? "welcome"}, settingsJson = ${JSON.stringify(merged)}, updatedAt = CURRENT_TIMESTAMP`);
+  return getMiloOnboarding(lineUserId);
+}
+
+export async function completeMiloOnboarding(lineUserId: string) {
+  await ensureMiloOnboardingSchema();
+  const db = await requireDb();
+  await db.execute(sql`INSERT INTO milo_onboarding (lineUserId, status, step, settingsJson, completedAt) VALUES (${lineUserId}, 'completed', 'complete', '{}', CURRENT_TIMESTAMP) ON DUPLICATE KEY UPDATE status = 'completed', step = 'complete', completedAt = CURRENT_TIMESTAMP, updatedAt = CURRENT_TIMESTAMP`);
+  return getMiloOnboarding(lineUserId);
+}
+
 let captureSchemaReady: Promise<void> | undefined;
 
 export async function ensureCaptureSchema() {

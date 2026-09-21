@@ -74,6 +74,28 @@ export async function replyText(replyToken: string, text: string, credentials = 
   return callLine("/v2/bot/message/reply", credentials, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ replyToken, messages: [{ type: "text", text: text.slice(0, 5000) }] }) });
 }
 
+export async function replyMiloOnboarding(replyToken: string, displayName?: string, credentials = lineCredentials()) {
+  const imageUrl = new URL("/richmenu/greeting-home.png", process.env.MILO_PUBLIC_URL || "https://milo-line-assistant.onrender.com").href;
+  const name = displayName?.trim() ? displayName.trim().slice(0, 40) : "คุณ";
+  return callLine("/v2/bot/message/reply", credentials, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ replyToken, messages: [{ type: "flex", altText: "ตั้งค่า Milo ก่อนเริ่มใช้งาน", contents: { type: "bubble", size: "mega", hero: { type: "image", url: imageUrl, size: "full", aspectRatio: "20:11", aspectMode: "cover" }, body: { type: "box", layout: "vertical", spacing: "md", backgroundColor: "#F3FBF7", contents: [
+    { type: "text", text: "สวัสดีครับ 👋", weight: "bold", size: "xl", color: "#0D735B" },
+    { type: "text", text: "คุณ" + name + " เชื่อมต่อ Milo แล้ว", size: "sm", color: "#4B756B", wrap: true },
+    { type: "text", text: "ก่อนเริ่มใช้งาน ขอจัดค่าพื้นฐานให้ไมโลสักนิดนะครับ", size: "sm", color: "#6D8D86", wrap: true },
+    { type: "box", layout: "vertical", spacing: "sm", margin: "md", paddingAll: "12px", cornerRadius: "lg", backgroundColor: "#FFFFFF", contents: [
+      { type: "text", text: "สิ่งที่จะตั้งค่า", size: "xs", weight: "bold", color: "#2D675B" },
+      { type: "text", text: "• บัญชีส่วนตัวและยอดเริ่มต้น\n• หมวดหมู่รายรับ / รายจ่าย\n• งบประมาณและรายการประจำ\n• ปฏิทิน เตือน และสรุปอัตโนมัติ", size: "xs", color: "#708E87", wrap: true, margin: "sm" },
+    ] },
+  ] }, footer: { type: "box", layout: "vertical", spacing: "sm", backgroundColor: "#F3FBF7", contents: [
+    { type: "button", style: "primary", color: "#159A75", action: { type: "message", label: "เริ่มตั้งค่า", text: "เริ่มตั้งค่า" } },
+    { type: "button", style: "link", color: "#4E8A7D", action: { type: "message", label: "ตั้งค่าภายหลัง", text: "ตั้งค่า" } },
+  ] } } }] }) });
+}
+
+export async function replyMiloSettings(replyToken: string, credentials = lineCredentials()) {
+  const items = [["💰 บัญชี / ยอดเริ่มต้น", "ยอดเงินเริ่มต้น 0 บาท", "ตั้งยอดเงินเริ่มต้น 0 บาท"], ["🏷️ หมวดหมู่", "เพิ่มหรือลบหมวดรายรับ / รายจ่าย", "หมวดหมู่"], ["🎯 งบประมาณ", "กำหนดงบตามหมวดและรอบงบ", "งบประมาณ"], ["🔁 รายการประจำ", "ตั้งรายรับ / รายจ่ายที่เกิดซ้ำ", "รายการประจำ"], ["📅 ปฏิทิน / เตือน", "จัดการนัดหมายและการแจ้งเตือน", "ปฏิทิน"], ["📊 สรุปอัตโนมัติ", "ดูภาพรวมการเงินช่วงต่าง ๆ", "สรุปเดือนนี้"]] as const;
+  const cards = items.map(([title, desc, text]) => ({ type: "box", layout: "horizontal", spacing: "sm", paddingAll: "10px", cornerRadius: "md", backgroundColor: "#FFFFFF", contents: [{ type: "box", layout: "vertical", flex: 1, contents: [{ type: "text", text: title, size: "sm", weight: "bold", color: "#315F58" }, { type: "text", text: desc, size: "xxs", color: "#8AA49E", wrap: true, margin: "xs" }] }, { type: "button", style: "link", height: "sm", flex: 0, action: { type: "message", label: "เปิด", text } }] }));
+  return callLine("/v2/bot/message/reply", credentials, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ replyToken, messages: [{ type: "flex", altText: "ตั้งค่า Milo", contents: { type: "bubble", size: "mega", body: { type: "box", layout: "vertical", spacing: "md", backgroundColor: "#F7FCFA", contents: [{ type: "text", text: "⚙️ ตั้งค่า Milo", weight: "bold", size: "xl", color: "#0D735B" }, { type: "text", text: "จัดการค่าการเงินและการใช้งานจากหน้านี้ได้เลยครับ", size: "xs", color: "#75958D", wrap: true }, ...cards] }, footer: { type: "box", layout: "vertical", backgroundColor: "#F7FCFA", contents: [{ type: "button", style: "primary", color: "#159A75", action: { type: "message", label: "เริ่มใช้งาน Milo", text: "เริ่มใช้งาน" } }] } } }] }) });
+}
 export async function replyTextWithQuickReplies(replyToken: string, text: string, actions: Array<{ label: string; text: string }>, credentials = lineCredentials()) {
   return callLine("/v2/bot/message/reply", credentials, {
     method: "POST",
@@ -461,6 +483,7 @@ export async function getProfile(source: LineSource, credentials = lineCredentia
 }
 
 export async function replyRichMenu(replyToken: string, text: string, artwork: RichMenuArtwork, credentials = lineCredentials()) {
+  if (artwork === "settings") return replyMiloSettings(replyToken, credentials);
   const [staticImage] = artworkMessages(artwork);
   if (!staticImage) throw new Error("Milo rich-menu artwork is unavailable");
   const image = isDynamicRichMenuArtwork(artwork)

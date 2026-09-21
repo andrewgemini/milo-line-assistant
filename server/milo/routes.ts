@@ -26,7 +26,7 @@ import { deserializeCapturePlan, formatCapturePreview, serializeCapturePlan } fr
 import { bangkokDayRange, formatTodayOverview } from "./todayOverview";
 import { formatEveningSummary, formatMorningBrief, shouldDeliverDailyDigest } from "./personalDigest";
 import { STANDARD_EXPENSE_CATEGORIES, STANDARD_INCOME_CATEGORIES } from "./financeCategories";
-import { financeReportCardText, getMessageContent, getProfile, lineCredentials, postSaveSummaryText, pushText, pushTextWithQuickReplies, replyFinanceReportCard, replyFinanceReportCardFallback, replyGreetingHome, replyMention, replyPostSaveSummary, replyPostSaveSummaryFallback, replyPostSaveSummaryImage, replyText, replyTextWithQuickReplies, replyVoiceCategoryChoices, replyVoiceProposal, replyVoiceProposalFallback, sourceIdentity, type LineEvent, type VoiceTransactionProposal, verifyLineSignature } from "./line";
+import { financeReportCardText, getMessageContent, getProfile, lineCredentials, postSaveSummaryText, pushText, pushTextWithQuickReplies, replyFinanceReportCard, replyFinanceReportCardFallback, replyGreetingHome, replyMention, replyMiloOnboarding, replyMiloSettings, replyPostSaveSummary, replyPostSaveSummaryFallback, replyPostSaveSummaryImage, replyText, replyTextWithQuickReplies, replyVoiceCategoryChoices, replyVoiceProposal, replyVoiceProposalFallback, sourceIdentity, type LineEvent, type VoiceTransactionProposal, verifyLineSignature } from "./line";
 
 function helpText() {
   return "Milo ช่วยคุณจบงานใน LINE แชทเดียวครับ\n🔔 เตือน: เตือนประชุมพรุ่งนี้ 10:00 / เตือนดื่มน้ำทุก 30 นาที / รายการเตือน\n🎯 ตามงาน: ช่วยตามงาน Proposal ลูกค้า B / ช่วยตามงานส่งใบเสนอราคา อีก 24 ชั่วโมง\n☀️ วันนี้: วันนี้มีอะไร / สรุปเช้า / สรุปเย็น / บิลรอจ่าย / จ่ายบิล #เลขรายการ\n🗂️ เก็บ: เก็บ https://example.com #งาน / ค้นหา ใบเสนอราคา / สถานะคลัง\n📦 เอกสาร: สรุปเอกสารเดือนนี้ / ไฟล์ที่ต้องตรวจ\n🧠 จดหลายอย่าง: พรุ่งนี้บ่ายสองประชุมลูกค้า ค่าแท็กซี่ 300 ช่วยเตือนด้วย\n📅 ปฏิทิน: ลงปฏิทิน ประชุมทีมพรุ่งนี้ 10:00 / ดูปฏิทิน\n👥 กลุ่ม LINE: @ไมโล ผู้ช่วยกลุ่ม / @ไมโล แจ้งส่งงานด้วยถึง @สมชาย\n✅ งาน: งาน ส่งสรุปรายสัปดาห์ / ดูงาน / เสร็จงาน #12 / โน้ต รหัส Wi-Fi\n💰 การเงิน: กินกาแฟ 80 / เงินเดือนเข้า 35000 / ตั้งงบ อาหาร 5000 / สรุปเดือนนี้\n📷🎙️ ส่งรูปใบเสร็จหรือเสียงให้ไมโลอ่าน แล้วตรวจและยืนยันก่อนบันทึก\n\nพิมพ์ “ช่วย” ได้ทุกเมื่อครับ";
@@ -232,6 +232,44 @@ function financeAccessMessage(scope: LineFinanceScope) {
     : "กลุ่มนี้ยังไม่ได้เปิดสมุดบัญชีสำหรับสมาชิกของคุณ จึงไม่บันทึกหรือแสดงการเงินร่วมโดยอัตโนมัติ เพื่อปกป้องข้อมูลส่วนตัว ให้เจ้าของกลุ่มตั้งค่าบัญชีและบทบาทจาก dashboard ก่อนครับ";
 }
 
+async function handleMiloOnboardingText(event: LineEvent, lineUserId: string, text: string) {
+  const state = await db.getMiloOnboarding(lineUserId);
+  if (!state || state.status === "completed") return false;
+  const value = text.trim();
+  if (/^(เริ่มตั้งค่า|ตั้งค่าเริ่มต้น)$/i.test(value)) {
+    await db.updateMiloOnboarding(lineUserId, { step: "opening" });
+    if (event.replyToken) await replyTextWithQuickReplies(event.replyToken, "ขั้นแรก: มียอดเงินที่ต้องการให้ไมโลนับเป็นยอดตั้งต้นไหมครับ?\nพิมพ์จำนวนเงิน เช่น 5000 บาท หรือกด 0 หากเริ่มจากศูนย์", [{ label: "เริ่มที่ 0 บาท", text: "ยอดเริ่มต้น 0" }, { label: "ตั้งภายหลัง", text: "ตั้งค่า" }]);
+    return true;
+  }
+  if (/^ตั้งค่า$/i.test(value)) {
+    await db.updateMiloOnboarding(lineUserId, { step: "settings" });
+    if (event.replyToken) await replyMiloSettings(event.replyToken);
+    return true;
+  }
+  if (/^เริ่มใช้งาน$/i.test(value)) {
+    await db.completeMiloOnboarding(lineUserId);
+    if (event.replyToken) await replyGreetingHome(event.replyToken);
+    return true;
+  }
+  if (state.step === "opening") {
+    const match = value.match(/^(?:ตั้ง)?(?:ยอด(?:เงิน)?เริ่มต้น|ยอดเริ่มต้น)?\s*(\d[\d,]*(?:\.\d{1,2})?)\s*(?:บาท)?$/i);
+    if (match) {
+      const amount = Number(match[1].replace(/,/g, ""));
+      if (Number.isFinite(amount) && amount >= 0) {
+        const account = await db.getOrCreatePersonalFinanceAccount(lineUserId);
+        await db.upsertOpeningBalance(lineUserId, amount, new Date(), account.id);
+        await db.updateMiloOnboarding(lineUserId, { step: "settings", settings: { openingBalance: amount } });
+        if (event.replyToken) await replyMiloSettings(event.replyToken);
+        return true;
+      }
+    }
+    if (event.replyToken) await replyTextWithQuickReplies(event.replyToken, "ส่งยอดเริ่มต้นเป็นตัวเลขได้เลยครับ เช่น 5000 หรือกดปุ่มด้านล่าง", [{ label: "เริ่มที่ 0 บาท", text: "ยอดเริ่มต้น 0" }, { label: "เปิดหน้าตั้งค่า", text: "ตั้งค่า" }]);
+    return true;
+  }
+  if (/^(หมวดหมู่|งบประมาณ|รายการประจำ|ปฏิทิน|เตือน|ช่วย|จดบันทึก|สรุปวันนี้|สรุปสัปดาห์นี้|สรุปเดือนนี้|วิเคราะห์)$/i.test(value)) return false;
+  if (event.replyToken) await replyMiloOnboarding(event.replyToken);
+  return true;
+}
 async function handleText(event: LineEvent, lineChatId: string, lineUserId: string, scope: LineFinanceScope) {
   const text = event.message?.text ?? "";
   if (/^(?:ไอดี|id|user\s*id)$/i.test(text.trim())) {
@@ -727,7 +765,8 @@ async function handleText(event: LineEvent, lineChatId: string, lineUserId: stri
       }
     }
   } else if (command.type === "settingGuide") {
-    message = "⚙️ ตั้งค่า Milo\nตั้งค่าการใช้งาน Milo ได้จากเมนูและคำสั่งใน LINE ครับ\n• พิมพ์ “ช่วย” เพื่อดูคำสั่งทั้งหมด\n• พิมพ์ “หมวดหมู่” เพื่อจัดการหมวดหมู่\n• พิมพ์ “งบประมาณ” เพื่อดูและจัดการงบประมาณ\n🔐 “แดชบอร์ดหลังบ้าน” เป็นเมนูสำหรับผู้ดูแลระบบโดยเฉพาะครับ";
+    if (event.replyToken) { await replyRichMenu(event.replyToken, text, "settings"); return; }
+    message = "⚙️ ตั้งค่า Milo: หมวดหมู่ • งบประมาณ • รายการประจำ • ปฏิทิน • เตือน และสรุปการเงิน";
   } else if (command.type === "dashboardGuide") {
     message = "🔐 แดชบอร์ดหลังบ้าน Milo\nhttps://milo-line-assistant.onrender.com/dashboard";
   } else if (command.type === "recordGuide") {
@@ -1009,11 +1048,26 @@ export async function processEvent(event: LineEvent, rawPayload: string, runtime
     const profile = await getProfile(event.source).catch(() => undefined);
     await db.upsertLineChat(identity.lineChatId, identity.scope, profile?.displayName);
     await db.upsertLineMember(identity.lineChatId, identity.lineUserId, profile?.displayName);
+    if (identity.scope === "user") {
+      await db.ensureMiloOnboardingSchema();
+      if (event.type === "follow") {
+        const onboarding = await db.startMiloOnboarding(identity.lineUserId);
+        if (event.replyToken && onboarding?.status !== "completed") await replyMiloOnboarding(event.replyToken, profile?.displayName);
+        else if (event.replyToken) await replyGreetingHome(event.replyToken);
+        await db.finishWebhookEvent(event.webhookEventId, "processed");
+        return;
+      }
+    }
     if (event.type !== "message" || !event.message) { await db.finishWebhookEvent(event.webhookEventId, "ignored"); return; }
     const isGroup = identity.scope !== "user";
     const isMention = event.message.mention?.mentionees?.some(item => item.isSelf) || event.message.text?.trim().startsWith("@ไมโล");
     if (isGroup && event.message.type === "text" && !isMention) { await db.finishWebhookEvent(event.webhookEventId, "ignored"); return; }
     if (event.message.type === "text") {
+      const onboarding = identity.scope === "user" ? await db.getMiloOnboarding(identity.lineUserId) : undefined;
+      if (onboarding?.status === "pending" && await handleMiloOnboardingText(event, identity.lineUserId, event.message.text ?? "")) {
+        await db.finishWebhookEvent(event.webhookEventId, "processed");
+        return;
+      }
       await db.ensureCaptureSchema();
       await handleText(event, identity.lineChatId, identity.lineUserId, identity.scope);
     }
