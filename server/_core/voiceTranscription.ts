@@ -182,17 +182,34 @@ async function parseProviderResponse(response: Response, provider: string): Prom
   return validateTranscript(whisperResponse, provider);
 }
 
+function normalizeAudioMimeType(mimeType: string): string {
+  const normalized = mimeType.split(";")[0].trim().toLowerCase();
+  if (normalized === "audio/x-m4a" || normalized === "audio/m4a") return "audio/mp4";
+  if (normalized === "audio/x-wav") return "audio/wav";
+  if (normalized === "audio/x-mpeg") return "audio/mpeg";
+  return normalized || "audio/mp4";
+}
+
 async function transcribeWithGemini(audioBuffer: Buffer, mimeType: string, apiKey: string): Promise<TranscriptionResponse> {
   const model = process.env.MILO_GEMINI_STT_MODEL || process.env.MILO_GOOGLE_STT_MODEL || "gemini-3.6-flash";
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey.trim()}`;
   const promptText = "ถอดเสียงภาษาไทยตามที่ผู้ใช้พูดจริงแบบคำต่อคำ ห้ามสรุป ห้ามตอบกลับ ห้ามเติมคำทักทายหรือคำที่ไม่ได้ยิน ต้องรักษาตัวเลข จำนวนเงิน บาท สตางค์ ชื่อรายการ และคำว่า รายรับ/รายจ่ายตามเสียงจริง";
+  const inlineMimeType = normalizeAudioMimeType(mimeType);
   const resp = await fetchWithTimeout(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
-    contents: [{ parts: [{ text: promptText }, { inlineData: { mimeType: mimeType.split(";")[0], data: audioBuffer.toString("base64") } }] }],
+    contents: [{ parts: [{ text: promptText }, { inlineData: { mimeType: inlineMimeType, data: audioBuffer.toString("base64") } }] }],
     generationConfig: { temperature: 0.0 },
   }) }, 60_000);
-  if (!resp.ok) throw new Error(`Gemini Audio API error (${resp.status})`);
+  if (!resp.ok) {
+    const errorBody = await resp.text().catch(() => "");
+    throw new Error(`Gemini Audio API error (${resp.status})${errorBody ? `: ${errorBody.slice(0, 700)}` : ""}`);
+  }
   const data = await resp.json() as any;
-  const text = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "";
+  const parts = Array.isArray(data?.candidates?.[0]?.content?.parts) ? data.candidates[0].content.parts : [];
+  const text = parts
+    .map((part: any) => typeof part?.text === "string" ? part.text.trim() : "")
+    .filter(Boolean)
+    .join("\n")
+    .trim();
   const result: TranscriptionResponse = { task: "transcribe", language: "th", duration: 0, text, segments: [] };
   const validated = validateTranscript(result, "Google Gemini");
   if ("error" in validated) throw new Error(validated.details || validated.error);
