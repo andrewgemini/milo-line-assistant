@@ -276,6 +276,7 @@ export async function replyPostSaveSummary(replyToken: string, summary: PostSave
       type: "flex", altText: postSaveSummaryText(summary),
       contents: {
         type: "bubble", size: "mega",
+        hero: { type: "image", url: miloRichMenuImageUrl("save-complete"), size: "full", aspectRatio: "20:5", aspectMode: "cover" },
         body: { type: "box", layout: "vertical", spacing: "md", paddingAll: "16px", backgroundColor: "#F2F0FF", contents: [
           { type: "box", layout: "horizontal", alignItems: "center", spacing: "md", paddingAll: "12px", cornerRadius: "md", backgroundColor: "#E4F8F2", contents: [
             { type: "box", layout: "vertical", justifyContent: "center", alignItems: "center", width: "38px", height: "38px", cornerRadius: "md", backgroundColor: "#5AC6AD", contents: [{ type: "text", text: "✓", align: "center", weight: "bold", size: "xl", color: "#FFFFFF" }] },
@@ -312,6 +313,10 @@ export async function replyPostSaveSummary(replyToken: string, summary: PostSave
           ] },
         ] },
         footer: { type: "box", layout: "vertical", paddingAll: "16px", backgroundColor: "#F2F0FF", contents: [
+          { type: "box", layout: "horizontal", spacing: "sm", contents: [
+            { type: "button", style: "secondary", height: "sm", action: { type: "message", label: "ลบรายการล่าสุด", text: "ลบรายการล่าสุด" } },
+            { type: "button", style: "primary", color: "#7657AA", height: "sm", action: { type: "message", label: "ดูรายการ", text: "รายการ" } },
+          ] },
           { type: "button", style: "primary", color: "#7657AA", height: "sm", action: { type: "message", label: "ดูสรุปยอดวันนี้", text: "สรุปวันนี้" } },
         ] },
       },

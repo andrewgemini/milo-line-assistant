@@ -73,7 +73,10 @@ describe("LINE credentials", () => {
     expect(payload.messages[0]?.contents.body.backgroundColor).toBe("#F2F0FF");
     expect(String(init.body)).toContain('"text":"✓"');
     expect(payload.messages[0]?.contents.body.contents[1]?.backgroundColor).toBe("#FFFEFB");
-    expect(payload.messages[0]?.contents.footer.contents[0]?.action.text).toBe("สรุปวันนี้");
+    expect(String(init.body)).toContain("save-complete.png");
+    expect(String(init.body)).toContain("ลบรายการล่าสุด");
+    expect(String(init.body)).toContain("ดูรายการ");
+    expect(String(init.body)).toContain("สรุปวันนี้");
   });
 
   it("sends the post-save success as one image message only", async () => {

@@ -26,7 +26,7 @@ import { deserializeCapturePlan, formatCapturePreview, serializeCapturePlan } fr
 import { bangkokDayRange, formatTodayOverview } from "./todayOverview";
 import { formatEveningSummary, formatMorningBrief, shouldDeliverDailyDigest } from "./personalDigest";
 import { STANDARD_EXPENSE_CATEGORIES, STANDARD_INCOME_CATEGORIES } from "./financeCategories";
-import { financeReportCardText, getMessageContent, getProfile, lineCredentials, postSaveSummaryText, pushText, pushTextWithQuickReplies, replyCalendarList, replyFinanceReportCard, replyFinanceReportCardFallback, replyGreetingHome, replyMention, replyMiloOnboarding, replyMiloSettings, replyPostSaveSummary, replyReminderList, replyText, replyTransactionList, replyPostSaveSummaryFallback, replyPostSaveSummaryImage, replyTextWithQuickReplies, replyVoiceCategoryChoices, replyVoiceProposal, replyVoiceProposalFallback, sourceIdentity, type LineEvent, type VoiceTransactionProposal, verifyLineSignature } from "./line";
+import { financeReportCardText, getMessageContent, getProfile, lineCredentials, postSaveSummaryText, pushText, pushTextWithQuickReplies, replyCalendarList, replyFinanceReportCard, replyFinanceReportCardFallback, replyGreetingHome, replyMention, replyMiloOnboarding, replyMiloSettings, replyPostSaveSummary, replyReminderList, replyText, replyTransactionList, replyPostSaveSummaryFallback, replyTextWithQuickReplies, replyVoiceCategoryChoices, replyVoiceProposal, replyVoiceProposalFallback, sourceIdentity, type LineEvent, type VoiceTransactionProposal, verifyLineSignature } from "./line";
 
 function helpText() {
   return "Milo ช่วยคุณจบงานใน LINE แชทเดียวครับ\n🔔 เตือน: เตือนประชุมพรุ่งนี้ 10:00 / เตือนดื่มน้ำทุก 30 นาที / รายการเตือน\n🎯 ตามงาน: ช่วยตามงาน Proposal ลูกค้า B / ช่วยตามงานส่งใบเสนอราคา อีก 24 ชั่วโมง\n☀️ วันนี้: วันนี้มีอะไร / สรุปเช้า / สรุปเย็น / บิลรอจ่าย / จ่ายบิล #เลขรายการ\n🗂️ เก็บ: เก็บ https://example.com #งาน / ค้นหา ใบเสนอราคา / สถานะคลัง\n📦 เอกสาร: สรุปเอกสารเดือนนี้ / ไฟล์ที่ต้องตรวจ\n🧠 จดหลายอย่าง: พรุ่งนี้บ่ายสองประชุมลูกค้า ค่าแท็กซี่ 300 ช่วยเตือนด้วย\n📅 ปฏิทิน: ลงปฏิทิน ประชุมทีมพรุ่งนี้ 10:00 / ดูปฏิทิน\n👥 กลุ่ม LINE: @ไมโล ผู้ช่วยกลุ่ม / @ไมโล แจ้งส่งงานด้วยถึง @สมชาย\n✅ งาน: งาน ส่งสรุปรายสัปดาห์ / ดูงาน / เสร็จงาน #12 / โน้ต รหัส Wi-Fi\n💰 การเงิน: กินกาแฟ 80 / เงินเดือนเข้า 35000 / ตั้งงบ อาหาร 5000 / สรุปเดือนนี้\n📷🎙️ ส่งรูปใบเสร็จหรือเสียงให้ไมโลอ่าน แล้วตรวจและยืนยันก่อนบันทึก\n\nพิมพ์ “ช่วย” ได้ทุกเมื่อครับ";
@@ -173,15 +173,11 @@ async function sendPostSaveSummary(replyToken: string, lineUserId: string, lineC
   const budgetPercent = budgetLimit > 0 ? Math.round((budgetSpent / budgetLimit) * 100) : undefined;
   const summary = { transactionType: transaction.transactionType!, amount: transaction.amount!, category: transaction.category!, note: transaction.note, occurredAt, dailyIncome: dailyReport.income, dailyExpense: dailyReport.expense, dailyBalance: dailyReport.balance, budgetSpent, budgetLimit, budgetPercent };
   try {
-    await replyPostSaveSummaryImage(replyToken, summary);
+    // LINE-first: render the result as a native Flex bubble. Do not generate/send a full-card image.
+    await replyPostSaveSummary(replyToken, summary);
   } catch (error) {
-    console.error("[Milo Save] image summary failed; sending Flex fallback", { error: error instanceof Error ? error.message : "unknown" });
-    try {
-      await replyPostSaveSummary(replyToken, summary);
-    } catch (fallbackError) {
-      console.error("[Milo Save] reply fallback failed; pushing text summary", { error: fallbackError instanceof Error ? fallbackError.message : "unknown" });
-      await pushText(lineChatId, postSaveSummaryText(summary));
-    }
+    console.error("[Milo Save] native Flex summary failed; pushing text summary", { error: error instanceof Error ? error.message : "unknown" });
+    await pushText(lineChatId, postSaveSummaryText(summary));
   }
 }
 

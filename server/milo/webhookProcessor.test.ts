@@ -137,7 +137,7 @@ describe("LINE webhook processor", () => {
 
   it("confirms a staged capture into calendar, reminder, and pending bill but not a transaction", async () => {
     vi.mocked(db.registerWebhookEvent).mockResolvedValue(true);
-    vi.mocked(sourceIdentity).mockReturnValueOnce({ lineChatId: "U1", lineUserId: "U1", scope: "user" });
+    vi.mocked(sourceIdentity).mockReturnValue({ lineChatId: "U1", lineUserId: "U1", scope: "user" });
     vi.mocked(db.latestProposedCaptureDraft).mockResolvedValue({
       id: 31,
       payloadJson: JSON.stringify({
@@ -174,7 +174,7 @@ describe("LINE webhook processor", () => {
     vi.mocked(db.getPendingBillForAction).mockResolvedValue({ id: 42, title: "ค่าไฟ", amount: "1250.00", category: "ค่าสาธารณูปโภค" } as never);
     vi.mocked(db.createTransaction).mockResolvedValue(700 as never);
     vi.mocked(db.financeReport).mockResolvedValue({ income: 0, expense: 1250, balance: -1250 } as never);
-    vi.mocked(replyPostSaveSummaryImage).mockResolvedValue(new Response());
+    vi.mocked(replyPostSaveSummary).mockResolvedValue(new Response());
 
     await processEvent({
       type: "message", webhookEventId: "evt-bill-paid", timestamp: Date.parse("2026-09-16T03:00:00.000Z"),
@@ -186,7 +186,8 @@ describe("LINE webhook processor", () => {
       transactionType: "expense", amount: 1250, source: "pending_bill", sourceMessageId: "pending-bill:42",
     }));
     expect(db.markPendingBillPaid).toHaveBeenCalledWith({ id: 42, transactionId: 700, lineUserId: "U1", lineChatId: "U1" });
-    expect(replyPostSaveSummaryImage).toHaveBeenCalledTimes(1);
+    expect(replyPostSaveSummary).toHaveBeenCalledTimes(1);
+    expect(replyPostSaveSummaryImage).not.toHaveBeenCalled();
     expect(replyText).not.toHaveBeenCalled();
   });
 
@@ -399,7 +400,8 @@ describe("LINE webhook processor", () => {
     expect(db.addExpenseCategory).toHaveBeenCalledWith("U1", "เดินทาง", "expense", 7);
     expect(db.addExpenseCategory).toHaveBeenCalledWith("U1", "โบนัส", "income", 7);
     expect(db.listTransactionCategories).toHaveBeenCalledWith("U1", 7);
-    expect(replyPostSaveSummaryImage).toHaveBeenCalledWith("token", expect.objectContaining({ transactionType: "expense", amount: 65, category: "อาหาร", dailyExpense: 65 }));
+    expect(replyPostSaveSummary).toHaveBeenCalledWith("token", expect.objectContaining({ transactionType: "expense", amount: 65, category: "อาหาร", dailyExpense: 65 }));
+    expect(replyPostSaveSummaryImage).not.toHaveBeenCalled();
     expect(replyRichMenu).toHaveBeenCalledWith("token", expect.stringContaining("Milo ช่วยคุณจบงานใน LINE แชทเดียวครับ"), "help");
     expect(replyReminderList).toHaveBeenCalled();
   });
@@ -521,7 +523,8 @@ describe("LINE webhook processor", () => {
     expect(db.createTransaction).toHaveBeenCalledWith(expect.objectContaining({ note: expect.stringContaining("ร้านค้า/คู่ค้า: ร้านกาแฟ") }));
     expect(db.linkTransactionAttachment).toHaveBeenCalledWith({ transactionId: 155, vaultItemId: 9, lineUserId: "U1", label: "ใบเสร็จต้นฉบับ" });
     expect(db.setImageExtractionStatus).toHaveBeenCalledWith(3, "accepted");
-    expect(replyPostSaveSummaryImage).toHaveBeenCalledWith("token", expect.objectContaining({ transactionType: "expense", amount: 125, category: "อาหาร", dailyExpense: 125 }));
+    expect(replyPostSaveSummary).toHaveBeenCalledWith("token", expect.objectContaining({ transactionType: "expense", amount: 125, category: "อาหาร", dailyExpense: 125 }));
+    expect(replyPostSaveSummaryImage).not.toHaveBeenCalled();
   });
 
   it("edits a receipt proposal in chat without creating a transaction before confirmation", async () => {
@@ -728,12 +731,12 @@ describe("LINE webhook processor", () => {
     vi.mocked(db.financeReport).mockResolvedValue({ period: "day", income: 0, expense: 80, balance: -80, categories: { อาหาร: 80 } } as never);
     vi.mocked(db.financeBudgetCycleReport).mockResolvedValue({ key: "2026-09", categories: { อาหาร: 3880 }, income: 0, expense: 3880, balance: -3880, rows: [] } as never);
     vi.mocked(db.listBudgets).mockResolvedValue([{ category: "อาหาร", amount: "5000" }] as never);
-    vi.mocked(replyPostSaveSummaryImage).mockResolvedValue(new Response());
+    vi.mocked(replyPostSaveSummary).mockResolvedValue(new Response());
 
     await processEvent({ type: "message", webhookEventId: "evt-budget-expense", timestamp: Date.now(), replyToken: "token", source: { type: "user", userId: "U1" }, message: { id: "budget-expense", type: "text", text: "กินกาแฟ 80" } }, "{}");
 
     expect(db.createTransaction).toHaveBeenCalledWith(expect.objectContaining({ financeAccountId: 7, transactionType: "expense", amount: 80, category: "อาหาร", note: "กินกาแฟ" }));
-    expect(replyPostSaveSummaryImage).toHaveBeenCalledWith("token", expect.objectContaining({ amount: 80, category: "อาหาร", budgetSpent: 3880, budgetLimit: 5000, budgetPercent: 78 }));
+    expect(replyPostSaveSummary).toHaveBeenCalledWith("token", expect.objectContaining({ amount: 80, category: "อาหาร", budgetSpent: 3880, budgetLimit: 5000, budgetPercent: 78 }));
   });
 
   it("enforces the 20-item recurring transaction UAT limit in LINE", async () => {
