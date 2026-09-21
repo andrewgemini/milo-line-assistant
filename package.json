@@ -13,7 +13,8 @@
     "db:push": "drizzle-kit generate && drizzle-kit migrate",
     "test:release": "vitest run --maxWorkers=1 --minWorkers=1 --testTimeout=15000",
     "release:gate": "pnpm check && pnpm test:release && pnpm build",
-    "recovery:verify": "node scripts/recovery-drill.mjs"
+    "recovery:verify": "node scripts/recovery-drill.mjs",
+    "probe:jev": "node scripts/probe-jev.mjs"
   },
   "dependencies": {
     "@ai-sdk/gateway": "^4.0.80",
@@ -52,6 +53,7 @@
     "@trpc/client": "^11.6.0",
     "@trpc/react-query": "^11.6.0",
     "@trpc/server": "^11.6.0",
+    "@typesafe-ai/sdk": "0.6.0",
     "@vercel/functions": "^3.9.8",
     "ai": "^7.0.99",
     "axios": "^1.12.0",
