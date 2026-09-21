@@ -26,34 +26,117 @@ function chatModel(env: NodeJS.ProcessEnv = process.env) {
   return (env.MILO_GOOGLE_CHAT_MODEL || env.MILO_GEMINI_CHAT_MODEL || "gemini-3.8-flash").trim();
 }
 
-export async function generateGoogleGeminiText(args: { prompt: string; system: string; timeoutMs?: number }): Promise<string> {
-  const apiKey = googleGeminiApiKey();
-  if (!apiKey) throw new Error("Google Gemini API key is not configured");
-  const model = chatModel();
+type GeminiTransientError = Error & { status?: number; transient?: boolean };
+
+const geminiChatCooldownUntil = new Map<string, number>();
+
+function chatFallbackModel(env: NodeJS.ProcessEnv = process.env) {
+  return (env.MILO_GOOGLE_CHAT_FALLBACK_MODEL || "gemini-3.7-flash").trim();
+}
+
+function isTransientGeminiStatus(status: number) {
+  return status === 408 || status === 429 || status === 500 || status === 502 || status === 503 || status === 504;
+}
+
+function isAbortError(error: unknown) {
+  return error instanceof Error && (error.name === "AbortError" || /aborted|timeout/i.test(error.message));
+}
+
+async function sleep(ms: number) {
+  await new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function requestGeminiText(model: string, args: { prompt: string; system: string; timeoutMs: number; apiKey: string }) {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), args.timeoutMs ?? 20_000);
+  const timeout = setTimeout(() => controller.abort(), args.timeoutMs);
   try {
     const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(args.apiKey)}`,
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           systemInstruction: { parts: [{ text: args.system }] },
           contents: [{ role: "user", parts: [{ text: args.prompt.slice(0, 4000) }] }],
-          generationConfig: { temperature: 0.7, maxOutputTokens: 700 },
+          generationConfig: {
+            temperature: 0.7,
+            maxOutputTokens: 700,
+            thinkingConfig: { thinkingLevel: "low" },
+          },
         }),
         signal: controller.signal,
       },
     );
-    const payload = await response.json().catch(() => ({})) as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>; error?: { message?: string } };
-    if (!response.ok) throw new Error(payload.error?.message || `Google Gemini returned HTTP ${response.status}`);
+    const payload = await response.json().catch(() => ({})) as {
+      candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+      error?: { message?: string };
+    };
+    if (!response.ok) {
+      const error = new Error(payload.error?.message || `Google Gemini returned HTTP ${response.status}`) as GeminiTransientError;
+      error.status = response.status;
+      error.transient = isTransientGeminiStatus(response.status);
+      throw error;
+    }
     const text = payload.candidates?.[0]?.content?.parts?.map(part => part.text || "").join("").trim() || "";
     if (!text) throw new Error("Google Gemini returned empty content");
     return text.slice(0, 5000);
+  } catch (error) {
+    if (isAbortError(error)) {
+      const timeoutError = new Error(`Google Gemini request timed out after ${args.timeoutMs}ms`) as GeminiTransientError;
+      timeoutError.transient = true;
+      throw timeoutError;
+    }
+    throw error;
   } finally {
     clearTimeout(timeout);
   }
+}
+
+export async function generateGoogleGeminiText(args: { prompt: string; system: string; timeoutMs?: number }): Promise<string> {
+  const apiKey = googleGeminiApiKey();
+  if (!apiKey) throw new Error("Google Gemini API key is not configured");
+
+  const primary = chatModel();
+  const fallback = chatFallbackModel();
+  const models = [primary, fallback].filter((model, index, all) => model && all.indexOf(model) === index);
+  const requestedTimeout = args.timeoutMs ?? Number(process.env.MILO_GOOGLE_CHAT_TIMEOUT_MS || 7_500);
+  const perAttemptTimeout = Math.max(3_500, Math.min(requestedTimeout, 9_000));
+
+  let lastError: unknown;
+  for (let index = 0; index < models.length; index++) {
+    const model = models[index];
+    const cooldown = geminiChatCooldownUntil.get(model) ?? 0;
+    if (cooldown > Date.now() && index === 0 && models.length > 1) {
+      console.warn("[Milo Gemini Chat] primary model cooling down", { model, cooldownMs: cooldown - Date.now() });
+      continue;
+    }
+
+    try {
+      console.info("[Milo Gemini Chat] request", { model, attempt: index + 1, timeoutMs: perAttemptTimeout });
+      const text = await requestGeminiText(model, { ...args, timeoutMs: perAttemptTimeout, apiKey });
+      geminiChatCooldownUntil.delete(model);
+      console.info("[Milo Gemini Chat] success", { model, attempt: index + 1 });
+      return text;
+    } catch (error) {
+      lastError = error;
+      const transient = (error as GeminiTransientError)?.transient === true;
+      console.warn("[Milo Gemini Chat] attempt failed", {
+        model,
+        attempt: index + 1,
+        status: (error as GeminiTransientError)?.status,
+        transient,
+        message: error instanceof Error ? error.message : "unknown",
+      });
+      if (!transient) throw error;
+
+      geminiChatCooldownUntil.set(model, Date.now() + 15_000);
+      if (index < models.length - 1) {
+        await sleep(250 + Math.floor(Math.random() * 350));
+      }
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error("Google Gemini chat failed");
 }
 
 export async function generateGoogleGeminiJson<T>(args: {
