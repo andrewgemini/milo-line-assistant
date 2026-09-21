@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { getMessageContent, mascotExpenseCopy, pushFinanceReportCard, replyFinanceReportCard, replyGreetingHome, replyPostSaveSummary, replyPostSaveSummaryImage, replyVoiceCategoryChoices, replyVoiceProposal, replyVoiceProposalFallback } from "./line";
+import { getMessageContent, mascotExpenseCopy, pushFinanceReportCard, replyFinanceReportCard, replyGreetingHome, replyPostSaveSummary, replyCalendarList, replyReminderList, replyTransactionList, replyPostSaveSummaryImage, replyVoiceCategoryChoices, replyVoiceProposal, replyVoiceProposalFallback } from "./line";
 
 describe("LINE credentials", () => {
   afterEach(() => vi.restoreAllMocks());
@@ -132,5 +132,16 @@ describe("LINE credentials", () => {
     const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
     const payload = JSON.parse(String(init.body)) as { messages: Array<{ quickReply: { items: Array<{ action: { text: string } }> } }> };
     expect(payload.messages[0]?.quickReply.items.map(item => item.action.text)).toContain("เปลี่ยนหมวดเสียง อาหาร");
+  });
+
+  it("renders list results with direct LINE action buttons", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(null, { status: 200 }));
+    await replyTransactionList("reply-token", [{ id: 7, title: "รายจ่าย 80 บาท", detail: "อาหาร" }], { channelSecret: "secret", channelAccessToken: "token" });
+    await replyReminderList("reply-token", [{ id: 8, title: "ประชุม", detail: "18 ก.ย. 2569 10:00" }], { channelSecret: "secret", channelAccessToken: "token" });
+    await replyCalendarList("reply-token", [{ id: 9, title: "นัดลูกค้า", detail: "19 ก.ย. 2569 14:00" }], { channelSecret: "secret", channelAccessToken: "token" });
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(String(fetchMock.mock.calls[0]?.[1]?.body)).toContain("ลบรายการ #7");
+    expect(String(fetchMock.mock.calls[1]?.[1]?.body)).toContain("ยกเลิกเตือน #8");
+    expect(String(fetchMock.mock.calls[2]?.[1]?.body)).toContain("ยกเลิกนัด #9");
   });
 });

@@ -26,7 +26,7 @@ import { deserializeCapturePlan, formatCapturePreview, serializeCapturePlan } fr
 import { bangkokDayRange, formatTodayOverview } from "./todayOverview";
 import { formatEveningSummary, formatMorningBrief, shouldDeliverDailyDigest } from "./personalDigest";
 import { STANDARD_EXPENSE_CATEGORIES, STANDARD_INCOME_CATEGORIES } from "./financeCategories";
-import { financeReportCardText, getMessageContent, getProfile, lineCredentials, postSaveSummaryText, pushText, pushTextWithQuickReplies, replyFinanceReportCard, replyFinanceReportCardFallback, replyGreetingHome, replyMention, replyMiloOnboarding, replyMiloSettings, replyPostSaveSummary, replyPostSaveSummaryFallback, replyPostSaveSummaryImage, replyText, replyTextWithQuickReplies, replyVoiceCategoryChoices, replyVoiceProposal, replyVoiceProposalFallback, sourceIdentity, type LineEvent, type VoiceTransactionProposal, verifyLineSignature } from "./line";
+import { financeReportCardText, getMessageContent, getProfile, lineCredentials, postSaveSummaryText, pushText, pushTextWithQuickReplies, replyCalendarList, replyFinanceReportCard, replyFinanceReportCardFallback, replyGreetingHome, replyMention, replyMiloOnboarding, replyMiloSettings, replyPostSaveSummary, replyReminderList, replyText, replyTransactionList, replyPostSaveSummaryFallback, replyPostSaveSummaryImage, replyTextWithQuickReplies, replyVoiceCategoryChoices, replyVoiceProposal, replyVoiceProposalFallback, sourceIdentity, type LineEvent, type VoiceTransactionProposal, verifyLineSignature } from "./line";
 
 function helpText() {
   return "Milo ช่วยคุณจบงานใน LINE แชทเดียวครับ\n🔔 เตือน: เตือนประชุมพรุ่งนี้ 10:00 / เตือนดื่มน้ำทุก 30 นาที / รายการเตือน\n🎯 ตามงาน: ช่วยตามงาน Proposal ลูกค้า B / ช่วยตามงานส่งใบเสนอราคา อีก 24 ชั่วโมง\n☀️ วันนี้: วันนี้มีอะไร / สรุปเช้า / สรุปเย็น / บิลรอจ่าย / จ่ายบิล #เลขรายการ\n🗂️ เก็บ: เก็บ https://example.com #งาน / ค้นหา ใบเสนอราคา / สถานะคลัง\n📦 เอกสาร: สรุปเอกสารเดือนนี้ / ไฟล์ที่ต้องตรวจ\n🧠 จดหลายอย่าง: พรุ่งนี้บ่ายสองประชุมลูกค้า ค่าแท็กซี่ 300 ช่วยเตือนด้วย\n📅 ปฏิทิน: ลงปฏิทิน ประชุมทีมพรุ่งนี้ 10:00 / ดูปฏิทิน\n👥 กลุ่ม LINE: @ไมโล ผู้ช่วยกลุ่ม / @ไมโล แจ้งส่งงานด้วยถึง @สมชาย\n✅ งาน: งาน ส่งสรุปรายสัปดาห์ / ดูงาน / เสร็จงาน #12 / โน้ต รหัส Wi-Fi\n💰 การเงิน: กินกาแฟ 80 / เงินเดือนเข้า 35000 / ตั้งงบ อาหาร 5000 / สรุปเดือนนี้\n📷🎙️ ส่งรูปใบเสร็จหรือเสียงให้ไมโลอ่าน แล้วตรวจและยืนยันก่อนบันทึก\n\nพิมพ์ “ช่วย” ได้ทุกเมื่อครับ";
@@ -465,9 +465,11 @@ async function handleText(event: LineEvent, lineChatId: string, lineUserId: stri
     message = cancelled ? `ยกเลิกบิล #${command.id} แล้วครับ` : `ไม่พบบิลรอจ่าย #${command.id}`;
   } else if (command.type === "reminderList") {
     const items = await db.listRemindersForChat(lineUserId, lineChatId, scope);
-    message = items.length
-      ? `🔔 รายการเตือนใน${scope === "user" ? "แชทนี้" : "กลุ่มนี้"}\n${items.slice(0, 20).map(item => `#${item.id} • ${item.title} • ${item.nextRunAt ? formatDate(item.nextRunAt) : "รอกำหนดเวลา"}`).join("\n")}\n\nยกเลิกของคุณ: ยกเลิกเตือน #เลขรายการ`
-      : "🔔 ยังไม่มีรายการเตือนที่กำลังใช้งานในแชทนี้ครับ";
+    if (event.replyToken) {
+      await replyReminderList(event.replyToken, items.slice(0, 10).map(item => ({ id: item.id, title: item.title, detail: item.nextRunAt ? formatDate(item.nextRunAt) : "รอกำหนดเวลา" })));
+      return;
+    }
+    message = items.length ? "🔔 มีรายการเตือน " + items.length + " รายการ" : "🔔 ยังไม่มีรายการเตือนที่กำลังใช้งานในแชทนี้ครับ";
   } else if (command.type === "reminderCancel") {
     const cancelled = await db.cancelReminderForChat(command.id, lineUserId, lineChatId);
     message = cancelled ? `ยกเลิกเตือน #${command.id} แล้วครับ` : `ไม่พบรายการเตือน #${command.id} ที่คุณยกเลิกได้ในแชทนี้`;
@@ -486,9 +488,11 @@ async function handleText(event: LineEvent, lineChatId: string, lineUserId: stri
     message = `📅 เพิ่มนัด #${id} ในปฏิทิน Milo แล้ว\n${command.data.title}\n${formatDate(command.data.startsAt)} – ${formatDate(command.data.endsAt)}\n\nGoogle Calendar: ${googleUrl}\nApple/Outlook (.ics): ${icsUrl}`;
   } else if (command.type === "calendarList") {
     const items = await db.listCalendarEvents(lineUserId, lineChatId, new Date(), 20);
-    message = items.length
-      ? `📅 นัดหมายที่กำลังจะถึง\n${items.map(item => `#${item.id} • ${item.title} • ${formatDate(item.startsAt)}`).join("\n")}`
-      : "📅 ยังไม่มีนัดหมายที่กำลังจะถึงในแชทนี้ครับ";
+    if (event.replyToken) {
+      await replyCalendarList(event.replyToken, items.slice(0, 10).map(item => ({ id: item.id, title: item.title, detail: formatDate(item.startsAt) })));
+      return;
+    }
+    message = items.length ? "📅 มีนัดหมาย " + items.length + " รายการ" : "📅 ยังไม่มีนัดหมายที่กำลังจะถึงในแชทนี้ครับ";
   } else if (command.type === "calendarCancel") {
     const cancelled = await db.cancelCalendarEvent(command.id, lineUserId, lineChatId);
     message = cancelled ? `ยกเลิกนัด #${command.id} แล้วครับ` : `ไม่พบนัด #${command.id} ที่คุณยกเลิกได้ในแชทนี้`;
@@ -777,8 +781,12 @@ async function handleText(event: LineEvent, lineChatId: string, lineUserId: stri
     const budgets = await db.listBudgets(lineUserId, report.key, financeScope!.financeAccountId);
     message = budgets.length ? `📊 งบประมาณรอบ ${formatBudgetCycleLabel(new Date(), startDay)}\n` + budgets.slice(0, 10).map(item => `• ${item.category}: ใช้ไป ${(report.categories[item.category] ?? 0).toLocaleString("th-TH")} / งบ ${Number(item.amount).toLocaleString("th-TH")} บาท`).join("\n") : `📊 ยังไม่มีงบประมาณที่ตั้งไว้ในรอบ ${formatBudgetCycleLabel(new Date(), startDay)}\nตัวอย่าง: ตั้งงบ อาหาร 5000\nเปลี่ยนวันเริ่มรอบ: ตั้งวันเริ่มงบ 14`;
   } else if (command.type === "transactionList") {
-    const results = await db.searchTransactions(lineUserId, "", 10, financeScope!.financeAccountId);
-    message = results.length ? "📋 รายการล่าสุด\n" + results.map(item => `#${item.id} • ${item.transactionType === "expense" ? "รายจ่าย" : "รายรับ"} ${Number(item.amount).toLocaleString("th-TH")} บาท • ${item.category}`).join("\n") : "📋 ยังไม่มีรายการธุรกรรมครับ";
+    const results = await db.listTransactions(lineUserId, undefined, undefined, false, financeScope!.financeAccountId);
+    if (event.replyToken) {
+      await replyTransactionList(event.replyToken, results.map(item => ({ id: item.id, title: (item.transactionType === "expense" ? "รายจ่าย " : "รายรับ ") + Number(item.amount).toLocaleString("th-TH") + " บาท", detail: item.category + (item.note ? " • " + item.note : "") })));
+      return;
+    }
+    message = results.length ? "📋 มีรายการล่าสุด " + results.length + " รายการ" : "📋 ยังไม่มีรายการธุรกรรมครับ";
   } else if (command.type === "greeting") {
     message = "สวัสดีครับ 👋 ผมไมโล ผู้ช่วยการเงินของคุณ\nพร้อมช่วยจดรายรับรายจ่าย อ่านสลิป/ใบเสร็จ ฟังข้อความเสียง ดูสรุป และคุมงบให้ครับ";
     if (event.replyToken) { await replyGreetingHome(event.replyToken); return; }

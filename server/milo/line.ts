@@ -506,3 +506,34 @@ export async function replyRichMenu(replyToken: string, text: string, artwork: R
     }),
   });
 }
+export type MiloListRow = { id: number; title: string; detail: string; actionLabel?: string; actionText?: string };
+
+async function replyMiloListBubble(replyToken: string, title: string, subtitle: string, rows: MiloListRow[], credentials = lineCredentials()) {
+  const contents = rows.slice(0, 10).map(row => ({
+    type: "box", layout: "horizontal", spacing: "sm", paddingAll: "10px", cornerRadius: "lg", backgroundColor: "#FFFFFF",
+    contents: [
+      { type: "box", layout: "vertical", flex: 1, contents: [
+        { type: "text", text: ("#" + row.id + " " + row.title).slice(0, 120), size: "sm", weight: "bold", color: "#315F58", wrap: true },
+        { type: "text", text: row.detail.slice(0, 180), size: "xxs", color: "#789891", wrap: true, margin: "xs" },
+      ] },
+      ...(row.actionText ? [{ type: "button", style: "secondary", height: "sm", flex: 0, action: { type: "message", label: (row.actionLabel ?? "ยกเลิก").slice(0, 20), text: row.actionText.slice(0, 300) } }] : []),
+    ],
+  }));
+  return callLine("/v2/bot/message/reply", credentials, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ replyToken, messages: [{ type: "flex", altText: title, contents: { type: "bubble", size: "mega", body: { type: "box", layout: "vertical", spacing: "md", backgroundColor: "#F3FBF7", contents: [
+    { type: "text", text: title, size: "xl", weight: "bold", color: "#0D735B" },
+    { type: "text", text: subtitle, size: "xs", color: "#789891", wrap: true },
+    ...(contents.length ? contents : [{ type: "text", text: "ยังไม่มีรายการครับ", size: "sm", color: "#789891", margin: "md" }]),
+  ] } } }] }) });
+}
+
+export async function replyTransactionList(replyToken: string, rows: MiloListRow[], credentials = lineCredentials()) {
+  return replyMiloListBubble(replyToken, "📋 รายการล่าสุด", "แตะปุ่มด้านขวาเพื่อลบรายการที่ต้องการ", rows.map(row => ({ ...row, actionLabel: "ลบ", actionText: "ลบรายการ #" + row.id })), credentials);
+}
+
+export async function replyReminderList(replyToken: string, rows: MiloListRow[], credentials = lineCredentials()) {
+  return replyMiloListBubble(replyToken, "🔔 รายการเตือน", "แต่ละรายการมีปุ่มยกเลิกให้กดได้ทันที", rows.map(row => ({ ...row, actionLabel: "ยกเลิก", actionText: "ยกเลิกเตือน #" + row.id })), credentials);
+}
+
+export async function replyCalendarList(replyToken: string, rows: MiloListRow[], credentials = lineCredentials()) {
+  return replyMiloListBubble(replyToken, "📅 ปฏิทิน Milo", "นัดหมายที่กำลังจะถึง แตะยกเลิกได้จากรายการ", rows.map(row => ({ ...row, actionLabel: "ยกเลิก", actionText: "ยกเลิกนัด #" + row.id })), credentials);
+}
