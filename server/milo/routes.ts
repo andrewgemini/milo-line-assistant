@@ -162,8 +162,10 @@ function monthKeyForBangkok(date: Date) {
 }
 async function sendPostSaveSummary(replyToken: string, lineUserId: string, lineChatId: string, financeAccountId: number, transaction: Pick<VoiceTransactionProposal, "transactionType" | "amount" | "category" | "note"> & { occurredAt?: Date }) {
   const occurredAt = transaction.occurredAt ?? new Date();
-  const dailyReport = await db.financeReport(lineUserId, "day", occurredAt, financeAccountId);
-  const budgetCycleReport = await db.financeBudgetCycleReport(lineUserId, occurredAt, financeAccountId);
+  const [dailyReport, budgetCycleReport] = await Promise.all([
+    db.financeReport(lineUserId, "day", occurredAt, financeAccountId),
+    db.financeBudgetCycleReport(lineUserId, occurredAt, financeAccountId),
+  ]);
   const budgets = await db.listBudgets(lineUserId, budgetCycleReport.key, financeAccountId);
   const budget = budgets.find(item => item.category === transaction.category);
   const budgetLimit = budget ? Number(budget.amount) : 0;
