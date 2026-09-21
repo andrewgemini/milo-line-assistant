@@ -512,6 +512,7 @@ export async function analyzeImage(dataUrl: string, options: { gatewayToken?: st
         providerAnalysis = direct;
         directVisionAnalysis = direct;
         console.info("[Milo Image] Google Gemini direct vision applied before OCR merge");
+        return sanitizeAnalysisMerchants(direct);
       } catch (error) {
         console.warn("[Milo Image] Google Gemini direct vision retry failed", {
           error: error instanceof Error ? error.message : "unknown",
@@ -519,6 +520,10 @@ export async function analyzeImage(dataUrl: string, options: { gatewayToken?: st
       }
     }
 
+    // Do not turn a provider outage into a confident but unverified financial proposal.
+    if (googleGeminiConfigured() && !providerAnalysis) {
+      throw new Error("Image AI temporarily unavailable; please retry the original image later");
+    }
     const ocrAnalysis = await analyzeImageWithOcr(dataUrl);
     if (!providerAnalysis) {
       let selected = ocrAnalysis;

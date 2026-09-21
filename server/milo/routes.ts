@@ -997,7 +997,7 @@ async function handleMedia(event: LineEvent, lineChatId: string, lineUserId: str
     });
     let userNotified = false;
     try {
-      await pushText(lineChatId, "เก็บรูปไว้แล้ว แต่ระบบอ่านสลิป/ใบเสร็จครั้งนี้ไม่สำเร็จ กรุณาลองส่งภาพที่คมชัดและเห็นยอด วันที่ เวลา และผู้รับครบถ้วนอีกครั้งน่ะจ๊ะ");
+      await pushText(lineChatId, "เก็บรูปไว้แล้ว แต่ระบบอ่านสลิป/ใบเสร็จครั้งนี้ไม่สำเร็จ อาจเกิดจากบริการ AI ไม่พร้อมหรือภาพอ่านไม่ชัด ยังไม่ได้บันทึกค่าใช้จ่ายครับ กรุณาลองส่งภาพต้นฉบับเดิมอีกครั้งในภายหลัง");
       userNotified = true;
     } catch (pushError) {
       console.error("[Milo Image] failure notification failed", { messageId: message.id, error: pushError instanceof Error ? pushError.message : "unknown" });
