@@ -262,6 +262,7 @@ export async function replyPostSaveSummary(replyToken: string, summary: PostSave
               { type: "text", text: mascotExpenseCopy(summary.transactionType, summary.amount), size: "xs", wrap: true, color: "#7B6E97" },
             ] },
           ] },
+          miloFinanceBrandStrip(),
           { type: "box", layout: "vertical", spacing: "md", paddingAll: "16px", cornerRadius: "md", backgroundColor: "#FFFEFB", contents: [
             { type: "box", layout: "horizontal", alignItems: "center", contents: [
               { type: "text", text: `${isExpense ? "รายจ่าย" : "รายรับ"}  •  ${categoryLabel}`, size: "sm", weight: "bold", color: accent, flex: 1 },
@@ -289,8 +290,9 @@ export async function replyPostSaveSummary(replyToken: string, summary: PostSave
             ] },
           ] },
         ] },
-        footer: { type: "box", layout: "vertical", paddingAll: "16px", backgroundColor: "#F2F0FF", contents: [
+        footer: { type: "box", layout: "vertical", spacing: "sm", paddingAll: "16px", backgroundColor: "#F2F0FF", contents: [
           { type: "button", style: "primary", color: "#7657AA", height: "sm", action: { type: "message", label: "ดูสรุปยอดวันนี้", text: "สรุปวันนี้" } },
+          { type: "button", style: "secondary", height: "sm", action: { type: "message", label: "ยกเลิกรายการล่าสุด", text: "ยกเลิกรายการล่าสุด" } },
         ] },
       },
       },
@@ -299,24 +301,11 @@ export async function replyPostSaveSummary(replyToken: string, summary: PostSave
 }
 
 export async function replyPostSaveSummaryImage(replyToken: string, summary: PostSaveSummary, credentials = lineCredentials()) {
-  const imageUrl = miloSaveResultImageUrl(summary);
-  return callLine("/v2/bot/message/reply", credentials, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ replyToken, messages: [{
-      type: "image",
-      originalContentUrl: imageUrl,
-      previewImageUrl: imageUrl,
-      quickReply: { items: [
-        { type: "action", action: { type: "message", label: "ยกเลิกรายการล่าสุด", text: "ยกเลิกรายการล่าสุด" } },
-        { type: "action", action: { type: "message", label: "สรุปวันนี้", text: "สรุปวันนี้" } },
-      ] },
-    }] }),
-  });
+  return replyPostSaveSummary(replyToken, summary, credentials);
 }
 
-/** Compatibility alias retained for callers/tests; now image-only by design. */
-export const replyPostSaveSummaryFallback = replyPostSaveSummaryImage;
+/** Compatibility aliases retained for older callers; both now send native LINE Flex. */
+export const replyPostSaveSummaryFallback = replyPostSaveSummary;
 
 export async function replyVoiceCategoryChoices(replyToken: string, credentials = lineCredentials()) {
   const popular = ["อาหาร", "เดินทาง", "ค่าสาธารณูปโภค", "ช้อปปิ้ง", "สุขภาพ"];

@@ -72,22 +72,24 @@ describe("LINE credentials", () => {
     expect(String(init.body)).toContain("รายจ่าย 280 บาท");
     expect(payload.messages[0]?.contents.body.backgroundColor).toBe("#F2F0FF");
     expect(String(init.body)).toContain('"text":"✓"');
-    expect(payload.messages[0]?.contents.body.contents[1]?.backgroundColor).toBe("#FFFEFB");
+    expect(String(init.body)).toContain("MILO  •  FINANCE");
+    expect(payload.messages[0]?.contents.body.contents.some(item => item.backgroundColor === "#FFFEFB")).toBe(true);
     expect(payload.messages[0]?.contents.footer.contents[0]?.action.text).toBe("สรุปวันนี้");
+    expect(payload.messages[0]?.contents.footer.contents[1]?.action.text).toBe("ยกเลิกรายการล่าสุด");
   });
 
-  it("sends the post-save success as one image message only", async () => {
+  it("keeps the legacy post-save helper native Flex with Milo and item data", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(null, { status: 200 }));
     await replyPostSaveSummaryImage("reply-token", { transactionType: "expense", amount: 80, category: "อาหาร", note: "กาแฟ", dailyIncome: 0, dailyExpense: 80, dailyBalance: -80, occurredAt: new Date("2026-09-12T13:54:00.000Z"), budgetSpent: 1040, budgetLimit: 1000, budgetPercent: 104 }, { channelSecret: "secret", channelAccessToken: "token" });
     const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
-    const payload = JSON.parse(String(init.body)) as { messages: Array<{ type: string; originalContentUrl?: string; previewImageUrl?: string }> };
+    const payload = JSON.parse(String(init.body)) as { messages: Array<{ type: string; contents?: unknown; originalContentUrl?: string }> };
     expect(payload.messages).toHaveLength(1);
-    expect(payload.messages[0]?.type).toBe("image");
-    expect(payload.messages[0]?.originalContentUrl).toContain("/api/milo/save-result.png?");
-    expect(payload.messages[0]?.originalContentUrl).toContain("item=%E0%B8%81%E0%B8%B2%E0%B9%81%E0%B8%9F");
-    expect(payload.messages[0]?.originalContentUrl).toContain("amount=80");
-    expect(payload.messages[0]?.originalContentUrl).toContain("render=glyph-v3");
-    expect(payload.messages[0]?.previewImageUrl).toBe(payload.messages[0]?.originalContentUrl);
+    expect(payload.messages[0]?.type).toBe("flex");
+    expect(payload.messages[0]?.originalContentUrl).toBeUndefined();
+    expect(String(init.body)).toContain("MILO  •  FINANCE");
+    expect(String(init.body)).toContain("น้องแมวช่วยดูแลยอดของคุณ");
+    expect(String(init.body)).toContain("กาแฟ");
+    expect(String(init.body)).toContain("80 บาท");
   });
 
   it("uses deterministic mascot microcopy for small, medium, and high expenses", () => {
