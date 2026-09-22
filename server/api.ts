@@ -60,7 +60,7 @@ const healthHandler = async (req: express.Request, res: express.Response) => {
   res.status(200).json({
     status: runtime.authenticated && voice.configured && Boolean(process.env.LINE_CHANNEL_SECRET?.trim()) && Boolean(process.env.LINE_CHANNEL_ACCESS_TOKEN?.trim()) && Boolean(process.env.DATABASE_URL?.trim()) ? "ok" : "degraded",
     service: "milo",
-    release: "milo-systemone-gateway-2026-09-22",
+    release: "milo-native-richmenu-2026-09-23",
     intentRoutingMode: "systemone-first+deterministic-fallback",
     systemOneConfigured: systemOneConfigured(),
     systemOneProviderOrder: systemOneProviderOrder(),

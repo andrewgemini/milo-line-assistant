@@ -420,7 +420,8 @@ describe("LINE webhook processor", () => {
     expect(db.listTransactionCategories).toHaveBeenCalledWith("U1", 7);
     expect(replyPostSaveSummary).toHaveBeenCalledWith("token", expect.objectContaining({ transactionType: "expense", amount: 65, category: "อาหาร", dailyExpense: 65 }));
     expect(replyPostSaveSummaryImage).not.toHaveBeenCalled();
-    expect(replyRichMenu).toHaveBeenCalledWith("token", expect.stringContaining("Milo ช่วยคุณจบงานใน LINE แชทเดียวครับ"), "help");
+    expect(replyRichMenu).not.toHaveBeenCalled();
+    expect(replyText).toHaveBeenCalledWith("token", expect.stringContaining("Milo ช่วยคุณจบงานใน LINE แชทเดียวครับ"));
     expect(replyReminderList).toHaveBeenCalled();
   });
 
@@ -895,10 +896,10 @@ describe("rich menu webhook regression", () => {
     vi.mocked(db.listTransactionCategories).mockResolvedValue([]);
   });
   const event = (text: string) => ({ type: "message", webhookEventId: "richmenu-test", timestamp: Date.now(), replyToken: "token", source: { type: "user" as const, userId: "U1" }, message: { id: "menu", type: "text" as const, text } });
-  it.each([["จดบันทึก","record"],["งบประมาณ","budget"],["หมวดหมู่","categories"],["วิธีใช้งาน","help"]])("%s replies with %s artwork", async (text,key) => {
+  it.each(["จดบันทึก","งบประมาณ","หมวดหมู่","วิธีใช้งาน"])("%s replies with native LINE output instead of artwork", async text => {
     await processEvent(event(text), "{}");
-    expect(replyRichMenu).toHaveBeenCalledWith("token", expect.any(String), key);
-    expect(replyText).not.toHaveBeenCalled();
+    expect(replyRichMenu).not.toHaveBeenCalled();
+    expect(replyText).toHaveBeenCalledWith("token", expect.any(String));
     expect(db.finishWebhookEvent).toHaveBeenCalledWith("richmenu-test", "processed");
   });
   it("รายการ replies with the real transaction list", async () => {
@@ -929,24 +930,25 @@ describe("rich menu webhook regression", () => {
     expect(replyRichMenu).not.toHaveBeenCalled();
     expect(replyText).toHaveBeenCalledWith("token", expect.stringContaining("ยังไม่พบบัญชี"));
   });
-  it("analysis computes actual account data before replying with artwork", async () => {
+  it("analysis computes actual account data and replies natively", async () => {
     vi.mocked(generateFinancialInsight).mockResolvedValue({ dataSufficiency: "limited", summary: "ข้อมูลจริง", highlights: [], suggestedActions: [] } as never);
     await processEvent(event("วิเคราะห์"), "{}");
     expect(db.financeReport).toHaveBeenCalledWith("U1", "month", expect.any(Date), 7);
     expect(generateFinancialInsight).toHaveBeenCalled();
-    expect(replyRichMenu).toHaveBeenCalledWith("token", expect.stringContaining("ข้อมูลจริง"), "analysis");
-    expect(replyText).not.toHaveBeenCalled();
+    expect(replyRichMenu).not.toHaveBeenCalled();
+    expect(replyText).toHaveBeenCalledWith("token", expect.stringContaining("ข้อมูลจริง"));
   });
   it.each([["สรุป","year"],["สรุปวันนี้","day"],["สรุปสัปดาห์นี้","week"],["สรุปเดือนนี้","month"],["สรุปปีนี้","year"]])("%s loads the requested period", async (text,period) => {
     await processEvent(event(text), "{}");
     expect(db.financeReport).toHaveBeenCalledWith("U1", period, expect.any(Date), 7);
     expect(replyFinanceReportCard).toHaveBeenCalled();
   });
-  it("budget overview includes real category spending", async () => {
+  it("budget overview includes real category spending and replies natively", async () => {
     vi.mocked(db.listBudgets).mockResolvedValue([{category:"อาหาร",amount:"5000"}] as never);
     vi.mocked(db.financeBudgetCycleReport).mockResolvedValue({key:"2026-09",period:"budget-cycle",categories:{อาหาร:125},income:0,expense:125,balance:-125,rows:[]} as never);
     await processEvent(event("งบประมาณ"), "{}");
-    expect(replyRichMenu).toHaveBeenCalledWith("token",expect.stringContaining("ใช้ไป 125 / งบ 5,000"),"budget");
+    expect(replyRichMenu).not.toHaveBeenCalled();
+    expect(replyText).toHaveBeenCalledWith("token",expect.stringContaining("ใช้ไป 125 / งบ 5,000"));
   });
   it("falls back to useful text when artwork is rejected", async () => {
     vi.mocked(replyRichMenu).mockRejectedValueOnce(new Error("image rejected"));

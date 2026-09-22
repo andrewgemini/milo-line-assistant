@@ -5,13 +5,16 @@ import { parseMiloCommand } from "./commandParser";
 import { replyRichMenu } from "./line";
 afterEach(() => vi.restoreAllMocks());
 describe("rich menu artwork and advertised commands", () => {
-  it.each([["จดบันทึก","record"],["สรุป","report-year"],["สรุปวันนี้","report-day"],["สรุปสัปดาห์นี้","report-week"],["สรุปเดือนนี้","report-month"],["สรุปปีนี้","report-year"],["วิเคราะห์","analysis"],["งบประมาณ","budget"],["รายการ","transactions"],["หมวดหมู่","categories"],["ตั้งค่า","settings"],["วิธีใช้งาน","help"],["สวัสดีไมโล","overview"]])("maps %s to %s", (text,key) => expect(artworkForCommand(parseMiloCommand(text))).toBe(key));
-  it("maps every deployed rich-menu action to supported artwork", () => {
+  it.each(["จดบันทึก","สรุป","สรุปวันนี้","สรุปสัปดาห์นี้","สรุปเดือนนี้","สรุปปีนี้","วิเคราะห์","งบประมาณ","รายการ","หมวดหมู่","ตั้งค่า","วิธีใช้งาน"])("%s uses native LINE output instead of artwork", text => expect(artworkForCommand(parseMiloCommand(text))).toBeUndefined());
+  it("keeps artwork only for the explicit greeting flow", () => expect(artworkForCommand(parseMiloCommand("สวัสดีไมโล"))).toBe("overview"));
+  it("maps every deployed rich-menu action to a supported command", () => {
     const config=JSON.parse(readFileSync("shared/richmenu.json","utf8"));
     expect(config.areas).toHaveLength(20);
     for(const area of config.areas) {
       expect(area.action.type).toBe("message");
-      expect(parseMiloCommand(area.action.text).type).not.toBe("invalid");
+      const command = parseMiloCommand(area.action.text);
+      expect(command.type).not.toBe("invalid");
+      expect(artworkForCommand(command)).toBeUndefined();
     }
   });
   it.each([

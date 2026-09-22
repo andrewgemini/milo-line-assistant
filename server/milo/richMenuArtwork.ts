@@ -54,19 +54,7 @@ export const RICH_MENU_ARTWORK = {
 export type RichMenuArtwork = keyof typeof RICH_MENU_ARTWORK;
 
 export function artworkForCommand(command: MiloCommand): RichMenuArtwork | undefined {
-  if (command.type === "financeReport") return ("report-" + command.period) as RichMenuArtwork;
-  const keys: Partial<Record<MiloCommand["type"], RichMenuArtwork>> = {
-    recordGuide: "record",
-    aiSummary: "analysis",
-    budgetOverview: "budget",
-    transactionList: "transactions",
-    categoryList: "categories",
-    settingGuide: "settings",
-    help: "help",
-    greeting: "overview",
-    dashboardGuide: "overview",
-  };
-  return keys[command.type];
+  return command.type === "greeting" ? "overview" : undefined;
 }
 
 /**

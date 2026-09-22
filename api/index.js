@@ -2056,19 +2056,7 @@ var RICH_MENU_ARTWORK = {
   }
 };
 function artworkForCommand(command) {
-  if (command.type === "financeReport") return "report-" + command.period;
-  const keys = {
-    recordGuide: "record",
-    aiSummary: "analysis",
-    budgetOverview: "budget",
-    transactionList: "transactions",
-    categoryList: "categories",
-    settingGuide: "settings",
-    help: "help",
-    greeting: "overview",
-    dashboardGuide: "overview"
-  };
-  return keys[command.type];
+  return command.type === "greeting" ? "overview" : void 0;
 }
 function artworkMessages(key) {
   const base = process.env.MILO_PUBLIC_URL || "https://milo-line-assistant.onrender.com";
@@ -9364,7 +9352,7 @@ var healthHandler = async (req, res) => {
   res.status(200).json({
     status: runtime.authenticated && voice.configured && Boolean(process.env.LINE_CHANNEL_SECRET?.trim()) && Boolean(process.env.LINE_CHANNEL_ACCESS_TOKEN?.trim()) && Boolean(process.env.DATABASE_URL?.trim()) ? "ok" : "degraded",
     service: "milo",
-    release: "milo-systemone-gateway-2026-09-22",
+    release: "milo-native-richmenu-2026-09-23",
     intentRoutingMode: "systemone-first+deterministic-fallback",
     systemOneConfigured: systemOneConfigured(),
     systemOneProviderOrder: systemOneProviderOrder(),
