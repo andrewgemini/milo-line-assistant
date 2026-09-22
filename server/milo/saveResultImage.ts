@@ -1,4 +1,6 @@
 import type { Express, Request, Response } from "express";
+import { readFile } from "node:fs/promises";
+import path from "node:path";
 import sharp from "sharp";
 import { budgetStatusCopy, getBudgetMetrics } from "./budgetStatus";
 import { normalizeRenderText, vectorTextSvg } from "./vectorText";
@@ -225,6 +227,24 @@ function buildThaiTextLayers(input: {
   return layers;
 }
 
+async function loadSaveCompleteTemplate() {
+  const localPath = path.join(process.cwd(), "client", "public", "milo-richmenu", "save-complete.png");
+  try {
+    return await readFile(localPath);
+  } catch {
+    const baseUrl = (process.env.MILO_RICH_MENU_IMAGE_BASE_URL ?? "https://milo-line-assistant.onrender.com/milo-richmenu").replace(/\/+$/, "");
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 5000);
+    try {
+      const response = await fetch(`${baseUrl}/save-complete.png`, { cache: "no-store", signal: controller.signal });
+      if (!response.ok) throw new Error(`Save result template HTTP ${response.status}`);
+      return Buffer.from(await response.arrayBuffer());
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+}
+
 export function registerSaveResultImageRoute(app: Express) {
   app.get("/api/milo/save-result.png", async (req: Request, res: Response) => {
     try {
@@ -238,10 +258,7 @@ export function registerSaveResultImageRoute(app: Express) {
 
       if (!Number.isFinite(amount) || amount <= 0) return res.status(400).type("text/plain").send("Invalid amount");
 
-      const baseUrl = (process.env.MILO_RICH_MENU_IMAGE_BASE_URL ?? "https://milo-line-assistant.onrender.com/milo-richmenu").replace(/\/+$/, "");
-      const templateResponse = await fetch(`${baseUrl}/save-complete.png`, { cache: "no-store" });
-      if (!templateResponse.ok) return res.status(502).type("text/plain").send("Save result template unavailable");
-      const template = Buffer.from(await templateResponse.arrayBuffer());
+      const template = await loadSaveCompleteTemplate();
 
       const svg = buildSaveResultSvg({ transactionType, item, category, amount, occurredAt, budgetSpent, budgetLimit });
       const shapesOnlySvg = svg.replace(/<text\b[^>]*>[\s\S]*?<\/text>/g, "");

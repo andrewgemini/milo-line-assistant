@@ -13,6 +13,7 @@ import { buildFinanceExportUrl } from "./financeExport";
 import { budgetCycleWindow, formatBudgetCycleLabel } from "./budgetCycle";
 import { generateFinancialInsight, suggestExpenseCategory } from "./financialAssistant";
 import { parseMiloCommand } from "./commandParser";
+import { routeMiloIntent, routingLog, type MiloIntentDecision } from "./intentRouter";
 import { deliverDueReminders } from "./reminderDelivery";
 import { deliverDueRecurringTransactions } from "./recurringTransactionDelivery";
 import { assertRecurringCapacity } from "./recurringLimit";
@@ -57,6 +58,35 @@ function contextualFallback(text: string) {
   if (/สรุป|ยอด|เงิน|วิเคราะห์/.test(value)) return { text: "ต้องการดูภาพรวมช่วงไหนครับ?", actions: [{ label: "สรุปวันนี้", text: "สรุปวันนี้" }, { label: "สรุปเดือนนี้", text: "สรุปเดือนนี้" }, { label: "วิเคราะห์", text: "วิเคราะห์" }] };
   if (/จด|ซื้อ|กิน|จ่าย|รับ/.test(value)) return { text: "พิมพ์รายการพร้อมยอดได้เลยครับ เช่น “กินกาแฟ 80”", actions: [{ label: "วิธีจด", text: "จดบันทึก" }, { label: "รายการล่าสุด", text: "รายการ" }, { label: "สรุปวันนี้", text: "สรุปวันนี้" }] };
   return { text: "ไมโลยังไม่แน่ใจว่า “" + (value || "ข้อความนี้") + "” ต้องการทำอะไร เลือกทางลัดได้เลยครับ", actions: [{ label: "จดรายรับ/รายจ่าย", text: "จดบันทึก" }, { label: "สรุปเดือนนี้", text: "สรุปเดือนนี้" }, { label: "วิธีใช้งาน", text: "วิธีใช้งาน" }] };
+}
+
+function routedFallback(text: string, routing: MiloIntentDecision) {
+  switch (routing.intent) {
+    case "transaction":
+      return { text: "ไมโลเข้าใจว่าเป็นงานการเงินครับ ส่งชื่อรายการกับยอดให้ชัดอีกนิด เช่น “กินกาแฟ 80”", actions: [{ label: "จดบันทึก", text: "จดบันทึก" }, { label: "รายการล่าสุด", text: "รายการ" }, { label: "สรุปวันนี้", text: "สรุปวันนี้" }] };
+    case "finance_summary":
+    case "financial_analysis":
+      return { text: "ไมโลเข้าใจว่าต้องการดูการเงินครับ เลือกช่วงหรือรูปแบบที่ต้องการได้เลย", actions: [{ label: "สรุปวันนี้", text: "สรุปวันนี้" }, { label: "สรุปเดือนนี้", text: "สรุปเดือนนี้" }, { label: "วิเคราะห์", text: "วิเคราะห์" }] };
+    case "budget":
+      return { text: "ไมโลเข้าใจว่าเป็นเรื่องงบหรือหมวดครับ เลือกสิ่งที่ต้องการได้เลย", actions: [{ label: "ดูงบ", text: "งบ" }, { label: "ดูหมวด", text: "หมวดหมู่" }, { label: "ตั้งงบอาหาร", text: "ตั้งงบ อาหาร 5000" }] };
+    case "reminder":
+      return { text: "ไมโลเข้าใจว่าต้องการตั้งเตือนครับ ระบุสิ่งที่จะเตือนและวันเวลา เช่น “เตือนประชุมพรุ่งนี้ 10:00”", actions: [{ label: "รายการเตือน", text: "รายการเตือน" }, { label: "ตัวอย่าง", text: "เตือนประชุมพรุ่งนี้ 10:00" }] };
+    case "calendar":
+      return { text: "ไมโลเข้าใจว่าเป็นงานปฏิทินครับ ระบุหัวข้อและเวลา เช่น “ลงปฏิทิน ประชุมทีมพรุ่งนี้ 10:30”", actions: [{ label: "ดูปฏิทิน", text: "ดูปฏิทิน" }, { label: "ตัวอย่าง", text: "ลงปฏิทิน ประชุมทีมพรุ่งนี้ 10:30" }] };
+    case "vault":
+    case "document":
+      return { text: "ไมโลเข้าใจว่าเป็นงานเก็บหรือค้นหาเอกสารครับ ระบุว่าจะเก็บหรือค้นหาอะไร เช่น “ค้นหา ใบเสนอราคา”", actions: [{ label: "สถานะคลัง", text: "สถานะคลัง" }, { label: "ค้นหา", text: "ค้นหา ใบเสร็จ" }] };
+    case "todo":
+      return { text: "ไมโลเข้าใจว่าเป็นงานหรือโน้ตครับ ลองพิมพ์ “งาน ส่งสรุปรายสัปดาห์” หรือ “โน้ต รหัส Wi‑Fi ห้องประชุม”", actions: [{ label: "ดูงาน", text: "ดูงาน" }, { label: "วิธีใช้", text: "ช่วย" }] };
+    case "settings":
+      return { text: "ไมโลเข้าใจว่าต้องการตั้งค่าครับ", actions: [{ label: "ตั้งค่า", text: "ตั้งค่า" }, { label: "แดชบอร์ด", text: "แดชบอร์ด" }] };
+    case "export":
+      return { text: "ไมโลเข้าใจว่าต้องการส่งออกข้อมูลครับ", actions: [{ label: "Excel", text: "ส่งออก XLSX" }, { label: "CSV", text: "ส่งออก CSV" }] };
+    case "help":
+      return { text: helpText(), actions: [{ label: "จดบันทึก", text: "จดบันทึก" }, { label: "สรุปเดือนนี้", text: "สรุปเดือนนี้" }] };
+    default:
+      return contextualFallback(text);
+  }
 }
 
 function formatDate(date: Date) {
@@ -268,8 +298,10 @@ async function handleMiloOnboardingText(event: LineEvent, lineUserId: string, te
   if (event.replyToken) await replyMiloOnboarding(event.replyToken);
   return true;
 }
-async function handleText(event: LineEvent, lineChatId: string, lineUserId: string, scope: LineFinanceScope) {
+async function handleText(event: LineEvent, lineChatId: string, lineUserId: string, scope: LineFinanceScope, preRouting?: MiloIntentDecision) {
   const text = event.message?.text ?? "";
+  const routing = preRouting ?? await routeMiloIntent(text);
+
   if (/^(?:ไอดี|id|user\s*id)$/i.test(text.trim())) {
     if (event.source.type === "user") {
       if (event.replyToken) await replyText(event.replyToken, `LINE User ID ของคุณคือ\n${lineUserId}\n\nคัดลอกรหัสนี้ไปเชื่อมในแดชบอร์ดไมโลได้เลยครับ`);
@@ -798,12 +830,13 @@ async function handleText(event: LineEvent, lineChatId: string, lineUserId: stri
   } else if (command.type === "help") {
     message = helpText();
   } else {
-    const geminiReply = await geminiChatFallback(text);
+    const shouldUseChatLlm = routing.intent === "general_chat" || (routing.intent === "unknown" && routing.source === "deterministic");
+    const geminiReply = shouldUseChatLlm ? await geminiChatFallback(text) : undefined;
     if (geminiReply) {
       message = geminiReply;
     } else {
       if (event.replyToken) {
-        const fallback = contextualFallback(text);
+        const fallback = routedFallback(text, routing);
         await replyTextWithQuickReplies(event.replyToken, fallback.text, fallback.actions);
         return;
       }
@@ -953,6 +986,8 @@ async function handleMedia(event: LineEvent, lineChatId: string, lineUserId: str
     try {
       const transcript = await transcribeAudio({ audioBuffer: bytes, mimeType, language: "th", prompt: "ถอดเสียงภาษาไทยตามที่พูดจริงแบบคำต่อคำ ห้ามสรุป ห้ามตอบกลับ ห้ามเติมคำทักทายหรือคำที่ไม่ได้ยิน และต้องรักษาตัวเลข จำนวนเงิน บาท สตางค์ ชื่อรายการ และคำว่า รายรับ/รายจ่ายตามเสียงจริง", gatewayToken: runtime.gatewayToken });
       if ("error" in transcript) throw new Error(`${transcript.error}${transcript.details ? `: ${transcript.details}` : ""}`);
+      const routing = await routeMiloIntent(transcript.text);
+      console.info("[Milo Router] audio-transcript", routingLog(routing));
       const financeScope = await resolveFinanceScope(lineUserId, lineChatId, scope);
       const proposal = await buildVoiceProposal(transcript.text, lineUserId, financeScope?.financeAccountId);
       await db.saveVoiceTranscription({ vaultItemId: vaultId, lineChatId, lineUserId, transcript: transcript.text, language: transcript.language, durationSeconds: transcript.duration, proposalJson: JSON.stringify(proposal) });
@@ -988,6 +1023,8 @@ async function handleMedia(event: LineEvent, lineChatId: string, lineUserId: str
   if (isPdf) {
     try {
       const analysis = await analyzePdfBuffer(bytes);
+      const routing = await routeMiloIntent([analysis.summary, ...analysis.proposals.slice(0, 5).map(formatImageProposal)].join("\n"));
+      console.info("[Milo Router] pdf-extraction", routingLog(routing));
       await db.saveImageExtraction(vaultId, "expense", JSON.stringify(analysis), analysis.confidence);
       await persistDocumentIntelligence({
         vaultId, lineUserId, lineChatId, filename: message.fileName, mimeType,
@@ -1030,7 +1067,10 @@ async function handleMedia(event: LineEvent, lineChatId: string, lineUserId: str
   }
   try {
     const analysis = await analyzeImage(`data:${mimeType};base64,${bytes.toString("base64")}`, { gatewayToken: runtime.gatewayToken });
-    await db.saveImageExtraction(vaultId, analysis.proposals.some(item => item.kind === "expense") ? "expense" : "reminder", JSON.stringify(analysis), analysis.confidence);
+    const routing = await routeMiloIntent([analysis.summary, ...analysis.proposals.slice(0, 5).map(formatImageProposal)].join("\n"));
+    console.info("[Milo Router] image-extraction", routingLog(routing));
+    const extractionType = routing.intent === "reminder" ? "reminder" : analysis.proposals.some(item => item.kind === "expense") ? "expense" : "reminder";
+    await db.saveImageExtraction(vaultId, extractionType, JSON.stringify(analysis), analysis.confidence);
     await persistDocumentIntelligence({
       vaultId, lineUserId, lineChatId, filename: message.fileName, mimeType,
       storageReady: Boolean(stored?.key), fingerprint, senderDisplayName: runtime.senderDisplayName, analysis,
@@ -1081,13 +1121,15 @@ export async function processEvent(event: LineEvent, rawPayload: string, runtime
     const isMention = event.message.mention?.mentionees?.some(item => item.isSelf) || event.message.text?.trim().startsWith("@ไมโล");
     if (isGroup && event.message.type === "text" && !isMention) { await db.finishWebhookEvent(event.webhookEventId, "ignored"); return; }
     if (event.message.type === "text") {
+      const routing = await routeMiloIntent(event.message.text ?? "");
+      console.info("[Milo Router] pre-handler", routingLog(routing));
       const onboarding = identity.scope === "user" ? await db.getMiloOnboarding(identity.lineUserId) : undefined;
       if (onboarding?.status === "pending" && await handleMiloOnboardingText(event, identity.lineUserId, event.message.text ?? "")) {
         await db.finishWebhookEvent(event.webhookEventId, "processed");
         return;
       }
       await db.ensureCaptureSchema();
-      await handleText(event, identity.lineChatId, identity.lineUserId, identity.scope);
+      await handleText(event, identity.lineChatId, identity.lineUserId, identity.scope, routing);
     }
     else if (event.message.type === "image" || event.message.type === "file" || event.message.type === "audio") await handleMedia(event, identity.lineChatId, identity.lineUserId, identity.scope, { ...runtime, senderDisplayName: profile?.displayName });
     await db.finishWebhookEvent(event.webhookEventId, "processed");
