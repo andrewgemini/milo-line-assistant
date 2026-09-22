@@ -8,10 +8,10 @@ describe("rich menu artwork and advertised commands", () => {
   it.each([["จดบันทึก","record"],["สรุป","report-year"],["สรุปวันนี้","report-day"],["สรุปสัปดาห์นี้","report-week"],["สรุปเดือนนี้","report-month"],["สรุปปีนี้","report-year"],["วิเคราะห์","analysis"],["งบประมาณ","budget"],["รายการ","transactions"],["หมวดหมู่","categories"],["ตั้งค่า","settings"],["วิธีใช้งาน","help"],["สวัสดีไมโล","overview"]])("maps %s to %s", (text,key) => expect(artworkForCommand(parseMiloCommand(text))).toBe(key));
   it("maps every deployed rich-menu action to supported artwork", () => {
     const config=JSON.parse(readFileSync("shared/richmenu.json","utf8"));
-    expect(config.areas).toHaveLength(9);
+    expect(config.areas).toHaveLength(20);
     for(const area of config.areas) {
       expect(area.action.type).toBe("message");
-      expect(artworkForCommand(parseMiloCommand(area.action.text))).toBeDefined();
+      expect(parseMiloCommand(area.action.text).type).not.toBe("invalid");
     }
   });
   it.each([

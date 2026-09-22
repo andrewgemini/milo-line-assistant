@@ -285,6 +285,7 @@ async function handleText(event: LineEvent, lineChatId: string, lineUserId: stri
   const needsFinance = financeCommands.has(command.type) || captureNeedsFinance;
   const needsPlan = command.type === "reminder"
     || command.type === "followUp"
+    || command.type === "captureConfirm"
     || command.type === "pdfConfirm"
     || command.type === "budgetCycleStart"
     || (command.type === "captureDraft" && (captureNeedsFinance || command.plan.items.some(item => item.type === "reminder")))
