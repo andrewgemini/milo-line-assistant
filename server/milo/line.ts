@@ -35,7 +35,7 @@ async function callLine(path: string, credentials: LineCredentials, init: Reques
   return response;
 }
 
-const MILO_RICH_MENU_IMAGE_BASE_URL = (process.env.MILO_RICH_MENU_IMAGE_BASE_URL ?? "https://milo-line-app.vercel.app/milo-richmenu").replace(/\/+$/, "");
+const MILO_RICH_MENU_IMAGE_BASE_URL = (process.env.MILO_RICH_MENU_IMAGE_BASE_URL ?? "https://milo-line-assistant.onrender.com/milo-richmenu").replace(/\/+$/, "");
 
 export type MiloRichMenuImageKey = "home" | "analysis" | "record" | "wallet" | "settings" | "summary" | "save-complete" | "save-complete-preview";
 
@@ -45,7 +45,7 @@ export function miloRichMenuImageUrl(key: MiloRichMenuImageKey) {
 }
 
 export function miloSaveResultImageUrl(summary: PostSaveSummary) {
-  const appBaseUrl = (process.env.MILO_SAVE_RESULT_IMAGE_BASE_URL ?? "https://milo-line-app.vercel.app").replace(/\/+$/, "");
+  const appBaseUrl = (process.env.MILO_SAVE_RESULT_IMAGE_BASE_URL ?? "https://milo-line-assistant.onrender.com").replace(/\/+$/, "");
   const params = new URLSearchParams({
     transactionType: summary.transactionType,
     item: (summary.note?.trim() || summary.category).slice(0, 300),
@@ -74,6 +74,28 @@ export async function replyText(replyToken: string, text: string, credentials = 
   return callLine("/v2/bot/message/reply", credentials, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ replyToken, messages: [{ type: "text", text: text.slice(0, 5000) }] }) });
 }
 
+export async function replyMiloOnboarding(replyToken: string, displayName?: string, credentials = lineCredentials()) {
+  const imageUrl = new URL("/richmenu/greeting-home.png", process.env.MILO_PUBLIC_URL || "https://milo-line-assistant.onrender.com").href;
+  const name = displayName?.trim() ? displayName.trim().slice(0, 40) : "คุณ";
+  return callLine("/v2/bot/message/reply", credentials, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ replyToken, messages: [{ type: "flex", altText: "ตั้งค่า Milo ก่อนเริ่มใช้งาน", contents: { type: "bubble", size: "mega", hero: { type: "image", url: imageUrl, size: "full", aspectRatio: "20:11", aspectMode: "cover" }, body: { type: "box", layout: "vertical", spacing: "md", backgroundColor: "#F3FBF7", contents: [
+    { type: "text", text: "สวัสดีครับ 👋", weight: "bold", size: "xl", color: "#0D735B" },
+    { type: "text", text: "คุณ" + name + " เชื่อมต่อ Milo แล้ว", size: "sm", color: "#4B756B", wrap: true },
+    { type: "text", text: "ก่อนเริ่มใช้งาน ขอจัดค่าพื้นฐานให้ไมโลสักนิดนะครับ", size: "sm", color: "#6D8D86", wrap: true },
+    { type: "box", layout: "vertical", spacing: "sm", margin: "md", paddingAll: "12px", cornerRadius: "lg", backgroundColor: "#FFFFFF", contents: [
+      { type: "text", text: "สิ่งที่จะตั้งค่า", size: "xs", weight: "bold", color: "#2D675B" },
+      { type: "text", text: "• บัญชีส่วนตัวและยอดเริ่มต้น\n• หมวดหมู่รายรับ / รายจ่าย\n• งบประมาณและรายการประจำ\n• ปฏิทิน เตือน และสรุปอัตโนมัติ", size: "xs", color: "#708E87", wrap: true, margin: "sm" },
+    ] },
+  ] }, footer: { type: "box", layout: "vertical", spacing: "sm", backgroundColor: "#F3FBF7", contents: [
+    { type: "button", style: "primary", color: "#159A75", action: { type: "message", label: "เริ่มตั้งค่า", text: "เริ่มตั้งค่า" } },
+    { type: "button", style: "link", color: "#4E8A7D", action: { type: "message", label: "ตั้งค่าภายหลัง", text: "ตั้งค่า" } },
+  ] } } }] }) });
+}
+
+export async function replyMiloSettings(replyToken: string, credentials = lineCredentials()) {
+  const items = [["💰 บัญชี / ยอดเริ่มต้น", "ยอดเงินเริ่มต้น 0 บาท", "ตั้งยอดเงินเริ่มต้น 0 บาท"], ["🏷️ หมวดหมู่", "เพิ่มหรือลบหมวดรายรับ / รายจ่าย", "หมวดหมู่"], ["🎯 งบประมาณ", "กำหนดงบตามหมวดและรอบงบ", "งบประมาณ"], ["🔁 รายการประจำ", "ตั้งรายรับ / รายจ่ายที่เกิดซ้ำ", "รายการประจำ"], ["📅 ปฏิทิน / เตือน", "จัดการนัดหมายและการแจ้งเตือน", "ปฏิทิน"], ["📊 สรุปอัตโนมัติ", "ดูภาพรวมการเงินช่วงต่าง ๆ", "สรุปเดือนนี้"]] as const;
+  const cards = items.map(([title, desc, text]) => ({ type: "box", layout: "horizontal", spacing: "sm", paddingAll: "10px", cornerRadius: "md", backgroundColor: "#FFFFFF", contents: [{ type: "box", layout: "vertical", flex: 1, contents: [{ type: "text", text: title, size: "sm", weight: "bold", color: "#315F58" }, { type: "text", text: desc, size: "xxs", color: "#8AA49E", wrap: true, margin: "xs" }] }, { type: "button", style: "link", height: "sm", flex: 0, action: { type: "message", label: "เปิด", text } }] }));
+  return callLine("/v2/bot/message/reply", credentials, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ replyToken, messages: [{ type: "flex", altText: "ตั้งค่า Milo", contents: { type: "bubble", size: "mega", body: { type: "box", layout: "vertical", spacing: "md", backgroundColor: "#F7FCFA", contents: [{ type: "text", text: "⚙️ ตั้งค่า Milo", weight: "bold", size: "xl", color: "#0D735B" }, { type: "text", text: "จัดการค่าการเงินและการใช้งานจากหน้านี้ได้เลยครับ", size: "xs", color: "#75958D", wrap: true }, ...cards] }, footer: { type: "box", layout: "vertical", backgroundColor: "#F7FCFA", contents: [{ type: "button", style: "primary", color: "#159A75", action: { type: "message", label: "เริ่มใช้งาน Milo", text: "เริ่มใช้งาน" } }] } } }] }) });
+}
 export async function replyTextWithQuickReplies(replyToken: string, text: string, actions: Array<{ label: string; text: string }>, credentials = lineCredentials()) {
   return callLine("/v2/bot/message/reply", credentials, {
     method: "POST",
@@ -83,7 +105,7 @@ export async function replyTextWithQuickReplies(replyToken: string, text: string
 }
 
 export async function replyGreetingHome(replyToken: string, credentials = lineCredentials()) {
-  const base = process.env.MILO_PUBLIC_URL || "https://milo-line-app.vercel.app";
+  const base = process.env.MILO_PUBLIC_URL || "https://milo-line-assistant.onrender.com";
   const imageUrl = new URL("/richmenu/greeting-home.png", base).href;
   return callLine("/v2/bot/message/reply", credentials, {
     method: "POST",
@@ -100,7 +122,7 @@ export type VoiceTransactionProposal = {
   note?: string;
 };
 
-const MILO_VOICE_CAT_IMAGE_URL = (process.env.MILO_VOICE_CAT_IMAGE_URL ?? "https://milo-line-app.vercel.app/milo-voice-proposal-cat.webp").trim();
+const MILO_VOICE_CAT_IMAGE_URL = (process.env.MILO_VOICE_CAT_IMAGE_URL ?? "https://milo-line-assistant.onrender.com/milo-voice-proposal-cat.webp").trim();
 
 export type PostSaveSummary = {
   transactionType: "expense" | "income";
@@ -254,6 +276,7 @@ export async function replyPostSaveSummary(replyToken: string, summary: PostSave
       type: "flex", altText: postSaveSummaryText(summary),
       contents: {
         type: "bubble", size: "mega",
+        hero: { type: "image", url: miloRichMenuImageUrl("save-complete"), size: "full", aspectRatio: "20:5", aspectMode: "cover" },
         body: { type: "box", layout: "vertical", spacing: "md", paddingAll: "16px", backgroundColor: "#F2F0FF", contents: [
           { type: "box", layout: "horizontal", alignItems: "center", spacing: "md", paddingAll: "12px", cornerRadius: "md", backgroundColor: "#E4F8F2", contents: [
             { type: "box", layout: "vertical", justifyContent: "center", alignItems: "center", width: "38px", height: "38px", cornerRadius: "md", backgroundColor: "#5AC6AD", contents: [{ type: "text", text: "✓", align: "center", weight: "bold", size: "xl", color: "#FFFFFF" }] },
@@ -262,7 +285,6 @@ export async function replyPostSaveSummary(replyToken: string, summary: PostSave
               { type: "text", text: mascotExpenseCopy(summary.transactionType, summary.amount), size: "xs", wrap: true, color: "#7B6E97" },
             ] },
           ] },
-          miloFinanceBrandStrip(),
           { type: "box", layout: "vertical", spacing: "md", paddingAll: "16px", cornerRadius: "md", backgroundColor: "#FFFEFB", contents: [
             { type: "box", layout: "horizontal", alignItems: "center", contents: [
               { type: "text", text: `${isExpense ? "รายจ่าย" : "รายรับ"}  •  ${categoryLabel}`, size: "sm", weight: "bold", color: accent, flex: 1 },
@@ -290,9 +312,12 @@ export async function replyPostSaveSummary(replyToken: string, summary: PostSave
             ] },
           ] },
         ] },
-        footer: { type: "box", layout: "vertical", spacing: "sm", paddingAll: "16px", backgroundColor: "#F2F0FF", contents: [
+        footer: { type: "box", layout: "vertical", paddingAll: "16px", backgroundColor: "#F2F0FF", contents: [
+          { type: "box", layout: "horizontal", spacing: "sm", contents: [
+            { type: "button", style: "secondary", height: "sm", action: { type: "message", label: "ลบรายการล่าสุด", text: "ลบรายการล่าสุด" } },
+            { type: "button", style: "primary", color: "#7657AA", height: "sm", action: { type: "message", label: "ดูรายการ", text: "รายการ" } },
+          ] },
           { type: "button", style: "primary", color: "#7657AA", height: "sm", action: { type: "message", label: "ดูสรุปยอดวันนี้", text: "สรุปวันนี้" } },
-          { type: "button", style: "secondary", height: "sm", action: { type: "message", label: "ยกเลิกรายการล่าสุด", text: "ยกเลิกรายการล่าสุด" } },
         ] },
       },
       },
@@ -301,11 +326,24 @@ export async function replyPostSaveSummary(replyToken: string, summary: PostSave
 }
 
 export async function replyPostSaveSummaryImage(replyToken: string, summary: PostSaveSummary, credentials = lineCredentials()) {
-  return replyPostSaveSummary(replyToken, summary, credentials);
+  const imageUrl = miloSaveResultImageUrl(summary);
+  return callLine("/v2/bot/message/reply", credentials, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ replyToken, messages: [{
+      type: "image",
+      originalContentUrl: imageUrl,
+      previewImageUrl: imageUrl,
+      quickReply: { items: [
+        { type: "action", action: { type: "message", label: "ยกเลิกรายการล่าสุด", text: "ยกเลิกรายการล่าสุด" } },
+        { type: "action", action: { type: "message", label: "สรุปวันนี้", text: "สรุปวันนี้" } },
+      ] },
+    }] }),
+  });
 }
 
-/** Compatibility aliases retained for older callers; both now send native LINE Flex. */
-export const replyPostSaveSummaryFallback = replyPostSaveSummary;
+/** Compatibility alias retained for callers/tests; now image-only by design. */
+export const replyPostSaveSummaryFallback = replyPostSaveSummaryImage;
 
 export async function replyVoiceCategoryChoices(replyToken: string, credentials = lineCredentials()) {
   const popular = ["อาหาร", "เดินทาง", "ค่าสาธารณูปโภค", "ช้อปปิ้ง", "สุขภาพ"];
@@ -467,9 +505,40 @@ export async function replyRichMenu(replyToken: string, text: string, artwork: R
           { type: "action", action: { type: "message", label: "สัปดาห์นี้", text: "สรุปสัปดาห์นี้" } },
           { type: "action", action: { type: "message", label: "เดือนนี้", text: "สรุปเดือนนี้" } },
           { type: "action", action: { type: "message", label: "ปีนี้", text: "สรุปปีนี้" } },
-          { type: "action", action: { type: "uri", label: "เปิดแดชบอร์ด", uri: new URL("/dashboard", process.env.MILO_PUBLIC_URL || "https://milo-line-app.vercel.app").href } },
+          { type: "action", action: { type: "uri", label: "เปิดแดชบอร์ด", uri: new URL("/dashboard", process.env.MILO_PUBLIC_URL || "https://milo-line-assistant.onrender.com").href } },
         ] },
       }],
     }),
   });
+}
+export type MiloListRow = { id: number; title: string; detail: string; actionLabel?: string; actionText?: string };
+
+async function replyMiloListBubble(replyToken: string, title: string, subtitle: string, rows: MiloListRow[], credentials = lineCredentials()) {
+  const contents = rows.slice(0, 10).map(row => ({
+    type: "box", layout: "horizontal", spacing: "sm", paddingAll: "10px", cornerRadius: "lg", backgroundColor: "#FFFFFF",
+    contents: [
+      { type: "box", layout: "vertical", flex: 1, contents: [
+        { type: "text", text: ("#" + row.id + " " + row.title).slice(0, 120), size: "sm", weight: "bold", color: "#315F58", wrap: true },
+        { type: "text", text: row.detail.slice(0, 180), size: "xxs", color: "#789891", wrap: true, margin: "xs" },
+      ] },
+      ...(row.actionText ? [{ type: "button", style: "secondary", height: "sm", flex: 0, action: { type: "message", label: (row.actionLabel ?? "ยกเลิก").slice(0, 20), text: row.actionText.slice(0, 300) } }] : []),
+    ],
+  }));
+  return callLine("/v2/bot/message/reply", credentials, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ replyToken, messages: [{ type: "flex", altText: title, contents: { type: "bubble", size: "mega", body: { type: "box", layout: "vertical", spacing: "md", backgroundColor: "#F3FBF7", contents: [
+    { type: "text", text: title, size: "xl", weight: "bold", color: "#0D735B" },
+    { type: "text", text: subtitle, size: "xs", color: "#789891", wrap: true },
+    ...(contents.length ? contents : [{ type: "text", text: "ยังไม่มีรายการครับ", size: "sm", color: "#789891", margin: "md" }]),
+  ] } } }] }) });
+}
+
+export async function replyTransactionList(replyToken: string, rows: MiloListRow[], credentials = lineCredentials()) {
+  return replyMiloListBubble(replyToken, "📋 รายการล่าสุด", "แตะปุ่มด้านขวาเพื่อลบรายการที่ต้องการ", rows.map(row => ({ ...row, actionLabel: "ลบ", actionText: "ลบรายการ #" + row.id })), credentials);
+}
+
+export async function replyReminderList(replyToken: string, rows: MiloListRow[], credentials = lineCredentials()) {
+  return replyMiloListBubble(replyToken, "🔔 รายการเตือน", "แต่ละรายการมีปุ่มยกเลิกให้กดได้ทันที", rows.map(row => ({ ...row, actionLabel: "ยกเลิก", actionText: "ยกเลิกเตือน #" + row.id })), credentials);
+}
+
+export async function replyCalendarList(replyToken: string, rows: MiloListRow[], credentials = lineCredentials()) {
+  return replyMiloListBubble(replyToken, "📅 ปฏิทิน Milo", "นัดหมายที่กำลังจะถึง แตะยกเลิกได้จากรายการ", rows.map(row => ({ ...row, actionLabel: "ยกเลิก", actionText: "ยกเลิกนัด #" + row.id })), credentials);
 }

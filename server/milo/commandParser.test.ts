@@ -33,7 +33,7 @@ describe("Milo command parser", () => {
     expect(parseMiloCommand("โน้ต รหัส Wi‑Fi ห้องประชุม", now)).toEqual({ type: "note", title: "รหัส Wi‑Fi ห้องประชุม", content: "รหัส Wi‑Fi ห้องประชุม" }); expect(parseMiloCommand("งาน ส่งสรุปรายสัปดาห์", now)).toEqual({ type: "todo", title: "ส่งสรุปรายสัปดาห์" });
     expect(parseMiloCommand("เก็บ ข้อความสำคัญ", now)).toMatchObject({ type: "vault", title: "ข้อความสำคัญ", itemType: "text" }); expect(parseMiloCommand("ค้นหา ใบเสร็จ", now)).toEqual({ type: "search", query: "ใบเสร็จ" });
   });
-  it("recognizes the help command used to discover available workflows", () => expect(parseMiloCommand("ช่วย", now)).toEqual({ type: "help" }));
+  it("recognizes help commands used by both rich menus", () => { expect(parseMiloCommand("ช่วย", now)).toEqual({ type: "help" }); expect(parseMiloCommand("ช่วยเหลือ", now)).toEqual({ type: "help" }); });
   it("recognizes a tagged link and a group mention instruction", () => { expect(parseMiloCommand("เก็บ https://example.com/brief #งาน #สำคัญ", now)).toMatchObject({ type: "vault", itemType: "link", tagsText: "#งาน #สำคัญ" }); expect(parseMiloCommand("แจ้งส่งงานด้วยถึง @สมชาย", now)).toEqual({ type: "mention", message: "ส่งงานด้วย", memberName: "สมชาย" }); });
   it("returns an actionable error for an incomplete budget command", () => expect(parseMiloCommand("ตั้งงบ อาหาร", now)).toEqual({ type: "invalid", message: "รูปแบบงบประมาณ: ตั้งงบ อาหาร 5000 บาท" }));
   it("validates category commands and supports add, remove, and list", () => {

@@ -1,0 +1,89 @@
+{
+  "size": {
+    "width": 2500,
+    "height": 1686
+  },
+  "selected": false,
+  "name": "Milo - เมนูเพิ่มเติม",
+  "chatBarText": "เมนูเพิ่มเติม",
+  "areas": [
+    {
+      "bounds": {
+        "x": 0,
+        "y": 0,
+        "width": 1250,
+        "height": 230
+      },
+      "action": {
+        "type": "richmenuswitch",
+        "richMenuAliasId": "milo-main",
+        "data": "switch:milo-main"
+      }
+    },
+    {
+      "bounds": {
+        "x": 1250,
+        "y": 0,
+        "width": 1250,
+        "height": 230
+      },
+      "action": {
+        "type": "richmenuswitch",
+        "richMenuAliasId": "milo-more",
+        "data": "switch:milo-more"
+      }
+    },
+    {
+      "bounds": {
+        "x": 0,
+        "y": 230,
+        "width": 950,
+        "height": 680
+      },
+      "action": {
+        "type": "message",
+        "label": "หมวดหมู่",
+        "text": "หมวดหมู่"
+      }
+    },
+    {
+      "bounds": {
+        "x": 950,
+        "y": 230,
+        "width": 950,
+        "height": 680
+      },
+      "action": {
+        "type": "message",
+        "label": "ปฏิทิน",
+        "text": "ดูปฏิทิน"
+      }
+    },
+    {
+      "bounds": {
+        "x": 0,
+        "y": 910,
+        "width": 950,
+        "height": 650
+      },
+      "action": {
+        "type": "message",
+        "label": "ตั้งค่า",
+        "text": "ตั้งค่า"
+      }
+    },
+    {
+      "bounds": {
+        "x": 950,
+        "y": 910,
+        "width": 950,
+        "height": 650
+      },
+      "action": {
+        "type": "message",
+        "label": "ช่วยเหลือ",
+        "text": "ช่วยเหลือ"
+      }
+    }
+  ]
+}

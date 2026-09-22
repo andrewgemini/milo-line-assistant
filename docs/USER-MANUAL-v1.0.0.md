@@ -437,7 +437,7 @@ Excel มีหลายชีต เช่น ธุรกรรม สรุ�
 
 เปิด
 
-`https://milo-line-app.vercel.app/dashboard`
+`https://milo-line-assistant.onrender.com/dashboard`
 
 หลังเข้าสู่ระบบและเชื่อม LINE User ID แล้ว จะเห็นข้อมูลตามสิทธิ์ของบัญชี เช่น
 

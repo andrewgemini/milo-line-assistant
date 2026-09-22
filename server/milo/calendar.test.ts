@@ -50,7 +50,7 @@ describe("Milo calendar", () => {
       createdAt: new Date("2026-09-14T02:00:00.000Z"),
     });
     expect(ics).toContain("BEGIN:VCALENDAR");
-    expect(ics).toContain("UID:milo-12@milo-line-app.vercel.app");
+    expect(ics).toContain("UID:milo-12@milo-line-assistant.onrender.com");
     expect(ics).toContain("SUMMARY:ประชุม\\, ทีม");
     expect(ics).toContain("DESCRIPTION:ห้อง A\\; ชั้น 2");
   });

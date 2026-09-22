@@ -1,4 +1,5 @@
 import { invokeLLM } from "../_core/llm";
+import { classifyExpenseCategory, typeSafeConfigured } from "../_core/typeSafe";
 import type { FinancePeriod, ReportTransaction } from "./financeReport";
 
 export type FinancialInsight = {
@@ -16,6 +17,14 @@ const categorySchema = {
 } as const;
 
 export async function suggestExpenseCategory(note: string, allowedCategories: string[]) {
+  if (typeSafeConfigured()) {
+    try {
+      return { ...(await classifyExpenseCategory(note, allowedCategories)), reason: "จัดหมวดด้วย Jev", provider: "jev" as const };
+    } catch (error) {
+      console.warn("[Milo Jev] expense categorization failed; falling back to existing LLM classifier", { error: error instanceof Error ? error.message : "unknown" });
+    }
+  }
+
   const response = await invokeLLM({
     model: "gpt-5-mini",
     messages: [

@@ -1,128 +1,31 @@
 {
-  "size": {
-    "width": 2500,
-    "height": 1686
-  },
+  "size": { "width": 2500, "height": 1686 },
   "selected": true,
-  "name": "Milo LINE Assistant - Master Rich Menu",
+  "name": "Milo LINE Assistant - Mobile 20 Features",
   "chatBarText": "เมนูไมโล",
   "areas": [
-    {
-      "bounds": {
-        "x": 0,
-        "y": 0,
-        "width": 1270,
-        "height": 1030
-      },
-      "action": {
-        "type": "message",
-        "label": "จดบันทึก",
-        "text": "จดบันทึก"
-      }
-    },
-    {
-      "bounds": {
-        "x": 1270,
-        "y": 0,
-        "width": 615,
-        "height": 530
-      },
-      "action": {
-        "type": "message",
-        "label": "สรุป",
-        "text": "สรุป"
-      }
-    },
-    {
-      "bounds": {
-        "x": 1885,
-        "y": 0,
-        "width": 615,
-        "height": 530
-      },
-      "action": {
-        "type": "message",
-        "label": "วิเคราะห์",
-        "text": "วิเคราะห์"
-      }
-    },
-    {
-      "bounds": {
-        "x": 1270,
-        "y": 530,
-        "width": 615,
-        "height": 500
-      },
-      "action": {
-        "type": "message",
-        "label": "งบประมาณ",
-        "text": "งบประมาณ"
-      }
-    },
-    {
-      "bounds": {
-        "x": 1885,
-        "y": 530,
-        "width": 615,
-        "height": 500
-      },
-      "action": {
-        "type": "message",
-        "label": "รายการ",
-        "text": "รายการ"
-      }
-    },
-    {
-      "bounds": {
-        "x": 0,
-        "y": 1030,
-        "width": 590,
-        "height": 656
-      },
-      "action": {
-        "type": "message",
-        "label": "หมวดหมู่",
-        "text": "หมวดหมู่"
-      }
-    },
-    {
-      "bounds": {
-        "x": 590,
-        "y": 1030,
-        "width": 560,
-        "height": 656
-      },
-      "action": {
-        "type": "message",
-        "label": "ตั้งค่า",
-        "text": "ตั้งค่า"
-      }
-    },
-    {
-      "bounds": {
-        "x": 1150,
-        "y": 1030,
-        "width": 570,
-        "height": 656
-      },
-      "action": {
-        "type": "message",
-        "label": "วิธีใช้งาน",
-        "text": "วิธีใช้งาน"
-      }
-    },
-    {
-      "bounds": {
-        "x": 1720,
-        "y": 1030,
-        "width": 780,
-        "height": 656
-      },
-      "action": {
-        "type": "message",
-        "label": "สวัสดีไมโล",
-        "text": "สวัสดีไมโล"
-      }
-    }
+    { "bounds": { "x": 0, "y": 0, "width": 500, "height": 421 }, "action": { "type": "message", "label": "จดบันทึก", "text": "จดบันทึก" } },
+    { "bounds": { "x": 500, "y": 0, "width": 500, "height": 421 }, "action": { "type": "message", "label": "สแกนใบเสร็จ", "text": "สแกนใบเสร็จ" } },
+    { "bounds": { "x": 1000, "y": 0, "width": 500, "height": 421 }, "action": { "type": "message", "label": "บันทึกเสียง", "text": "บันทึกเสียง" } },
+    { "bounds": { "x": 1500, "y": 0, "width": 500, "height": 421 }, "action": { "type": "message", "label": "วันนี้", "text": "วันนี้มีอะไร" } },
+    { "bounds": { "x": 2000, "y": 0, "width": 500, "height": 421 }, "action": { "type": "message", "label": "สัปดาห์นี้", "text": "สรุปการเงิน สัปดาห์นี้" } },
+
+    { "bounds": { "x": 0, "y": 421, "width": 500, "height": 421 }, "action": { "type": "message", "label": "เดือนนี้", "text": "สรุปการเงิน เดือนนี้" } },
+    { "bounds": { "x": 500, "y": 421, "width": 500, "height": 421 }, "action": { "type": "message", "label": "วิเคราะห์", "text": "วิเคราะห์" } },
+    { "bounds": { "x": 1000, "y": 421, "width": 500, "height": 421 }, "action": { "type": "message", "label": "งบประมาณ", "text": "งบประมาณ" } },
+    { "bounds": { "x": 1500, "y": 421, "width": 500, "height": 421 }, "action": { "type": "message", "label": "รายการ", "text": "รายการ" } },
+    { "bounds": { "x": 2000, "y": 421, "width": 500, "height": 421 }, "action": { "type": "message", "label": "หมวดหมู่", "text": "หมวดหมู่" } },
+
+    { "bounds": { "x": 0, "y": 842, "width": 500, "height": 421 }, "action": { "type": "message", "label": "เตือน", "text": "รายการเตือน" } },
+    { "bounds": { "x": 500, "y": 842, "width": 500, "height": 421 }, "action": { "type": "message", "label": "ปฏิทิน", "text": "ดูปฏิทิน" } },
+    { "bounds": { "x": 1000, "y": 842, "width": 500, "height": 421 }, "action": { "type": "message", "label": "งาน", "text": "ดูงาน" } },
+    { "bounds": { "x": 1500, "y": 842, "width": 500, "height": 421 }, "action": { "type": "message", "label": "บิลรอจ่าย", "text": "บิลรอจ่าย" } },
+    { "bounds": { "x": 2000, "y": 842, "width": 500, "height": 421 }, "action": { "type": "message", "label": "รายการประจำ", "text": "รายการประจำ" } },
+
+    { "bounds": { "x": 0, "y": 1263, "width": 500, "height": 423 }, "action": { "type": "message", "label": "ส่งออก", "text": "ส่งออก xlsx" } },
+    { "bounds": { "x": 500, "y": 1263, "width": 500, "height": 423 }, "action": { "type": "message", "label": "เอกสาร", "text": "เอกสารเดือนนี้" } },
+    { "bounds": { "x": 1000, "y": 1263, "width": 500, "height": 423 }, "action": { "type": "message", "label": "คลังไฟล์", "text": "คลังไฟล์" } },
+    { "bounds": { "x": 1500, "y": 1263, "width": 500, "height": 423 }, "action": { "type": "message", "label": "ผู้ช่วยกลุ่ม", "text": "ผู้ช่วยกลุ่ม" } },
+    { "bounds": { "x": 2000, "y": 1263, "width": 500, "height": 423 }, "action": { "type": "message", "label": "เมนูเพิ่ม", "text": "เมนูไมโล" } }
   ]
 }

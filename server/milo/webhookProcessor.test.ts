@@ -4,6 +4,11 @@ import type { AddressInfo } from "node:net";
 
 vi.mock("../db", () => ({
   registerWebhookEvent: vi.fn(),
+  ensureMiloOnboardingSchema: vi.fn(),
+  getMiloOnboarding: vi.fn(),
+  startMiloOnboarding: vi.fn(),
+  updateMiloOnboarding: vi.fn(),
+  completeMiloOnboarding: vi.fn(),
   ensureCaptureSchema: vi.fn(),
   upsertLineChat: vi.fn(),
   upsertLineMember: vi.fn(),
@@ -65,13 +70,13 @@ vi.mock("./financeExport", () => ({ buildFinanceExportUrl: vi.fn(() => "https://
 vi.mock("../_core/voiceTranscription", () => ({ transcribeAudio: vi.fn() }));
 vi.mock("./financialAssistant", () => ({ generateFinancialInsight: vi.fn(), suggestExpenseCategory: vi.fn() }));
 vi.mock("./line", () => ({
-  replyRichMenu: vi.fn(), replyGreetingHome: vi.fn(), getMessageContent: vi.fn(), getProfile: vi.fn(), lineCredentials: vi.fn(() => ({ channelSecret: "test-secret", channelAccessToken: "test-token" })), pushText: vi.fn(), pushTextWithQuickReplies: vi.fn(), replyMention: vi.fn(), replyText: vi.fn(), replyTextWithQuickReplies: vi.fn(),
-  replyVoiceProposal: vi.fn(), replyPostSaveSummary: vi.fn(), replyPostSaveSummaryFallback: vi.fn(), replyVoiceCategoryChoices: vi.fn(), postSaveSummaryText: vi.fn((summary: { amount: number }) => `รายจ่าย ${summary.amount} บาท`), replyFinanceReportCard: vi.fn(), replyFinanceReportCardFallback: vi.fn(), financeReportCardText: vi.fn(() => "สรุปการเงินวันนี้"),
+  replyRichMenu: vi.fn(), replyTransactionList: vi.fn(), replyReminderList: vi.fn(), replyCalendarList: vi.fn(), replyGreetingHome: vi.fn(), replyMiloOnboarding: vi.fn(), replyMiloSettings: vi.fn(), getMessageContent: vi.fn(), getProfile: vi.fn(), lineCredentials: vi.fn(() => ({ channelSecret: "test-secret", channelAccessToken: "test-token" })), pushText: vi.fn(), pushTextWithQuickReplies: vi.fn(), replyMention: vi.fn(), replyText: vi.fn(), replyTextWithQuickReplies: vi.fn(),
+  replyVoiceProposal: vi.fn(), replyPostSaveSummary: vi.fn(), replyPostSaveSummaryImage: vi.fn(), replyPostSaveSummaryFallback: vi.fn(), replyVoiceCategoryChoices: vi.fn(), postSaveSummaryText: vi.fn((summary: { amount: number }) => `รายจ่าย ${summary.amount} บาท`), replyFinanceReportCard: vi.fn(), replyFinanceReportCardFallback: vi.fn(), financeReportCardText: vi.fn(() => "สรุปการเงินวันนี้"),
   sourceIdentity: vi.fn(() => ({ lineChatId: "G1", lineUserId: "U1", scope: "group" })), verifyLineSignature: vi.fn(),
 }));
 
 import * as db from "../db";
-import { replyRichMenu, replyGreetingHome, getMessageContent, getProfile, pushTextWithQuickReplies, replyFinanceReportCard, replyMention, replyPostSaveSummary, replyPostSaveSummaryFallback, replyText, replyTextWithQuickReplies, replyVoiceCategoryChoices, replyVoiceProposal, sourceIdentity, verifyLineSignature } from "./line";
+import { replyRichMenu, replyReminderList, replyTransactionList, replyCalendarList, replyGreetingHome, replyMiloSettings, getMessageContent, getProfile, pushTextWithQuickReplies, replyFinanceReportCard, replyMention, replyPostSaveSummary, replyPostSaveSummaryImage, replyPostSaveSummaryFallback, replyText, replyTextWithQuickReplies, replyVoiceCategoryChoices, replyVoiceProposal, sourceIdentity, verifyLineSignature } from "./line";
 import { storageGetSignedUrl, storagePut } from "../storage";
 import { analyzeImage } from "./imageAnalysis";
 import { analyzePdfBuffer } from "./pdfAnalysis";
@@ -133,7 +138,7 @@ describe("LINE webhook processor", () => {
 
   it("confirms a staged capture into calendar, reminder, and pending bill but not a transaction", async () => {
     vi.mocked(db.registerWebhookEvent).mockResolvedValue(true);
-    vi.mocked(sourceIdentity).mockReturnValueOnce({ lineChatId: "U1", lineUserId: "U1", scope: "user" });
+    vi.mocked(sourceIdentity).mockReturnValue({ lineChatId: "U1", lineUserId: "U1", scope: "user" });
     vi.mocked(db.latestProposedCaptureDraft).mockResolvedValue({
       id: 31,
       payloadJson: JSON.stringify({
@@ -183,6 +188,7 @@ describe("LINE webhook processor", () => {
     }));
     expect(db.markPendingBillPaid).toHaveBeenCalledWith({ id: 42, transactionId: 700, lineUserId: "U1", lineChatId: "U1" });
     expect(replyPostSaveSummary).toHaveBeenCalledTimes(1);
+    expect(replyPostSaveSummaryImage).not.toHaveBeenCalled();
     expect(replyText).not.toHaveBeenCalled();
   });
 
@@ -399,6 +405,8 @@ describe("LINE webhook processor", () => {
     await processEvent(event("income-category-add", "เพิ่มหมวดรายรับ โบนัส"), "{}");
     await processEvent(event("category-list", "ดูหมวด"), "{}");
     await processEvent(event("help", "ช่วย"), "{}");
+    await processEvent(event("help-th", "ช่วยเหลือ"), "{}");
+    await processEvent(event("rem-list-menu", "รายการเตือน"), "{}");
 
     expect(db.createReminder).toHaveBeenCalledWith(expect.objectContaining({ lineChatId: "U1", createdByLineUserId: "U1" }));
     expect(db.createTransaction).toHaveBeenCalledWith(expect.objectContaining({ transactionType: "expense", amount: 65, category: "อาหาร" }));
@@ -411,7 +419,22 @@ describe("LINE webhook processor", () => {
     expect(db.addExpenseCategory).toHaveBeenCalledWith("U1", "โบนัส", "income", 7);
     expect(db.listTransactionCategories).toHaveBeenCalledWith("U1", 7);
     expect(replyPostSaveSummary).toHaveBeenCalledWith("token", expect.objectContaining({ transactionType: "expense", amount: 65, category: "อาหาร", dailyExpense: 65 }));
+    expect(replyPostSaveSummaryImage).not.toHaveBeenCalled();
     expect(replyRichMenu).toHaveBeenCalledWith("token", expect.stringContaining("Milo ช่วยคุณจบงานใน LINE แชทเดียวครับ"), "help");
+    expect(replyReminderList).toHaveBeenCalled();
+  });
+
+  it("lists transactions from the same finance account", async () => {
+    vi.mocked(db.registerWebhookEvent).mockResolvedValue(true);
+    vi.mocked(getProfile).mockResolvedValue({ displayName: "ผู้ส่ง" });
+    vi.mocked(sourceIdentity).mockReturnValue({ lineChatId: "U1", lineUserId: "U1", scope: "user" });
+    vi.mocked(db.resolveFinanceAccountForLineEvent).mockResolvedValue({ account: { id: 7 }, membership: { role: "owner" } } as never);
+    vi.mocked(db.listTransactions).mockResolvedValue([{ id: 12, transactionType: "expense", amount: "40", category: "อาหาร", note: "กาแฟ", occurredAt: new Date("2026-09-21T10:00:00.000Z") }] as never);
+    vi.mocked(replyTransactionList).mockResolvedValue(new Response());
+    const event = (id: string, text: string) => ({ type: "message" as const, webhookEventId: `evt-${id}`, timestamp: Date.now(), replyToken: "token", source: { type: "user" as const, userId: "U1" }, message: { id, type: "text" as const, text } });
+    await processEvent(event("tx-list", "รายการ"), "{}");
+    expect(db.listTransactions).toHaveBeenCalledWith("U1", undefined, undefined, false, 7);
+    expect(replyTransactionList).toHaveBeenCalledWith("token", expect.arrayContaining([expect.objectContaining({ id: 12, title: expect.stringContaining("40") })]));
   });
 
   it("lists and cancels reminders from the same LINE chat", async () => {
@@ -424,7 +447,7 @@ describe("LINE webhook processor", () => {
     const event = (id: string, text: string) => ({ type: "message" as const, webhookEventId: `evt-${id}`, timestamp: Date.now(), replyToken: "token", source: { type: "user" as const, userId: "U1" }, message: { id, type: "text" as const, text } });
     await processEvent(event("rem-list", "รายการเตือน"), "{}");
     expect(db.listRemindersForChat).toHaveBeenCalledWith("U1", "U1", "user");
-    expect(replyText).toHaveBeenCalledWith("token", expect.stringContaining("ประชุม"));
+    expect(replyReminderList).toHaveBeenCalledWith("token", expect.arrayContaining([expect.objectContaining({ id: 7, title: "ประชุม" })]));
     await processEvent(event("rem-cancel", "ยกเลิกเตือน 7"), "{}");
     expect(db.cancelReminderForChat).toHaveBeenCalledWith(7, "U1", "U1");
   });
@@ -442,6 +465,17 @@ describe("LINE webhook processor", () => {
     expect(replyText).toHaveBeenCalledWith("token", expect.stringContaining("ส่งรายงาน"));
     await processEvent(event("todo-done", "เสร็จงาน 9"), "{}");
     expect(db.completeTodoForChat).toHaveBeenCalledWith(9, "U1", "U1", "user");
+  });
+
+  it("lists upcoming calendar events from the same LINE chat", async () => {
+    vi.mocked(db.registerWebhookEvent).mockResolvedValue(true);
+    vi.mocked(getProfile).mockResolvedValue({ displayName: "ผู้ส่ง" });
+    vi.mocked(sourceIdentity).mockReturnValue({ lineChatId: "U1", lineUserId: "U1", scope: "user" });
+    vi.mocked(db.listCalendarEvents).mockResolvedValue([{ id: 88, title: "ประชุมทีม", startsAt: new Date("2026-09-22T03:30:00.000Z"), endsAt: new Date("2026-09-22T04:30:00.000Z") }] as never);
+    vi.mocked(replyCalendarList).mockResolvedValue(new Response());
+    await processEvent({ type: "message", webhookEventId: "evt-calendar-list", timestamp: Date.now(), replyToken: "token", source: { type: "user", userId: "U1" }, message: { id: "cal-list-1", type: "text", text: "ดูปฏิทิน" } }, "{}");
+    expect(db.listCalendarEvents).toHaveBeenCalledWith("U1", "U1", expect.any(Date), 20);
+    expect(replyCalendarList).toHaveBeenCalledWith("token", expect.arrayContaining([expect.objectContaining({ id: 88, title: "ประชุมทีม" })]));
   });
 
   it("creates a Milo calendar event from private LINE chat and returns add-to-calendar links", async () => {
@@ -508,6 +542,7 @@ describe("LINE webhook processor", () => {
     expect(db.linkTransactionAttachment).toHaveBeenCalledWith({ transactionId: 155, vaultItemId: 9, lineUserId: "U1", label: "ใบเสร็จต้นฉบับ" });
     expect(db.setImageExtractionStatus).toHaveBeenCalledWith(3, "accepted");
     expect(replyPostSaveSummary).toHaveBeenCalledWith("token", expect.objectContaining({ transactionType: "expense", amount: 125, category: "อาหาร", dailyExpense: 125 }));
+    expect(replyPostSaveSummaryImage).not.toHaveBeenCalled();
   });
 
   it("edits a receipt proposal in chat without creating a transaction before confirmation", async () => {
@@ -559,7 +594,7 @@ describe("LINE webhook processor", () => {
     vi.mocked(db.createTransaction).mockResolvedValue(166 as never);
     vi.mocked(db.linkTransactionAttachment).mockResolvedValue(true);
     vi.mocked(db.financeReport).mockResolvedValue({ period: "day", income: 0, expense: 30, balance: -30, categories: { อาหาร: 30 } } as never);
-    vi.mocked(replyPostSaveSummary).mockResolvedValue(new Response());
+    vi.mocked(replyPostSaveSummaryImage).mockResolvedValue(new Response());
 
     await processEvent({ type: "message", webhookEventId: "evt-time-only-confirm", timestamp: new Date("2026-09-14T06:39:00.000Z").getTime(), replyToken: "token", source: { type: "user", userId: "U1" }, message: { id: "txt-time-only", type: "text", text: "ยืนยันค่าใช้จ่าย" } }, "{}");
 
@@ -741,6 +776,7 @@ describe("LINE webhook processor", () => {
     vi.mocked(getProfile).mockResolvedValue({ displayName: "ผู้ส่ง" });
     vi.mocked(sourceIdentity).mockReturnValue({ lineChatId: "U1", lineUserId: "U1", scope: "user" });
     vi.mocked(db.financeReport).mockResolvedValue({ period: "day", income: 0, expense: 100, balance: -100, categories: { อาหาร: 100 } } as never);
+    vi.mocked(replyPostSaveSummaryImage).mockRejectedValue(new Error("invalid image reply"));
     vi.mocked(replyPostSaveSummary).mockRejectedValue(new Error("invalid flex reply"));
     const line = await import("./line");
     vi.mocked(line.replyPostSaveSummaryFallback).mockRejectedValue(new Error("invalid reply token"));
@@ -859,11 +895,22 @@ describe("rich menu webhook regression", () => {
     vi.mocked(db.listTransactionCategories).mockResolvedValue([]);
   });
   const event = (text: string) => ({ type: "message", webhookEventId: "richmenu-test", timestamp: Date.now(), replyToken: "token", source: { type: "user" as const, userId: "U1" }, message: { id: "menu", type: "text" as const, text } });
-  it.each([["จดบันทึก","record"],["งบประมาณ","budget"],["รายการ","transactions"],["หมวดหมู่","categories"],["ตั้งค่า","settings"],["วิธีใช้งาน","help"]])("%s replies with %s artwork", async (text,key) => {
+  it.each([["จดบันทึก","record"],["งบประมาณ","budget"],["หมวดหมู่","categories"],["วิธีใช้งาน","help"]])("%s replies with %s artwork", async (text,key) => {
     await processEvent(event(text), "{}");
     expect(replyRichMenu).toHaveBeenCalledWith("token", expect.any(String), key);
     expect(replyText).not.toHaveBeenCalled();
     expect(db.finishWebhookEvent).toHaveBeenCalledWith("richmenu-test", "processed");
+  });
+  it("รายการ replies with the real transaction list", async () => {
+    vi.mocked(db.listTransactions).mockResolvedValue([{ id: 12, transactionType: "expense", amount: 80, category: "อาหาร", note: "กาแฟ" }] as never);
+    await processEvent(event("รายการ"), "{}");
+    expect(replyTransactionList).toHaveBeenCalledWith("token", expect.arrayContaining([expect.objectContaining({ id: 12, title: expect.stringContaining("80") })]));
+  });
+  it("ตั้งค่า opens the Milo settings hub", async () => {
+    await processEvent(event("ตั้งค่า"), "{}");
+    expect(replyMiloSettings).toHaveBeenCalledWith("token");
+    expect(replyRichMenu).not.toHaveBeenCalled();
+    expect(replyText).not.toHaveBeenCalled();
   });
   it("สวัสดีไมโล greets and opens the main action shortcuts", async () => {
     vi.mocked(replyGreetingHome).mockResolvedValue(new Response());

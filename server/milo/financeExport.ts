@@ -28,7 +28,7 @@ function safeEqual(a: string, b: string) {
 export function buildFinanceExportUrl(input: { lineUserId: string; financeAccountId: number; format: FinanceExportFormat; ttlSeconds?: number }) {
   const expires = Math.floor(Date.now() / 1000) + Math.min(Math.max(input.ttlSeconds ?? 600, 60), 3600);
   const sig = sign(input.lineUserId, input.financeAccountId, input.format, expires);
-  const base = (process.env.MILO_APP_BASE_URL ?? process.env.MILO_SAVE_RESULT_IMAGE_BASE_URL ?? "https://milo-line-app.vercel.app").replace(/\/+$/, "");
+  const base = (process.env.MILO_APP_BASE_URL ?? process.env.MILO_SAVE_RESULT_IMAGE_BASE_URL ?? "https://milo-line-assistant.onrender.com").replace(/\/+$/, "");
   const params = new URLSearchParams({ user: input.lineUserId, account: String(input.financeAccountId), format: input.format, expires: String(expires), sig });
   return `${base}/api/milo/export?${params.toString()}`;
 }

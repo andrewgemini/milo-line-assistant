@@ -156,7 +156,7 @@ function safeEqual(left: string, right: string) {
 }
 
 export function buildCalendarIcsUrl(id: number, ttlSeconds = 7 * 24 * 60 * 60) {
-  const base = process.env.MILO_PUBLIC_URL?.trim() || "https://milo-line-app.vercel.app";
+  const base = process.env.MILO_PUBLIC_URL?.trim() || "https://milo-line-assistant.onrender.com";
   const expires = Math.floor(Date.now() / 1000) + ttlSeconds;
   const sig = calendarSignature(id, expires);
   const url = new URL(`/api/milo/calendar/${id}.ics`, base);
@@ -176,7 +176,7 @@ export function calendarEventToIcs(event: { id: number; title: string; detail: s
     "PRODID:-//Milo LINE Assistant//Calendar//TH",
     "CALSCALE:GREGORIAN",
     "BEGIN:VEVENT",
-    `UID:milo-${event.id}@milo-line-app.vercel.app`,
+    `UID:milo-${event.id}@milo-line-assistant.onrender.com`,
     `DTSTAMP:${compactUtc(event.createdAt)}`,
     `DTSTART:${compactUtc(event.startsAt)}`,
     `DTEND:${compactUtc(event.endsAt)}`,

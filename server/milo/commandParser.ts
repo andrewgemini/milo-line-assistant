@@ -144,6 +144,11 @@ export function parseMiloCommand(text: string, now = new Date()): MiloCommand {
   const value = text.trim().replace(/^@?ไมโล\s*/i, "");
   if (/^(?:ยืนยันรายการทั้งหมด|ยืนยันทั้งหมด)$/i.test(value)) return { type: "captureConfirm" };
   if (/^(?:ยกเลิกรายการทั้งหมด|ยกเลิกทั้งหมด)$/i.test(value)) return { type: "captureCancel" };
+  if (/^วันนี้$/i.test(value)) return { type: "todayOverview" };
+  if (/^สัปดาห์นี้$/i.test(value)) return { type: "financeReport", period: "week" };
+  if (/^เดือนนี้$/i.test(value)) return { type: "financeReport", period: "month" };
+  if (/^ส่งออก$/i.test(value)) return { type: "exportFinance", format: "xlsx" };
+  if (/^เมนูเพิ่ม$/i.test(value)) return { type: "help" };
   if (/^(?:วันนี้มีอะไร|วันนี้ของฉัน|สรุปวันนี้ของฉัน)$/i.test(value)) return { type: "todayOverview" };
   if (/^(?:สรุปเช้า|morning brief)$/i.test(value)) return { type: "morningBrief" };
   if (/^(?:สรุปเย็น|evening summary)$/i.test(value)) return { type: "eveningSummary" };
@@ -202,6 +207,8 @@ export function parseMiloCommand(text: string, now = new Date()): MiloCommand {
   const openingBalance = value.match(/^(?:ตั้ง)?ยอด(?:เงิน)?เริ่มต้น\s*(\d[\d,]*(?:\.\d{1,2})?)\s*(?:บาท)?$/i); if (openingBalance) return { type: "openingBalance", amount: Number(openingBalance[1].replace(/,/g, "")) };
   if (/^(?:สวัสดี(?:ไมโล|ครับ|ค่ะ)?|หวัดดี(?:ไมโล)?|hello|hi|hey)$/i.test(value)) return { type: "greeting" };
   if (/^(?:เมนูไมโล|วิธีใช้งาน|คู่มือ(?:การใช้งาน)?|คำสั่ง|ช่วย|เมนู|help|\?)$/i.test(value)) return { type: "help" };
+  if (/^(?:ใบเสร็จ|สลิป|สแกนใบเสร็จ)$/i.test(value)) return { type: "recordGuide" };
+  if (/^(?:บันทึกเสียง|ส่งเสียง|เสียง)$/i.test(value)) return { type: "recordGuide" };
   if (/^(?:จดบันทึก|เริ่มจดบันทึก|บันทึกรายรับรายจ่าย|บันทึกรายรับ-รายจ่าย|จด)$/i.test(value)) return { type: "recordGuide" };
   if (/^(?:หมวด\s*\/?\s*งบ|งบประมาณ|คุมงบประมาณ|ดูงบ|งบ)$/i.test(value)) return { type: "budgetOverview" };
   if (/^(?:รายการ|ประวัติ|ประวัติธุรกรรม|ประวัติรายการ|รายการธุรกรรม|รายการทั้งหมด|ดูย้อนหลัง)$/i.test(value)) return { type: "transactionList" };
@@ -230,5 +237,5 @@ export function parseMiloCommand(text: string, now = new Date()): MiloCommand {
     return { type: "imageEdit", field: "note", value: raw };
   }
   const imageConfirm = value.match(/^(?:ยืนยันรูป|ยืนยันภาพ|บันทึกจากรูป|ยืนยันค่าใช้จ่าย|ยืนยันสลิป|ยืนยันใบเสร็จ|บันทึกสลิป|บันทึกใบเสร็จ)(?:\s+(?:วันที่\s*)?(\d{1,2}[\/-]\d{1,2}[\/-]\d{2,4}|\d{4}-\d{1,2}-\d{1,2}))?$/i); if (imageConfirm) return imageConfirm[1] ? { type: "imageConfirm", dateText: imageConfirm[1] } : { type: "imageConfirm" };
-  if (/^(ช่วย|เมนู|help)$/i.test(value)) return { type: "help" }; return { type: "unknown" };
+  if (/^(ช่วย|ช่วยเหลือ|เมนู|help)$/i.test(value)) return { type: "help" }; return { type: "unknown" };
 }

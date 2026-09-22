@@ -693,6 +693,52 @@ async function removeFinanceAccountMember(financeAccountId, lineUserId) {
   const result = await db.delete(financeAccountMembers).where(and(eq(financeAccountMembers.financeAccountId, financeAccountId), eq(financeAccountMembers.lineUserId, lineUserId), ne(financeAccountMembers.role, "owner")));
   return result[0].affectedRows > 0;
 }
+var miloOnboardingSchemaReady;
+async function ensureMiloOnboardingSchema() {
+  if (!miloOnboardingSchemaReady) {
+    miloOnboardingSchemaReady = (async () => {
+      const db = await requireDb();
+      await db.execute(sql.raw("CREATE TABLE IF NOT EXISTS milo_onboarding (id INT NOT NULL AUTO_INCREMENT, lineUserId VARCHAR(128) NOT NULL, status ENUM('pending','completed') NOT NULL DEFAULT 'pending', step VARCHAR(64) NOT NULL DEFAULT 'welcome', settingsJson TEXT NOT NULL, completedAt TIMESTAMP NULL, createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, updatedAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, PRIMARY KEY (id), UNIQUE KEY milo_onboarding_user_unique (lineUserId), INDEX milo_onboarding_status_idx (status, updatedAt))"));
+    })();
+  }
+  await miloOnboardingSchemaReady;
+}
+async function getMiloOnboarding(lineUserId) {
+  await ensureMiloOnboardingSchema();
+  const db = await requireDb();
+  const result = await db.execute(sql`SELECT lineUserId, status, step, settingsJson, completedAt FROM milo_onboarding WHERE lineUserId = ${lineUserId} LIMIT 1`);
+  const rows = result[0];
+  const row = rows[0];
+  if (!row) return void 0;
+  return { lineUserId: String(row.lineUserId), status: row.status === "completed" ? "completed" : "pending", step: String(row.step), settingsJson: String(row.settingsJson ?? "{}"), completedAt: row.completedAt instanceof Date ? row.completedAt : row.completedAt ? new Date(String(row.completedAt)) : null };
+}
+async function startMiloOnboarding(lineUserId) {
+  await ensureMiloOnboardingSchema();
+  const db = await requireDb();
+  await db.execute(sql`INSERT INTO milo_onboarding (lineUserId, status, step, settingsJson) VALUES (${lineUserId}, 'pending', 'welcome', '{}') ON DUPLICATE KEY UPDATE updatedAt = CURRENT_TIMESTAMP`);
+  return getMiloOnboarding(lineUserId);
+}
+async function updateMiloOnboarding(lineUserId, input) {
+  await ensureMiloOnboardingSchema();
+  const db = await requireDb();
+  const current = await getMiloOnboarding(lineUserId);
+  const settings = (() => {
+    try {
+      return JSON.parse(current?.settingsJson ?? "{}");
+    } catch {
+      return {};
+    }
+  })();
+  const merged = { ...settings, ...input.settings ?? {} };
+  await db.execute(sql`INSERT INTO milo_onboarding (lineUserId, status, step, settingsJson) VALUES (${lineUserId}, 'pending', ${input.step ?? current?.step ?? "welcome"}, ${JSON.stringify(merged)}) ON DUPLICATE KEY UPDATE step = ${input.step ?? current?.step ?? "welcome"}, settingsJson = ${JSON.stringify(merged)}, updatedAt = CURRENT_TIMESTAMP`);
+  return getMiloOnboarding(lineUserId);
+}
+async function completeMiloOnboarding(lineUserId) {
+  await ensureMiloOnboardingSchema();
+  const db = await requireDb();
+  await db.execute(sql`INSERT INTO milo_onboarding (lineUserId, status, step, settingsJson, completedAt) VALUES (${lineUserId}, 'completed', 'complete', '{}', CURRENT_TIMESTAMP) ON DUPLICATE KEY UPDATE status = 'completed', step = 'complete', completedAt = CURRENT_TIMESTAMP, updatedAt = CURRENT_TIMESTAMP`);
+  return getMiloOnboarding(lineUserId);
+}
 var captureSchemaReady;
 async function ensureCaptureSchema() {
   if (!captureSchemaReady) {
@@ -1028,12 +1074,25 @@ async function findVaultItemByFingerprint(lineChatId, fingerprint) {
     id: vaultItems.id,
     title: vaultItems.title,
     storageKey: vaultItems.storageKey,
+    storageUrl: vaultItems.storageUrl,
+    createdByLineUserId: vaultItems.createdByLineUserId,
     lineMessageId: vaultItems.lineMessageId
   }).from(vaultItems).where(and(
     eq(vaultItems.lineChatId, lineChatId),
     eq(vaultItems.status, "active"),
     like(vaultItems.tagsText, `%#sha256:${fingerprint}%`)
   )).orderBy(desc(vaultItems.createdAt)).limit(1))[0];
+}
+async function canReprocessVaultMedia(vaultItemId, lineUserId, lineChatId) {
+  const db = await requireDb();
+  const [vault] = await db.select({ id: vaultItems.id }).from(vaultItems).where(and(eq(vaultItems.id, vaultItemId), eq(vaultItems.createdByLineUserId, lineUserId), eq(vaultItems.lineChatId, lineChatId), eq(vaultItems.status, "active"))).limit(1);
+  if (!vault) return false;
+  const [images, voices, attachments] = await Promise.all([
+    db.select({ id: imageExtractions.id }).from(imageExtractions).where(and(eq(imageExtractions.vaultItemId, vaultItemId), eq(imageExtractions.status, "accepted"))).limit(1),
+    db.select({ id: voiceTranscriptions.id }).from(voiceTranscriptions).where(and(eq(voiceTranscriptions.vaultItemId, vaultItemId), eq(voiceTranscriptions.status, "accepted"))).limit(1),
+    db.select({ id: transactionAttachments.id }).from(transactionAttachments).where(eq(transactionAttachments.vaultItemId, vaultItemId)).limit(1)
+  ]);
+  return !images.length && !voices.length && !attachments.length;
 }
 async function listVaultDocumentsForChat(lineUserId, lineChatId, scope, start, end) {
   const db = await requireDb();
@@ -1478,8 +1537,8 @@ var EXCHANGE_TOKEN_PATH = `/webdev.v1.WebDevAuthPublicService/ExchangeToken`;
 var GET_USER_INFO_PATH = `/webdev.v1.WebDevAuthPublicService/GetUserInfo`;
 var GET_USER_INFO_WITH_JWT_PATH = `/webdev.v1.WebDevAuthPublicService/GetUserInfoWithJwt`;
 var OAuthService = class {
-  constructor(client) {
-    this.client = client;
+  constructor(client2) {
+    this.client = client2;
     console.log("[OAuth] Initialized with baseURL:", ENV.oAuthServerUrl);
     if (!ENV.oAuthServerUrl) {
       console.error(
@@ -1520,8 +1579,8 @@ var createOAuthHttpClient = () => axios.create({
 var SDKServer = class {
   client;
   oauthService;
-  constructor(client = createOAuthHttpClient()) {
-    this.client = client;
+  constructor(client2 = createOAuthHttpClient()) {
+    this.client = client2;
     this.oauthService = new OAuthService(this.client);
   }
   deriveLoginMethod(platforms, fallback) {
@@ -2012,7 +2071,7 @@ function artworkForCommand(command) {
   return keys[command.type];
 }
 function artworkMessages(key) {
-  const base = process.env.MILO_PUBLIC_URL || "https://milo-line-app.vercel.app";
+  const base = process.env.MILO_PUBLIC_URL || "https://milo-line-assistant.onrender.com";
   const url = new URL("/richmenu/" + RICH_MENU_ARTWORK[key].file, base).href;
   return [{ type: "image", originalContentUrl: url, previewImageUrl: url.replace(/\.png$/, "-preview.jpg") }];
 }
@@ -2081,20 +2140,20 @@ function splitRuns(text2, bold) {
   const normalized = normalizeRenderText(text2);
   const runs = [];
   for (const { segment } of Array.from(graphemeSegmenter.segment(normalized))) {
-    let choice;
+    let choice2;
     if (/^\s+$/.test(segment)) {
       const previous2 = runs.at(-1);
-      choice = previous2 ? { key: previous2.key, font: previous2.font } : fontsFor(bold)[1];
+      choice2 = previous2 ? { key: previous2.key, font: previous2.font } : fontsFor(bold)[1];
     } else {
-      choice = selectFont(segment, bold);
+      choice2 = selectFont(segment, bold);
     }
-    if (!choice) {
+    if (!choice2) {
       assertRenderableText(segment, bold, "text-run");
       continue;
     }
     const previous = runs.at(-1);
-    if (previous?.key === choice.key) previous.text += segment;
-    else runs.push({ ...choice, text: segment });
+    if (previous?.key === choice2.key) previous.text += segment;
+    else runs.push({ ...choice2, text: segment });
   }
   return runs;
 }
@@ -2194,7 +2253,7 @@ function isDynamicRichMenuArtwork(key) {
 }
 function buildRichMenuDataImageUrl(key, text2) {
   if (!isDynamicRichMenuArtwork(key)) throw new Error(`Artwork ${key} is not data-driven`);
-  const base = (process.env.MILO_APP_BASE_URL ?? process.env.MILO_SAVE_RESULT_IMAGE_BASE_URL ?? "https://milo-line-app.vercel.app").replace(/\/+$/, "");
+  const base = (process.env.MILO_APP_BASE_URL ?? process.env.MILO_SAVE_RESULT_IMAGE_BASE_URL ?? "https://milo-line-assistant.onrender.com").replace(/\/+$/, "");
   const data = encode(key, text2);
   return `${base}/api/milo/rich-menu-card.png?data=${encodeURIComponent(data)}&sig=${sign(data)}&render=richmenu-data-v1`;
 }
@@ -2347,7 +2406,7 @@ function sign2(payload) {
   return crypto3.createHmac("sha256", secret2()).update(payload).digest("hex");
 }
 function buildFinanceReportImageUrl(input) {
-  const base = (process.env.MILO_SAVE_RESULT_IMAGE_BASE_URL ?? process.env.MILO_APP_BASE_URL ?? "https://milo-line-app.vercel.app").replace(/\/+$/, "");
+  const base = (process.env.MILO_SAVE_RESULT_IMAGE_BASE_URL ?? process.env.MILO_APP_BASE_URL ?? "https://milo-line-assistant.onrender.com").replace(/\/+$/, "");
   const data = encodePayload(input);
   return `${base}/api/milo/finance-report.png?data=${encodeURIComponent(data)}&sig=${sign2(data)}&render=summary-v4`;
 }
@@ -2551,28 +2610,34 @@ async function callLine(path4, credentials, init) {
   console.info("[Milo LINE] message delivered", { endpoint: path4, status: response.status });
   return response;
 }
-var MILO_RICH_MENU_IMAGE_BASE_URL = (process.env.MILO_RICH_MENU_IMAGE_BASE_URL ?? "https://milo-line-app.vercel.app/milo-richmenu").replace(/\/+$/, "");
+var MILO_RICH_MENU_IMAGE_BASE_URL = (process.env.MILO_RICH_MENU_IMAGE_BASE_URL ?? "https://milo-line-assistant.onrender.com/milo-richmenu").replace(/\/+$/, "");
 function miloRichMenuImageUrl(key) {
   const extension = key === "save-complete-preview" ? "jpg" : "png";
   return `${MILO_RICH_MENU_IMAGE_BASE_URL}/${key}.${extension}`;
 }
-function miloSaveResultImageUrl(summary) {
-  const appBaseUrl = (process.env.MILO_SAVE_RESULT_IMAGE_BASE_URL ?? "https://milo-line-app.vercel.app").replace(/\/+$/, "");
-  const params = new URLSearchParams({
-    transactionType: summary.transactionType,
-    item: (summary.note?.trim() || summary.category).slice(0, 300),
-    category: summary.category.slice(0, 50),
-    amount: String(summary.amount),
-    occurredAt: summary.occurredAt.toISOString(),
-    budgetSpent: String(summary.budgetSpent),
-    budgetLimit: String(summary.budgetLimit),
-    budgetPercent: summary.budgetPercent === void 0 ? "" : String(summary.budgetPercent),
-    render: "glyph-v3"
-  });
-  return `${appBaseUrl}/api/milo/save-result.png?${params.toString()}`;
-}
 async function replyText(replyToken, text2, credentials = lineCredentials()) {
   return callLine("/v2/bot/message/reply", credentials, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ replyToken, messages: [{ type: "text", text: text2.slice(0, 5e3) }] }) });
+}
+async function replyMiloOnboarding(replyToken, displayName, credentials = lineCredentials()) {
+  const imageUrl = new URL("/richmenu/greeting-home.png", process.env.MILO_PUBLIC_URL || "https://milo-line-assistant.onrender.com").href;
+  const name = displayName?.trim() ? displayName.trim().slice(0, 40) : "\u0E04\u0E38\u0E13";
+  return callLine("/v2/bot/message/reply", credentials, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ replyToken, messages: [{ type: "flex", altText: "\u0E15\u0E31\u0E49\u0E07\u0E04\u0E48\u0E32 Milo \u0E01\u0E48\u0E2D\u0E19\u0E40\u0E23\u0E34\u0E48\u0E21\u0E43\u0E0A\u0E49\u0E07\u0E32\u0E19", contents: { type: "bubble", size: "mega", hero: { type: "image", url: imageUrl, size: "full", aspectRatio: "20:11", aspectMode: "cover" }, body: { type: "box", layout: "vertical", spacing: "md", backgroundColor: "#F3FBF7", contents: [
+    { type: "text", text: "\u0E2A\u0E27\u0E31\u0E2A\u0E14\u0E35\u0E04\u0E23\u0E31\u0E1A \u{1F44B}", weight: "bold", size: "xl", color: "#0D735B" },
+    { type: "text", text: "\u0E04\u0E38\u0E13" + name + " \u0E40\u0E0A\u0E37\u0E48\u0E2D\u0E21\u0E15\u0E48\u0E2D Milo \u0E41\u0E25\u0E49\u0E27", size: "sm", color: "#4B756B", wrap: true },
+    { type: "text", text: "\u0E01\u0E48\u0E2D\u0E19\u0E40\u0E23\u0E34\u0E48\u0E21\u0E43\u0E0A\u0E49\u0E07\u0E32\u0E19 \u0E02\u0E2D\u0E08\u0E31\u0E14\u0E04\u0E48\u0E32\u0E1E\u0E37\u0E49\u0E19\u0E10\u0E32\u0E19\u0E43\u0E2B\u0E49\u0E44\u0E21\u0E42\u0E25\u0E2A\u0E31\u0E01\u0E19\u0E34\u0E14\u0E19\u0E30\u0E04\u0E23\u0E31\u0E1A", size: "sm", color: "#6D8D86", wrap: true },
+    { type: "box", layout: "vertical", spacing: "sm", margin: "md", paddingAll: "12px", cornerRadius: "lg", backgroundColor: "#FFFFFF", contents: [
+      { type: "text", text: "\u0E2A\u0E34\u0E48\u0E07\u0E17\u0E35\u0E48\u0E08\u0E30\u0E15\u0E31\u0E49\u0E07\u0E04\u0E48\u0E32", size: "xs", weight: "bold", color: "#2D675B" },
+      { type: "text", text: "\u2022 \u0E1A\u0E31\u0E0D\u0E0A\u0E35\u0E2A\u0E48\u0E27\u0E19\u0E15\u0E31\u0E27\u0E41\u0E25\u0E30\u0E22\u0E2D\u0E14\u0E40\u0E23\u0E34\u0E48\u0E21\u0E15\u0E49\u0E19\n\u2022 \u0E2B\u0E21\u0E27\u0E14\u0E2B\u0E21\u0E39\u0E48\u0E23\u0E32\u0E22\u0E23\u0E31\u0E1A / \u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22\n\u2022 \u0E07\u0E1A\u0E1B\u0E23\u0E30\u0E21\u0E32\u0E13\u0E41\u0E25\u0E30\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E1B\u0E23\u0E30\u0E08\u0E33\n\u2022 \u0E1B\u0E0F\u0E34\u0E17\u0E34\u0E19 \u0E40\u0E15\u0E37\u0E2D\u0E19 \u0E41\u0E25\u0E30\u0E2A\u0E23\u0E38\u0E1B\u0E2D\u0E31\u0E15\u0E42\u0E19\u0E21\u0E31\u0E15\u0E34", size: "xs", color: "#708E87", wrap: true, margin: "sm" }
+    ] }
+  ] }, footer: { type: "box", layout: "vertical", spacing: "sm", backgroundColor: "#F3FBF7", contents: [
+    { type: "button", style: "primary", color: "#159A75", action: { type: "message", label: "\u0E40\u0E23\u0E34\u0E48\u0E21\u0E15\u0E31\u0E49\u0E07\u0E04\u0E48\u0E32", text: "\u0E40\u0E23\u0E34\u0E48\u0E21\u0E15\u0E31\u0E49\u0E07\u0E04\u0E48\u0E32" } },
+    { type: "button", style: "link", color: "#4E8A7D", action: { type: "message", label: "\u0E15\u0E31\u0E49\u0E07\u0E04\u0E48\u0E32\u0E20\u0E32\u0E22\u0E2B\u0E25\u0E31\u0E07", text: "\u0E15\u0E31\u0E49\u0E07\u0E04\u0E48\u0E32" } }
+  ] } } }] }) });
+}
+async function replyMiloSettings(replyToken, credentials = lineCredentials()) {
+  const items = [["\u{1F4B0} \u0E1A\u0E31\u0E0D\u0E0A\u0E35 / \u0E22\u0E2D\u0E14\u0E40\u0E23\u0E34\u0E48\u0E21\u0E15\u0E49\u0E19", "\u0E22\u0E2D\u0E14\u0E40\u0E07\u0E34\u0E19\u0E40\u0E23\u0E34\u0E48\u0E21\u0E15\u0E49\u0E19 0 \u0E1A\u0E32\u0E17", "\u0E15\u0E31\u0E49\u0E07\u0E22\u0E2D\u0E14\u0E40\u0E07\u0E34\u0E19\u0E40\u0E23\u0E34\u0E48\u0E21\u0E15\u0E49\u0E19 0 \u0E1A\u0E32\u0E17"], ["\u{1F3F7}\uFE0F \u0E2B\u0E21\u0E27\u0E14\u0E2B\u0E21\u0E39\u0E48", "\u0E40\u0E1E\u0E34\u0E48\u0E21\u0E2B\u0E23\u0E37\u0E2D\u0E25\u0E1A\u0E2B\u0E21\u0E27\u0E14\u0E23\u0E32\u0E22\u0E23\u0E31\u0E1A / \u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22", "\u0E2B\u0E21\u0E27\u0E14\u0E2B\u0E21\u0E39\u0E48"], ["\u{1F3AF} \u0E07\u0E1A\u0E1B\u0E23\u0E30\u0E21\u0E32\u0E13", "\u0E01\u0E33\u0E2B\u0E19\u0E14\u0E07\u0E1A\u0E15\u0E32\u0E21\u0E2B\u0E21\u0E27\u0E14\u0E41\u0E25\u0E30\u0E23\u0E2D\u0E1A\u0E07\u0E1A", "\u0E07\u0E1A\u0E1B\u0E23\u0E30\u0E21\u0E32\u0E13"], ["\u{1F501} \u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E1B\u0E23\u0E30\u0E08\u0E33", "\u0E15\u0E31\u0E49\u0E07\u0E23\u0E32\u0E22\u0E23\u0E31\u0E1A / \u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22\u0E17\u0E35\u0E48\u0E40\u0E01\u0E34\u0E14\u0E0B\u0E49\u0E33", "\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E1B\u0E23\u0E30\u0E08\u0E33"], ["\u{1F4C5} \u0E1B\u0E0F\u0E34\u0E17\u0E34\u0E19 / \u0E40\u0E15\u0E37\u0E2D\u0E19", "\u0E08\u0E31\u0E14\u0E01\u0E32\u0E23\u0E19\u0E31\u0E14\u0E2B\u0E21\u0E32\u0E22\u0E41\u0E25\u0E30\u0E01\u0E32\u0E23\u0E41\u0E08\u0E49\u0E07\u0E40\u0E15\u0E37\u0E2D\u0E19", "\u0E1B\u0E0F\u0E34\u0E17\u0E34\u0E19"], ["\u{1F4CA} \u0E2A\u0E23\u0E38\u0E1B\u0E2D\u0E31\u0E15\u0E42\u0E19\u0E21\u0E31\u0E15\u0E34", "\u0E14\u0E39\u0E20\u0E32\u0E1E\u0E23\u0E27\u0E21\u0E01\u0E32\u0E23\u0E40\u0E07\u0E34\u0E19\u0E0A\u0E48\u0E27\u0E07\u0E15\u0E48\u0E32\u0E07 \u0E46", "\u0E2A\u0E23\u0E38\u0E1B\u0E40\u0E14\u0E37\u0E2D\u0E19\u0E19\u0E35\u0E49"]];
+  const cards = items.map(([title, desc2, text2]) => ({ type: "box", layout: "horizontal", spacing: "sm", paddingAll: "10px", cornerRadius: "md", backgroundColor: "#FFFFFF", contents: [{ type: "box", layout: "vertical", flex: 1, contents: [{ type: "text", text: title, size: "sm", weight: "bold", color: "#315F58" }, { type: "text", text: desc2, size: "xxs", color: "#8AA49E", wrap: true, margin: "xs" }] }, { type: "button", style: "link", height: "sm", flex: 0, action: { type: "message", label: "\u0E40\u0E1B\u0E34\u0E14", text: text2 } }] }));
+  return callLine("/v2/bot/message/reply", credentials, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ replyToken, messages: [{ type: "flex", altText: "\u0E15\u0E31\u0E49\u0E07\u0E04\u0E48\u0E32 Milo", contents: { type: "bubble", size: "mega", body: { type: "box", layout: "vertical", spacing: "md", backgroundColor: "#F7FCFA", contents: [{ type: "text", text: "\u2699\uFE0F \u0E15\u0E31\u0E49\u0E07\u0E04\u0E48\u0E32 Milo", weight: "bold", size: "xl", color: "#0D735B" }, { type: "text", text: "\u0E08\u0E31\u0E14\u0E01\u0E32\u0E23\u0E04\u0E48\u0E32\u0E01\u0E32\u0E23\u0E40\u0E07\u0E34\u0E19\u0E41\u0E25\u0E30\u0E01\u0E32\u0E23\u0E43\u0E0A\u0E49\u0E07\u0E32\u0E19\u0E08\u0E32\u0E01\u0E2B\u0E19\u0E49\u0E32\u0E19\u0E35\u0E49\u0E44\u0E14\u0E49\u0E40\u0E25\u0E22\u0E04\u0E23\u0E31\u0E1A", size: "xs", color: "#75958D", wrap: true }, ...cards] }, footer: { type: "box", layout: "vertical", backgroundColor: "#F7FCFA", contents: [{ type: "button", style: "primary", color: "#159A75", action: { type: "message", label: "\u0E40\u0E23\u0E34\u0E48\u0E21\u0E43\u0E0A\u0E49\u0E07\u0E32\u0E19 Milo", text: "\u0E40\u0E23\u0E34\u0E48\u0E21\u0E43\u0E0A\u0E49\u0E07\u0E32\u0E19" } }] } } }] }) });
 }
 async function replyTextWithQuickReplies(replyToken, text2, actions, credentials = lineCredentials()) {
   return callLine("/v2/bot/message/reply", credentials, {
@@ -2582,7 +2647,7 @@ async function replyTextWithQuickReplies(replyToken, text2, actions, credentials
   });
 }
 async function replyGreetingHome(replyToken, credentials = lineCredentials()) {
-  const base = process.env.MILO_PUBLIC_URL || "https://milo-line-app.vercel.app";
+  const base = process.env.MILO_PUBLIC_URL || "https://milo-line-assistant.onrender.com";
   const imageUrl = new URL("/richmenu/greeting-home.png", base).href;
   return callLine("/v2/bot/message/reply", credentials, {
     method: "POST",
@@ -2590,7 +2655,7 @@ async function replyGreetingHome(replyToken, credentials = lineCredentials()) {
     body: JSON.stringify({ replyToken, messages: [{ type: "image", originalContentUrl: imageUrl, previewImageUrl: imageUrl }] })
   });
 }
-var MILO_VOICE_CAT_IMAGE_URL = (process.env.MILO_VOICE_CAT_IMAGE_URL ?? "https://milo-line-app.vercel.app/milo-voice-proposal-cat.webp").trim();
+var MILO_VOICE_CAT_IMAGE_URL = (process.env.MILO_VOICE_CAT_IMAGE_URL ?? "https://milo-line-assistant.onrender.com/milo-voice-proposal-cat.webp").trim();
 function voiceQuickReply() {
   return {
     items: [
@@ -2730,6 +2795,7 @@ async function replyPostSaveSummary(replyToken, summary, credentials = lineCrede
         contents: {
           type: "bubble",
           size: "mega",
+          hero: { type: "image", url: miloRichMenuImageUrl("save-complete"), size: "full", aspectRatio: "20:5", aspectMode: "cover" },
           body: { type: "box", layout: "vertical", spacing: "md", paddingAll: "16px", backgroundColor: "#F2F0FF", contents: [
             { type: "box", layout: "horizontal", alignItems: "center", spacing: "md", paddingAll: "12px", cornerRadius: "md", backgroundColor: "#E4F8F2", contents: [
               { type: "box", layout: "vertical", justifyContent: "center", alignItems: "center", width: "38px", height: "38px", cornerRadius: "md", backgroundColor: "#5AC6AD", contents: [{ type: "text", text: "\u2713", align: "center", weight: "bold", size: "xl", color: "#FFFFFF" }] },
@@ -2766,27 +2832,15 @@ async function replyPostSaveSummary(replyToken, summary, credentials = lineCrede
             ] }
           ] },
           footer: { type: "box", layout: "vertical", paddingAll: "16px", backgroundColor: "#F2F0FF", contents: [
+            { type: "box", layout: "horizontal", spacing: "sm", contents: [
+              { type: "button", style: "secondary", height: "sm", action: { type: "message", label: "\u0E25\u0E1A\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E25\u0E48\u0E32\u0E2A\u0E38\u0E14", text: "\u0E25\u0E1A\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E25\u0E48\u0E32\u0E2A\u0E38\u0E14" } },
+              { type: "button", style: "primary", color: "#7657AA", height: "sm", action: { type: "message", label: "\u0E14\u0E39\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23", text: "\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23" } }
+            ] },
             { type: "button", style: "primary", color: "#7657AA", height: "sm", action: { type: "message", label: "\u0E14\u0E39\u0E2A\u0E23\u0E38\u0E1B\u0E22\u0E2D\u0E14\u0E27\u0E31\u0E19\u0E19\u0E35\u0E49", text: "\u0E2A\u0E23\u0E38\u0E1B\u0E27\u0E31\u0E19\u0E19\u0E35\u0E49" } }
           ] }
         }
       }
     ] })
-  });
-}
-async function replyPostSaveSummaryImage(replyToken, summary, credentials = lineCredentials()) {
-  const imageUrl = miloSaveResultImageUrl(summary);
-  return callLine("/v2/bot/message/reply", credentials, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ replyToken, messages: [{
-      type: "image",
-      originalContentUrl: imageUrl,
-      previewImageUrl: imageUrl,
-      quickReply: { items: [
-        { type: "action", action: { type: "message", label: "\u0E22\u0E01\u0E40\u0E25\u0E34\u0E01\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E25\u0E48\u0E32\u0E2A\u0E38\u0E14", text: "\u0E22\u0E01\u0E40\u0E25\u0E34\u0E01\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E25\u0E48\u0E32\u0E2A\u0E38\u0E14" } },
-        { type: "action", action: { type: "message", label: "\u0E2A\u0E23\u0E38\u0E1B\u0E27\u0E31\u0E19\u0E19\u0E35\u0E49", text: "\u0E2A\u0E23\u0E38\u0E1B\u0E27\u0E31\u0E19\u0E19\u0E35\u0E49" } }
-      ] }
-    }] })
   });
 }
 async function replyVoiceCategoryChoices(replyToken, credentials = lineCredentials()) {
@@ -2937,11 +2991,42 @@ async function replyRichMenu(replyToken, text2, artwork, credentials = lineCrede
           { type: "action", action: { type: "message", label: "\u0E2A\u0E31\u0E1B\u0E14\u0E32\u0E2B\u0E4C\u0E19\u0E35\u0E49", text: "\u0E2A\u0E23\u0E38\u0E1B\u0E2A\u0E31\u0E1B\u0E14\u0E32\u0E2B\u0E4C\u0E19\u0E35\u0E49" } },
           { type: "action", action: { type: "message", label: "\u0E40\u0E14\u0E37\u0E2D\u0E19\u0E19\u0E35\u0E49", text: "\u0E2A\u0E23\u0E38\u0E1B\u0E40\u0E14\u0E37\u0E2D\u0E19\u0E19\u0E35\u0E49" } },
           { type: "action", action: { type: "message", label: "\u0E1B\u0E35\u0E19\u0E35\u0E49", text: "\u0E2A\u0E23\u0E38\u0E1B\u0E1B\u0E35\u0E19\u0E35\u0E49" } },
-          { type: "action", action: { type: "uri", label: "\u0E40\u0E1B\u0E34\u0E14\u0E41\u0E14\u0E0A\u0E1A\u0E2D\u0E23\u0E4C\u0E14", uri: new URL("/dashboard", process.env.MILO_PUBLIC_URL || "https://milo-line-app.vercel.app").href } }
+          { type: "action", action: { type: "uri", label: "\u0E40\u0E1B\u0E34\u0E14\u0E41\u0E14\u0E0A\u0E1A\u0E2D\u0E23\u0E4C\u0E14", uri: new URL("/dashboard", process.env.MILO_PUBLIC_URL || "https://milo-line-assistant.onrender.com").href } }
         ] }
       }]
     })
   });
+}
+async function replyMiloListBubble(replyToken, title, subtitle, rows, credentials = lineCredentials()) {
+  const contents = rows.slice(0, 10).map((row) => ({
+    type: "box",
+    layout: "horizontal",
+    spacing: "sm",
+    paddingAll: "10px",
+    cornerRadius: "lg",
+    backgroundColor: "#FFFFFF",
+    contents: [
+      { type: "box", layout: "vertical", flex: 1, contents: [
+        { type: "text", text: ("#" + row.id + " " + row.title).slice(0, 120), size: "sm", weight: "bold", color: "#315F58", wrap: true },
+        { type: "text", text: row.detail.slice(0, 180), size: "xxs", color: "#789891", wrap: true, margin: "xs" }
+      ] },
+      ...row.actionText ? [{ type: "button", style: "secondary", height: "sm", flex: 0, action: { type: "message", label: (row.actionLabel ?? "\u0E22\u0E01\u0E40\u0E25\u0E34\u0E01").slice(0, 20), text: row.actionText.slice(0, 300) } }] : []
+    ]
+  }));
+  return callLine("/v2/bot/message/reply", credentials, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ replyToken, messages: [{ type: "flex", altText: title, contents: { type: "bubble", size: "mega", body: { type: "box", layout: "vertical", spacing: "md", backgroundColor: "#F3FBF7", contents: [
+    { type: "text", text: title, size: "xl", weight: "bold", color: "#0D735B" },
+    { type: "text", text: subtitle, size: "xs", color: "#789891", wrap: true },
+    ...contents.length ? contents : [{ type: "text", text: "\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E21\u0E35\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E04\u0E23\u0E31\u0E1A", size: "sm", color: "#789891", margin: "md" }]
+  ] } } }] }) });
+}
+async function replyTransactionList(replyToken, rows, credentials = lineCredentials()) {
+  return replyMiloListBubble(replyToken, "\u{1F4CB} \u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E25\u0E48\u0E32\u0E2A\u0E38\u0E14", "\u0E41\u0E15\u0E30\u0E1B\u0E38\u0E48\u0E21\u0E14\u0E49\u0E32\u0E19\u0E02\u0E27\u0E32\u0E40\u0E1E\u0E37\u0E48\u0E2D\u0E25\u0E1A\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E17\u0E35\u0E48\u0E15\u0E49\u0E2D\u0E07\u0E01\u0E32\u0E23", rows.map((row) => ({ ...row, actionLabel: "\u0E25\u0E1A", actionText: "\u0E25\u0E1A\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23 #" + row.id })), credentials);
+}
+async function replyReminderList(replyToken, rows, credentials = lineCredentials()) {
+  return replyMiloListBubble(replyToken, "\u{1F514} \u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E40\u0E15\u0E37\u0E2D\u0E19", "\u0E41\u0E15\u0E48\u0E25\u0E30\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E21\u0E35\u0E1B\u0E38\u0E48\u0E21\u0E22\u0E01\u0E40\u0E25\u0E34\u0E01\u0E43\u0E2B\u0E49\u0E01\u0E14\u0E44\u0E14\u0E49\u0E17\u0E31\u0E19\u0E17\u0E35", rows.map((row) => ({ ...row, actionLabel: "\u0E22\u0E01\u0E40\u0E25\u0E34\u0E01", actionText: "\u0E22\u0E01\u0E40\u0E25\u0E34\u0E01\u0E40\u0E15\u0E37\u0E2D\u0E19 #" + row.id })), credentials);
+}
+async function replyCalendarList(replyToken, rows, credentials = lineCredentials()) {
+  return replyMiloListBubble(replyToken, "\u{1F4C5} \u0E1B\u0E0F\u0E34\u0E17\u0E34\u0E19 Milo", "\u0E19\u0E31\u0E14\u0E2B\u0E21\u0E32\u0E22\u0E17\u0E35\u0E48\u0E01\u0E33\u0E25\u0E31\u0E07\u0E08\u0E30\u0E16\u0E36\u0E07 \u0E41\u0E15\u0E30\u0E22\u0E01\u0E40\u0E25\u0E34\u0E01\u0E44\u0E14\u0E49\u0E08\u0E32\u0E01\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23", rows.map((row) => ({ ...row, actionLabel: "\u0E22\u0E01\u0E40\u0E25\u0E34\u0E01", actionText: "\u0E22\u0E01\u0E40\u0E25\u0E34\u0E01\u0E19\u0E31\u0E14 #" + row.id })), credentials);
 }
 
 // server/milo/reminderDelivery.ts
@@ -3193,6 +3278,78 @@ async function invokeLLM(params) {
   return await response.json();
 }
 
+// server/_core/typeSafe.ts
+import { choice, TypeSafeClient } from "@typesafe-ai/sdk";
+var client;
+var clientFingerprint = "";
+function jevApiKey(env = process.env) {
+  return (env.JEV_API_KEY || env.TYPESAFE_API_KEY || "").trim();
+}
+function jevBaseUrl(env = process.env) {
+  return (env.JEV_BASE_URL || env.TYPESAFE_BASE_URL || "https://api.typesafe.ai").trim().replace(/\/+$/, "");
+}
+function jevModel(env = process.env) {
+  return (env.JEV_MODEL || env.TYPESAFE_DEFAULT_MODEL || "jev-latest").trim() || "jev-latest";
+}
+function typeSafeConfigured(env = process.env) {
+  return Boolean(jevApiKey(env));
+}
+function getJevConfig(env = process.env) {
+  return {
+    jevApiKey: jevApiKey(env),
+    jevBaseUrl: jevBaseUrl(env),
+    jevModel: jevModel(env)
+  };
+}
+function getClient(config) {
+  const fingerprint = [config.jevApiKey ? "configured" : "missing", config.jevBaseUrl, config.jevModel].join("|");
+  if (!client || clientFingerprint !== fingerprint) {
+    client = new TypeSafeClient({
+      apiKey: config.jevApiKey,
+      baseURL: config.jevBaseUrl,
+      defaultModel: config.jevModel
+    });
+    clientFingerprint = fingerprint;
+  }
+  return client;
+}
+var JevProvider = class {
+  constructor(config = getJevConfig()) {
+    this.config = config;
+  }
+  configured() {
+    return Boolean(this.config.jevApiKey);
+  }
+  async classifyExpenseCategory(note, allowedCategories) {
+    const categories = Array.from(new Set(allowedCategories.map((item) => item.trim()).filter(Boolean)));
+    if (!this.config.jevApiKey || categories.length === 0) {
+      throw new Error("Jev API key is not configured");
+    }
+    const response = await getClient(this.config).systemOne({
+      state: { expense_note: note.slice(0, 500) },
+      model: this.config.jevModel,
+      questions: {
+        category: choice(
+          "\u0E40\u0E25\u0E37\u0E2D\u0E01\u0E2B\u0E21\u0E27\u0E14\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22\u0E17\u0E35\u0E48\u0E15\u0E23\u0E07\u0E01\u0E31\u0E1A\u0E02\u0E49\u0E2D\u0E04\u0E27\u0E32\u0E21\u0E21\u0E32\u0E01\u0E17\u0E35\u0E48\u0E2A\u0E38\u0E14 \u0E42\u0E14\u0E22\u0E40\u0E25\u0E37\u0E2D\u0E01\u0E44\u0E14\u0E49\u0E40\u0E09\u0E1E\u0E32\u0E30\u0E15\u0E31\u0E27\u0E40\u0E25\u0E37\u0E2D\u0E01\u0E17\u0E35\u0E48\u0E01\u0E33\u0E2B\u0E19\u0E14 \u0E2B\u0E32\u0E01\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E44\u0E21\u0E48\u0E0A\u0E31\u0E14\u0E40\u0E08\u0E19\u0E43\u0E2B\u0E49\u0E40\u0E25\u0E37\u0E2D\u0E01 \u0E17\u0E31\u0E48\u0E27\u0E44\u0E1B\u0E40\u0E21\u0E37\u0E48\u0E2D\u0E21\u0E35\u0E15\u0E31\u0E27\u0E40\u0E25\u0E37\u0E2D\u0E01\u0E19\u0E35\u0E49",
+          Object.fromEntries(categories.map((category2) => [category2, null]))
+        )
+      }
+    });
+    const answer = response.answers.category;
+    const category = answer.choice;
+    if (!categories.includes(category)) throw new Error("Jev returned an unknown expense category");
+    return {
+      category,
+      confidence: answer.confidence,
+      probabilities: answer.probabilities,
+      model: response.model
+    };
+  }
+};
+async function classifyExpenseCategory(note, allowedCategories) {
+  return new JevProvider().classifyExpenseCategory(note, allowedCategories);
+}
+
 // server/milo/financialAssistant.ts
 var categorySchema = {
   type: "object",
@@ -3205,6 +3362,13 @@ var categorySchema = {
   additionalProperties: false
 };
 async function suggestExpenseCategory(note, allowedCategories) {
+  if (typeSafeConfigured()) {
+    try {
+      return { ...await classifyExpenseCategory(note, allowedCategories), reason: "\u0E08\u0E31\u0E14\u0E2B\u0E21\u0E27\u0E14\u0E14\u0E49\u0E27\u0E22 Jev", provider: "jev" };
+    } catch (error) {
+      console.warn("[Milo Jev] expense categorization failed; falling back to existing LLM classifier", { error: error instanceof Error ? error.message : "unknown" });
+    }
+  }
   const response = await invokeLLM({
     model: "gpt-5-mini",
     messages: [
@@ -3970,7 +4134,7 @@ function safeEqual(left, right) {
   return a.length === b.length && crypto6.timingSafeEqual(a, b);
 }
 function buildCalendarIcsUrl(id, ttlSeconds = 7 * 24 * 60 * 60) {
-  const base = process.env.MILO_PUBLIC_URL?.trim() || "https://milo-line-app.vercel.app";
+  const base = process.env.MILO_PUBLIC_URL?.trim() || "https://milo-line-assistant.onrender.com";
   const expires = Math.floor(Date.now() / 1e3) + ttlSeconds;
   const sig = calendarSignature(id, expires);
   const url = new URL(`/api/milo/calendar/${id}.ics`, base);
@@ -3988,7 +4152,7 @@ function calendarEventToIcs(event) {
     "PRODID:-//Milo LINE Assistant//Calendar//TH",
     "CALSCALE:GREGORIAN",
     "BEGIN:VEVENT",
-    `UID:milo-${event.id}@milo-line-app.vercel.app`,
+    `UID:milo-${event.id}@milo-line-assistant.onrender.com`,
     `DTSTAMP:${compactUtc(event.createdAt)}`,
     `DTSTART:${compactUtc(event.startsAt)}`,
     `DTEND:${compactUtc(event.endsAt)}`,
@@ -4026,6 +4190,125 @@ import express from "express";
 // server/_core/voiceTranscription.ts
 import { transcribe as gatewayTranscribe } from "ai";
 import { createGateway, gateway } from "@ai-sdk/gateway";
+
+// server/_core/googleGemini.ts
+function googleGeminiApiKey(env = process.env) {
+  return (env.GEMINI_API_KEY || env.GOOGLE_GEMINI_API_KEY || env.GOOGLE_API_KEY || env.GOOGLE_GENERATIVE_AI_API_KEY || "").trim();
+}
+function googleGeminiConfigured(env = process.env) {
+  return Boolean(googleGeminiApiKey(env));
+}
+var PRIMARY_MULTIMODAL_MODEL = "gemini-3.6-flash";
+var FALLBACK_MULTIMODAL_MODEL = "gemini-3.8-flash";
+function uniqueModels(values) {
+  return Array.from(new Set(values.map((value) => value?.trim()).filter((value) => Boolean(value))));
+}
+function googleGeminiModels(kind, env = process.env) {
+  const configured = kind === "vision" ? env.MILO_GOOGLE_VISION_MODEL || env.MILO_VISION_MODEL : kind === "audio" ? env.MILO_GOOGLE_STT_MODEL || env.MILO_GEMINI_STT_MODEL : env.MILO_GOOGLE_CHAT_MODEL || env.MILO_GEMINI_CHAT_MODEL;
+  return uniqueModels([configured, PRIMARY_MULTIMODAL_MODEL, FALLBACK_MULTIMODAL_MODEL]);
+}
+function googleGeminiModel(kind, env = process.env) {
+  return googleGeminiModels(kind, env)[0];
+}
+function responseError(payload, status, statusText) {
+  return payload.error?.message || payload.promptFeedback?.blockReason || `Google Gemini returned HTTP ${status} ${statusText}`.trim();
+}
+async function generateGoogleGeminiText(args) {
+  const apiKey = googleGeminiApiKey();
+  if (!apiKey) throw new Error("Google Gemini API key is not configured");
+  const failures = [];
+  for (const model of googleGeminiModels("chat")) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), args.timeoutMs ?? 2e4);
+    try {
+      const response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
+          body: JSON.stringify({
+            systemInstruction: { parts: [{ text: args.system }] },
+            contents: [{ role: "user", parts: [{ text: args.prompt.slice(0, 4e3) }] }],
+            generationConfig: { temperature: 0.7, maxOutputTokens: 700 }
+          }),
+          signal: controller.signal
+        }
+      );
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(responseError(payload, response.status, response.statusText));
+      const text2 = payload.candidates?.[0]?.content?.parts?.map((part) => part.text || "").join("").trim() || "";
+      if (!text2) throw new Error(`empty content${payload.candidates?.[0]?.finishReason ? ` (${payload.candidates[0].finishReason})` : ""}`);
+      return text2.slice(0, 5e3);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "unknown error";
+      failures.push(`${model}: ${message}`);
+      console.warn("[Milo Gemini] chat model failed; trying fallback", { model, error: message });
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+  throw new Error(`Google Gemini text generation failed: ${failures.join(" | ").slice(0, 1600)}`);
+}
+async function generateGoogleGeminiJson(args) {
+  const apiKey = googleGeminiApiKey();
+  if (!apiKey) throw new Error("Google Gemini API key is not configured");
+  const parts = [{ text: args.prompt }];
+  if (args.imageDataUrl) {
+    const match = args.imageDataUrl.match(/^data:([^;]+);base64,([\s\S]+)$/);
+    if (!match) throw new Error("Invalid image data URL");
+    parts.push({
+      inlineData: {
+        mimeType: match[1],
+        data: match[2]
+      }
+    });
+  }
+  if (args.audioBuffer) {
+    parts.push({
+      inlineData: {
+        mimeType: args.audioMimeType || "audio/m4a",
+        data: args.audioBuffer.toString("base64")
+      }
+    });
+  }
+  const body = {
+    systemInstruction: args.system ? { parts: [{ text: args.system }] } : void 0,
+    contents: [{ role: "user", parts }],
+    generationConfig: {
+      temperature: 0,
+      responseMimeType: "application/json",
+      responseJsonSchema: args.schema
+    }
+  };
+  const failures = [];
+  for (const model of googleGeminiModels(args.kind)) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), args.kind === "audio" ? 6e4 : 45e3);
+    try {
+      const response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
+          body: JSON.stringify(body),
+          signal: controller.signal
+        }
+      );
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(responseError(payload, response.status, response.statusText));
+      const text2 = payload.candidates?.[0]?.content?.parts?.map((part) => part.text || "").join("").trim();
+      if (!text2) throw new Error(`empty content${payload.candidates?.[0]?.finishReason ? ` (${payload.candidates[0].finishReason})` : ""}`);
+      return JSON.parse(text2);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "unknown error";
+      failures.push(`${model}: ${message}`);
+      console.warn("[Milo Gemini] structured model failed; trying fallback", { kind: args.kind, model, error: message });
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
+  throw new Error(`Google Gemini ${args.kind} generation failed: ${failures.join(" | ").slice(0, 1600)}`);
+}
 
 // server/_core/localVoiceTranscription.ts
 import { spawn } from "node:child_process";
@@ -4090,10 +4373,12 @@ function transcriptQualityIssue(text2, durationSeconds = 0) {
     if (longestRun >= 4) return "repeated-token-run";
     if (tokens.length >= 8 && dominantShare >= 0.5 && uniqueShare <= 0.4) return "dominant-repeated-token";
   }
-  const duration = Math.max(0.5, Number.isFinite(durationSeconds) ? durationSeconds : 0.5);
-  const nonSpaceCharacters = clean3.replace(/\s/g, "").length;
-  if (duration <= 15 && tokens.length > Math.max(24, Math.ceil(duration * 7))) return "too-many-tokens-for-duration";
-  if (duration <= 15 && nonSpaceCharacters / duration > 28) return "too-many-characters-for-duration";
+  const duration = Number.isFinite(durationSeconds) && durationSeconds > 0 ? durationSeconds : void 0;
+  if (duration !== void 0) {
+    const nonSpaceCharacters = clean3.replace(/\s/g, "").length;
+    if (duration <= 15 && tokens.length > Math.max(24, Math.ceil(duration * 7))) return "too-many-tokens-for-duration";
+    if (duration <= 15 && nonSpaceCharacters / duration > 28) return "too-many-characters-for-duration";
+  }
   return void 0;
 }
 async function decodeToFloat32Mono16k(audioBuffer) {
@@ -4232,7 +4517,7 @@ function gatewayTranscriptionModel(env = process.env) {
 }
 function voiceTranscriptionRuntimeStatus(requestToken) {
   const forge = Boolean(ENV.forgeApiUrl && ENV.forgeApiKey);
-  const gemini = Boolean((process.env.GEMINI_API_KEY || "").trim());
+  const gemini = Boolean(googleGeminiApiKey());
   const groq = Boolean((process.env.GROQ_API_KEY || "").trim());
   const openai = Boolean((process.env.OPENAI_API_KEY || "").trim());
   const gatewayAvailable = gatewayAuthAvailable(process.env, requestToken);
@@ -4345,20 +4630,39 @@ async function parseProviderResponse(response, provider) {
   return validateTranscript(whisperResponse, provider);
 }
 async function transcribeWithGemini(audioBuffer, mimeType, apiKey) {
-  const model = process.env.MILO_GEMINI_STT_MODEL || "gemini-3.5-transcribe";
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey.trim()}`;
   const promptText = "\u0E16\u0E2D\u0E14\u0E40\u0E2A\u0E35\u0E22\u0E07\u0E20\u0E32\u0E29\u0E32\u0E44\u0E17\u0E22\u0E15\u0E32\u0E21\u0E17\u0E35\u0E48\u0E1C\u0E39\u0E49\u0E43\u0E0A\u0E49\u0E1E\u0E39\u0E14\u0E08\u0E23\u0E34\u0E07\u0E41\u0E1A\u0E1A\u0E04\u0E33\u0E15\u0E48\u0E2D\u0E04\u0E33 \u0E2B\u0E49\u0E32\u0E21\u0E2A\u0E23\u0E38\u0E1B \u0E2B\u0E49\u0E32\u0E21\u0E15\u0E2D\u0E1A\u0E01\u0E25\u0E31\u0E1A \u0E2B\u0E49\u0E32\u0E21\u0E40\u0E15\u0E34\u0E21\u0E04\u0E33\u0E17\u0E31\u0E01\u0E17\u0E32\u0E22\u0E2B\u0E23\u0E37\u0E2D\u0E04\u0E33\u0E17\u0E35\u0E48\u0E44\u0E21\u0E48\u0E44\u0E14\u0E49\u0E22\u0E34\u0E19 \u0E15\u0E49\u0E2D\u0E07\u0E23\u0E31\u0E01\u0E29\u0E32\u0E15\u0E31\u0E27\u0E40\u0E25\u0E02 \u0E08\u0E33\u0E19\u0E27\u0E19\u0E40\u0E07\u0E34\u0E19 \u0E1A\u0E32\u0E17 \u0E2A\u0E15\u0E32\u0E07\u0E04\u0E4C \u0E0A\u0E37\u0E48\u0E2D\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23 \u0E41\u0E25\u0E30\u0E04\u0E33\u0E27\u0E48\u0E32 \u0E23\u0E32\u0E22\u0E23\u0E31\u0E1A/\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22\u0E15\u0E32\u0E21\u0E40\u0E2A\u0E35\u0E22\u0E07\u0E08\u0E23\u0E34\u0E07";
-  const resp = await fetchWithTimeout(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
-    contents: [{ parts: [{ text: promptText }, { inlineData: { mimeType: mimeType.split(";")[0], data: audioBuffer.toString("base64") } }] }],
-    generationConfig: { temperature: 0 }
-  }) }, 6e4);
-  if (!resp.ok) throw new Error(`Gemini Audio API error (${resp.status})`);
-  const data = await resp.json();
-  const text2 = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || "";
-  const result = { task: "transcribe", language: "th", duration: 0, text: text2, segments: [] };
-  const validated = validateTranscript(result, "Google Gemini");
-  if ("error" in validated) throw new Error(validated.details || validated.error);
-  return validated;
+  const failures = [];
+  const cleanMimeType = mimeType.split(";")[0] || "audio/m4a";
+  for (const model of googleGeminiModels("audio")) {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`;
+    try {
+      const resp = await fetchWithTimeout(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey.trim() },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: promptText }, { inlineData: { mimeType: cleanMimeType, data: audioBuffer.toString("base64") } }] }],
+          generationConfig: { temperature: 0, maxOutputTokens: 1200 }
+        })
+      }, 6e4);
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok) throw new Error(data.error?.message || `HTTP ${resp.status} ${resp.statusText}`.trim());
+      const text2 = data.candidates?.[0]?.content?.parts?.map((part) => part.text || "").join("").trim() || "";
+      if (!text2) {
+        const reason = data.promptFeedback?.blockReason || data.candidates?.[0]?.finishReason || "empty text";
+        throw new Error(reason);
+      }
+      const result = { task: "transcribe", language: "th", duration: 0, text: text2, segments: [] };
+      const validated = validateTranscript(result, `Google Gemini ${model}`);
+      if ("error" in validated) throw new Error(validated.details || validated.error);
+      console.info("[Milo Voice] Gemini audio model selected", { model, chars: validated.text.length });
+      return validated;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "unknown error";
+      failures.push(`${model}: ${message}`);
+      console.warn("[Milo Voice] Gemini audio model failed; trying fallback", { model, error: message });
+    }
+  }
+  throw new Error(failures.join(" | ").slice(0, 1600) || "Google Gemini returned no transcript");
 }
 async function transcribeWithGateway(audioBuffer, options) {
   const modelId = gatewayTranscriptionModel();
@@ -4392,7 +4696,7 @@ async function transcribeWithGateway(audioBuffer, options) {
 }
 async function transcribeAudio(options) {
   try {
-    const geminiKey = (process.env.GEMINI_API_KEY || "").trim();
+    const geminiKey = googleGeminiApiKey();
     const groqKey = (process.env.GROQ_API_KEY || "").trim();
     const forgeConfigured2 = Boolean(ENV.forgeApiUrl && ENV.forgeApiKey);
     const openAIKey = (process.env.OPENAI_API_KEY || "").trim();
@@ -4705,104 +5009,6 @@ async function storageGetGoogleDriveResponse(relKey) {
   if (!googleDriveConfigured()) throw new Error("Google Drive storage is not configured");
   const token = await googleDriveAccessToken();
   return fetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(objectKey)}?alt=media`, { headers: { Authorization: `Bearer ${token}` } });
-}
-
-// server/_core/googleGemini.ts
-function googleGeminiApiKey(env = process.env) {
-  return (env.GEMINI_API_KEY || env.GOOGLE_GEMINI_API_KEY || env.GOOGLE_API_KEY || env.GOOGLE_GENERATIVE_AI_API_KEY || "").trim();
-}
-function googleGeminiConfigured(env = process.env) {
-  return Boolean(googleGeminiApiKey(env));
-}
-function modelFor(kind, env = process.env) {
-  return (kind === "vision" ? env.MILO_GOOGLE_VISION_MODEL || env.MILO_VISION_MODEL || "gemini-3.8-flash" : env.MILO_GOOGLE_STT_MODEL || "gemini-3.5-transcribe").trim();
-}
-function chatModel(env = process.env) {
-  return (env.MILO_GOOGLE_CHAT_MODEL || env.MILO_GEMINI_CHAT_MODEL || "gemini-3.8-flash").trim();
-}
-async function generateGoogleGeminiText(args) {
-  const apiKey = googleGeminiApiKey();
-  if (!apiKey) throw new Error("Google Gemini API key is not configured");
-  const model = chatModel();
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), args.timeoutMs ?? 2e4);
-  try {
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          systemInstruction: { parts: [{ text: args.system }] },
-          contents: [{ role: "user", parts: [{ text: args.prompt.slice(0, 4e3) }] }],
-          generationConfig: { temperature: 0.7, maxOutputTokens: 700 }
-        }),
-        signal: controller.signal
-      }
-    );
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(payload.error?.message || `Google Gemini returned HTTP ${response.status}`);
-    const text2 = payload.candidates?.[0]?.content?.parts?.map((part) => part.text || "").join("").trim() || "";
-    if (!text2) throw new Error("Google Gemini returned empty content");
-    return text2.slice(0, 5e3);
-  } finally {
-    clearTimeout(timeout);
-  }
-}
-async function generateGoogleGeminiJson(args) {
-  const apiKey = googleGeminiApiKey();
-  if (!apiKey) throw new Error("Google Gemini API key is not configured");
-  const model = modelFor(args.kind);
-  const parts = [{ text: args.prompt }];
-  if (args.imageDataUrl) {
-    const match = args.imageDataUrl.match(/^data:([^;]+);base64,([\s\S]+)$/);
-    if (!match) throw new Error("Invalid image data URL");
-    parts.push({
-      inlineData: {
-        mimeType: match[1],
-        data: match[2]
-      }
-    });
-  }
-  if (args.audioBuffer) {
-    parts.push({
-      inlineData: {
-        mimeType: args.audioMimeType || "audio/m4a",
-        data: args.audioBuffer.toString("base64")
-      }
-    });
-  }
-  const body = {
-    systemInstruction: args.system ? { parts: [{ text: args.system }] } : void 0,
-    contents: [{ role: "user", parts }],
-    generationConfig: {
-      temperature: 0,
-      responseMimeType: "application/json",
-      responseSchema: args.schema
-    }
-  };
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), args.kind === "audio" ? 6e4 : 45e3);
-  try {
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(apiKey)}`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-        signal: controller.signal
-      }
-    );
-    const payload = await response.json().catch(() => ({}));
-    if (!response.ok) {
-      throw new Error(payload.error?.message || `Google Gemini returned HTTP ${response.status}`);
-    }
-    const text2 = payload.candidates?.[0]?.content?.parts?.map((part) => part.text || "").join("").trim();
-    if (!text2) throw new Error("Google Gemini returned empty content");
-    return JSON.parse(text2);
-  } finally {
-    clearTimeout(timeout);
-  }
 }
 
 // server/milo/ocrImageAnalysis.ts
@@ -5572,6 +5778,16 @@ function parseReceiptDateRepairContent(content) {
     evidence
   };
 }
+async function repairReceiptDateWithGoogle(dataUrl) {
+  const repair = await generateGoogleGeminiJson({
+    kind: "vision",
+    imageDataUrl: dataUrl,
+    system: "\u0E04\u0E38\u0E13\u0E40\u0E1B\u0E47\u0E19\u0E15\u0E31\u0E27\u0E15\u0E23\u0E27\u0E08\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48\u0E43\u0E1A\u0E40\u0E2A\u0E23\u0E47\u0E08\u0E44\u0E17\u0E22 \u0E2D\u0E48\u0E32\u0E19\u0E40\u0E09\u0E1E\u0E32\u0E30\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48\u0E41\u0E25\u0E30\u0E40\u0E27\u0E25\u0E32\u0E43\u0E19\u0E20\u0E32\u0E1E\u0E08\u0E23\u0E34\u0E07 \u0E2B\u0E49\u0E32\u0E21\u0E43\u0E0A\u0E49\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48\u0E1B\u0E31\u0E08\u0E08\u0E38\u0E1A\u0E31\u0E19\u0E2B\u0E23\u0E37\u0E2D\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48\u0E2A\u0E48\u0E07\u0E23\u0E39\u0E1B \u0E2B\u0E49\u0E32\u0E21\u0E40\u0E14\u0E32",
+    prompt: "\u0E2D\u0E48\u0E32\u0E19\u0E1A\u0E23\u0E23\u0E17\u0E31\u0E14\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48\u0E41\u0E25\u0E30\u0E40\u0E27\u0E25\u0E32\u0E17\u0E35\u0E48\u0E1E\u0E34\u0E21\u0E1E\u0E4C\u0E1A\u0E19\u0E43\u0E1A\u0E40\u0E2A\u0E23\u0E47\u0E08\u0E08\u0E23\u0E34\u0E07\u0E08\u0E32\u0E01\u0E1E\u0E34\u0E01\u0E40\u0E0B\u0E25 \u0E16\u0E49\u0E32\u0E40\u0E2B\u0E47\u0E19\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48\u0E41\u0E1A\u0E1A 17 \u0E01.\u0E22. 2569 10:58 \u0E43\u0E2B\u0E49\u0E04\u0E37\u0E19 dateText=2026-09-17 \u0E41\u0E25\u0E30 timeText=10:58",
+    schema: receiptDateSchema
+  });
+  return parseReceiptDateRepairContent(JSON.stringify(repair));
+}
 async function receiptDateRepairRequest(dataUrl, token) {
   const body = {
     model: process.env.MILO_VISION_MODEL || "google/gemini-2.5-flash",
@@ -5616,6 +5832,15 @@ async function receiptDateRepairRequest(dataUrl, token) {
     throw error;
   }
 }
+async function receiptDateRepairWithGoogle(dataUrl) {
+  return generateGoogleGeminiJson({
+    kind: "vision",
+    imageDataUrl: dataUrl,
+    system: "\u0E04\u0E38\u0E13\u0E04\u0E37\u0E2D OCR verifier \u0E2A\u0E33\u0E2B\u0E23\u0E31\u0E1A\u0E43\u0E1A\u0E40\u0E2A\u0E23\u0E47\u0E08\u0E44\u0E17\u0E22 \u0E2D\u0E48\u0E32\u0E19\u0E40\u0E09\u0E1E\u0E32\u0E30\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48\u0E17\u0E33\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E41\u0E25\u0E30\u0E40\u0E27\u0E25\u0E32\u0E17\u0E35\u0E48\u0E1E\u0E34\u0E21\u0E1E\u0E4C\u0E2D\u0E22\u0E39\u0E48\u0E43\u0E19\u0E20\u0E32\u0E1E\u0E08\u0E23\u0E34\u0E07 \u0E2B\u0E49\u0E32\u0E21\u0E40\u0E14\u0E32\u0E08\u0E32\u0E01\u0E40\u0E27\u0E25\u0E32\u0E2A\u0E48\u0E07\u0E23\u0E39\u0E1B \u0E27\u0E31\u0E19\u0E17\u0E35\u0E48\u0E1B\u0E31\u0E08\u0E08\u0E38\u0E1A\u0E31\u0E19 \u0E2B\u0E23\u0E37\u0E2D\u0E1A\u0E23\u0E34\u0E1A\u0E17\u0E2D\u0E37\u0E48\u0E19 \u0E16\u0E49\u0E32\u0E2D\u0E48\u0E32\u0E19\u0E27\u0E31\u0E19\u0E40\u0E14\u0E37\u0E2D\u0E19\u0E1B\u0E35\u0E44\u0E21\u0E48\u0E0A\u0E31\u0E14\u0E43\u0E2B\u0E49 dateText \u0E27\u0E48\u0E32\u0E07 \u0E41\u0E25\u0E30 evidence \u0E15\u0E49\u0E2D\u0E07\u0E04\u0E31\u0E14\u0E02\u0E49\u0E2D\u0E04\u0E27\u0E32\u0E21\u0E2A\u0E31\u0E49\u0E19\u0E46 \u0E17\u0E35\u0E48\u0E40\u0E2B\u0E47\u0E19\u0E08\u0E23\u0E34\u0E07",
+    prompt: "\u0E2D\u0E48\u0E32\u0E19\u0E40\u0E09\u0E1E\u0E32\u0E30\u0E1A\u0E23\u0E23\u0E17\u0E31\u0E14\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48\u0E41\u0E25\u0E30\u0E40\u0E27\u0E25\u0E32\u0E43\u0E19\u0E43\u0E1A\u0E40\u0E2A\u0E23\u0E47\u0E08\u0E08\u0E23\u0E34\u0E07\u0E08\u0E32\u0E01\u0E1E\u0E34\u0E01\u0E40\u0E0B\u0E25 \u0E16\u0E49\u0E32\u0E40\u0E2B\u0E47\u0E19\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48\u0E41\u0E1A\u0E1A 17 \u0E01.\u0E22. 2569 10:58 \u0E43\u0E2B\u0E49\u0E04\u0E37\u0E19 dateText=2026-09-17 \u0E41\u0E25\u0E30 timeText=10:58",
+    schema: receiptDateSchema
+  });
+}
 async function receiptDateRepairWithForge(dataUrl) {
   const response = await invokeLLM({
     model: ENV.visionModel,
@@ -5639,14 +5864,7 @@ async function repairMissingReceiptDate(analysis, dataUrl, gatewayKey) {
   if (googleGeminiConfigured()) {
     try {
       const header = await buildReceiptHeaderDataUrl(dataUrl).catch(() => dataUrl);
-      const repair = await generateGoogleGeminiJson({
-        kind: "vision",
-        imageDataUrl: header,
-        system: "\u0E04\u0E38\u0E13\u0E40\u0E1B\u0E47\u0E19\u0E15\u0E31\u0E27\u0E15\u0E23\u0E27\u0E08\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48\u0E43\u0E1A\u0E40\u0E2A\u0E23\u0E47\u0E08\u0E44\u0E17\u0E22 \u0E2D\u0E48\u0E32\u0E19\u0E40\u0E09\u0E1E\u0E32\u0E30\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48\u0E41\u0E25\u0E30\u0E40\u0E27\u0E25\u0E32\u0E43\u0E19\u0E20\u0E32\u0E1E\u0E08\u0E23\u0E34\u0E07 \u0E2B\u0E49\u0E32\u0E21\u0E43\u0E0A\u0E49\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48\u0E1B\u0E31\u0E08\u0E08\u0E38\u0E1A\u0E31\u0E19\u0E2B\u0E23\u0E37\u0E2D\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48\u0E2A\u0E48\u0E07\u0E23\u0E39\u0E1B \u0E2B\u0E49\u0E32\u0E21\u0E40\u0E14\u0E32",
-        prompt: "\u0E2D\u0E48\u0E32\u0E19\u0E1A\u0E23\u0E23\u0E17\u0E31\u0E14\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48\u0E41\u0E25\u0E30\u0E40\u0E27\u0E25\u0E32\u0E17\u0E35\u0E48\u0E1E\u0E34\u0E21\u0E1E\u0E4C\u0E1A\u0E19\u0E43\u0E1A\u0E40\u0E2A\u0E23\u0E47\u0E08\u0E08\u0E23\u0E34\u0E07\u0E08\u0E32\u0E01\u0E1E\u0E34\u0E01\u0E40\u0E0B\u0E25 \u0E16\u0E49\u0E32\u0E40\u0E2B\u0E47\u0E19\u0E27\u0E31\u0E19\u0E17\u0E35\u0E48\u0E41\u0E1A\u0E1A 17 \u0E01.\u0E22. 2569 10:58 \u0E43\u0E2B\u0E49\u0E04\u0E37\u0E19 dateText=2026-09-17 \u0E41\u0E25\u0E30 timeText=10:58",
-        schema: receiptDateSchema
-      });
-      const normalized = parseReceiptDateRepairContent(JSON.stringify(repair));
+      const normalized = await repairReceiptDateWithGoogle(header);
       if (normalized.dateText) return mergeDedicatedDateRepair(analysis, normalized);
     } catch (error) {
       console.warn("[Milo Image] Google focused date repair failed", { error: error instanceof Error ? error.message : "unknown" });
@@ -5654,14 +5872,14 @@ async function repairMissingReceiptDate(analysis, dataUrl, gatewayKey) {
   }
   const headerDataUrl = await buildReceiptHeaderDataUrl(dataUrl).catch(() => dataUrl);
   try {
-    if (ENV.forgeApiKey && !directVisionAnalysis) {
+    if (ENV.forgeApiKey) {
       const repair = await receiptDateRepairWithForge(headerDataUrl);
       if (repair.dateText) return mergeDedicatedDateRepair(analysis, repair);
     }
   } catch (error) {
     console.warn("[Milo Image] Forge focused date repair failed", { error: error instanceof Error ? error.message : "unknown" });
   }
-  if (gatewayKey && !directVisionAnalysis) {
+  if (gatewayKey) {
     try {
       const repair = await receiptDateRepairRequest(headerDataUrl, gatewayKey);
       return mergeDedicatedDateRepair(analysis, repair);
@@ -5772,11 +5990,11 @@ function sanitizeAnalysisMerchants(analysis) {
 async function analyzeImage(dataUrl, options = {}) {
   let providerError;
   let providerAnalysis;
-  let directVisionAnalysis2;
+  let directVisionAnalysis;
   if (googleGeminiConfigured()) {
     try {
       const analysis = await analyzeImageWithGoogle(dataUrl);
-      directVisionAnalysis2 = analysis;
+      directVisionAnalysis = analysis;
       providerAnalysis = analysis;
       console.info("[Milo Image] Google Gemini direct vision selected", {
         proposals: analysis.proposals.length,
@@ -5787,7 +6005,7 @@ async function analyzeImage(dataUrl, options = {}) {
       if (first?.kind === "expense" && first.documentType === "receipt" && !first.dateText) {
         try {
           const headerDataUrl = await buildReceiptHeaderDataUrl(dataUrl).catch(() => dataUrl);
-          const repair = await repairReceiptDateWithGoogle(headerDataUrl);
+          const repair = await receiptDateRepairWithGoogle(headerDataUrl);
           providerAnalysis = mergeDedicatedDateRepair(providerAnalysis, repair);
           console.info("[Milo Image] Google Gemini focused date repair", {
             dateText: repair.dateText,
@@ -5800,7 +6018,7 @@ async function analyzeImage(dataUrl, options = {}) {
           });
         }
       }
-      if (analysis.proposals.some((item) => item.documentType === "receipt" && item.kind === "expense")) {
+      if (providerAnalysis.proposals.some((item) => item.documentType === "receipt" && item.kind === "expense" && (!item.dateText || !item.timeText))) {
         try {
           const ocrDate = await analyzeImageWithOcr(dataUrl);
           const gp = providerAnalysis.proposals[0];
@@ -5808,8 +6026,8 @@ async function analyzeImage(dataUrl, options = {}) {
           if (gp && op?.documentType === "receipt" && op.dateText) {
             providerAnalysis = {
               ...providerAnalysis,
-              summary: gp.amount > 0 ? `\u0E2D\u0E48\u0E32\u0E19\u0E43\u0E1A\u0E40\u0E2A\u0E23\u0E47\u0E08\u0E44\u0E14\u0E49 \u0E22\u0E2D\u0E14 ${gp.amount.toLocaleString("th-TH")} \u0E1A\u0E32\u0E17 \u0E27\u0E31\u0E19\u0E17\u0E35\u0E48 ${op.dateText}` : providerAnalysis.summary,
-              proposals: [{ ...gp, dateText: op.dateText, timeText: op.timeText || gp.timeText }, ...providerAnalysis.proposals.slice(1)]
+              summary: gp.amount > 0 ? `\u0E2D\u0E48\u0E32\u0E19\u0E43\u0E1A\u0E40\u0E2A\u0E23\u0E47\u0E08\u0E44\u0E14\u0E49 \u0E22\u0E2D\u0E14 ${gp.amount.toLocaleString("th-TH")} \u0E1A\u0E32\u0E17 \u0E27\u0E31\u0E19\u0E17\u0E35\u0E48 ${gp.dateText || op.dateText}` : providerAnalysis.summary,
+              proposals: [{ ...gp, dateText: gp.dateText || op.dateText, timeText: gp.timeText || op.timeText }, ...providerAnalysis.proposals.slice(1)]
             };
             console.info("[Milo Image] OCR date verified Gemini receipt", {
               geminiDate: gp.dateText,
@@ -5833,7 +6051,7 @@ async function analyzeImage(dataUrl, options = {}) {
       });
     }
   }
-  if (ENV.forgeApiKey && !directVisionAnalysis2) {
+  if (ENV.forgeApiKey && !directVisionAnalysis) {
     try {
       const analysis = await analyzeImageWithForge(dataUrl);
       if (analysis.proposals.some((item) => item.kind === "reminder" && Boolean(item.dateText))) return analysis;
@@ -5847,7 +6065,7 @@ async function analyzeImage(dataUrl, options = {}) {
     }
   }
   const gatewayKey = imageGatewayToken(process.env, options.gatewayToken);
-  if (gatewayKey && !directVisionAnalysis2) {
+  if (gatewayKey && !directVisionAnalysis) {
     try {
       const analysis = await analyzeImageWithGatewayKey(dataUrl, gatewayKey);
       if (analysis.proposals.some((item) => item.kind === "reminder" && Boolean(item.dateText))) return analysis;
@@ -5865,13 +6083,17 @@ async function analyzeImage(dataUrl, options = {}) {
       try {
         const direct = await analyzeImageWithGoogle(dataUrl);
         providerAnalysis = direct;
-        directVisionAnalysis2 = direct;
+        directVisionAnalysis = direct;
         console.info("[Milo Image] Google Gemini direct vision applied before OCR merge");
+        return sanitizeAnalysisMerchants(direct);
       } catch (error) {
         console.warn("[Milo Image] Google Gemini direct vision retry failed", {
           error: error instanceof Error ? error.message : "unknown"
         });
       }
+    }
+    if (googleGeminiConfigured() && !providerAnalysis) {
+      throw new Error("Image AI temporarily unavailable; please retry the original image later");
     }
     const ocrAnalysis = await analyzeImageWithOcr(dataUrl);
     if (!providerAnalysis) {
@@ -6022,7 +6244,7 @@ function safeEqual2(a, b) {
 function buildFinanceExportUrl(input) {
   const expires = Math.floor(Date.now() / 1e3) + Math.min(Math.max(input.ttlSeconds ?? 600, 60), 3600);
   const sig = sign3(input.lineUserId, input.financeAccountId, input.format, expires);
-  const base = (process.env.MILO_APP_BASE_URL ?? process.env.MILO_SAVE_RESULT_IMAGE_BASE_URL ?? "https://milo-line-app.vercel.app").replace(/\/+$/, "");
+  const base = (process.env.MILO_APP_BASE_URL ?? process.env.MILO_SAVE_RESULT_IMAGE_BASE_URL ?? "https://milo-line-assistant.onrender.com").replace(/\/+$/, "");
   const params = new URLSearchParams({ user: input.lineUserId, account: String(input.financeAccountId), format: input.format, expires: String(expires), sig });
   return `${base}/api/milo/export?${params.toString()}`;
 }
@@ -6371,6 +6593,11 @@ function parseMiloCommand(text2, now = /* @__PURE__ */ new Date()) {
   const value = text2.trim().replace(/^@?ไมโล\s*/i, "");
   if (/^(?:ยืนยันรายการทั้งหมด|ยืนยันทั้งหมด)$/i.test(value)) return { type: "captureConfirm" };
   if (/^(?:ยกเลิกรายการทั้งหมด|ยกเลิกทั้งหมด)$/i.test(value)) return { type: "captureCancel" };
+  if (/^วันนี้$/i.test(value)) return { type: "todayOverview" };
+  if (/^สัปดาห์นี้$/i.test(value)) return { type: "financeReport", period: "week" };
+  if (/^เดือนนี้$/i.test(value)) return { type: "financeReport", period: "month" };
+  if (/^ส่งออก$/i.test(value)) return { type: "exportFinance", format: "xlsx" };
+  if (/^เมนูเพิ่ม$/i.test(value)) return { type: "help" };
   if (/^(?:วันนี้มีอะไร|วันนี้ของฉัน|สรุปวันนี้ของฉัน)$/i.test(value)) return { type: "todayOverview" };
   if (/^(?:สรุปเช้า|morning brief)$/i.test(value)) return { type: "morningBrief" };
   if (/^(?:สรุปเย็น|evening summary)$/i.test(value)) return { type: "eveningSummary" };
@@ -6447,6 +6674,8 @@ function parseMiloCommand(text2, now = /* @__PURE__ */ new Date()) {
   if (openingBalance) return { type: "openingBalance", amount: Number(openingBalance[1].replace(/,/g, "")) };
   if (/^(?:สวัสดี(?:ไมโล|ครับ|ค่ะ)?|หวัดดี(?:ไมโล)?|hello|hi|hey)$/i.test(value)) return { type: "greeting" };
   if (/^(?:เมนูไมโล|วิธีใช้งาน|คู่มือ(?:การใช้งาน)?|คำสั่ง|ช่วย|เมนู|help|\?)$/i.test(value)) return { type: "help" };
+  if (/^(?:ใบเสร็จ|สลิป|สแกนใบเสร็จ)$/i.test(value)) return { type: "recordGuide" };
+  if (/^(?:บันทึกเสียง|ส่งเสียง|เสียง)$/i.test(value)) return { type: "recordGuide" };
   if (/^(?:จดบันทึก|เริ่มจดบันทึก|บันทึกรายรับรายจ่าย|บันทึกรายรับ-รายจ่าย|จด)$/i.test(value)) return { type: "recordGuide" };
   if (/^(?:หมวด\s*\/?\s*งบ|งบประมาณ|คุมงบประมาณ|ดูงบ|งบ)$/i.test(value)) return { type: "budgetOverview" };
   if (/^(?:รายการ|ประวัติ|ประวัติธุรกรรม|ประวัติรายการ|รายการธุรกรรม|รายการทั้งหมด|ดูย้อนหลัง)$/i.test(value)) return { type: "transactionList" };
@@ -6523,7 +6752,7 @@ function parseMiloCommand(text2, now = /* @__PURE__ */ new Date()) {
   }
   const imageConfirm = value.match(/^(?:ยืนยันรูป|ยืนยันภาพ|บันทึกจากรูป|ยืนยันค่าใช้จ่าย|ยืนยันสลิป|ยืนยันใบเสร็จ|บันทึกสลิป|บันทึกใบเสร็จ)(?:\s+(?:วันที่\s*)?(\d{1,2}[\/-]\d{1,2}[\/-]\d{2,4}|\d{4}-\d{1,2}-\d{1,2}))?$/i);
   if (imageConfirm) return imageConfirm[1] ? { type: "imageConfirm", dateText: imageConfirm[1] } : { type: "imageConfirm" };
-  if (/^(ช่วย|เมนู|help)$/i.test(value)) return { type: "help" };
+  if (/^(ช่วย|ช่วยเหลือ|เมนู|help)$/i.test(value)) return { type: "help" };
   return { type: "unknown" };
 }
 
@@ -7146,8 +7375,10 @@ async function sendVoiceProposal(replyToken, proposal) {
 }
 async function sendPostSaveSummary(replyToken, lineUserId, lineChatId, financeAccountId, transaction) {
   const occurredAt = transaction.occurredAt ?? /* @__PURE__ */ new Date();
-  const dailyReport = await financeReport(lineUserId, "day", occurredAt, financeAccountId);
-  const budgetCycleReport = await financeBudgetCycleReport(lineUserId, occurredAt, financeAccountId);
+  const [dailyReport, budgetCycleReport] = await Promise.all([
+    financeReport(lineUserId, "day", occurredAt, financeAccountId),
+    financeBudgetCycleReport(lineUserId, occurredAt, financeAccountId)
+  ]);
   const budgets2 = await listBudgets(lineUserId, budgetCycleReport.key, financeAccountId);
   const budget = budgets2.find((item) => item.category === transaction.category);
   const budgetLimit = budget ? Number(budget.amount) : 0;
@@ -7155,15 +7386,10 @@ async function sendPostSaveSummary(replyToken, lineUserId, lineChatId, financeAc
   const budgetPercent = budgetLimit > 0 ? Math.round(budgetSpent / budgetLimit * 100) : void 0;
   const summary = { transactionType: transaction.transactionType, amount: transaction.amount, category: transaction.category, note: transaction.note, occurredAt, dailyIncome: dailyReport.income, dailyExpense: dailyReport.expense, dailyBalance: dailyReport.balance, budgetSpent, budgetLimit, budgetPercent };
   try {
-    await replyPostSaveSummaryImage(replyToken, summary);
+    await replyPostSaveSummary(replyToken, summary);
   } catch (error) {
-    console.error("[Milo Save] image summary failed; sending Flex fallback", { error: error instanceof Error ? error.message : "unknown" });
-    try {
-      await replyPostSaveSummary(replyToken, summary);
-    } catch (fallbackError) {
-      console.error("[Milo Save] reply fallback failed; pushing text summary", { error: fallbackError instanceof Error ? fallbackError.message : "unknown" });
-      await pushText(lineChatId, postSaveSummaryText(summary));
-    }
+    console.error("[Milo Save] native Flex summary failed; pushing text summary", { error: error instanceof Error ? error.message : "unknown" });
+    await pushText(lineChatId, postSaveSummaryText(summary));
   }
 }
 async function sendFinanceReportCard(replyToken, lineChatId, report) {
@@ -7207,6 +7433,44 @@ async function buildPersonalDigestSnapshot(lineUserId, lineChatId, scope, refere
 function financeAccessMessage(scope) {
   return scope === "user" ? "\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E1E\u0E1A\u0E1A\u0E31\u0E0D\u0E0A\u0E35\u0E01\u0E32\u0E23\u0E40\u0E07\u0E34\u0E19\u0E2A\u0E48\u0E27\u0E19\u0E15\u0E31\u0E27 \u0E25\u0E2D\u0E07\u0E2A\u0E48\u0E07\u0E04\u0E33\u0E2A\u0E31\u0E48\u0E07\u0E2D\u0E35\u0E01\u0E04\u0E23\u0E31\u0E49\u0E07\u0E04\u0E23\u0E31\u0E1A" : "\u0E01\u0E25\u0E38\u0E48\u0E21\u0E19\u0E35\u0E49\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E44\u0E14\u0E49\u0E40\u0E1B\u0E34\u0E14\u0E2A\u0E21\u0E38\u0E14\u0E1A\u0E31\u0E0D\u0E0A\u0E35\u0E2A\u0E33\u0E2B\u0E23\u0E31\u0E1A\u0E2A\u0E21\u0E32\u0E0A\u0E34\u0E01\u0E02\u0E2D\u0E07\u0E04\u0E38\u0E13 \u0E08\u0E36\u0E07\u0E44\u0E21\u0E48\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E2B\u0E23\u0E37\u0E2D\u0E41\u0E2A\u0E14\u0E07\u0E01\u0E32\u0E23\u0E40\u0E07\u0E34\u0E19\u0E23\u0E48\u0E27\u0E21\u0E42\u0E14\u0E22\u0E2D\u0E31\u0E15\u0E42\u0E19\u0E21\u0E31\u0E15\u0E34 \u0E40\u0E1E\u0E37\u0E48\u0E2D\u0E1B\u0E01\u0E1B\u0E49\u0E2D\u0E07\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E2A\u0E48\u0E27\u0E19\u0E15\u0E31\u0E27 \u0E43\u0E2B\u0E49\u0E40\u0E08\u0E49\u0E32\u0E02\u0E2D\u0E07\u0E01\u0E25\u0E38\u0E48\u0E21\u0E15\u0E31\u0E49\u0E07\u0E04\u0E48\u0E32\u0E1A\u0E31\u0E0D\u0E0A\u0E35\u0E41\u0E25\u0E30\u0E1A\u0E17\u0E1A\u0E32\u0E17\u0E08\u0E32\u0E01 dashboard \u0E01\u0E48\u0E2D\u0E19\u0E04\u0E23\u0E31\u0E1A";
 }
+async function handleMiloOnboardingText(event, lineUserId, text2) {
+  const state = await getMiloOnboarding(lineUserId);
+  if (!state || state.status === "completed") return false;
+  const value = text2.trim();
+  if (/^(เริ่มตั้งค่า|ตั้งค่าเริ่มต้น)$/i.test(value)) {
+    await updateMiloOnboarding(lineUserId, { step: "opening" });
+    if (event.replyToken) await replyTextWithQuickReplies(event.replyToken, "\u0E02\u0E31\u0E49\u0E19\u0E41\u0E23\u0E01: \u0E21\u0E35\u0E22\u0E2D\u0E14\u0E40\u0E07\u0E34\u0E19\u0E17\u0E35\u0E48\u0E15\u0E49\u0E2D\u0E07\u0E01\u0E32\u0E23\u0E43\u0E2B\u0E49\u0E44\u0E21\u0E42\u0E25\u0E19\u0E31\u0E1A\u0E40\u0E1B\u0E47\u0E19\u0E22\u0E2D\u0E14\u0E15\u0E31\u0E49\u0E07\u0E15\u0E49\u0E19\u0E44\u0E2B\u0E21\u0E04\u0E23\u0E31\u0E1A?\n\u0E1E\u0E34\u0E21\u0E1E\u0E4C\u0E08\u0E33\u0E19\u0E27\u0E19\u0E40\u0E07\u0E34\u0E19 \u0E40\u0E0A\u0E48\u0E19 5000 \u0E1A\u0E32\u0E17 \u0E2B\u0E23\u0E37\u0E2D\u0E01\u0E14 0 \u0E2B\u0E32\u0E01\u0E40\u0E23\u0E34\u0E48\u0E21\u0E08\u0E32\u0E01\u0E28\u0E39\u0E19\u0E22\u0E4C", [{ label: "\u0E40\u0E23\u0E34\u0E48\u0E21\u0E17\u0E35\u0E48 0 \u0E1A\u0E32\u0E17", text: "\u0E22\u0E2D\u0E14\u0E40\u0E23\u0E34\u0E48\u0E21\u0E15\u0E49\u0E19 0" }, { label: "\u0E15\u0E31\u0E49\u0E07\u0E20\u0E32\u0E22\u0E2B\u0E25\u0E31\u0E07", text: "\u0E15\u0E31\u0E49\u0E07\u0E04\u0E48\u0E32" }]);
+    return true;
+  }
+  if (/^ตั้งค่า$/i.test(value)) {
+    await updateMiloOnboarding(lineUserId, { step: "settings" });
+    if (event.replyToken) await replyMiloSettings(event.replyToken);
+    return true;
+  }
+  if (/^เริ่มใช้งาน$/i.test(value)) {
+    await completeMiloOnboarding(lineUserId);
+    if (event.replyToken) await replyGreetingHome(event.replyToken);
+    return true;
+  }
+  if (state.step === "opening") {
+    const match = value.match(/^(?:ตั้ง)?(?:ยอด(?:เงิน)?เริ่มต้น|ยอดเริ่มต้น)?\s*(\d[\d,]*(?:\.\d{1,2})?)\s*(?:บาท)?$/i);
+    if (match) {
+      const amount = Number(match[1].replace(/,/g, ""));
+      if (Number.isFinite(amount) && amount >= 0) {
+        const account = await getOrCreatePersonalFinanceAccount(lineUserId);
+        await upsertOpeningBalance(lineUserId, amount, /* @__PURE__ */ new Date(), account.id);
+        await updateMiloOnboarding(lineUserId, { step: "settings", settings: { openingBalance: amount } });
+        if (event.replyToken) await replyMiloSettings(event.replyToken);
+        return true;
+      }
+    }
+    if (event.replyToken) await replyTextWithQuickReplies(event.replyToken, "\u0E2A\u0E48\u0E07\u0E22\u0E2D\u0E14\u0E40\u0E23\u0E34\u0E48\u0E21\u0E15\u0E49\u0E19\u0E40\u0E1B\u0E47\u0E19\u0E15\u0E31\u0E27\u0E40\u0E25\u0E02\u0E44\u0E14\u0E49\u0E40\u0E25\u0E22\u0E04\u0E23\u0E31\u0E1A \u0E40\u0E0A\u0E48\u0E19 5000 \u0E2B\u0E23\u0E37\u0E2D\u0E01\u0E14\u0E1B\u0E38\u0E48\u0E21\u0E14\u0E49\u0E32\u0E19\u0E25\u0E48\u0E32\u0E07", [{ label: "\u0E40\u0E23\u0E34\u0E48\u0E21\u0E17\u0E35\u0E48 0 \u0E1A\u0E32\u0E17", text: "\u0E22\u0E2D\u0E14\u0E40\u0E23\u0E34\u0E48\u0E21\u0E15\u0E49\u0E19 0" }, { label: "\u0E40\u0E1B\u0E34\u0E14\u0E2B\u0E19\u0E49\u0E32\u0E15\u0E31\u0E49\u0E07\u0E04\u0E48\u0E32", text: "\u0E15\u0E31\u0E49\u0E07\u0E04\u0E48\u0E32" }]);
+    return true;
+  }
+  if (/^(หมวดหมู่|งบประมาณ|รายการประจำ|ปฏิทิน|เตือน|รายการเตือน|ดูเตือน|ดูรายการเตือน|ช่วย|ช่วยเหลือ|เมนู|help|วิธีใช้งาน|คำสั่ง|จดบันทึก|สรุปวันนี้|สรุปสัปดาห์นี้|สรุปเดือนนี้|วิเคราะห์)$/i.test(value)) return false;
+  if (event.replyToken) await replyMiloOnboarding(event.replyToken);
+  return true;
+}
 async function handleText(event, lineChatId, lineUserId, scope) {
   const text2 = event.message?.text ?? "";
   if (/^(?:ไอดี|id|user\s*id)$/i.test(text2.trim())) {
@@ -7221,11 +7485,12 @@ ${lineUserId}
     return;
   }
   const command = parseMiloCommand(text2);
-  const plan = resolveMiloPlan(lineUserId, process.env, await isAdminLinkedLineUser(lineUserId));
   let message = "";
   const financeCommands = /* @__PURE__ */ new Set(["expense", "income", "transactionSearch", "transactionUndo", "transactionDelete", "transactionUpdate", "openingBalance", "financeReport", "aiSummary", "budgetOverview", "transactionList", "voiceConfirm", "voiceEditPrompt", "voiceCategoryChange", "voiceEdit", "budget", "budgetCycleStart", "categoryAdd", "categoryRemove", "categoryList", "imageConfirm", "imageEdit", "pdfConfirm", "recurringCreate", "recurringList", "recurringStatus", "exportFinance", "pendingBillList", "pendingBillPay", "pendingBillCancel"]);
   const captureNeedsFinance = command.type === "captureDraft" && command.plan.items.some((item) => item.type === "pending_bill");
   const needsFinance = financeCommands.has(command.type) || captureNeedsFinance;
+  const needsPlan = command.type === "reminder" || command.type === "followUp" || command.type === "captureConfirm" || command.type === "pdfConfirm" || command.type === "budgetCycleStart" || command.type === "captureDraft" && (captureNeedsFinance || command.plan.items.some((item) => item.type === "reminder")) || scope !== "user" && needsFinance;
+  const plan = needsPlan ? resolveMiloPlan(lineUserId, process.env, await isAdminLinkedLineUser(lineUserId)) : "free";
   if ((command.type === "reminder" || command.type === "followUp") && !hasMiloEntitlement(plan, "reminders")) {
     if (event.replyToken) await replyText(event.replyToken, entitlementMessage("reminders"));
     return;
@@ -7420,10 +7685,11 @@ ${bills.slice(0, 30).map((item) => `#${item.id} \u2022 ${item.title} \u2022 ${Nu
     message = cancelled ? `\u0E22\u0E01\u0E40\u0E25\u0E34\u0E01\u0E1A\u0E34\u0E25 #${command.id} \u0E41\u0E25\u0E49\u0E27\u0E04\u0E23\u0E31\u0E1A` : `\u0E44\u0E21\u0E48\u0E1E\u0E1A\u0E1A\u0E34\u0E25\u0E23\u0E2D\u0E08\u0E48\u0E32\u0E22 #${command.id}`;
   } else if (command.type === "reminderList") {
     const items = await listRemindersForChat(lineUserId, lineChatId, scope);
-    message = items.length ? `\u{1F514} \u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E40\u0E15\u0E37\u0E2D\u0E19\u0E43\u0E19${scope === "user" ? "\u0E41\u0E0A\u0E17\u0E19\u0E35\u0E49" : "\u0E01\u0E25\u0E38\u0E48\u0E21\u0E19\u0E35\u0E49"}
-${items.slice(0, 20).map((item) => `#${item.id} \u2022 ${item.title} \u2022 ${item.nextRunAt ? formatDate(item.nextRunAt) : "\u0E23\u0E2D\u0E01\u0E33\u0E2B\u0E19\u0E14\u0E40\u0E27\u0E25\u0E32"}`).join("\n")}
-
-\u0E22\u0E01\u0E40\u0E25\u0E34\u0E01\u0E02\u0E2D\u0E07\u0E04\u0E38\u0E13: \u0E22\u0E01\u0E40\u0E25\u0E34\u0E01\u0E40\u0E15\u0E37\u0E2D\u0E19 #\u0E40\u0E25\u0E02\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23` : "\u{1F514} \u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E21\u0E35\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E40\u0E15\u0E37\u0E2D\u0E19\u0E17\u0E35\u0E48\u0E01\u0E33\u0E25\u0E31\u0E07\u0E43\u0E0A\u0E49\u0E07\u0E32\u0E19\u0E43\u0E19\u0E41\u0E0A\u0E17\u0E19\u0E35\u0E49\u0E04\u0E23\u0E31\u0E1A";
+    if (event.replyToken) {
+      await replyReminderList(event.replyToken, items.slice(0, 10).map((item) => ({ id: item.id, title: item.title, detail: item.nextRunAt ? formatDate(item.nextRunAt) : "\u0E23\u0E2D\u0E01\u0E33\u0E2B\u0E19\u0E14\u0E40\u0E27\u0E25\u0E32" })));
+      return;
+    }
+    message = items.length ? "\u{1F514} \u0E21\u0E35\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E40\u0E15\u0E37\u0E2D\u0E19 " + items.length + " \u0E23\u0E32\u0E22\u0E01\u0E32\u0E23" : "\u{1F514} \u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E21\u0E35\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E40\u0E15\u0E37\u0E2D\u0E19\u0E17\u0E35\u0E48\u0E01\u0E33\u0E25\u0E31\u0E07\u0E43\u0E0A\u0E49\u0E07\u0E32\u0E19\u0E43\u0E19\u0E41\u0E0A\u0E17\u0E19\u0E35\u0E49\u0E04\u0E23\u0E31\u0E1A";
   } else if (command.type === "reminderCancel") {
     const cancelled = await cancelReminderForChat(command.id, lineUserId, lineChatId);
     message = cancelled ? `\u0E22\u0E01\u0E40\u0E25\u0E34\u0E01\u0E40\u0E15\u0E37\u0E2D\u0E19 #${command.id} \u0E41\u0E25\u0E49\u0E27\u0E04\u0E23\u0E31\u0E1A` : `\u0E44\u0E21\u0E48\u0E1E\u0E1A\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E40\u0E15\u0E37\u0E2D\u0E19 #${command.id} \u0E17\u0E35\u0E48\u0E04\u0E38\u0E13\u0E22\u0E01\u0E40\u0E25\u0E34\u0E01\u0E44\u0E14\u0E49\u0E43\u0E19\u0E41\u0E0A\u0E17\u0E19\u0E35\u0E49`;
@@ -7448,8 +7714,11 @@ Google Calendar: ${googleUrl}
 Apple/Outlook (.ics): ${icsUrl}`;
   } else if (command.type === "calendarList") {
     const items = await listCalendarEvents(lineUserId, lineChatId, /* @__PURE__ */ new Date(), 20);
-    message = items.length ? `\u{1F4C5} \u0E19\u0E31\u0E14\u0E2B\u0E21\u0E32\u0E22\u0E17\u0E35\u0E48\u0E01\u0E33\u0E25\u0E31\u0E07\u0E08\u0E30\u0E16\u0E36\u0E07
-${items.map((item) => `#${item.id} \u2022 ${item.title} \u2022 ${formatDate(item.startsAt)}`).join("\n")}` : "\u{1F4C5} \u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E21\u0E35\u0E19\u0E31\u0E14\u0E2B\u0E21\u0E32\u0E22\u0E17\u0E35\u0E48\u0E01\u0E33\u0E25\u0E31\u0E07\u0E08\u0E30\u0E16\u0E36\u0E07\u0E43\u0E19\u0E41\u0E0A\u0E17\u0E19\u0E35\u0E49\u0E04\u0E23\u0E31\u0E1A";
+    if (event.replyToken) {
+      await replyCalendarList(event.replyToken, items.slice(0, 10).map((item) => ({ id: item.id, title: item.title, detail: formatDate(item.startsAt) })));
+      return;
+    }
+    message = items.length ? "\u{1F4C5} \u0E21\u0E35\u0E19\u0E31\u0E14\u0E2B\u0E21\u0E32\u0E22 " + items.length + " \u0E23\u0E32\u0E22\u0E01\u0E32\u0E23" : "\u{1F4C5} \u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E21\u0E35\u0E19\u0E31\u0E14\u0E2B\u0E21\u0E32\u0E22\u0E17\u0E35\u0E48\u0E01\u0E33\u0E25\u0E31\u0E07\u0E08\u0E30\u0E16\u0E36\u0E07\u0E43\u0E19\u0E41\u0E0A\u0E17\u0E19\u0E35\u0E49\u0E04\u0E23\u0E31\u0E1A";
   } else if (command.type === "calendarCancel") {
     const cancelled = await cancelCalendarEvent(command.id, lineUserId, lineChatId);
     message = cancelled ? `\u0E22\u0E01\u0E40\u0E25\u0E34\u0E01\u0E19\u0E31\u0E14 #${command.id} \u0E41\u0E25\u0E49\u0E27\u0E04\u0E23\u0E31\u0E1A` : `\u0E44\u0E21\u0E48\u0E1E\u0E1A\u0E19\u0E31\u0E14 #${command.id} \u0E17\u0E35\u0E48\u0E04\u0E38\u0E13\u0E22\u0E01\u0E40\u0E25\u0E34\u0E01\u0E44\u0E14\u0E49\u0E43\u0E19\u0E41\u0E0A\u0E17\u0E19\u0E35\u0E49`;
@@ -7834,9 +8103,13 @@ ${incomeSection}
       }
     }
   } else if (command.type === "settingGuide") {
-    message = "\u2699\uFE0F \u0E15\u0E31\u0E49\u0E07\u0E04\u0E48\u0E32 Milo\n\u0E15\u0E31\u0E49\u0E07\u0E04\u0E48\u0E32\u0E01\u0E32\u0E23\u0E43\u0E0A\u0E49\u0E07\u0E32\u0E19 Milo \u0E44\u0E14\u0E49\u0E08\u0E32\u0E01\u0E40\u0E21\u0E19\u0E39\u0E41\u0E25\u0E30\u0E04\u0E33\u0E2A\u0E31\u0E48\u0E07\u0E43\u0E19 LINE \u0E04\u0E23\u0E31\u0E1A\n\u2022 \u0E1E\u0E34\u0E21\u0E1E\u0E4C \u201C\u0E0A\u0E48\u0E27\u0E22\u201D \u0E40\u0E1E\u0E37\u0E48\u0E2D\u0E14\u0E39\u0E04\u0E33\u0E2A\u0E31\u0E48\u0E07\u0E17\u0E31\u0E49\u0E07\u0E2B\u0E21\u0E14\n\u2022 \u0E1E\u0E34\u0E21\u0E1E\u0E4C \u201C\u0E2B\u0E21\u0E27\u0E14\u0E2B\u0E21\u0E39\u0E48\u201D \u0E40\u0E1E\u0E37\u0E48\u0E2D\u0E08\u0E31\u0E14\u0E01\u0E32\u0E23\u0E2B\u0E21\u0E27\u0E14\u0E2B\u0E21\u0E39\u0E48\n\u2022 \u0E1E\u0E34\u0E21\u0E1E\u0E4C \u201C\u0E07\u0E1A\u0E1B\u0E23\u0E30\u0E21\u0E32\u0E13\u201D \u0E40\u0E1E\u0E37\u0E48\u0E2D\u0E14\u0E39\u0E41\u0E25\u0E30\u0E08\u0E31\u0E14\u0E01\u0E32\u0E23\u0E07\u0E1A\u0E1B\u0E23\u0E30\u0E21\u0E32\u0E13\n\u{1F510} \u201C\u0E41\u0E14\u0E0A\u0E1A\u0E2D\u0E23\u0E4C\u0E14\u0E2B\u0E25\u0E31\u0E07\u0E1A\u0E49\u0E32\u0E19\u201D \u0E40\u0E1B\u0E47\u0E19\u0E40\u0E21\u0E19\u0E39\u0E2A\u0E33\u0E2B\u0E23\u0E31\u0E1A\u0E1C\u0E39\u0E49\u0E14\u0E39\u0E41\u0E25\u0E23\u0E30\u0E1A\u0E1A\u0E42\u0E14\u0E22\u0E40\u0E09\u0E1E\u0E32\u0E30\u0E04\u0E23\u0E31\u0E1A";
+    if (event.replyToken) {
+      await replyMiloSettings(event.replyToken);
+      return;
+    }
+    message = "\u2699\uFE0F \u0E15\u0E31\u0E49\u0E07\u0E04\u0E48\u0E32 Milo: \u0E2B\u0E21\u0E27\u0E14\u0E2B\u0E21\u0E39\u0E48 \u2022 \u0E07\u0E1A\u0E1B\u0E23\u0E30\u0E21\u0E32\u0E13 \u2022 \u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E1B\u0E23\u0E30\u0E08\u0E33 \u2022 \u0E1B\u0E0F\u0E34\u0E17\u0E34\u0E19 \u2022 \u0E40\u0E15\u0E37\u0E2D\u0E19 \u0E41\u0E25\u0E30\u0E2A\u0E23\u0E38\u0E1B\u0E01\u0E32\u0E23\u0E40\u0E07\u0E34\u0E19";
   } else if (command.type === "dashboardGuide") {
-    message = "\u{1F510} \u0E41\u0E14\u0E0A\u0E1A\u0E2D\u0E23\u0E4C\u0E14\u0E2B\u0E25\u0E31\u0E07\u0E1A\u0E49\u0E32\u0E19 Milo\nhttps://milo-line-app.vercel.app/dashboard";
+    message = "\u{1F510} \u0E41\u0E14\u0E0A\u0E1A\u0E2D\u0E23\u0E4C\u0E14\u0E2B\u0E25\u0E31\u0E07\u0E1A\u0E49\u0E32\u0E19 Milo\nhttps://milo-line-assistant.onrender.com/dashboard";
   } else if (command.type === "recordGuide") {
     message = "\u{1F4DD} \u0E08\u0E14\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E44\u0E14\u0E49\u0E40\u0E25\u0E22\n\u0E15\u0E31\u0E27\u0E2D\u0E22\u0E48\u0E32\u0E07: \u0E01\u0E34\u0E19\u0E01\u0E32\u0E41\u0E1F 80 \u0E2B\u0E23\u0E37\u0E2D \u0E08\u0E48\u0E32\u0E22 \u0E04\u0E48\u0E32\u0E2D\u0E32\u0E2B\u0E32\u0E23 125\n\u0E2B\u0E23\u0E37\u0E2D: \u0E23\u0E31\u0E1A\u0E40\u0E07\u0E34\u0E19\u0E40\u0E14\u0E37\u0E2D\u0E19 30000\n\u0E2A\u0E48\u0E07\u0E23\u0E39\u0E1B\u0E43\u0E1A\u0E40\u0E2A\u0E23\u0E47\u0E08\u0E41\u0E25\u0E49\u0E27\u0E1E\u0E34\u0E21\u0E1E\u0E4C \u201C\u0E22\u0E37\u0E19\u0E22\u0E31\u0E19\u0E04\u0E48\u0E32\u0E43\u0E0A\u0E49\u0E08\u0E48\u0E32\u0E22\u201D \u0E2B\u0E23\u0E37\u0E2D\u0E2A\u0E48\u0E07\u0E40\u0E2A\u0E35\u0E22\u0E07\u0E41\u0E25\u0E49\u0E27\u0E1E\u0E34\u0E21\u0E1E\u0E4C \u201C\u0E22\u0E37\u0E19\u0E22\u0E31\u0E19\u0E40\u0E2A\u0E35\u0E22\u0E07\u201D \u0E2B\u0E25\u0E31\u0E07\u0E15\u0E23\u0E27\u0E08\u0E23\u0E32\u0E22\u0E25\u0E30\u0E40\u0E2D\u0E35\u0E22\u0E14\u0E04\u0E23\u0E31\u0E1A";
   } else if (command.type === "budgetOverview") {
@@ -7848,8 +8121,12 @@ ${incomeSection}
 \u0E15\u0E31\u0E27\u0E2D\u0E22\u0E48\u0E32\u0E07: \u0E15\u0E31\u0E49\u0E07\u0E07\u0E1A \u0E2D\u0E32\u0E2B\u0E32\u0E23 5000
 \u0E40\u0E1B\u0E25\u0E35\u0E48\u0E22\u0E19\u0E27\u0E31\u0E19\u0E40\u0E23\u0E34\u0E48\u0E21\u0E23\u0E2D\u0E1A: \u0E15\u0E31\u0E49\u0E07\u0E27\u0E31\u0E19\u0E40\u0E23\u0E34\u0E48\u0E21\u0E07\u0E1A 14`;
   } else if (command.type === "transactionList") {
-    const results = await searchTransactions(lineUserId, "", 10, financeScope.financeAccountId);
-    message = results.length ? "\u{1F4CB} \u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E25\u0E48\u0E32\u0E2A\u0E38\u0E14\n" + results.map((item) => `#${item.id} \u2022 ${item.transactionType === "expense" ? "\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22" : "\u0E23\u0E32\u0E22\u0E23\u0E31\u0E1A"} ${Number(item.amount).toLocaleString("th-TH")} \u0E1A\u0E32\u0E17 \u2022 ${item.category}`).join("\n") : "\u{1F4CB} \u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E21\u0E35\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E18\u0E38\u0E23\u0E01\u0E23\u0E23\u0E21\u0E04\u0E23\u0E31\u0E1A";
+    const results = await listTransactions(lineUserId, void 0, void 0, false, financeScope.financeAccountId);
+    if (event.replyToken) {
+      await replyTransactionList(event.replyToken, results.map((item) => ({ id: item.id, title: (item.transactionType === "expense" ? "\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22 " : "\u0E23\u0E32\u0E22\u0E23\u0E31\u0E1A ") + Number(item.amount).toLocaleString("th-TH") + " \u0E1A\u0E32\u0E17", detail: item.category + (item.note ? " \u2022 " + item.note : "") })));
+      return;
+    }
+    message = results.length ? "\u{1F4CB} \u0E21\u0E35\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E25\u0E48\u0E32\u0E2A\u0E38\u0E14 " + results.length + " \u0E23\u0E32\u0E22\u0E01\u0E32\u0E23" : "\u{1F4CB} \u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E21\u0E35\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E18\u0E38\u0E23\u0E01\u0E23\u0E23\u0E21\u0E04\u0E23\u0E31\u0E1A";
   } else if (command.type === "greeting") {
     message = "\u0E2A\u0E27\u0E31\u0E2A\u0E14\u0E35\u0E04\u0E23\u0E31\u0E1A \u{1F44B} \u0E1C\u0E21\u0E44\u0E21\u0E42\u0E25 \u0E1C\u0E39\u0E49\u0E0A\u0E48\u0E27\u0E22\u0E01\u0E32\u0E23\u0E40\u0E07\u0E34\u0E19\u0E02\u0E2D\u0E07\u0E04\u0E38\u0E13\n\u0E1E\u0E23\u0E49\u0E2D\u0E21\u0E0A\u0E48\u0E27\u0E22\u0E08\u0E14\u0E23\u0E32\u0E22\u0E23\u0E31\u0E1A\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22 \u0E2D\u0E48\u0E32\u0E19\u0E2A\u0E25\u0E34\u0E1B/\u0E43\u0E1A\u0E40\u0E2A\u0E23\u0E47\u0E08 \u0E1F\u0E31\u0E07\u0E02\u0E49\u0E2D\u0E04\u0E27\u0E32\u0E21\u0E40\u0E2A\u0E35\u0E22\u0E07 \u0E14\u0E39\u0E2A\u0E23\u0E38\u0E1B \u0E41\u0E25\u0E30\u0E04\u0E38\u0E21\u0E07\u0E1A\u0E43\u0E2B\u0E49\u0E04\u0E23\u0E31\u0E1A";
     if (event.replyToken) {
@@ -7934,7 +8211,8 @@ async function handleMedia(event, lineChatId, lineUserId, scope, runtime = {}) {
   }
   const fingerprint = fingerprintMedia(bytes);
   const duplicate = await findVaultItemByFingerprint(lineChatId, fingerprint).catch(() => void 0);
-  if (duplicate) {
+  const retryMedia = duplicate && (isImage || isAudio || isPdf) ? await canReprocessVaultMedia(duplicate.id, lineUserId, lineChatId).catch(() => false) : false;
+  if (duplicate && !retryMedia) {
     try {
       await writeAuditLog({
         action: "vault.duplicate.detected",
@@ -7952,9 +8230,9 @@ async function handleMedia(event, lineChatId, lineUserId, scope, runtime = {}) {
     else await pushText(lineChatId, duplicateMessage);
     return;
   }
-  let stored;
+  let stored = retryMedia && duplicate?.storageKey ? { key: duplicate.storageKey, url: duplicate.storageUrl || "" } : void 0;
   try {
-    stored = await storagePut(`milo/${lineChatId}/${message.id}`, bytes, mimeType);
+    if (!stored) stored = await storagePut(`milo/${lineChatId}/${message.id}`, bytes, mimeType);
   } catch (error) {
     console.warn("[Milo Media] permanent storage unavailable; continuing from LINE bytes", {
       messageId: message.id,
@@ -7965,7 +8243,7 @@ async function handleMedia(event, lineChatId, lineUserId, scope, runtime = {}) {
   let vaultId;
   try {
     const existing = await findVaultItemByLineMessageId(message.id, lineUserId, lineChatId);
-    vaultId = existing?.id ?? await createVaultItem({
+    vaultId = (retryMedia ? duplicate?.id : void 0) ?? existing?.id ?? await createVaultItem({
       lineChatId,
       createdByLineUserId: lineUserId,
       itemType: isImage ? "image" : "file",
@@ -8176,7 +8454,7 @@ ${proposals || "\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E1E\u0E1A\u0E23\u0E32\u0E
     });
     let userNotified = false;
     try {
-      await pushText(lineChatId, "\u0E40\u0E01\u0E47\u0E1A\u0E23\u0E39\u0E1B\u0E44\u0E27\u0E49\u0E41\u0E25\u0E49\u0E27 \u0E41\u0E15\u0E48\u0E23\u0E30\u0E1A\u0E1A\u0E2D\u0E48\u0E32\u0E19\u0E2A\u0E25\u0E34\u0E1B/\u0E43\u0E1A\u0E40\u0E2A\u0E23\u0E47\u0E08\u0E04\u0E23\u0E31\u0E49\u0E07\u0E19\u0E35\u0E49\u0E44\u0E21\u0E48\u0E2A\u0E33\u0E40\u0E23\u0E47\u0E08 \u0E01\u0E23\u0E38\u0E13\u0E32\u0E25\u0E2D\u0E07\u0E2A\u0E48\u0E07\u0E20\u0E32\u0E1E\u0E17\u0E35\u0E48\u0E04\u0E21\u0E0A\u0E31\u0E14\u0E41\u0E25\u0E30\u0E40\u0E2B\u0E47\u0E19\u0E22\u0E2D\u0E14 \u0E27\u0E31\u0E19\u0E17\u0E35\u0E48 \u0E40\u0E27\u0E25\u0E32 \u0E41\u0E25\u0E30\u0E1C\u0E39\u0E49\u0E23\u0E31\u0E1A\u0E04\u0E23\u0E1A\u0E16\u0E49\u0E27\u0E19\u0E2D\u0E35\u0E01\u0E04\u0E23\u0E31\u0E49\u0E07\u0E19\u0E48\u0E30\u0E08\u0E4A\u0E30");
+      await pushText(lineChatId, "\u0E40\u0E01\u0E47\u0E1A\u0E23\u0E39\u0E1B\u0E44\u0E27\u0E49\u0E41\u0E25\u0E49\u0E27 \u0E41\u0E15\u0E48\u0E23\u0E30\u0E1A\u0E1A\u0E2D\u0E48\u0E32\u0E19\u0E2A\u0E25\u0E34\u0E1B/\u0E43\u0E1A\u0E40\u0E2A\u0E23\u0E47\u0E08\u0E04\u0E23\u0E31\u0E49\u0E07\u0E19\u0E35\u0E49\u0E44\u0E21\u0E48\u0E2A\u0E33\u0E40\u0E23\u0E47\u0E08 \u0E2D\u0E32\u0E08\u0E40\u0E01\u0E34\u0E14\u0E08\u0E32\u0E01\u0E1A\u0E23\u0E34\u0E01\u0E32\u0E23 AI \u0E44\u0E21\u0E48\u0E1E\u0E23\u0E49\u0E2D\u0E21\u0E2B\u0E23\u0E37\u0E2D\u0E20\u0E32\u0E1E\u0E2D\u0E48\u0E32\u0E19\u0E44\u0E21\u0E48\u0E0A\u0E31\u0E14 \u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E44\u0E14\u0E49\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E04\u0E48\u0E32\u0E43\u0E0A\u0E49\u0E08\u0E48\u0E32\u0E22\u0E04\u0E23\u0E31\u0E1A \u0E01\u0E23\u0E38\u0E13\u0E32\u0E25\u0E2D\u0E07\u0E2A\u0E48\u0E07\u0E20\u0E32\u0E1E\u0E15\u0E49\u0E19\u0E09\u0E1A\u0E31\u0E1A\u0E40\u0E14\u0E34\u0E21\u0E2D\u0E35\u0E01\u0E04\u0E23\u0E31\u0E49\u0E07\u0E43\u0E19\u0E20\u0E32\u0E22\u0E2B\u0E25\u0E31\u0E07");
       userNotified = true;
     } catch (pushError) {
       console.error("[Milo Image] failure notification failed", { messageId: message.id, error: pushError instanceof Error ? pushError.message : "unknown" });
@@ -8193,6 +8471,16 @@ async function processEvent(event, rawPayload, runtime = {}) {
     const profile = await getProfile(event.source).catch(() => void 0);
     await upsertLineChat(identity.lineChatId, identity.scope, profile?.displayName);
     await upsertLineMember(identity.lineChatId, identity.lineUserId, profile?.displayName);
+    if (identity.scope === "user") {
+      await ensureMiloOnboardingSchema();
+      if (event.type === "follow") {
+        const onboarding = await startMiloOnboarding(identity.lineUserId);
+        if (event.replyToken && onboarding?.status !== "completed") await replyMiloOnboarding(event.replyToken, profile?.displayName);
+        else if (event.replyToken) await replyGreetingHome(event.replyToken);
+        await finishWebhookEvent(event.webhookEventId, "processed");
+        return;
+      }
+    }
     if (event.type !== "message" || !event.message) {
       await finishWebhookEvent(event.webhookEventId, "ignored");
       return;
@@ -8204,6 +8492,11 @@ async function processEvent(event, rawPayload, runtime = {}) {
       return;
     }
     if (event.message.type === "text") {
+      const onboarding = identity.scope === "user" ? await getMiloOnboarding(identity.lineUserId) : void 0;
+      if (onboarding?.status === "pending" && await handleMiloOnboardingText(event, identity.lineUserId, event.message.text ?? "")) {
+        await finishWebhookEvent(event.webhookEventId, "processed");
+        return;
+      }
       await ensureCaptureSchema();
       await handleText(event, identity.lineChatId, identity.lineUserId, identity.scope);
     } else if (event.message.type === "image" || event.message.type === "file" || event.message.type === "audio") await handleMedia(event, identity.lineChatId, identity.lineUserId, identity.scope, { ...runtime, senderDisplayName: profile?.displayName });
@@ -8311,6 +8604,7 @@ function registerLineWebhook(app2) {
 }
 function registerMiloCron(app2) {
   app2.all("/api/scheduled/reminders", async (req, res) => {
+    const sendSuccess = (payload) => req.headers["x-cron-compact"] === "1" ? res.status(204).end() : res.json(payload);
     try {
       const isVercelCron = req.method === "GET" && req.headers["user-agent"] === "vercel-cron/1.0";
       let taskUid;
@@ -8322,13 +8616,13 @@ function registerMiloCron(app2) {
         const headerValid = headerSecret === secret3;
         if (!secret3 || !bearerValid && !headerValid) return res.status(401).json({ error: "cron-unauthorized" });
         const schedule = await getAutomationSetting("reminder-delivery-primary");
-        if (!schedule?.isEnabled) return res.json({ ok: true, skipped: "disabled" });
+        if (!schedule?.isEnabled) return sendSuccess({ ok: true, skipped: "disabled" });
         taskUid = schedule.scheduleCronTaskUid ?? "vercel-cron-reminders";
       } else if (req.method === "POST") {
         const user = await sdk.authenticateRequest(req);
         if (!user.isCron || !user.taskUid) return res.status(403).json({ error: "cron-only" });
         const schedule = await getAutomationSettingByTaskUid(user.taskUid);
-        if (!schedule) return res.json({ ok: true, skipped: "orphan" });
+        if (!schedule) return sendSuccess({ ok: true, skipped: "orphan" });
         taskUid = user.taskUid;
       } else {
         return res.status(405).json({ error: "method-not-allowed" });
@@ -8336,7 +8630,7 @@ function registerMiloCron(app2) {
       const result = await deliverDueReminders({ runner: "heartbeat", taskUid });
       const recurring = await deliverDueRecurringTransactions();
       await saveAutomationSetting({ settingKey: "reminder-delivery-primary", scheduleCronTaskUid: taskUid, isEnabled: true, lastRunAt: /* @__PURE__ */ new Date() });
-      return res.json({ ok: true, ...result, recurring });
+      return sendSuccess({ ok: true, ...result, recurring });
     } catch (error) {
       return res.status(500).json({ error: error instanceof Error ? error.message : "unknown", timestamp: (/* @__PURE__ */ new Date()).toISOString() });
     }
@@ -8576,7 +8870,7 @@ function registerSaveResultImageRoute(app2) {
       const budgetLimit = Number(req.query.budgetLimit ?? 0);
       const occurredAt = parseDate(typeof req.query.occurredAt === "string" ? req.query.occurredAt : null);
       if (!Number.isFinite(amount) || amount <= 0) return res.status(400).type("text/plain").send("Invalid amount");
-      const baseUrl = (process.env.MILO_RICH_MENU_IMAGE_BASE_URL ?? "https://milo-line-app.vercel.app/milo-richmenu").replace(/\/+$/, "");
+      const baseUrl = (process.env.MILO_RICH_MENU_IMAGE_BASE_URL ?? "https://milo-line-assistant.onrender.com/milo-richmenu").replace(/\/+$/, "");
       const templateResponse = await fetch(`${baseUrl}/save-complete.png`, { cache: "no-store" });
       if (!templateResponse.ok) return res.status(502).type("text/plain").send("Save result template unavailable");
       const template = Buffer.from(await templateResponse.arrayBuffer());
@@ -8666,13 +8960,14 @@ var healthHandler = async (req, res) => {
   res.status(200).json({
     status: runtime.authenticated && voice.configured && Boolean(process.env.LINE_CHANNEL_SECRET?.trim()) && Boolean(process.env.LINE_CHANNEL_ACCESS_TOKEN?.trim()) && Boolean(process.env.DATABASE_URL?.trim()) ? "ok" : "degraded",
     service: "milo",
-    release: "document-intelligence-v1-2026-09-16",
+    release: "milo-capture-confirm-2026-09-22",
     visionConfigured: runtime.authenticated,
     imageAnalysisMode: mode,
-    visionModel: mode === "ocr-fallback" ? "tesseract-tha+eng" : process.env.MILO_VISION_MODEL || (mode.startsWith("vercel-ai-gateway") ? "google/gemini-2.5-flash" : mode.startsWith("forge-vision") ? "gemini-3-flash-preview" : "unconfigured"),
+    visionModel: mode === "ocr-fallback" ? "tesseract-tha+eng" : mode.startsWith("google-gemini") ? googleGeminiModel("vision") : process.env.MILO_VISION_MODEL || (mode.startsWith("vercel-ai-gateway") ? "google/gemini-2.5-flash" : mode.startsWith("forge-vision") ? "gemini-3-flash-preview" : "unconfigured"),
     ocrAssetsReady: runtime.ocrAssetsReady,
     voiceConfigured: voice.configured,
     voiceTranscriptionMode: voice.mode,
+    voiceTranscriptionModel: voice.mode.startsWith("google-gemini") ? googleGeminiModel("audio") : null,
     voiceLocalBundled: voice.local?.bundled ?? false,
     voiceLocalModel: voice.local?.model ?? null,
     storage: {

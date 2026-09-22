@@ -63,7 +63,7 @@ describe("save-result vector image route UAT", () => {
         budgetSpent: "80",
         budgetLimit: "0",
       });
-      const response = await fetch(`http://127.0.0.1:${port}/api/milo/save-result.png?${params}`);
+      const response = await fetch(`http://127.0.0.1:${port}/api/milo/save-result.png?${params}`, { headers: { connection: "close" } });
       expect(response.status).toBe(200);
       expect(response.headers.get("content-type")).toContain("image/png");
       const png = Buffer.from(await response.arrayBuffer());
@@ -73,7 +73,10 @@ describe("save-result vector image route UAT", () => {
       expect(metadata.height).toBeGreaterThanOrEqual(900);
       expect(png.subarray(1, 4).toString()).toBe("PNG");
     } finally {
-      await new Promise<void>(resolve => server.close(() => resolve()));
+      await new Promise<void>(resolve => {
+        server.close(() => resolve());
+        server.closeAllConnections();
+      });
     }
   });
 });
