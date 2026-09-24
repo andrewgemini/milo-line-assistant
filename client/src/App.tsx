@@ -1,14 +1,16 @@
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import NotFound from "@/pages/NotFound";
 import { Route, Switch } from "wouter";
 import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
-import Home from "./pages/Home";
-import Dashboard from "./pages/Dashboard";
-import AdminLogin from "./pages/AdminLogin";
-import AdminPassword from "./pages/AdminPassword";
 import { useAuth } from "@/_core/hooks/useAuth";
+import { lazy, Suspense } from "react";
+
+const Home = lazy(() => import("./pages/Home"));
+const Dashboard = lazy(() => import("./pages/Dashboard"));
+const AdminLogin = lazy(() => import("./pages/AdminLogin"));
+const AdminPassword = lazy(() => import("./pages/AdminPassword"));
+const NotFound = lazy(() => import("@/pages/NotFound"));
 
 const DASHBOARD_PATH = "/milo-ops-7f3c9a";
 
@@ -37,7 +39,9 @@ function App() {
       <ThemeProvider defaultTheme="light">
         <TooltipProvider>
           <Toaster />
-          <Router />
+          <Suspense fallback={<div className="grid min-h-screen place-items-center bg-[#f4faf7] text-sm text-[#6d918a]">กำลังโหลด...</div>}>
+            <Router />
+          </Suspense>
         </TooltipProvider>
       </ThemeProvider>
     </ErrorBoundary>
