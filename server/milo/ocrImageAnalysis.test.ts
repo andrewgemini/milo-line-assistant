@@ -190,4 +190,30 @@ K+
 `);
     expect(result.proposals[0]).toMatchObject({ kind: "expense", documentType: "bank_slip", amount: 140, dateText: "2026-09-13", timeText: "15:07", category: "อาหาร" });
   });
+
+  it("parses the K+ EVEANDBOY 716-baht slip that failed in production during Gemini high demand", () => {
+    const result = analyzeOcrText(`
+ชำระเงินสำเร็จ
+23 ก.ย. 69 15:16 น.
+K+
+นาย จตุพล
+ธ.กสิกรไทย
+xxx-x-x3512-x
+อีฟ แอนด์ บอย-บางแค
+บริษัท อีฟ แอนด์ บอย จำกัด (มหาชน)
+202609232079264
+เลขที่รายการ:
+016266151635CQR07478
+จำนวน:
+716.00 บาท
+ค่าธรรมเนียม:
+0.00 บาท
+`);
+    expect(result.confidence).toBeGreaterThanOrEqual(0.75);
+    expect(result.proposals[0]).toMatchObject({
+      kind: "expense", documentType: "bank_slip", amount: 716,
+      dateText: "2026-09-23", timeText: "15:16",
+      receiptNumber: "016266151635CQR07478", paymentMethod: "โอนเงิน",
+    });
+  });
 });

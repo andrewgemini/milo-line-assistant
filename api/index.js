@@ -6911,6 +6911,12 @@ function sanitizeAnalysisMerchants(analysis) {
     }))
   };
 }
+function trustedOcrBankSlipFallback(analysis) {
+  const proposal = analysis.proposals[0];
+  if (!proposal || proposal.kind !== "expense" || proposal.documentType !== "bank_slip" || proposal.amount <= 0) return false;
+  const hasTransactionIdentity = Boolean(proposal.receiptNumber || proposal.merchant && proposal.timeText);
+  return analysis.confidence >= 0.75 && Boolean(proposal.dateText) && hasTransactionIdentity;
+}
 async function analyzeImage(dataUrl, options = {}) {
   let providerError;
   let providerAnalysis;
@@ -7016,11 +7022,11 @@ async function analyzeImage(dataUrl, options = {}) {
         });
       }
     }
-    if (googleGeminiConfigured() && !providerAnalysis) {
-      throw new Error("Image AI temporarily unavailable; please retry the original image later");
-    }
     const ocrAnalysis = await analyzeImageWithOcr(dataUrl);
     if (!providerAnalysis) {
+      if (googleGeminiConfigured() && !trustedOcrBankSlipFallback(ocrAnalysis)) {
+        throw new Error("Image AI temporarily unavailable; OCR could not verify this slip strongly enough");
+      }
       let selected2 = ocrAnalysis;
       selected2 = await repairMissingReceiptDate(selected2, dataUrl, gatewayKey);
       const proposal = selected2.proposals[0];
@@ -7042,6 +7048,18 @@ async function analyzeImage(dataUrl, options = {}) {
         }
       }
       if (gatewayKey) selected2 = await refineReceiptDetails(selected2, dataUrl, gatewayKey);
+      if (providerError && trustedOcrBankSlipFallback(selected2)) {
+        selected2 = {
+          ...selected2,
+          summary: `AI \u0E2D\u0E48\u0E32\u0E19\u0E20\u0E32\u0E1E\u0E2B\u0E25\u0E31\u0E01\u0E44\u0E21\u0E48\u0E1E\u0E23\u0E49\u0E2D\u0E21\u0E0A\u0E31\u0E48\u0E27\u0E04\u0E23\u0E32\u0E27 \u0E08\u0E36\u0E07\u0E2D\u0E48\u0E32\u0E19\u0E2A\u0E25\u0E34\u0E1B\u0E14\u0E49\u0E27\u0E22 OCR \u0E41\u0E17\u0E19 \u2014 ${selected2.summary} \u0E01\u0E23\u0E38\u0E13\u0E32\u0E15\u0E23\u0E27\u0E08\u0E2A\u0E2D\u0E1A\u0E01\u0E48\u0E2D\u0E19\u0E22\u0E37\u0E19\u0E22\u0E31\u0E19\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01`
+        };
+        console.warn("[Milo Image] trusted OCR bank-slip fallback selected after vision outage", {
+          confidence: selected2.confidence,
+          amount: selected2.proposals[0]?.amount,
+          dateText: selected2.proposals[0]?.dateText,
+          receiptNumber: selected2.proposals[0]?.receiptNumber
+        });
+      }
       return sanitizeAnalysisMerchants(selected2);
     }
     const score = (analysis) => analysis.proposals.reduce((total, item) => total + (item.kind === "expense" && item.amount > 0 ? 6 : 0) + (item.kind === "reminder" && item.dateText ? 5 : 0) + (item.documentType !== "unknown" ? 1 : 0) + (item.dateText ? 1 : 0) + (item.merchant ? 0.5 : 0), analysis.confidence);

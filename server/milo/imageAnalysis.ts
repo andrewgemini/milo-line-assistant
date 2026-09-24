@@ -416,6 +416,13 @@ function sanitizeAnalysisMerchants(analysis: ImageAnalysis): ImageAnalysis {
   };
 }
 
+function trustedOcrBankSlipFallback(analysis: ImageAnalysis) {
+  const proposal = analysis.proposals[0];
+  if (!proposal || proposal.kind !== "expense" || proposal.documentType !== "bank_slip" || proposal.amount <= 0) return false;
+  const hasTransactionIdentity = Boolean(proposal.receiptNumber || (proposal.merchant && proposal.timeText));
+  return analysis.confidence >= 0.75 && Boolean(proposal.dateText) && hasTransactionIdentity;
+}
+
 export async function analyzeImage(dataUrl: string, options: { gatewayToken?: string } = {}): Promise<ImageAnalysis> {
   let providerError: unknown;
   let providerAnalysis: ImageAnalysis | undefined;
@@ -530,12 +537,15 @@ export async function analyzeImage(dataUrl: string, options: { gatewayToken?: st
       }
     }
 
-    // Do not turn a provider outage into a confident but unverified financial proposal.
-    if (googleGeminiConfigured() && !providerAnalysis) {
-      throw new Error("Image AI temporarily unavailable; please retry the original image later");
-    }
     const ocrAnalysis = await analyzeImageWithOcr(dataUrl);
     if (!providerAnalysis) {
+      // During a temporary Gemini outage, only accept OCR-only financial data when
+      // the document is a strongly identified bank slip. The webhook still saves
+      // this as a proposal and requires an explicit user confirmation before any
+      // transaction is created.
+      if (googleGeminiConfigured() && !trustedOcrBankSlipFallback(ocrAnalysis)) {
+        throw new Error("Image AI temporarily unavailable; OCR could not verify this slip strongly enough");
+      }
       let selected = ocrAnalysis;
       selected = await repairMissingReceiptDate(selected, dataUrl, gatewayKey);
       const proposal = selected.proposals[0];
@@ -557,6 +567,18 @@ export async function analyzeImage(dataUrl: string, options: { gatewayToken?: st
         }
       }
       if (gatewayKey) selected = await refineReceiptDetails(selected, dataUrl, gatewayKey);
+      if (providerError && trustedOcrBankSlipFallback(selected)) {
+        selected = {
+          ...selected,
+          summary: `AI อ่านภาพหลักไม่พร้อมชั่วคราว จึงอ่านสลิปด้วย OCR แทน — ${selected.summary} กรุณาตรวจสอบก่อนยืนยันบันทึก`,
+        };
+        console.warn("[Milo Image] trusted OCR bank-slip fallback selected after vision outage", {
+          confidence: selected.confidence,
+          amount: selected.proposals[0]?.amount,
+          dateText: selected.proposals[0]?.dateText,
+          receiptNumber: selected.proposals[0]?.receiptNumber,
+        });
+      }
       return sanitizeAnalysisMerchants(selected);
     }
 
