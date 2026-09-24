@@ -174,6 +174,35 @@ var calendarEvents = mysqlTable("calendar_events", {
   index("calendar_events_user_start_idx").on(table.createdByLineUserId, table.status, table.startsAt),
   index("calendar_events_source_idx").on(table.sourceMessageId)
 ]);
+var googleCalendarConnections = mysqlTable("google_calendar_connections", {
+  id: int("id").autoincrement().primaryKey(),
+  lineUserId: varchar("lineUserId", { length: 128 }).notNull().unique(),
+  accessTokenEncrypted: text("accessTokenEncrypted"),
+  refreshTokenEncrypted: text("refreshTokenEncrypted").notNull(),
+  tokenExpiresAt: timestamp("tokenExpiresAt"),
+  scope: text("scope"),
+  calendarId: varchar("calendarId", { length: 255 }).default("primary").notNull(),
+  status: mysqlEnum("status", ["connected", "disconnected", "error"]).default("connected").notNull(),
+  lastError: text("lastError"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull()
+}, (table) => [
+  index("google_calendar_connections_status_idx").on(table.status, table.updatedAt)
+]);
+var googleCalendarEventLinks = mysqlTable("google_calendar_event_links", {
+  id: int("id").autoincrement().primaryKey(),
+  calendarEventId: int("calendarEventId").notNull().unique(),
+  lineUserId: varchar("lineUserId", { length: 128 }).notNull(),
+  googleEventId: varchar("googleEventId", { length: 255 }).notNull(),
+  googleCalendarId: varchar("googleCalendarId", { length: 255 }).default("primary").notNull(),
+  status: mysqlEnum("status", ["active", "deleted", "error"]).default("active").notNull(),
+  lastError: text("lastError"),
+  syncedAt: timestamp("syncedAt").defaultNow().notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull()
+}, (table) => [
+  index("google_calendar_event_links_user_idx").on(table.lineUserId, table.status, table.updatedAt)
+]);
 var captureDrafts = mysqlTable("capture_drafts", {
   id: int("id").autoincrement().primaryKey(),
   lineChatId: varchar("lineChatId", { length: 128 }).notNull(),
@@ -916,6 +945,98 @@ async function listCalendarEventsForRange(lineUserId, lineChatId, scope, start, 
     lte(calendarEvents.startsAt, end),
     gte(calendarEvents.endsAt, start)
   )).orderBy(calendarEvents.startsAt).limit(50);
+}
+var googleCalendarSchemaReady;
+async function ensureGoogleCalendarSchema() {
+  if (!googleCalendarSchemaReady) {
+    googleCalendarSchemaReady = (async () => {
+      const db = await requireDb();
+      await db.execute(sql.raw(`
+        CREATE TABLE IF NOT EXISTS google_calendar_connections (
+          id INT NOT NULL AUTO_INCREMENT,
+          lineUserId VARCHAR(128) NOT NULL,
+          accessTokenEncrypted TEXT NULL,
+          refreshTokenEncrypted TEXT NOT NULL,
+          tokenExpiresAt TIMESTAMP NULL,
+          scope TEXT NULL,
+          calendarId VARCHAR(255) NOT NULL DEFAULT 'primary',
+          status ENUM('connected','disconnected','error') NOT NULL DEFAULT 'connected',
+          lastError TEXT NULL,
+          createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          updatedAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+          PRIMARY KEY (id),
+          UNIQUE KEY google_calendar_connections_user_unique (lineUserId),
+          INDEX google_calendar_connections_status_idx (status, updatedAt)
+        )
+      `));
+      await db.execute(sql.raw(`
+        CREATE TABLE IF NOT EXISTS google_calendar_event_links (
+          id INT NOT NULL AUTO_INCREMENT,
+          calendarEventId INT NOT NULL,
+          lineUserId VARCHAR(128) NOT NULL,
+          googleEventId VARCHAR(255) NOT NULL,
+          googleCalendarId VARCHAR(255) NOT NULL DEFAULT 'primary',
+          status ENUM('active','deleted','error') NOT NULL DEFAULT 'active',
+          lastError TEXT NULL,
+          syncedAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          updatedAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+          PRIMARY KEY (id),
+          UNIQUE KEY google_calendar_event_links_event_unique (calendarEventId),
+          INDEX google_calendar_event_links_user_idx (lineUserId, status, updatedAt)
+        )
+      `));
+    })().catch((error) => {
+      googleCalendarSchemaReady = void 0;
+      throw error;
+    });
+  }
+  return googleCalendarSchemaReady;
+}
+async function getGoogleCalendarConnection(lineUserId) {
+  await ensureGoogleCalendarSchema();
+  const db = await requireDb();
+  return (await db.select().from(googleCalendarConnections).where(eq(googleCalendarConnections.lineUserId, lineUserId)).limit(1))[0];
+}
+async function upsertGoogleCalendarConnection(input) {
+  await ensureGoogleCalendarSchema();
+  const db = await requireDb();
+  await db.insert(googleCalendarConnections).values({ ...input, status: "connected", lastError: null }).onDuplicateKeyUpdate({
+    set: {
+      accessTokenEncrypted: input.accessTokenEncrypted,
+      refreshTokenEncrypted: input.refreshTokenEncrypted,
+      tokenExpiresAt: input.tokenExpiresAt,
+      scope: input.scope,
+      calendarId: input.calendarId,
+      status: "connected",
+      lastError: null
+    }
+  });
+}
+async function disconnectGoogleCalendar(lineUserId) {
+  await ensureGoogleCalendarSchema();
+  const db = await requireDb();
+  const current = (await db.select({ id: googleCalendarConnections.id }).from(googleCalendarConnections).where(eq(googleCalendarConnections.lineUserId, lineUserId)).limit(1))[0];
+  if (!current) return false;
+  await db.update(googleCalendarConnections).set({ status: "disconnected", accessTokenEncrypted: null, refreshTokenEncrypted: "" }).where(eq(googleCalendarConnections.lineUserId, lineUserId));
+  return true;
+}
+async function getGoogleCalendarEventLink(calendarEventId, lineUserId) {
+  await ensureGoogleCalendarSchema();
+  const db = await requireDb();
+  return (await db.select().from(googleCalendarEventLinks).where(and(eq(googleCalendarEventLinks.calendarEventId, calendarEventId), eq(googleCalendarEventLinks.lineUserId, lineUserId))).limit(1))[0];
+}
+async function upsertGoogleCalendarEventLink(input) {
+  await ensureGoogleCalendarSchema();
+  const db = await requireDb();
+  await db.insert(googleCalendarEventLinks).values({ ...input, status: "active", lastError: null, syncedAt: /* @__PURE__ */ new Date() }).onDuplicateKeyUpdate({
+    set: { lineUserId: input.lineUserId, googleEventId: input.googleEventId, googleCalendarId: input.googleCalendarId, status: "active", lastError: null, syncedAt: /* @__PURE__ */ new Date() }
+  });
+}
+async function markGoogleCalendarEventLinkDeleted(calendarEventId, lineUserId) {
+  await ensureGoogleCalendarSchema();
+  const db = await requireDb();
+  await db.update(googleCalendarEventLinks).set({ status: "deleted", lastError: null }).where(and(eq(googleCalendarEventLinks.calendarEventId, calendarEventId), eq(googleCalendarEventLinks.lineUserId, lineUserId)));
 }
 async function createCaptureDraft(input) {
   const db = await requireDb();
@@ -4365,6 +4486,302 @@ function registerCalendarExportRoute(app2) {
   });
 }
 
+// server/milo/googleCalendar.ts
+import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
+var GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
+var GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";
+var GOOGLE_CALENDAR_API = "https://www.googleapis.com/calendar/v3";
+var CALENDAR_SCOPE = "https://www.googleapis.com/auth/calendar.events";
+var DEFAULT_PUBLIC_URL = "https://milo-line-app.onrender.com";
+function envValue(env, ...keys) {
+  for (const key of keys) {
+    const value = env[key]?.trim();
+    if (value) return value;
+  }
+  return void 0;
+}
+function clientId(env = process.env) {
+  return envValue(env, "MILO_GOOGLE_CALENDAR_CLIENT_ID", "GOOGLE_CALENDAR_CLIENT_ID", "GOOGLE_OAUTH_CLIENT_ID", "GOOGLE_CLIENT_ID");
+}
+function clientSecret(env = process.env) {
+  return envValue(env, "MILO_GOOGLE_CALENDAR_CLIENT_SECRET", "GOOGLE_CALENDAR_CLIENT_SECRET", "GOOGLE_OAUTH_CLIENT_SECRET", "GOOGLE_CLIENT_SECRET");
+}
+function tokenSecret(env = process.env) {
+  return envValue(env, "MILO_GOOGLE_TOKEN_ENCRYPTION_KEY", "SESSION_SECRET", "LINE_CHANNEL_SECRET");
+}
+function publicBaseUrl(env = process.env) {
+  const configured = envValue(env, "MILO_PUBLIC_URL", "RENDER_EXTERNAL_URL");
+  if (configured) return configured.replace(/\/+$/, "");
+  const vercel = envValue(env, "VERCEL_PROJECT_PRODUCTION_URL");
+  if (vercel) return (vercel.startsWith("http") ? vercel : `https://${vercel}`).replace(/\/+$/, "");
+  return DEFAULT_PUBLIC_URL;
+}
+function redirectUri(env = process.env) {
+  return envValue(env, "MILO_GOOGLE_CALENDAR_REDIRECT_URI") || `${publicBaseUrl(env)}/api/milo/google/calendar/callback`;
+}
+function googleCalendarRuntimeStatus(env = process.env) {
+  const hasClientId = Boolean(clientId(env));
+  const hasClientSecret = Boolean(clientSecret(env));
+  const hasTokenEncryptionKey = Boolean(tokenSecret(env));
+  return {
+    configured: hasClientId && hasClientSecret && hasTokenEncryptionKey,
+    hasClientId,
+    hasClientSecret,
+    hasTokenEncryptionKey,
+    redirectUri: redirectUri(env)
+  };
+}
+function signingKey(env = process.env) {
+  const secret3 = tokenSecret(env);
+  if (!secret3) throw new Error("Google Calendar token encryption key is not configured");
+  return createHash("sha256").update(secret3).digest();
+}
+function sign3(value, env = process.env) {
+  return createHmac("sha256", signingKey(env)).update(value).digest("base64url");
+}
+function signaturesMatch(value, signature, env = process.env) {
+  const expected = Buffer.from(sign3(value, env));
+  const actual = Buffer.from(signature);
+  return expected.length === actual.length && timingSafeEqual(expected, actual);
+}
+function encrypt(value, env = process.env) {
+  const iv = randomBytes(12);
+  const cipher = createCipheriv("aes-256-gcm", signingKey(env), iv);
+  const encrypted = Buffer.concat([cipher.update(value, "utf8"), cipher.final()]);
+  return [iv.toString("base64url"), cipher.getAuthTag().toString("base64url"), encrypted.toString("base64url")].join(".");
+}
+function decrypt(value, env = process.env) {
+  const [iv, tag, ciphertext] = value.split(".");
+  if (!iv || !tag || !ciphertext) throw new Error("Invalid encrypted Google token");
+  const decipher = createDecipheriv("aes-256-gcm", signingKey(env), Buffer.from(iv, "base64url"));
+  decipher.setAuthTag(Buffer.from(tag, "base64url"));
+  return Buffer.concat([decipher.update(Buffer.from(ciphertext, "base64url")), decipher.final()]).toString("utf8");
+}
+function signedState(lineUserId, env = process.env) {
+  const payload = Buffer.from(JSON.stringify({
+    lineUserId,
+    expiresAt: Date.now() + 10 * 6e4,
+    nonce: randomBytes(12).toString("base64url")
+  })).toString("base64url");
+  return `${payload}.${sign3(payload, env)}`;
+}
+function verifyState(state, env = process.env) {
+  const separator = state.lastIndexOf(".");
+  if (separator < 1) return void 0;
+  const payload = state.slice(0, separator);
+  const signature = state.slice(separator + 1);
+  if (!signaturesMatch(payload, signature, env)) return void 0;
+  try {
+    const parsed = JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
+    if (!parsed.lineUserId || !parsed.expiresAt || parsed.expiresAt < Date.now()) return void 0;
+    return parsed.lineUserId;
+  } catch {
+    return void 0;
+  }
+}
+function buildGoogleCalendarConnectUrl(lineUserId, env = process.env) {
+  if (!googleCalendarRuntimeStatus(env).configured) return void 0;
+  const expires = Math.floor(Date.now() / 1e3) + 10 * 60;
+  const signature = sign3(`${lineUserId}:${expires}`, env);
+  const url = new URL("/api/milo/google/calendar/connect", publicBaseUrl(env));
+  url.searchParams.set("lineUserId", lineUserId);
+  url.searchParams.set("expires", String(expires));
+  url.searchParams.set("sig", signature);
+  return url.toString();
+}
+function htmlPage(title, message) {
+  return `<!doctype html><html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title}</title><style>body{font-family:system-ui,sans-serif;background:#fff8f2;color:#33283b;display:grid;place-items:center;min-height:100vh;margin:0}.card{max-width:540px;margin:24px;padding:32px;border-radius:24px;background:white;box-shadow:0 12px 45px #6b5b8e22;text-align:center}h1{color:#d74475}p{line-height:1.7}</style></head><body><main class="card"><h1>${title}</h1><p>${message}</p></main></body></html>`;
+}
+async function exchangeCode(code, env = process.env) {
+  const response = await fetch(GOOGLE_TOKEN_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      code,
+      client_id: clientId(env),
+      client_secret: clientSecret(env),
+      redirect_uri: redirectUri(env),
+      grant_type: "authorization_code"
+    })
+  });
+  const json = await response.json();
+  if (!response.ok || !json.access_token) {
+    throw new Error(json.error_description || json.error || `Google OAuth failed (${response.status})`);
+  }
+  return json;
+}
+async function refreshAccessToken(refreshToken, env = process.env) {
+  const response = await fetch(GOOGLE_TOKEN_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      refresh_token: refreshToken,
+      client_id: clientId(env),
+      client_secret: clientSecret(env),
+      grant_type: "refresh_token"
+    })
+  });
+  const json = await response.json();
+  if (!response.ok || !json.access_token) {
+    throw new Error(json.error_description || json.error || `Google token refresh failed (${response.status})`);
+  }
+  return json;
+}
+async function accessTokenFor(lineUserId, forceRefresh = false) {
+  const connection = await getGoogleCalendarConnection(lineUserId);
+  if (!connection || connection.status !== "connected" || !connection.refreshTokenEncrypted) return void 0;
+  if (!forceRefresh && connection.accessTokenEncrypted && connection.tokenExpiresAt && connection.tokenExpiresAt.getTime() > Date.now() + 6e4) {
+    return decrypt(connection.accessTokenEncrypted);
+  }
+  const refreshToken = decrypt(connection.refreshTokenEncrypted);
+  const tokens = await refreshAccessToken(refreshToken);
+  const expiresAt = new Date(Date.now() + (tokens.expires_in ?? 3600) * 1e3);
+  await upsertGoogleCalendarConnection({
+    lineUserId,
+    accessTokenEncrypted: encrypt(tokens.access_token),
+    refreshTokenEncrypted: connection.refreshTokenEncrypted,
+    tokenExpiresAt: expiresAt,
+    scope: tokens.scope || connection.scope || CALENDAR_SCOPE,
+    calendarId: connection.calendarId || "primary"
+  });
+  return tokens.access_token;
+}
+async function calendarFetch(lineUserId, url, init) {
+  let token = await accessTokenFor(lineUserId);
+  if (!token) return void 0;
+  let response = await fetch(url, { ...init, headers: { ...init.headers || {}, Authorization: `Bearer ${token}` } });
+  if (response.status === 401) {
+    token = await accessTokenFor(lineUserId, true);
+    if (!token) return void 0;
+    response = await fetch(url, { ...init, headers: { ...init.headers || {}, Authorization: `Bearer ${token}` } });
+  }
+  return response;
+}
+async function googleCalendarConnectionStatus(lineUserId) {
+  if (!googleCalendarRuntimeStatus().configured) return { configured: false, connected: false };
+  const connection = await getGoogleCalendarConnection(lineUserId);
+  return {
+    configured: true,
+    connected: connection?.status === "connected",
+    calendarId: connection?.calendarId || "primary",
+    updatedAt: connection?.updatedAt
+  };
+}
+async function disconnectGoogleCalendar2(lineUserId) {
+  return disconnectGoogleCalendar(lineUserId);
+}
+async function syncGoogleCalendarEventCreate(lineUserId, event) {
+  if (!googleCalendarRuntimeStatus().configured) return { synced: false, reason: "unconfigured" };
+  try {
+    const existing = await getGoogleCalendarEventLink(event.id, lineUserId);
+    if (existing?.status === "active") return { synced: true, googleEventId: existing.googleEventId };
+    const connection = await getGoogleCalendarConnection(lineUserId);
+    if (!connection || connection.status !== "connected") return { synced: false, reason: "not_connected" };
+    const calendarId = connection.calendarId || "primary";
+    const url = `${GOOGLE_CALENDAR_API}/calendars/${encodeURIComponent(calendarId)}/events`;
+    const response = await calendarFetch(lineUserId, url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        summary: event.title,
+        description: event.detail || void 0,
+        start: { dateTime: event.startsAt.toISOString(), timeZone: "Asia/Bangkok" },
+        end: { dateTime: event.endsAt.toISOString(), timeZone: "Asia/Bangkok" },
+        extendedProperties: { private: { miloCalendarEventId: String(event.id) } }
+      })
+    });
+    if (!response) return { synced: false, reason: "not_connected" };
+    const json = await response.json().catch(() => ({}));
+    if (!response.ok || !json.id) throw new Error(json.error?.message || `Google Calendar create failed (${response.status})`);
+    await upsertGoogleCalendarEventLink({
+      calendarEventId: event.id,
+      lineUserId,
+      googleEventId: json.id,
+      googleCalendarId: calendarId
+    });
+    return { synced: true, googleEventId: json.id };
+  } catch (error) {
+    console.error("[Milo Google Calendar] create sync failed", { calendarEventId: event.id, message: error instanceof Error ? error.message : "unknown" });
+    return { synced: false, reason: "failed" };
+  }
+}
+async function syncGoogleCalendarEventDelete(lineUserId, calendarEventId) {
+  if (!googleCalendarRuntimeStatus().configured) return { synced: false, reason: "unconfigured" };
+  try {
+    const link = await getGoogleCalendarEventLink(calendarEventId, lineUserId);
+    if (!link || link.status === "deleted") return { synced: false, reason: "not_linked" };
+    const response = await calendarFetch(
+      lineUserId,
+      `${GOOGLE_CALENDAR_API}/calendars/${encodeURIComponent(link.googleCalendarId)}/events/${encodeURIComponent(link.googleEventId)}`,
+      { method: "DELETE" }
+    );
+    if (!response) return { synced: false, reason: "not_connected" };
+    if (!response.ok && response.status !== 404 && response.status !== 410) {
+      const body = await response.text().catch(() => "");
+      throw new Error(`Google Calendar delete failed (${response.status}) ${body.slice(0, 200)}`);
+    }
+    await markGoogleCalendarEventLinkDeleted(calendarEventId, lineUserId);
+    return { synced: true };
+  } catch (error) {
+    console.error("[Milo Google Calendar] delete sync failed", { calendarEventId, message: error instanceof Error ? error.message : "unknown" });
+    return { synced: false, reason: "failed" };
+  }
+}
+function connectHandler(req, res) {
+  if (!googleCalendarRuntimeStatus().configured) {
+    return res.status(503).type("html").send(htmlPage("\u0E22\u0E31\u0E07\u0E40\u0E0A\u0E37\u0E48\u0E2D\u0E21\u0E44\u0E21\u0E48\u0E44\u0E14\u0E49", "Google Calendar OAuth \u0E22\u0E31\u0E07\u0E15\u0E31\u0E49\u0E07\u0E04\u0E48\u0E32\u0E44\u0E21\u0E48\u0E04\u0E23\u0E1A \u0E01\u0E23\u0E38\u0E13\u0E32\u0E15\u0E23\u0E27\u0E08 Client ID, Client Secret \u0E41\u0E25\u0E30\u0E04\u0E35\u0E22\u0E4C\u0E40\u0E02\u0E49\u0E32\u0E23\u0E2B\u0E31\u0E2A\u0E42\u0E17\u0E40\u0E04\u0E19"));
+  }
+  const lineUserId = typeof req.query.lineUserId === "string" ? req.query.lineUserId : "";
+  const expires = typeof req.query.expires === "string" ? req.query.expires : "";
+  const signature = typeof req.query.sig === "string" ? req.query.sig : "";
+  const expiresAt = Number(expires);
+  if (!lineUserId || !Number.isFinite(expiresAt) || expiresAt < Math.floor(Date.now() / 1e3) || !signaturesMatch(`${lineUserId}:${expires}`, signature)) {
+    return res.status(400).type("html").send(htmlPage("\u0E25\u0E34\u0E07\u0E01\u0E4C\u0E2B\u0E21\u0E14\u0E2D\u0E32\u0E22\u0E38", "\u0E01\u0E25\u0E31\u0E1A\u0E44\u0E1B\u0E17\u0E35\u0E48 LINE \u0E41\u0E25\u0E49\u0E27\u0E1E\u0E34\u0E21\u0E1E\u0E4C \u201C\u0E40\u0E0A\u0E37\u0E48\u0E2D\u0E21 Google Calendar\u201D \u0E40\u0E1E\u0E37\u0E48\u0E2D\u0E02\u0E2D\u0E25\u0E34\u0E07\u0E01\u0E4C\u0E43\u0E2B\u0E21\u0E48\u0E04\u0E23\u0E31\u0E1A"));
+  }
+  const auth = new URL(GOOGLE_AUTH_URL);
+  auth.searchParams.set("client_id", clientId());
+  auth.searchParams.set("redirect_uri", redirectUri());
+  auth.searchParams.set("response_type", "code");
+  auth.searchParams.set("scope", CALENDAR_SCOPE);
+  auth.searchParams.set("access_type", "offline");
+  auth.searchParams.set("prompt", "consent");
+  auth.searchParams.set("include_granted_scopes", "true");
+  auth.searchParams.set("state", signedState(lineUserId));
+  return res.redirect(302, auth.toString());
+}
+async function callbackHandler(req, res) {
+  try {
+    if (!googleCalendarRuntimeStatus().configured) throw new Error("Google Calendar OAuth is not configured");
+    const code = typeof req.query.code === "string" ? req.query.code : "";
+    const state = typeof req.query.state === "string" ? req.query.state : "";
+    const lineUserId = verifyState(state);
+    if (!code || !lineUserId) return res.status(400).type("html").send(htmlPage("\u0E40\u0E0A\u0E37\u0E48\u0E2D\u0E21\u0E44\u0E21\u0E48\u0E2A\u0E33\u0E40\u0E23\u0E47\u0E08", "\u0E04\u0E33\u0E02\u0E2D\u0E44\u0E21\u0E48\u0E16\u0E39\u0E01\u0E15\u0E49\u0E2D\u0E07\u0E2B\u0E23\u0E37\u0E2D\u0E2B\u0E21\u0E14\u0E2D\u0E32\u0E22\u0E38 \u0E01\u0E23\u0E38\u0E13\u0E32\u0E01\u0E25\u0E31\u0E1A\u0E44\u0E1B\u0E02\u0E2D\u0E25\u0E34\u0E07\u0E01\u0E4C\u0E43\u0E2B\u0E21\u0E48\u0E43\u0E19 LINE"));
+    const tokens = await exchangeCode(code);
+    const current = await getGoogleCalendarConnection(lineUserId);
+    const refreshTokenEncrypted = tokens.refresh_token ? encrypt(tokens.refresh_token) : current?.refreshTokenEncrypted;
+    if (!refreshTokenEncrypted) throw new Error("Google did not return a refresh token");
+    await upsertGoogleCalendarConnection({
+      lineUserId,
+      accessTokenEncrypted: encrypt(tokens.access_token),
+      refreshTokenEncrypted,
+      tokenExpiresAt: new Date(Date.now() + (tokens.expires_in ?? 3600) * 1e3),
+      scope: tokens.scope || CALENDAR_SCOPE,
+      calendarId: current?.calendarId || "primary"
+    });
+    await pushText(lineUserId, "\u0E40\u0E0A\u0E37\u0E48\u0E2D\u0E21 Google Calendar \u0E2A\u0E33\u0E40\u0E23\u0E47\u0E08\u0E41\u0E25\u0E49\u0E27 \u2705\n\u0E19\u0E31\u0E14\u0E43\u0E2B\u0E21\u0E48\u0E17\u0E35\u0E48\u0E2A\u0E23\u0E49\u0E32\u0E07\u0E01\u0E31\u0E1A Milo \u0E08\u0E30\u0E0B\u0E34\u0E07\u0E01\u0E4C\u0E40\u0E02\u0E49\u0E32\u0E1B\u0E0F\u0E34\u0E17\u0E34\u0E19\u0E43\u0E2B\u0E49\u0E2D\u0E31\u0E15\u0E42\u0E19\u0E21\u0E31\u0E15\u0E34\u0E04\u0E23\u0E31\u0E1A").catch((error) => {
+      console.error("[Milo Google Calendar] LINE confirmation failed", { message: error instanceof Error ? error.message : "unknown" });
+    });
+    return res.status(200).type("html").send(htmlPage("\u0E40\u0E0A\u0E37\u0E48\u0E2D\u0E21\u0E2A\u0E33\u0E40\u0E23\u0E47\u0E08 \u2705", "\u0E01\u0E25\u0E31\u0E1A\u0E44\u0E1B\u0E17\u0E35\u0E48 LINE \u0E44\u0E14\u0E49\u0E40\u0E25\u0E22 \u0E19\u0E31\u0E14\u0E43\u0E2B\u0E21\u0E48\u0E08\u0E32\u0E01 Milo \u0E08\u0E30\u0E0B\u0E34\u0E07\u0E01\u0E4C\u0E40\u0E02\u0E49\u0E32 Google Calendar \u0E2D\u0E31\u0E15\u0E42\u0E19\u0E21\u0E31\u0E15\u0E34"));
+  } catch (error) {
+    console.error("[Milo Google Calendar] callback failed", { message: error instanceof Error ? error.message : "unknown" });
+    return res.status(500).type("html").send(htmlPage("\u0E40\u0E0A\u0E37\u0E48\u0E2D\u0E21\u0E44\u0E21\u0E48\u0E2A\u0E33\u0E40\u0E23\u0E47\u0E08", "\u0E01\u0E23\u0E38\u0E13\u0E32\u0E01\u0E25\u0E31\u0E1A\u0E44\u0E1B\u0E17\u0E35\u0E48 LINE \u0E41\u0E25\u0E49\u0E27\u0E25\u0E2D\u0E07\u0E40\u0E0A\u0E37\u0E48\u0E2D\u0E21\u0E43\u0E2B\u0E21\u0E48 \u0E2B\u0E23\u0E37\u0E2D\u0E15\u0E23\u0E27\u0E08 Redirect URI \u0E43\u0E19 Google Cloud Console"));
+  }
+}
+function registerGoogleCalendarRoutes(app2) {
+  app2.get("/api/milo/google/calendar/connect", connectHandler);
+  app2.get("/api/milo/google/calendar/callback", callbackHandler);
+}
+
 // server/milo/routes.ts
 import express from "express";
 
@@ -5096,7 +5513,7 @@ async function googleDriveAccessToken() {
   const email = process.env.MILO_GOOGLE_DRIVE_SERVICE_ACCOUNT_EMAIL.trim();
   const privateKey = await importPKCS8(googlePrivateKey(), "RS256");
   const now = Math.floor(Date.now() / 1e3);
-  const assertion = await new SignJWT2({ scope: "https://www.googleapis.com/auth/drive.file" }).setProtectedHeader({ alg: "RS256", typ: "JWT" }).setIssuer(email).setSubject(email).setAudience("https://oauth2.googleapis.com/token").setIssuedAt(now).setExpirationTime(now + 3600).sign(privateKey);
+  const assertion = await new SignJWT2({ scope: "https://www.googleapis.com/auth/drive.file" }).setProtectedHeader({ alg: "RS256", typ: "JWT" }).setIssuer(email).setAudience("https://oauth2.googleapis.com/token").setIssuedAt(now).setExpirationTime(now + 3600).sign(privateKey);
   const response = await fetch("https://oauth2.googleapis.com/token", {
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -5132,7 +5549,7 @@ Content-Type: ${contentType}\r
     Buffer.from(`\r
 --${boundary}--`)
   ]);
-  const response = await fetch("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id", {
+  const response = await fetch("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true&fields=id", {
     method: "POST",
     headers: { Authorization: `Bearer ${token}`, "Content-Type": `multipart/related; boundary=${boundary}` },
     body: multipart
@@ -5189,7 +5606,7 @@ async function storageGetGoogleDriveResponse(relKey) {
   if (provider !== "google-drive") return void 0;
   if (!googleDriveConfigured()) throw new Error("Google Drive storage is not configured");
   const token = await googleDriveAccessToken();
-  return fetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(objectKey)}?alt=media`, { headers: { Authorization: `Bearer ${token}` } });
+  return fetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(objectKey)}?alt=media&supportsAllDrives=true`, { headers: { Authorization: `Bearer ${token}` } });
 }
 
 // server/milo/ocrImageAnalysis.ts
@@ -6414,7 +6831,7 @@ function exportSecret() {
 function signaturePayload(lineUserId, financeAccountId, format, expires) {
   return `${lineUserId}|${financeAccountId}|${format}|${expires}`;
 }
-function sign3(lineUserId, financeAccountId, format, expires) {
+function sign4(lineUserId, financeAccountId, format, expires) {
   return crypto7.createHmac("sha256", exportSecret()).update(signaturePayload(lineUserId, financeAccountId, format, expires)).digest("hex");
 }
 function safeEqual2(a, b) {
@@ -6424,7 +6841,7 @@ function safeEqual2(a, b) {
 }
 function buildFinanceExportUrl(input) {
   const expires = Math.floor(Date.now() / 1e3) + Math.min(Math.max(input.ttlSeconds ?? 600, 60), 3600);
-  const sig = sign3(input.lineUserId, input.financeAccountId, input.format, expires);
+  const sig = sign4(input.lineUserId, input.financeAccountId, input.format, expires);
   const base = (process.env.MILO_APP_BASE_URL ?? process.env.MILO_SAVE_RESULT_IMAGE_BASE_URL ?? "https://milo-line-assistant.onrender.com").replace(/\/+$/, "");
   const params = new URLSearchParams({ user: input.lineUserId, account: String(input.financeAccountId), format: input.format, expires: String(expires), sig });
   return `${base}/api/milo/export?${params.toString()}`;
@@ -6460,7 +6877,7 @@ function registerFinanceExportRoute(app2) {
       const expires = Number(req.query.expires ?? 0);
       const supplied = String(req.query.sig ?? "");
       if (!lineUserId || !Number.isInteger(financeAccountId) || financeAccountId <= 0 || !Number.isInteger(expires) || expires < Math.floor(Date.now() / 1e3) || !supplied) return res.status(401).type("text/plain").send("Export link expired or invalid");
-      const expected = sign3(lineUserId, financeAccountId, format, expires);
+      const expected = sign4(lineUserId, financeAccountId, format, expires);
       if (!safeEqual2(supplied, expected)) return res.status(401).type("text/plain").send("Export link expired or invalid");
       const access = await getFinanceAccountAccess(financeAccountId, lineUserId);
       if (!access) return res.status(403).type("text/plain").send("No access to this finance account");
@@ -6799,6 +7216,9 @@ function parseMiloCommand(text2, now = /* @__PURE__ */ new Date()) {
   const todoComplete = value.match(/^(?:เสร็จงาน|ปิดงาน)\s*#?(\d+)$/i) ?? value.match(/^ทำงาน\s*#?(\d+)\s*เสร็จ$/i);
   if (todoComplete) return { type: "todoComplete", id: Number(todoComplete[1]) };
   if (/^(?:ดูงาน|รายการงาน|งานทั้งหมด|todo\s*list)$/i.test(value)) return { type: "todoList" };
+  if (/^(?:เชื่อม|เชื่อมต่อ|sync|ซิงก์)\s*(?:Google\s*)?(?:Calendar|ปฏิทิน)$/i.test(value)) return { type: "calendarConnect" };
+  if (/^(?:ยกเลิกการเชื่อม|ตัดการเชื่อม|disconnect)\s*(?:Google\s*)?(?:Calendar|ปฏิทิน)$/i.test(value)) return { type: "calendarDisconnect" };
+  if (/^(?:สถานะ|ตรวจสถานะ)\s*(?:Google\s*)?(?:Calendar|ปฏิทิน)$/i.test(value)) return { type: "calendarStatus" };
   const calendar = parseCalendarIntent(value, now);
   if (calendar?.type === "create") return { type: "calendarCreate", data: calendar.data };
   if (calendar?.type === "list") return { type: "calendarList" };
@@ -7009,6 +7429,9 @@ function intentForCommand(command) {
     case "calendarCreate":
     case "calendarList":
     case "calendarCancel":
+    case "calendarConnect":
+    case "calendarDisconnect":
+    case "calendarStatus":
       return "calendar";
     case "vault":
     case "vaultStatus":
@@ -7337,7 +7760,7 @@ function applyImageExpenseEdit(analysis, edit) {
 }
 
 // server/milo/documentIntelligence.ts
-import { createHash } from "node:crypto";
+import { createHash as createHash2 } from "node:crypto";
 var KIND_LABELS = {
   receipt: "\u0E43\u0E1A\u0E40\u0E2A\u0E23\u0E47\u0E08",
   tax_invoice: "\u0E43\u0E1A\u0E01\u0E33\u0E01\u0E31\u0E1A\u0E20\u0E32\u0E29\u0E35",
@@ -7364,7 +7787,7 @@ var STATUS_LABELS = {
   failed: "\u0E1B\u0E23\u0E30\u0E21\u0E27\u0E25\u0E1C\u0E25\u0E44\u0E21\u0E48\u0E2A\u0E33\u0E40\u0E23\u0E47\u0E08"
 };
 function fingerprintMedia(bytes) {
-  return createHash("sha256").update(bytes).digest("hex");
+  return createHash2("sha256").update(bytes).digest("hex");
 }
 function clean2(value) {
   return typeof value === "string" ? value.replace(/\s+/g, " ").trim() : "";
@@ -8068,16 +8491,33 @@ ${items.slice(0, 30).map((item) => `#${item.id} \u2022 ${item.title}${item.dueAt
   } else if (command.type === "todoComplete") {
     const completed = await completeTodoForChat(command.id, lineUserId, lineChatId, scope);
     message = completed ? `\u0E17\u0E33\u0E07\u0E32\u0E19 #${command.id} \u0E40\u0E2A\u0E23\u0E47\u0E08\u0E41\u0E25\u0E49\u0E27 \u2705` : `\u0E44\u0E21\u0E48\u0E1E\u0E1A\u0E07\u0E32\u0E19 #${command.id} \u0E17\u0E35\u0E48\u0E1B\u0E34\u0E14\u0E44\u0E14\u0E49\u0E43\u0E19\u0E41\u0E0A\u0E17\u0E19\u0E35\u0E49`;
+  } else if (command.type === "calendarConnect") {
+    const connectUrl = buildGoogleCalendarConnectUrl(lineUserId);
+    message = connectUrl ? `\u{1F4C5} \u0E40\u0E0A\u0E37\u0E48\u0E2D\u0E21 Google Calendar \u0E01\u0E31\u0E1A Milo \u0E44\u0E14\u0E49\u0E17\u0E35\u0E48\u0E25\u0E34\u0E07\u0E01\u0E4C\u0E19\u0E35\u0E49 (\u0E25\u0E34\u0E07\u0E01\u0E4C\u0E21\u0E35\u0E2D\u0E32\u0E22\u0E38 10 \u0E19\u0E32\u0E17\u0E35)
+${connectUrl}
+
+\u0E40\u0E21\u0E37\u0E48\u0E2D\u0E40\u0E0A\u0E37\u0E48\u0E2D\u0E21\u0E41\u0E25\u0E49\u0E27 \u0E19\u0E31\u0E14\u0E43\u0E2B\u0E21\u0E48\u0E08\u0E30\u0E0B\u0E34\u0E07\u0E01\u0E4C\u0E2D\u0E31\u0E15\u0E42\u0E19\u0E21\u0E31\u0E15\u0E34\u0E04\u0E23\u0E31\u0E1A` : "\u0E22\u0E31\u0E07\u0E40\u0E0A\u0E37\u0E48\u0E2D\u0E21 Google Calendar \u0E44\u0E21\u0E48\u0E44\u0E14\u0E49 \u0E40\u0E1E\u0E23\u0E32\u0E30\u0E04\u0E48\u0E32\u0E23\u0E30\u0E1A\u0E1A OAuth \u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E04\u0E23\u0E1A \u0E01\u0E23\u0E38\u0E13\u0E32\u0E43\u0E2B\u0E49\u0E1C\u0E39\u0E49\u0E14\u0E39\u0E41\u0E25\u0E15\u0E23\u0E27\u0E08 Client ID, Client Secret \u0E41\u0E25\u0E30\u0E04\u0E35\u0E22\u0E4C\u0E40\u0E02\u0E49\u0E32\u0E23\u0E2B\u0E31\u0E2A\u0E42\u0E17\u0E40\u0E04\u0E19\u0E04\u0E23\u0E31\u0E1A";
+  } else if (command.type === "calendarStatus") {
+    const status = await googleCalendarConnectionStatus(lineUserId);
+    message = !status.configured ? "Google Calendar OAuth \u0E22\u0E31\u0E07\u0E15\u0E31\u0E49\u0E07\u0E04\u0E48\u0E32\u0E44\u0E21\u0E48\u0E04\u0E23\u0E1A\u0E04\u0E23\u0E31\u0E1A" : status.connected ? "Google Calendar \u0E40\u0E0A\u0E37\u0E48\u0E2D\u0E21\u0E2D\u0E22\u0E39\u0E48 \u2705 \u0E19\u0E31\u0E14\u0E43\u0E2B\u0E21\u0E48\u0E08\u0E32\u0E01 Milo \u0E08\u0E30\u0E0B\u0E34\u0E07\u0E01\u0E4C\u0E2D\u0E31\u0E15\u0E42\u0E19\u0E21\u0E31\u0E15\u0E34\u0E04\u0E23\u0E31\u0E1A" : "\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E44\u0E14\u0E49\u0E40\u0E0A\u0E37\u0E48\u0E2D\u0E21 Google Calendar \u0E04\u0E23\u0E31\u0E1A \u0E1E\u0E34\u0E21\u0E1E\u0E4C \u201C\u0E40\u0E0A\u0E37\u0E48\u0E2D\u0E21 Google Calendar\u201D \u0E40\u0E1E\u0E37\u0E48\u0E2D\u0E40\u0E23\u0E34\u0E48\u0E21\u0E40\u0E0A\u0E37\u0E48\u0E2D\u0E21";
+  } else if (command.type === "calendarDisconnect") {
+    const disconnected = await disconnectGoogleCalendar2(lineUserId);
+    message = disconnected ? "\u0E22\u0E01\u0E40\u0E25\u0E34\u0E01\u0E01\u0E32\u0E23\u0E40\u0E0A\u0E37\u0E48\u0E2D\u0E21 Google Calendar \u0E41\u0E25\u0E49\u0E27\u0E04\u0E23\u0E31\u0E1A \u0E19\u0E31\u0E14\u0E40\u0E14\u0E34\u0E21\u0E43\u0E19 Google \u0E08\u0E30\u0E44\u0E21\u0E48\u0E16\u0E39\u0E01\u0E25\u0E1A" : "\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E1E\u0E1A Google Calendar \u0E17\u0E35\u0E48\u0E40\u0E0A\u0E37\u0E48\u0E2D\u0E21\u0E01\u0E31\u0E1A\u0E1A\u0E31\u0E0D\u0E0A\u0E35\u0E19\u0E35\u0E49\u0E04\u0E23\u0E31\u0E1A";
   } else if (command.type === "calendarCreate") {
     const id = await createCalendarEvent({ lineChatId, createdByLineUserId: lineUserId, ...command.data, sourceMessageId: event.message?.id });
     const googleUrl = buildGoogleCalendarUrl({ ...command.data, detail: command.data.detail ?? null });
     const icsUrl = buildCalendarIcsUrl(id);
+    const sync = await syncGoogleCalendarEventCreate(lineUserId, { id, ...command.data, detail: command.data.detail ?? null });
+    const connectUrl = sync.reason === "not_connected" ? buildGoogleCalendarConnectUrl(lineUserId) : void 0;
+    const syncMessage = sync.synced ? "\u0E0B\u0E34\u0E07\u0E01\u0E4C\u0E40\u0E02\u0E49\u0E32 Google Calendar \u0E41\u0E25\u0E49\u0E27 \u2705" : `Google Calendar: ${googleUrl}
+Apple/Outlook (.ics): ${icsUrl}${connectUrl ? `
+
+\u0E40\u0E0A\u0E37\u0E48\u0E2D\u0E21\u0E2D\u0E31\u0E15\u0E42\u0E19\u0E21\u0E31\u0E15\u0E34: ${connectUrl}` : ""}`;
     message = `\u{1F4C5} \u0E40\u0E1E\u0E34\u0E48\u0E21\u0E19\u0E31\u0E14 #${id} \u0E43\u0E19\u0E1B\u0E0F\u0E34\u0E17\u0E34\u0E19 Milo \u0E41\u0E25\u0E49\u0E27
 ${command.data.title}
 ${formatDate(command.data.startsAt)} \u2013 ${formatDate(command.data.endsAt)}
 
-Google Calendar: ${googleUrl}
-Apple/Outlook (.ics): ${icsUrl}`;
+${syncMessage}`;
   } else if (command.type === "calendarList") {
     const items = await listCalendarEvents(lineUserId, lineChatId, /* @__PURE__ */ new Date(), 20);
     if (event.replyToken) {
@@ -8087,7 +8527,8 @@ Apple/Outlook (.ics): ${icsUrl}`;
     message = items.length ? "\u{1F4C5} \u0E21\u0E35\u0E19\u0E31\u0E14\u0E2B\u0E21\u0E32\u0E22 " + items.length + " \u0E23\u0E32\u0E22\u0E01\u0E32\u0E23" : "\u{1F4C5} \u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E21\u0E35\u0E19\u0E31\u0E14\u0E2B\u0E21\u0E32\u0E22\u0E17\u0E35\u0E48\u0E01\u0E33\u0E25\u0E31\u0E07\u0E08\u0E30\u0E16\u0E36\u0E07\u0E43\u0E19\u0E41\u0E0A\u0E17\u0E19\u0E35\u0E49\u0E04\u0E23\u0E31\u0E1A";
   } else if (command.type === "calendarCancel") {
     const cancelled = await cancelCalendarEvent(command.id, lineUserId, lineChatId);
-    message = cancelled ? `\u0E22\u0E01\u0E40\u0E25\u0E34\u0E01\u0E19\u0E31\u0E14 #${command.id} \u0E41\u0E25\u0E49\u0E27\u0E04\u0E23\u0E31\u0E1A` : `\u0E44\u0E21\u0E48\u0E1E\u0E1A\u0E19\u0E31\u0E14 #${command.id} \u0E17\u0E35\u0E48\u0E04\u0E38\u0E13\u0E22\u0E01\u0E40\u0E25\u0E34\u0E01\u0E44\u0E14\u0E49\u0E43\u0E19\u0E41\u0E0A\u0E17\u0E19\u0E35\u0E49`;
+    const sync = cancelled ? await syncGoogleCalendarEventDelete(lineUserId, command.id) : void 0;
+    message = cancelled ? `\u0E22\u0E01\u0E40\u0E25\u0E34\u0E01\u0E19\u0E31\u0E14 #${command.id} \u0E41\u0E25\u0E49\u0E27\u0E04\u0E23\u0E31\u0E1A${sync?.synced ? " \u0E41\u0E25\u0E30\u0E25\u0E1A\u0E2D\u0E2D\u0E01\u0E08\u0E32\u0E01 Google Calendar \u0E41\u0E25\u0E49\u0E27 \u2705" : ""}` : `\u0E44\u0E21\u0E48\u0E1E\u0E1A\u0E19\u0E31\u0E14 #${command.id} \u0E17\u0E35\u0E48\u0E04\u0E38\u0E13\u0E22\u0E01\u0E40\u0E25\u0E34\u0E01\u0E44\u0E14\u0E49\u0E43\u0E19\u0E41\u0E0A\u0E17\u0E19\u0E35\u0E49`;
   } else if (command.type === "groupGuide") {
     message = scope === "user" ? "\u{1F465} \u0E27\u0E34\u0E18\u0E35\u0E43\u0E0A\u0E49 Milo \u0E43\u0E19\u0E01\u0E25\u0E38\u0E48\u0E21 LINE\n1) \u0E40\u0E0A\u0E34\u0E0D Milo \u0E40\u0E02\u0E49\u0E32\u0E01\u0E25\u0E38\u0E48\u0E21\n2) \u0E40\u0E23\u0E35\u0E22\u0E01\u0E14\u0E49\u0E27\u0E22 @\u0E44\u0E21\u0E42\u0E25 \u0E01\u0E48\u0E2D\u0E19\u0E04\u0E33\u0E2A\u0E31\u0E48\u0E07\u0E02\u0E49\u0E2D\u0E04\u0E27\u0E32\u0E21\n3) \u0E43\u0E0A\u0E49\u0E40\u0E15\u0E37\u0E2D\u0E19 \u0E40\u0E01\u0E47\u0E1A/\u0E04\u0E49\u0E19\u0E2B\u0E32\u0E44\u0E1F\u0E25\u0E4C \u0E1B\u0E0F\u0E34\u0E17\u0E34\u0E19 To-do \u0E41\u0E25\u0E30\u0E41\u0E17\u0E47\u0E01\u0E2A\u0E21\u0E32\u0E0A\u0E34\u0E01\u0E44\u0E14\u0E49\n\u0E15\u0E31\u0E27\u0E2D\u0E22\u0E48\u0E32\u0E07: @\u0E44\u0E21\u0E42\u0E25 \u0E40\u0E15\u0E37\u0E2D\u0E19\u0E2A\u0E48\u0E07\u0E23\u0E32\u0E22\u0E07\u0E32\u0E19\u0E1E\u0E23\u0E38\u0E48\u0E07\u0E19\u0E35\u0E49 9:00 \u0E2B\u0E23\u0E37\u0E2D @\u0E44\u0E21\u0E42\u0E25 \u0E41\u0E08\u0E49\u0E07\u0E2A\u0E48\u0E07\u0E07\u0E32\u0E19\u0E14\u0E49\u0E27\u0E22\u0E16\u0E36\u0E07 @\u0E2A\u0E21\u0E0A\u0E32\u0E22" : "\u{1F465} Milo \u0E1E\u0E23\u0E49\u0E2D\u0E21\u0E0A\u0E48\u0E27\u0E22\u0E43\u0E19\u0E01\u0E25\u0E38\u0E48\u0E21\u0E19\u0E35\u0E49\u0E04\u0E23\u0E31\u0E1A\n\u2022 @\u0E44\u0E21\u0E42\u0E25 \u0E40\u0E15\u0E37\u0E2D\u0E19\u0E1B\u0E23\u0E30\u0E0A\u0E38\u0E21\u0E1E\u0E23\u0E38\u0E48\u0E07\u0E19\u0E35\u0E49 10:00\n\u2022 @\u0E44\u0E21\u0E42\u0E25 \u0E40\u0E01\u0E47\u0E1A https://example.com #\u0E07\u0E32\u0E19\n\u2022 @\u0E44\u0E21\u0E42\u0E25 \u0E04\u0E49\u0E19\u0E2B\u0E32 \u0E43\u0E1A\u0E40\u0E2A\u0E19\u0E2D\u0E23\u0E32\u0E04\u0E32\n\u2022 @\u0E44\u0E21\u0E42\u0E25 \u0E25\u0E07\u0E1B\u0E0F\u0E34\u0E17\u0E34\u0E19 \u0E1B\u0E23\u0E30\u0E0A\u0E38\u0E21\u0E17\u0E35\u0E21\u0E1E\u0E23\u0E38\u0E48\u0E07\u0E19\u0E35\u0E49 10:00\n\u2022 @\u0E44\u0E21\u0E42\u0E25 \u0E41\u0E08\u0E49\u0E07\u0E2A\u0E48\u0E07\u0E07\u0E32\u0E19\u0E14\u0E49\u0E27\u0E22\u0E16\u0E36\u0E07 @\u0E2A\u0E21\u0E0A\u0E32\u0E22\n\u2022 \u0E2A\u0E48\u0E07\u0E23\u0E39\u0E1B/\u0E44\u0E1F\u0E25\u0E4C\u0E43\u0E19\u0E01\u0E25\u0E38\u0E48\u0E21\u0E40\u0E1E\u0E37\u0E48\u0E2D\u0E40\u0E01\u0E47\u0E1A\u0E41\u0E25\u0E30\u0E1B\u0E23\u0E30\u0E21\u0E27\u0E25\u0E1C\u0E25\u0E44\u0E14\u0E49\u0E15\u0E32\u0E21\u0E2A\u0E34\u0E17\u0E18\u0E34\u0E4C";
   } else if (command.type === "vaultStatus") {
@@ -9337,6 +9778,7 @@ registerFinanceReportImageRoute(app);
 registerRichMenuDataImageRoute(app);
 registerFinanceExportRoute(app);
 registerCalendarExportRoute(app);
+registerGoogleCalendarRoutes(app);
 registerMiloStorageRoute(app);
 registerLineWebhook(app);
 app.use(express2.json({ limit: "10mb" }));
@@ -9349,10 +9791,11 @@ var healthHandler = async (req, res) => {
   const mode = runtime.mode;
   const voice = voiceTranscriptionRuntimeStatus(gatewayToken);
   const storage = storageRuntimeStatus();
+  const googleCalendar = googleCalendarRuntimeStatus();
   res.status(200).json({
     status: runtime.authenticated && voice.configured && Boolean(process.env.LINE_CHANNEL_SECRET?.trim()) && Boolean(process.env.LINE_CHANNEL_ACCESS_TOKEN?.trim()) && Boolean(process.env.DATABASE_URL?.trim()) ? "ok" : "degraded",
     service: "milo",
-    release: "milo-native-richmenu-2026-09-23",
+    release: "milo-google-sync-2026-09-24",
     intentRoutingMode: "systemone-first+deterministic-fallback",
     systemOneConfigured: systemOneConfigured(),
     systemOneProviderOrder: systemOneProviderOrder(),
@@ -9370,6 +9813,10 @@ var healthHandler = async (req, res) => {
     voiceTranscriptionModel: voice.mode.startsWith("google-gemini") ? googleGeminiModel("audio") : null,
     voiceLocalBundled: voice.local?.bundled ?? false,
     voiceLocalModel: voice.local?.model ?? null,
+    googleCalendar: {
+      oauthConfigured: googleCalendar.configured,
+      redirectUri: googleCalendar.redirectUri
+    },
     storage: {
       requestedProvider: storage.requested,
       activeProvider: storage.activeProvider,
@@ -9384,10 +9831,13 @@ var healthHandler = async (req, res) => {
       undoSupported: true,
       webhookSignatureVerification: true,
       calendarSupported: true,
+      googleCalendarOAuthSupported: true,
+      googleCalendarOAuthConfigured: googleCalendar.configured,
       durableVaultStorageConfigured: storage.configured,
       databaseVaultStorageSupported: true,
       storageProviderChoiceSupported: true,
       googleDriveStorageSupported: true,
+      googleDriveSharedDriveSupported: true,
       s3CompatibleStorageSupported: true,
       groupSharedVaultSearch: true
     },

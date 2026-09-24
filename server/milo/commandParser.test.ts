@@ -85,6 +85,11 @@ describe("Milo command parser", () => {
     expect(parseMiloCommand("ผู้ช่วยกลุ่ม", now)).toEqual({ type: "groupGuide" });
     expect(parseMiloCommand("สถานะคลัง", now)).toEqual({ type: "vaultStatus" });
   });
+  it("recognizes Google Calendar connection commands", () => {
+    expect(parseMiloCommand("เชื่อม Google Calendar", now)).toEqual({ type: "calendarConnect" });
+    expect(parseMiloCommand("สถานะ Google Calendar", now)).toEqual({ type: "calendarStatus" });
+    expect(parseMiloCommand("ยกเลิกการเชื่อม Google Calendar", now)).toEqual({ type: "calendarDisconnect" });
+  });
   it("recognizes document packet and issue review commands", () => {
     expect(parseMiloCommand("สรุปเอกสารเดือนนี้", now)).toEqual({ type: "documentPacket" });
     expect(parseMiloCommand("เอกสารเดือนนี้ครบไหม", now)).toEqual({ type: "documentPacket" });

@@ -84,6 +84,9 @@ export function intentForCommand(command: MiloCommand): JevMiloIntent {
     case "calendarCreate":
     case "calendarList":
     case "calendarCancel":
+    case "calendarConnect":
+    case "calendarDisconnect":
+    case "calendarStatus":
       return "calendar";
     case "vault":
     case "vaultStatus":

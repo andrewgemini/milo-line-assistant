@@ -116,7 +116,6 @@ async function googleDriveAccessToken() {
   const assertion = await new SignJWT({ scope: "https://www.googleapis.com/auth/drive.file" })
     .setProtectedHeader({ alg: "RS256", typ: "JWT" })
     .setIssuer(email)
-    .setSubject(email)
     .setAudience("https://oauth2.googleapis.com/token")
     .setIssuedAt(now)
     .setExpirationTime(now + 3600)
@@ -149,7 +148,7 @@ async function googleDrivePut(relKey: string, data: Buffer | Uint8Array | string
     raw,
     Buffer.from(`\r\n--${boundary}--`),
   ]);
-  const response = await fetch("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id", {
+  const response = await fetch("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true&fields=id", {
     method: "POST",
     headers: { Authorization: `Bearer ${token}`, "Content-Type": `multipart/related; boundary=${boundary}` },
     body: multipart,
@@ -211,7 +210,7 @@ export async function storageGetGoogleDriveResponse(relKey: string) {
   if (provider !== "google-drive") return undefined;
   if (!googleDriveConfigured()) throw new Error("Google Drive storage is not configured");
   const token = await googleDriveAccessToken();
-  return fetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(objectKey)}?alt=media`, { headers: { Authorization: `Bearer ${token}` } });
+  return fetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(objectKey)}?alt=media&supportsAllDrives=true`, { headers: { Authorization: `Bearer ${token}` } });
 }
 
 export async function storageGet(relKey: string): Promise<{ key: string; url: string }> {

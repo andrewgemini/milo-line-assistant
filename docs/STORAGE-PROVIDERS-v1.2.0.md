@@ -44,10 +44,12 @@ Recommended setup:
 
 1. Create a Google Cloud service account.
 2. Enable the Google Drive API.
-3. Create a dedicated folder such as `Milo Vault`.
-4. Share that folder with the service-account email as Editor.
-5. Add the credentials to Production environment variables.
+3. In Google Workspace, create or select a **Shared Drive** and add the service-account email as Content manager.
+4. Create a dedicated folder such as `Milo Vault` inside that Shared Drive and use its folder ID.
+5. Add the credentials to Render Production environment variables.
 6. Redeploy and verify `/api/health` reports `activeProvider: "google-drive"`.
+
+A service account cannot own files in a regular user's My Drive. Use a Google Workspace Shared Drive for service-account storage (Milo sends `supportsAllDrives=true` for uploads and downloads). If Shared Drives are unavailable, keep `MILO_STORAGE_PROVIDER=database` or implement user OAuth instead.
 
 ### 3. S3-compatible storage
 
@@ -116,6 +118,6 @@ New storage keys contain a provider prefix (`db:`, `forge:`, `s3:`, `gdrive:`). 
 ## Security notes
 
 - Never commit database URLs, service-account private keys, or S3 secrets to Git.
-- Keep credentials in Vercel/production environment variables.
-- Use a dedicated Google Drive folder and service account when enabling Google Drive.
+- Keep credentials in Render/production environment variables.
+- Use a dedicated folder inside a Google Workspace Shared Drive when enabling service-account Google Drive storage.
 - Milo's health endpoint exposes provider names only, not secrets.

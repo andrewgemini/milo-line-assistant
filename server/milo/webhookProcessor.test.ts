@@ -67,6 +67,13 @@ vi.mock("../storage", () => ({ storageGetSignedUrl: vi.fn(), storagePut: vi.fn()
 vi.mock("./imageAnalysis", () => ({ analyzeImage: vi.fn() }));
 vi.mock("./pdfAnalysis", () => ({ analyzePdfBuffer: vi.fn() }));
 vi.mock("./financeExport", () => ({ buildFinanceExportUrl: vi.fn(() => "https://example.com/export") }));
+vi.mock("./googleCalendar", () => ({
+  buildGoogleCalendarConnectUrl: vi.fn(() => "https://example.com/connect-calendar"),
+  disconnectGoogleCalendar: vi.fn(async () => true),
+  googleCalendarConnectionStatus: vi.fn(async () => ({ configured: true, connected: true })),
+  syncGoogleCalendarEventCreate: vi.fn(async () => ({ synced: true })),
+  syncGoogleCalendarEventDelete: vi.fn(async () => ({ synced: true })),
+}));
 vi.mock("../_core/voiceTranscription", () => ({ transcribeAudio: vi.fn() }));
 vi.mock("./financialAssistant", () => ({ generateFinancialInsight: vi.fn(), suggestExpenseCategory: vi.fn() }));
 vi.mock("./line", () => ({
@@ -479,7 +486,7 @@ describe("LINE webhook processor", () => {
     expect(replyCalendarList).toHaveBeenCalledWith("token", expect.arrayContaining([expect.objectContaining({ id: 88, title: "ประชุมทีม" })]));
   });
 
-  it("creates a Milo calendar event from private LINE chat and returns add-to-calendar links", async () => {
+  it("creates a Milo calendar event from private LINE chat and confirms automatic Google sync", async () => {
     vi.mocked(db.registerWebhookEvent).mockResolvedValue(true);
     vi.mocked(getProfile).mockResolvedValue({ displayName: "ผู้ส่ง" });
     vi.mocked(sourceIdentity).mockReturnValue({ lineChatId: "U1", lineUserId: "U1", scope: "user" });
@@ -488,8 +495,7 @@ describe("LINE webhook processor", () => {
     await processEvent({ type: "message", webhookEventId: "evt-calendar-create", timestamp: new Date("2026-09-14T02:00:00.000Z").getTime(), replyToken: "token", source: { type: "user", userId: "U1" }, message: { id: "cal-1", type: "text", text: "ลงปฏิทิน ประชุมทีมพรุ่งนี้ 10:30" } }, "{}");
     expect(db.createCalendarEvent).toHaveBeenCalledWith(expect.objectContaining({ lineChatId: "U1", createdByLineUserId: "U1", title: "ประชุมทีม", sourceMessageId: "cal-1" }));
     expect(replyText).toHaveBeenCalledWith("token", expect.stringContaining("#88"));
-    expect(replyText).toHaveBeenCalledWith("token", expect.stringContaining("Google Calendar:"));
-    expect(replyText).toHaveBeenCalledWith("token", expect.stringContaining("Apple/Outlook (.ics):"));
+    expect(replyText).toHaveBeenCalledWith("token", expect.stringContaining("ซิงก์เข้า Google Calendar แล้ว"));
   });
 
   it("searches a shared group vault within the current LINE group", async () => {

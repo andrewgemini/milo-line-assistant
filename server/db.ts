@@ -11,6 +11,8 @@ import {
   automationSettings,
   financeDigestDeliveries,
   financeOpeningBalances,
+  googleCalendarConnections,
+  googleCalendarEventLinks,
   imageExtractions,
   lineAccountLinks,
   lineChats,
@@ -493,6 +495,113 @@ export async function listCalendarEventsForRange(lineUserId: string, lineChatId:
     lte(calendarEvents.startsAt, end),
     gte(calendarEvents.endsAt, start),
   )).orderBy(calendarEvents.startsAt).limit(50);
+}
+
+let googleCalendarSchemaReady: Promise<void> | undefined;
+
+export async function ensureGoogleCalendarSchema() {
+  if (!googleCalendarSchemaReady) {
+    googleCalendarSchemaReady = (async () => {
+      const db = await requireDb();
+      await db.execute(sql.raw(`
+        CREATE TABLE IF NOT EXISTS google_calendar_connections (
+          id INT NOT NULL AUTO_INCREMENT,
+          lineUserId VARCHAR(128) NOT NULL,
+          accessTokenEncrypted TEXT NULL,
+          refreshTokenEncrypted TEXT NOT NULL,
+          tokenExpiresAt TIMESTAMP NULL,
+          scope TEXT NULL,
+          calendarId VARCHAR(255) NOT NULL DEFAULT 'primary',
+          status ENUM('connected','disconnected','error') NOT NULL DEFAULT 'connected',
+          lastError TEXT NULL,
+          createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          updatedAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+          PRIMARY KEY (id),
+          UNIQUE KEY google_calendar_connections_user_unique (lineUserId),
+          INDEX google_calendar_connections_status_idx (status, updatedAt)
+        )
+      `));
+      await db.execute(sql.raw(`
+        CREATE TABLE IF NOT EXISTS google_calendar_event_links (
+          id INT NOT NULL AUTO_INCREMENT,
+          calendarEventId INT NOT NULL,
+          lineUserId VARCHAR(128) NOT NULL,
+          googleEventId VARCHAR(255) NOT NULL,
+          googleCalendarId VARCHAR(255) NOT NULL DEFAULT 'primary',
+          status ENUM('active','deleted','error') NOT NULL DEFAULT 'active',
+          lastError TEXT NULL,
+          syncedAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          createdAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          updatedAt TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+          PRIMARY KEY (id),
+          UNIQUE KEY google_calendar_event_links_event_unique (calendarEventId),
+          INDEX google_calendar_event_links_user_idx (lineUserId, status, updatedAt)
+        )
+      `));
+    })().catch(error => {
+      googleCalendarSchemaReady = undefined;
+      throw error;
+    });
+  }
+  return googleCalendarSchemaReady;
+}
+
+export async function getGoogleCalendarConnection(lineUserId: string) {
+  await ensureGoogleCalendarSchema();
+  const db = await requireDb();
+  return (await db.select().from(googleCalendarConnections).where(eq(googleCalendarConnections.lineUserId, lineUserId)).limit(1))[0];
+}
+
+export async function upsertGoogleCalendarConnection(input: {
+  lineUserId: string;
+  accessTokenEncrypted: string;
+  refreshTokenEncrypted: string;
+  tokenExpiresAt: Date;
+  scope: string;
+  calendarId: string;
+}) {
+  await ensureGoogleCalendarSchema();
+  const db = await requireDb();
+  await db.insert(googleCalendarConnections).values({ ...input, status: "connected", lastError: null }).onDuplicateKeyUpdate({
+    set: {
+      accessTokenEncrypted: input.accessTokenEncrypted,
+      refreshTokenEncrypted: input.refreshTokenEncrypted,
+      tokenExpiresAt: input.tokenExpiresAt,
+      scope: input.scope,
+      calendarId: input.calendarId,
+      status: "connected",
+      lastError: null,
+    },
+  });
+}
+
+export async function disconnectGoogleCalendar(lineUserId: string) {
+  await ensureGoogleCalendarSchema();
+  const db = await requireDb();
+  const current = (await db.select({ id: googleCalendarConnections.id }).from(googleCalendarConnections).where(eq(googleCalendarConnections.lineUserId, lineUserId)).limit(1))[0];
+  if (!current) return false;
+  await db.update(googleCalendarConnections).set({ status: "disconnected", accessTokenEncrypted: null, refreshTokenEncrypted: "" }).where(eq(googleCalendarConnections.lineUserId, lineUserId));
+  return true;
+}
+
+export async function getGoogleCalendarEventLink(calendarEventId: number, lineUserId: string) {
+  await ensureGoogleCalendarSchema();
+  const db = await requireDb();
+  return (await db.select().from(googleCalendarEventLinks).where(and(eq(googleCalendarEventLinks.calendarEventId, calendarEventId), eq(googleCalendarEventLinks.lineUserId, lineUserId))).limit(1))[0];
+}
+
+export async function upsertGoogleCalendarEventLink(input: { calendarEventId: number; lineUserId: string; googleEventId: string; googleCalendarId: string }) {
+  await ensureGoogleCalendarSchema();
+  const db = await requireDb();
+  await db.insert(googleCalendarEventLinks).values({ ...input, status: "active", lastError: null, syncedAt: new Date() }).onDuplicateKeyUpdate({
+    set: { lineUserId: input.lineUserId, googleEventId: input.googleEventId, googleCalendarId: input.googleCalendarId, status: "active", lastError: null, syncedAt: new Date() },
+  });
+}
+
+export async function markGoogleCalendarEventLinkDeleted(calendarEventId: number, lineUserId: string) {
+  await ensureGoogleCalendarSchema();
+  const db = await requireDb();
+  await db.update(googleCalendarEventLinks).set({ status: "deleted", lastError: null }).where(and(eq(googleCalendarEventLinks.calendarEventId, calendarEventId), eq(googleCalendarEventLinks.lineUserId, lineUserId)));
 }
 
 export async function createCaptureDraft(input: {

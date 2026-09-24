@@ -14,6 +14,9 @@ export type MiloCommand =
   | { type: "calendarCreate"; data: CalendarDraft }
   | { type: "calendarList" }
   | { type: "calendarCancel"; id: number }
+  | { type: "calendarConnect" }
+  | { type: "calendarDisconnect" }
+  | { type: "calendarStatus" }
   | { type: "groupGuide" }
   | { type: "vaultStatus" }
   | { type: "documentPacket" }
@@ -166,6 +169,9 @@ export function parseMiloCommand(text: string, now = new Date()): MiloCommand {
   const todoComplete = value.match(/^(?:เสร็จงาน|ปิดงาน)\s*#?(\d+)$/i) ?? value.match(/^ทำงาน\s*#?(\d+)\s*เสร็จ$/i);
   if (todoComplete) return { type: "todoComplete", id: Number(todoComplete[1]) };
   if (/^(?:ดูงาน|รายการงาน|งานทั้งหมด|todo\s*list)$/i.test(value)) return { type: "todoList" };
+  if (/^(?:เชื่อม|เชื่อมต่อ|sync|ซิงก์)\s*(?:Google\s*)?(?:Calendar|ปฏิทิน)$/i.test(value)) return { type: "calendarConnect" };
+  if (/^(?:ยกเลิกการเชื่อม|ตัดการเชื่อม|disconnect)\s*(?:Google\s*)?(?:Calendar|ปฏิทิน)$/i.test(value)) return { type: "calendarDisconnect" };
+  if (/^(?:สถานะ|ตรวจสถานะ)\s*(?:Google\s*)?(?:Calendar|ปฏิทิน)$/i.test(value)) return { type: "calendarStatus" };
   const calendar = parseCalendarIntent(value, now);
   if (calendar?.type === "create") return { type: "calendarCreate", data: calendar.data };
   if (calendar?.type === "list") return { type: "calendarList" };

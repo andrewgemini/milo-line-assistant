@@ -1,6 +1,7 @@
 import { waitUntil } from "@vercel/functions";
 import { artworkForCommand } from "./richMenuArtwork";
 import { buildCalendarIcsUrl, buildGoogleCalendarUrl } from "./calendar";
+import { buildGoogleCalendarConnectUrl, disconnectGoogleCalendar, googleCalendarConnectionStatus, syncGoogleCalendarEventCreate, syncGoogleCalendarEventDelete } from "./googleCalendar";
 import { replyRichMenu } from "./line";
 import express, { type Express, type Request, type Response } from "express";
 import { sdk } from "../_core/sdk";
@@ -518,11 +519,31 @@ async function handleText(event: LineEvent, lineChatId: string, lineUserId: stri
   } else if (command.type === "todoComplete") {
     const completed = await db.completeTodoForChat(command.id, lineUserId, lineChatId, scope);
     message = completed ? `ทำงาน #${command.id} เสร็จแล้ว ✅` : `ไม่พบงาน #${command.id} ที่ปิดได้ในแชทนี้`;
+  } else if (command.type === "calendarConnect") {
+    const connectUrl = buildGoogleCalendarConnectUrl(lineUserId);
+    message = connectUrl
+      ? `📅 เชื่อม Google Calendar กับ Milo ได้ที่ลิงก์นี้ (ลิงก์มีอายุ 10 นาที)\n${connectUrl}\n\nเมื่อเชื่อมแล้ว นัดใหม่จะซิงก์อัตโนมัติครับ`
+      : "ยังเชื่อม Google Calendar ไม่ได้ เพราะค่าระบบ OAuth ยังไม่ครบ กรุณาให้ผู้ดูแลตรวจ Client ID, Client Secret และคีย์เข้ารหัสโทเคนครับ";
+  } else if (command.type === "calendarStatus") {
+    const status = await googleCalendarConnectionStatus(lineUserId);
+    message = !status.configured
+      ? "Google Calendar OAuth ยังตั้งค่าไม่ครบครับ"
+      : status.connected
+        ? "Google Calendar เชื่อมอยู่ ✅ นัดใหม่จาก Milo จะซิงก์อัตโนมัติครับ"
+        : "ยังไม่ได้เชื่อม Google Calendar ครับ พิมพ์ “เชื่อม Google Calendar” เพื่อเริ่มเชื่อม";
+  } else if (command.type === "calendarDisconnect") {
+    const disconnected = await disconnectGoogleCalendar(lineUserId);
+    message = disconnected ? "ยกเลิกการเชื่อม Google Calendar แล้วครับ นัดเดิมใน Google จะไม่ถูกลบ" : "ยังไม่พบ Google Calendar ที่เชื่อมกับบัญชีนี้ครับ";
   } else if (command.type === "calendarCreate") {
     const id = await db.createCalendarEvent({ lineChatId, createdByLineUserId: lineUserId, ...command.data, sourceMessageId: event.message?.id });
     const googleUrl = buildGoogleCalendarUrl({ ...command.data, detail: command.data.detail ?? null });
     const icsUrl = buildCalendarIcsUrl(id);
-    message = `📅 เพิ่มนัด #${id} ในปฏิทิน Milo แล้ว\n${command.data.title}\n${formatDate(command.data.startsAt)} – ${formatDate(command.data.endsAt)}\n\nGoogle Calendar: ${googleUrl}\nApple/Outlook (.ics): ${icsUrl}`;
+    const sync = await syncGoogleCalendarEventCreate(lineUserId, { id, ...command.data, detail: command.data.detail ?? null });
+    const connectUrl = sync.reason === "not_connected" ? buildGoogleCalendarConnectUrl(lineUserId) : undefined;
+    const syncMessage = sync.synced
+      ? "ซิงก์เข้า Google Calendar แล้ว ✅"
+      : `Google Calendar: ${googleUrl}\nApple/Outlook (.ics): ${icsUrl}${connectUrl ? `\n\nเชื่อมอัตโนมัติ: ${connectUrl}` : ""}`;
+    message = `📅 เพิ่มนัด #${id} ในปฏิทิน Milo แล้ว\n${command.data.title}\n${formatDate(command.data.startsAt)} – ${formatDate(command.data.endsAt)}\n\n${syncMessage}`;
   } else if (command.type === "calendarList") {
     const items = await db.listCalendarEvents(lineUserId, lineChatId, new Date(), 20);
     if (event.replyToken) {
@@ -532,7 +553,8 @@ async function handleText(event: LineEvent, lineChatId: string, lineUserId: stri
     message = items.length ? "📅 มีนัดหมาย " + items.length + " รายการ" : "📅 ยังไม่มีนัดหมายที่กำลังจะถึงในแชทนี้ครับ";
   } else if (command.type === "calendarCancel") {
     const cancelled = await db.cancelCalendarEvent(command.id, lineUserId, lineChatId);
-    message = cancelled ? `ยกเลิกนัด #${command.id} แล้วครับ` : `ไม่พบนัด #${command.id} ที่คุณยกเลิกได้ในแชทนี้`;
+    const sync = cancelled ? await syncGoogleCalendarEventDelete(lineUserId, command.id) : undefined;
+    message = cancelled ? `ยกเลิกนัด #${command.id} แล้วครับ${sync?.synced ? " และลบออกจาก Google Calendar แล้ว ✅" : ""}` : `ไม่พบนัด #${command.id} ที่คุณยกเลิกได้ในแชทนี้`;
   } else if (command.type === "groupGuide") {
     message = scope === "user"
       ? "👥 วิธีใช้ Milo ในกลุ่ม LINE\n1) เชิญ Milo เข้ากลุ่ม\n2) เรียกด้วย @ไมโล ก่อนคำสั่งข้อความ\n3) ใช้เตือน เก็บ/ค้นหาไฟล์ ปฏิทิน To-do และแท็กสมาชิกได้\nตัวอย่าง: @ไมโล เตือนส่งรายงานพรุ่งนี้ 9:00 หรือ @ไมโล แจ้งส่งงานด้วยถึง @สมชาย"

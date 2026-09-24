@@ -129,6 +129,37 @@ export const calendarEvents = mysqlTable("calendar_events", {
   index("calendar_events_source_idx").on(table.sourceMessageId),
 ]);
 
+export const googleCalendarConnections = mysqlTable("google_calendar_connections", {
+  id: int("id").autoincrement().primaryKey(),
+  lineUserId: varchar("lineUserId", { length: 128 }).notNull().unique(),
+  accessTokenEncrypted: text("accessTokenEncrypted"),
+  refreshTokenEncrypted: text("refreshTokenEncrypted").notNull(),
+  tokenExpiresAt: timestamp("tokenExpiresAt"),
+  scope: text("scope"),
+  calendarId: varchar("calendarId", { length: 255 }).default("primary").notNull(),
+  status: mysqlEnum("status", ["connected", "disconnected", "error"]).default("connected").notNull(),
+  lastError: text("lastError"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, table => [
+  index("google_calendar_connections_status_idx").on(table.status, table.updatedAt),
+]);
+
+export const googleCalendarEventLinks = mysqlTable("google_calendar_event_links", {
+  id: int("id").autoincrement().primaryKey(),
+  calendarEventId: int("calendarEventId").notNull().unique(),
+  lineUserId: varchar("lineUserId", { length: 128 }).notNull(),
+  googleEventId: varchar("googleEventId", { length: 255 }).notNull(),
+  googleCalendarId: varchar("googleCalendarId", { length: 255 }).default("primary").notNull(),
+  status: mysqlEnum("status", ["active", "deleted", "error"]).default("active").notNull(),
+  lastError: text("lastError"),
+  syncedAt: timestamp("syncedAt").defaultNow().notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+}, table => [
+  index("google_calendar_event_links_user_idx").on(table.lineUserId, table.status, table.updatedAt),
+]);
+
 export const captureDrafts = mysqlTable("capture_drafts", {
   id: int("id").autoincrement().primaryKey(),
   lineChatId: varchar("lineChatId", { length: 128 }).notNull(),

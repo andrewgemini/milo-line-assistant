@@ -10,6 +10,7 @@ import { registerFinanceReportImageRoute } from "./milo/financeReportImage";
 import { registerRichMenuDataImageRoute } from "./milo/richMenuDataImage";
 import { registerFinanceExportRoute } from "./milo/financeExport";
 import { registerCalendarExportRoute } from "./milo/calendar";
+import { googleCalendarRuntimeStatus, registerGoogleCalendarRoutes } from "./milo/googleCalendar";
 import { registerMiloStorageRoute } from "./milo/storageRoute";
 import { storageRuntimeStatus } from "./storage";
 import { imageAnalysisRuntimeStatus } from "./milo/imageAnalysis";
@@ -41,6 +42,7 @@ registerFinanceReportImageRoute(app);
 registerRichMenuDataImageRoute(app);
 registerFinanceExportRoute(app);
 registerCalendarExportRoute(app);
+registerGoogleCalendarRoutes(app);
 registerMiloStorageRoute(app);
 registerLineWebhook(app);
 
@@ -57,10 +59,11 @@ const healthHandler = async (req: express.Request, res: express.Response) => {
   const mode = runtime.mode;
   const voice = voiceTranscriptionRuntimeStatus(gatewayToken);
   const storage = storageRuntimeStatus();
+  const googleCalendar = googleCalendarRuntimeStatus();
   res.status(200).json({
     status: runtime.authenticated && voice.configured && Boolean(process.env.LINE_CHANNEL_SECRET?.trim()) && Boolean(process.env.LINE_CHANNEL_ACCESS_TOKEN?.trim()) && Boolean(process.env.DATABASE_URL?.trim()) ? "ok" : "degraded",
     service: "milo",
-    release: "milo-native-richmenu-2026-09-23",
+    release: "milo-google-sync-2026-09-24",
     intentRoutingMode: "systemone-first+deterministic-fallback",
     systemOneConfigured: systemOneConfigured(),
     systemOneProviderOrder: systemOneProviderOrder(),
@@ -78,6 +81,10 @@ const healthHandler = async (req: express.Request, res: express.Response) => {
     voiceTranscriptionModel: voice.mode.startsWith("google-gemini") ? googleGeminiModel("audio") : null,
     voiceLocalBundled: voice.local?.bundled ?? false,
     voiceLocalModel: voice.local?.model ?? null,
+    googleCalendar: {
+      oauthConfigured: googleCalendar.configured,
+      redirectUri: googleCalendar.redirectUri,
+    },
     storage: {
       requestedProvider: storage.requested,
       activeProvider: storage.activeProvider,
@@ -92,10 +99,13 @@ const healthHandler = async (req: express.Request, res: express.Response) => {
       undoSupported: true,
       webhookSignatureVerification: true,
       calendarSupported: true,
+      googleCalendarOAuthSupported: true,
+      googleCalendarOAuthConfigured: googleCalendar.configured,
       durableVaultStorageConfigured: storage.configured,
       databaseVaultStorageSupported: true,
       storageProviderChoiceSupported: true,
       googleDriveStorageSupported: true,
+      googleDriveSharedDriveSupported: true,
       s3CompatibleStorageSupported: true,
       groupSharedVaultSearch: true,
     },
