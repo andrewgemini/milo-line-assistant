@@ -4492,7 +4492,7 @@ var GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
 var GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";
 var GOOGLE_CALENDAR_API = "https://www.googleapis.com/calendar/v3";
 var CALENDAR_SCOPE = "https://www.googleapis.com/auth/calendar.events";
-var DEFAULT_PUBLIC_URL = "https://milo-line-app.onrender.com";
+var DEFAULT_PUBLIC_URL = "https://milo-line-assistant.onrender.com";
 function envValue(env, ...keys) {
   for (const key of keys) {
     const value = env[key]?.trim();

@@ -7,7 +7,7 @@ const GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
 const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";
 const GOOGLE_CALENDAR_API = "https://www.googleapis.com/calendar/v3";
 const CALENDAR_SCOPE = "https://www.googleapis.com/auth/calendar.events";
-const DEFAULT_PUBLIC_URL = "https://milo-line-app.onrender.com";
+const DEFAULT_PUBLIC_URL = "https://milo-line-assistant.onrender.com";
 
 type TokenResponse = {
   access_token?: string;
