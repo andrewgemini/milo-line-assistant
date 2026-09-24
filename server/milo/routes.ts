@@ -27,7 +27,7 @@ import { deserializeCapturePlan, formatCapturePreview, serializeCapturePlan } fr
 import { bangkokDayRange, formatTodayOverview } from "./todayOverview";
 import { formatEveningSummary, formatMorningBrief, shouldDeliverDailyDigest } from "./personalDigest";
 import { STANDARD_EXPENSE_CATEGORIES, STANDARD_INCOME_CATEGORIES } from "./financeCategories";
-import { financeReportCardText, getMessageContent, getProfile, lineCredentials, postSaveSummaryText, pushText, pushTextWithQuickReplies, replyCalendarList, replyFinanceReportCard, replyFinanceReportCardFallback, replyGreetingHome, replyMention, replyMiloOnboarding, replyMiloSettings, replyPostSaveSummary, replyReminderList, replyText, replyThemedTextCard, replyTransactionList, replyPostSaveSummaryFallback, replyTextWithQuickReplies, replyVoiceCategoryChoices, replyVoiceProposal, replyVoiceProposalFallback, sourceIdentity, type LineEvent, type VoiceTransactionProposal, verifyLineSignature } from "./line";
+import { financeReportCardText, getMessageContent, getProfile, lineCredentials, postSaveSummaryText, pushText, pushTextWithQuickReplies, replyCalendarList, replyFinanceReportCard, replyFinanceReportCardFallback, replyGreetingHome, replyMention, replyMiloOnboarding, replyMiloSettings, replyPostSaveSummary, replyReminderList, replyText, replyThemedTextCard, replyTransactionList, replyTextWithQuickReplies, replyVoiceCategoryChoices, replyVoiceProposal, replyVoiceProposalFallback, sourceIdentity, type LineEvent, type VoiceTransactionProposal, verifyLineSignature } from "./line";
 
 function helpText() {
   return "Milo ช่วยคุณจบงานใน LINE แชทเดียวครับ\n🔔 เตือน: เตือนประชุมพรุ่งนี้ 10:00 / เตือนดื่มน้ำทุก 30 นาที / รายการเตือน\n🎯 ตามงาน: ช่วยตามงาน Proposal ลูกค้า B / ช่วยตามงานส่งใบเสนอราคา อีก 24 ชั่วโมง\n☀️ วันนี้: วันนี้มีอะไร / สรุปเช้า / สรุปเย็น / บิลรอจ่าย / จ่ายบิล #เลขรายการ\n🗂️ เก็บ: เก็บ https://example.com #งาน / ค้นหา ใบเสนอราคา / สถานะคลัง\n📦 เอกสาร: สรุปเอกสารเดือนนี้ / ไฟล์ที่ต้องตรวจ\n🧠 จดหลายอย่าง: พรุ่งนี้บ่ายสองประชุมลูกค้า ค่าแท็กซี่ 300 ช่วยเตือนด้วย\n📅 ปฏิทิน: ลงปฏิทิน ประชุมทีมพรุ่งนี้ 10:00 / ดูปฏิทิน\n👥 กลุ่ม LINE: @ไมโล ผู้ช่วยกลุ่ม / @ไมโล แจ้งส่งงานด้วยถึง @สมชาย\n✅ งาน: งาน ส่งสรุปรายสัปดาห์ / ดูงาน / เสร็จงาน #12 / โน้ต รหัส Wi-Fi\n💰 การเงิน: กินกาแฟ 80 / เงินเดือนเข้า 35000 / ตั้งงบ อาหาร 5000 / สรุปเดือนนี้\n📷🎙️ ส่งรูปใบเสร็จหรือเสียงให้ไมโลอ่าน แล้วตรวจและยืนยันก่อนบันทึก\n\nพิมพ์ “ช่วย” ได้ทุกเมื่อครับ";
@@ -847,7 +847,27 @@ async function handleText(event: LineEvent, lineChatId: string, lineUserId: stri
     message = results.length ? "📋 มีรายการล่าสุด " + results.length + " รายการ" : "📋 ยังไม่มีรายการธุรกรรมครับ";
   } else if (command.type === "greeting") {
     message = "สวัสดีครับ 👋 ผมไมโล ผู้ช่วยการเงินของคุณ\nพร้อมช่วยจดรายรับรายจ่าย อ่านสลิป/ใบเสร็จ ฟังข้อความเสียง ดูสรุป และคุมงบให้ครับ";
-    if (event.replyToken) { await replyGreetingHome(event.replyToken); return; }
+    if (event.replyToken) {
+      let overview: { income: number; expense: number; balance: number; dateLabel?: string } | undefined;
+      if (scope === "user") {
+        try {
+          const access = await resolveFinanceScope(lineUserId, lineChatId, scope);
+          if (access) {
+            const report = await db.financeReport(lineUserId, "day", new Date(), access.financeAccountId);
+            overview = {
+              income: report.income,
+              expense: report.expense,
+              balance: report.balance,
+              dateLabel: new Intl.DateTimeFormat("th-TH-u-nu-latn", { day: "numeric", month: "short", year: "numeric", timeZone: "Asia/Bangkok" }).format(new Date()),
+            };
+          }
+        } catch (error) {
+          console.warn("[Milo Home] daily overview unavailable; rendering menu without totals", { error: error instanceof Error ? error.message : "unknown" });
+        }
+      }
+      await replyGreetingHome(event.replyToken, lineCredentials(), overview);
+      return;
+    }
   } else if (command.type === "help") {
     message = helpText();
   } else {

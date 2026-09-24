@@ -78,12 +78,12 @@ vi.mock("../_core/voiceTranscription", () => ({ transcribeAudio: vi.fn() }));
 vi.mock("./financialAssistant", () => ({ generateFinancialInsight: vi.fn(), suggestExpenseCategory: vi.fn() }));
 vi.mock("./line", () => ({
   replyThemedTextCard: vi.fn(), replyTransactionList: vi.fn(), replyReminderList: vi.fn(), replyCalendarList: vi.fn(), replyGreetingHome: vi.fn(), replyMiloOnboarding: vi.fn(), replyMiloSettings: vi.fn(), getMessageContent: vi.fn(), getProfile: vi.fn(), lineCredentials: vi.fn(() => ({ channelSecret: "test-secret", channelAccessToken: "test-token" })), pushText: vi.fn(), pushTextWithQuickReplies: vi.fn(), replyMention: vi.fn(), replyText: vi.fn(), replyTextWithQuickReplies: vi.fn(),
-  replyVoiceProposal: vi.fn(), replyPostSaveSummary: vi.fn(), replyPostSaveSummaryImage: vi.fn(), replyPostSaveSummaryFallback: vi.fn(), replyVoiceCategoryChoices: vi.fn(), postSaveSummaryText: vi.fn((summary: { amount: number }) => `รายจ่าย ${summary.amount} บาท`), replyFinanceReportCard: vi.fn(), replyFinanceReportCardFallback: vi.fn(), financeReportCardText: vi.fn(() => "สรุปการเงินวันนี้"),
+  replyVoiceProposal: vi.fn(), replyPostSaveSummary: vi.fn(), replyVoiceCategoryChoices: vi.fn(), postSaveSummaryText: vi.fn((summary: { amount: number }) => `รายจ่าย ${summary.amount} บาท`), replyFinanceReportCard: vi.fn(), replyFinanceReportCardFallback: vi.fn(), financeReportCardText: vi.fn(() => "สรุปการเงินวันนี้"),
   sourceIdentity: vi.fn(() => ({ lineChatId: "G1", lineUserId: "U1", scope: "group" })), verifyLineSignature: vi.fn(),
 }));
 
 import * as db from "../db";
-import { replyThemedTextCard, replyReminderList, replyTransactionList, replyCalendarList, replyGreetingHome, replyMiloSettings, getMessageContent, getProfile, pushTextWithQuickReplies, replyFinanceReportCard, replyMention, replyPostSaveSummary, replyPostSaveSummaryImage, replyPostSaveSummaryFallback, replyText, replyTextWithQuickReplies, replyVoiceCategoryChoices, replyVoiceProposal, sourceIdentity, verifyLineSignature } from "./line";
+import { replyThemedTextCard, replyReminderList, replyTransactionList, replyCalendarList, replyGreetingHome, replyMiloSettings, getMessageContent, getProfile, pushTextWithQuickReplies, replyFinanceReportCard, replyMention, replyPostSaveSummary, replyText, replyTextWithQuickReplies, replyVoiceCategoryChoices, replyVoiceProposal, sourceIdentity, verifyLineSignature } from "./line";
 import { storageGetSignedUrl, storagePut } from "../storage";
 import { analyzeImage } from "./imageAnalysis";
 import { analyzePdfBuffer } from "./pdfAnalysis";
@@ -195,7 +195,6 @@ describe("LINE webhook processor", () => {
     }));
     expect(db.markPendingBillPaid).toHaveBeenCalledWith({ id: 42, transactionId: 700, lineUserId: "U1", lineChatId: "U1" });
     expect(replyPostSaveSummary).toHaveBeenCalledTimes(1);
-    expect(replyPostSaveSummaryImage).not.toHaveBeenCalled();
     expect(replyText).not.toHaveBeenCalled();
   });
 
@@ -426,7 +425,6 @@ describe("LINE webhook processor", () => {
     expect(db.addExpenseCategory).toHaveBeenCalledWith("U1", "โบนัส", "income", 7);
     expect(db.listTransactionCategories).toHaveBeenCalledWith("U1", 7);
     expect(replyPostSaveSummary).toHaveBeenCalledWith("token", expect.objectContaining({ transactionType: "expense", amount: 65, category: "อาหาร", dailyExpense: 65 }));
-    expect(replyPostSaveSummaryImage).not.toHaveBeenCalled();
 
     expect(replyThemedTextCard).toHaveBeenCalledWith("token", expect.stringContaining("Milo ช่วยคุณจบงานใน LINE แชทเดียวครับ"), "settings-help");
     expect(replyReminderList).toHaveBeenCalled();
@@ -550,7 +548,6 @@ describe("LINE webhook processor", () => {
     expect(db.linkTransactionAttachment).toHaveBeenCalledWith({ transactionId: 155, vaultItemId: 9, lineUserId: "U1", label: "ใบเสร็จต้นฉบับ" });
     expect(db.setImageExtractionStatus).toHaveBeenCalledWith(3, "accepted");
     expect(replyPostSaveSummary).toHaveBeenCalledWith("token", expect.objectContaining({ transactionType: "expense", amount: 125, category: "อาหาร", dailyExpense: 125 }));
-    expect(replyPostSaveSummaryImage).not.toHaveBeenCalled();
   });
 
   it("edits a receipt proposal in chat without creating a transaction before confirmation", async () => {
@@ -602,7 +599,6 @@ describe("LINE webhook processor", () => {
     vi.mocked(db.createTransaction).mockResolvedValue(166 as never);
     vi.mocked(db.linkTransactionAttachment).mockResolvedValue(true);
     vi.mocked(db.financeReport).mockResolvedValue({ period: "day", income: 0, expense: 30, balance: -30, categories: { อาหาร: 30 } } as never);
-    vi.mocked(replyPostSaveSummaryImage).mockResolvedValue(new Response());
 
     await processEvent({ type: "message", webhookEventId: "evt-time-only-confirm", timestamp: new Date("2026-09-14T06:39:00.000Z").getTime(), replyToken: "token", source: { type: "user", userId: "U1" }, message: { id: "txt-time-only", type: "text", text: "ยืนยันค่าใช้จ่าย" } }, "{}");
 
@@ -784,10 +780,8 @@ describe("LINE webhook processor", () => {
     vi.mocked(getProfile).mockResolvedValue({ displayName: "ผู้ส่ง" });
     vi.mocked(sourceIdentity).mockReturnValue({ lineChatId: "U1", lineUserId: "U1", scope: "user" });
     vi.mocked(db.financeReport).mockResolvedValue({ period: "day", income: 0, expense: 100, balance: -100, categories: { อาหาร: 100 } } as never);
-    vi.mocked(replyPostSaveSummaryImage).mockRejectedValue(new Error("invalid image reply"));
     vi.mocked(replyPostSaveSummary).mockRejectedValue(new Error("invalid flex reply"));
     const line = await import("./line");
-    vi.mocked(line.replyPostSaveSummaryFallback).mockRejectedValue(new Error("invalid reply token"));
     vi.mocked(line.replyPostSaveSummary).mockRejectedValue(new Error("invalid flex reply"));
     vi.mocked(line.pushText).mockResolvedValue(new Response());
 
@@ -923,7 +917,7 @@ describe("rich menu webhook regression", () => {
   it("สวัสดีไมโล greets and opens the main action shortcuts", async () => {
     vi.mocked(replyGreetingHome).mockResolvedValue(new Response());
     await processEvent(event("สวัสดีไมโล"), "{}");
-    expect(replyGreetingHome).toHaveBeenCalledWith("token");
+    expect(replyGreetingHome).toHaveBeenCalledWith("token", expect.any(Object), expect.objectContaining({ income: 0, expense: 0, balance: 0 }));
 
     expect(replyText).not.toHaveBeenCalled();
     expect(db.finishWebhookEvent).toHaveBeenCalledWith("richmenu-test", "processed");

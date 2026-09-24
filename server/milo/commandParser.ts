@@ -215,7 +215,7 @@ export function parseMiloCommand(text: string, now = new Date()): MiloCommand {
   if (/^(?:เมนูไมโล|วิธีใช้งาน|คู่มือ(?:การใช้งาน)?|คำสั่ง|ช่วย|เมนู|help|\?)$/i.test(value)) return { type: "help" };
   if (/^(?:ใบเสร็จ|สลิป|สแกนใบเสร็จ)$/i.test(value)) return { type: "recordGuide" };
   if (/^(?:บันทึกเสียง|ส่งเสียง|เสียง)$/i.test(value)) return { type: "recordGuide" };
-  if (/^(?:จดบันทึก|เริ่มจดบันทึก|บันทึกรายรับรายจ่าย|บันทึกรายรับ-รายจ่าย|จด)$/i.test(value)) return { type: "recordGuide" };
+  if (/^(?:จดบันทึก|เริ่มจดบันทึก|บันทึกรายรับ|บันทึกรายจ่าย|บันทึกรายรับรายจ่าย|บันทึกรายรับ-รายจ่าย|จด)$/i.test(value)) return { type: "recordGuide" };
   if (/^(?:หมวด\s*\/?\s*งบ|งบประมาณ|คุมงบประมาณ|ดูงบ|งบ)$/i.test(value)) return { type: "budgetOverview" };
   if (/^(?:รายการ|ประวัติ|ประวัติธุรกรรม|ประวัติรายการ|รายการธุรกรรม|รายการทั้งหมด|ดูย้อนหลัง)$/i.test(value)) return { type: "transactionList" };
   if (/^ตั้งค่า$/i.test(value)) return { type: "settingGuide" };

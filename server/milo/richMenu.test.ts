@@ -6,6 +6,8 @@ describe("Milo Rich Menu commands", () => {
     ["หน้าหลัก", "dashboardGuide"],
     ["วิเคราะห์", "aiSummary"],
     ["จดบันทึก", "recordGuide"],
+    ["บันทึกรายรับ", "recordGuide"],
+    ["บันทึกรายจ่าย", "recordGuide"],
     ["กระเป๋าเงิน", "budgetOverview"],
     ["ตั้งค่า", "settingGuide"],
     ["จดบันทึก", "recordGuide"],

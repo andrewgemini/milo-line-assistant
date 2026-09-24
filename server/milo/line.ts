@@ -1,5 +1,20 @@
 import { budgetStatusCopy } from "./budgetStatus";
-import { miloFlexThemeImageUrl, type MiloFlexThemeArtwork } from "./flexThemeArtwork";
+import type { MiloFlexThemeArtwork } from "./flexThemeArtwork";
+import {
+  MILO_COLORS,
+  miloActionTile,
+  miloBrandHeader,
+  miloBubble,
+  miloInfoRow,
+  miloPrimaryButton,
+  miloProgressRow,
+  miloSecondaryButton,
+  miloSectionTitle,
+  miloStatCard,
+  miloTab,
+  miloUriButton,
+  miloWelcomeBubble,
+} from "./flexUi";
 import crypto from "node:crypto";
 
 export type LineCredentials = { channelSecret: string; channelAccessToken: string };
@@ -33,33 +48,8 @@ async function callLine(path: string, credentials: LineCredentials, init: Reques
   return response;
 }
 
-export function miloSaveResultImageUrl(summary: PostSaveSummary) {
-  const appBaseUrl = (process.env.MILO_SAVE_RESULT_IMAGE_BASE_URL ?? "https://milo-line-assistant.onrender.com").replace(/\/+$/, "");
-  const params = new URLSearchParams({
-    transactionType: summary.transactionType,
-    item: (summary.note?.trim() || summary.category).slice(0, 300),
-    category: summary.category.slice(0, 50),
-    amount: String(summary.amount),
-    occurredAt: summary.occurredAt.toISOString(),
-    budgetSpent: String(summary.budgetSpent),
-    budgetLimit: String(summary.budgetLimit),
-    budgetPercent: summary.budgetPercent === undefined ? "" : String(summary.budgetPercent),
-    render: "glyph-v3",
-  });
-  return `${appBaseUrl}/api/milo/save-result.png?${params.toString()}`;
-}
 export async function replyText(replyToken: string, text: string, credentials = lineCredentials()) {
   return callLine("/v2/bot/message/reply", credentials, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ replyToken, messages: [{ type: "text", text: text.slice(0, 5000) }] }) });
-}
-
-function miloThemeHero(key: MiloFlexThemeArtwork, aspectRatio = "20:8") {
-  return {
-    type: "image",
-    url: miloFlexThemeImageUrl(key),
-    size: "full",
-    aspectRatio,
-    aspectMode: "cover",
-  };
 }
 
 function miloThemeQuickReplies() {
@@ -74,6 +64,144 @@ function miloThemeQuickReplies() {
   };
 }
 
+function miloMainActionRows() {
+  return [
+    {
+      type: "box", layout: "horizontal", spacing: "sm", contents: [
+        miloActionTile("บันทึกรายรับ", "บันทึกรายรับ", "mint", "+", "เพิ่มรายได้ของคุณ"),
+        miloActionTile("บันทึกรายจ่าย", "บันทึกรายจ่าย", "pink", "−", "บันทึกค่าใช้จ่ายง่าย ๆ"),
+      ],
+    },
+    {
+      type: "box", layout: "horizontal", spacing: "sm", contents: [
+        miloActionTile("สรุปวันนี้", "สรุปวันนี้", "lavender", "วัน"),
+        miloActionTile("สรุปสัปดาห์", "สรุปสัปดาห์นี้", "lavender", "7"),
+      ],
+    },
+    {
+      type: "box", layout: "horizontal", spacing: "sm", contents: [
+        miloActionTile("สรุปเดือน", "สรุปเดือนนี้", "lavender", "30"),
+        miloActionTile("วิเคราะห์", "วิเคราะห์", "blue", "%"),
+      ],
+    },
+    {
+      type: "box", layout: "horizontal", spacing: "sm", contents: [
+        miloActionTile("รายการล่าสุด", "รายการ", "blue", "≡"),
+        miloActionTile("ตั้งเตือน", "รายการเตือน", "lavender", "!"),
+      ],
+    },
+  ];
+}
+
+function miloTextPanel(text: string) {
+  return {
+    type: "box",
+    layout: "vertical",
+    spacing: "sm",
+    paddingAll: "14px",
+    cornerRadius: "xl",
+    backgroundColor: MILO_COLORS.surface,
+    contents: [{ type: "text", text: text.slice(0, 3500), size: "sm", color: MILO_COLORS.text, wrap: true }],
+  };
+}
+
+function miloThemedContents(artwork: MiloFlexThemeArtwork, text: string) {
+  if (artwork === "home") {
+    return [
+      miloBrandHeader(),
+      miloWelcomeBubble("สวัสดีครับ วันนี้ให้ Milo ช่วยจดหรือสรุปอะไรดีครับ?"),
+      miloSectionTitle("เมนูหลัก", "เลือกใช้งานได้เลย"),
+      ...miloMainActionRows(),
+    ];
+  }
+  if (artwork === "menu") {
+    return [
+      miloBrandHeader("เมนูหลัก", "เลือกเมนูที่ต้องการได้เลยครับ"),
+      ...miloMainActionRows(),
+      {
+        type: "box", layout: "horizontal", spacing: "sm", contents: [
+          miloActionTile("เก็บไฟล์", "คลังไฟล์", "blue", "F"),
+          miloActionTile("Export", "ส่งออก CSV", "blue", "↑"),
+        ],
+      },
+      miloActionTile("ตั้งค่า", "ตั้งค่า", "lavender", "S"),
+    ];
+  }
+  if (artwork === "analysis-budget") {
+    return [
+      miloBrandHeader("วิเคราะห์รายจ่าย", "งบประมาณและหมวดหมู่"),
+      {
+        type: "box", layout: "horizontal", spacing: "sm", contents: [
+          miloTab("วิเคราะห์", true, "วิเคราะห์"),
+          miloTab("งบประมาณ", false, "งบประมาณ"),
+          miloTab("หมวดหมู่", false, "หมวดหมู่"),
+        ],
+      },
+      miloTextPanel(text),
+      {
+        type: "box", layout: "horizontal", spacing: "sm", contents: [
+          miloActionTile("สรุปเดือน", "สรุปเดือนนี้", "lavender", "30"),
+          miloActionTile("รายการล่าสุด", "รายการ", "blue", "≡"),
+        ],
+      },
+    ];
+  }
+  if (artwork === "utility") {
+    return [
+      miloBrandHeader("ผู้ช่วยจัดการ", "ตั้งเตือน • เก็บไฟล์ • Export"),
+      {
+        type: "box", layout: "horizontal", spacing: "sm", contents: [
+          miloTab("ตั้งเตือน", true, "รายการเตือน"),
+          miloTab("เก็บไฟล์", false, "คลังไฟล์"),
+          miloTab("Export", false, "ส่งออก CSV"),
+        ],
+      },
+      miloTextPanel(text),
+      miloPrimaryButton("เพิ่มการตั้งเตือน", "ตั้งเตือน"),
+    ];
+  }
+  if (artwork === "settings-help") {
+    return [
+      miloBrandHeader("ตั้งค่า / วิธีใช้งาน", "จัดการ Milo ให้เหมาะกับคุณ"),
+      {
+        type: "box", layout: "horizontal", spacing: "sm", contents: [
+          miloTab("ตั้งค่า", true, "ตั้งค่า"),
+          miloTab("วิธีใช้งาน", false, "วิธีใช้งาน"),
+        ],
+      },
+      miloTextPanel(text),
+      miloActionTile("หมวดหมู่", "หมวดหมู่", "lavender", "M"),
+      miloActionTile("งบประมาณรายเดือน", "งบประมาณ", "mint", "฿"),
+      miloActionTile("การแจ้งเตือน", "รายการเตือน", "pink", "!"),
+    ];
+  }
+  if (artwork === "transactions") {
+    return [
+      miloBrandHeader("รายการล่าสุด", "ดูรายการย้อนหลังของคุณ"),
+      miloTextPanel(text),
+      miloPrimaryButton("ดูรายการทั้งหมด", "รายการ"),
+    ];
+  }
+  if (artwork === "summary-day") {
+    return [
+      miloBrandHeader("สรุปวันนี้", "ภาพรวมรายรับ รายจ่าย และคงเหลือ"),
+      miloTextPanel(text),
+      miloPrimaryButton("ดูรายการทั้งหมด", "รายการ"),
+    ];
+  }
+  if (artwork === "summary-period") {
+    return [
+      miloBrandHeader("สรุปสัปดาห์ / สรุปเดือน", "เปรียบเทียบภาพรวมการเงิน"),
+      miloTextPanel(text),
+      miloPrimaryButton("ดูรายละเอียด", "สรุปเดือนนี้"),
+    ];
+  }
+  return [
+    miloBrandHeader("บันทึกสำเร็จ", "Milo เก็บรายการนี้ไว้ให้แล้ว"),
+    miloTextPanel(text),
+  ];
+}
+
 export async function replyThemedTextCard(
   replyToken: string,
   text: string,
@@ -81,18 +209,7 @@ export async function replyThemedTextCard(
   credentials = lineCredentials(),
 ) {
   const detectedUrl = text.match(/https?:\/\/[^\s]+/)?.[0]?.replace(/[),.]+$/, "");
-  const footer = detectedUrl ? {
-    type: "box",
-    layout: "vertical",
-    paddingAll: "14px",
-    backgroundColor: "#F8F7FF",
-    contents: [{
-      type: "button",
-      style: "primary",
-      color: "#7A58C8",
-      action: { type: "uri", label: "เปิดลิงก์", uri: detectedUrl },
-    }],
-  } : undefined;
+  const footer = detectedUrl ? [miloUriButton("เปิดลิงก์", detectedUrl)] : undefined;
   return callLine("/v2/bot/message/reply", credentials, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -101,22 +218,7 @@ export async function replyThemedTextCard(
       messages: [{
         type: "flex",
         altText: text.slice(0, 400),
-        contents: {
-          type: "bubble",
-          size: "mega",
-          hero: miloThemeHero(artwork),
-          body: {
-            type: "box",
-            layout: "vertical",
-            spacing: "md",
-            paddingAll: "16px",
-            backgroundColor: "#F8F7FF",
-            contents: [
-              { type: "text", text: text.slice(0, 3500), size: "sm", color: "#3E3560", wrap: true },
-            ],
-          },
-          footer,
-        },
+        contents: miloBubble(miloThemedContents(artwork, text), footer),
         quickReply: miloThemeQuickReplies(),
       }],
     }),
@@ -125,24 +227,64 @@ export async function replyThemedTextCard(
 
 export async function replyMiloOnboarding(replyToken: string, displayName?: string, credentials = lineCredentials()) {
   const name = displayName?.trim() ? displayName.trim().slice(0, 40) : "คุณ";
-  return callLine("/v2/bot/message/reply", credentials, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ replyToken, messages: [{ type: "flex", altText: "ตั้งค่า Milo ก่อนเริ่มใช้งาน", contents: { type: "bubble", size: "mega", hero: miloThemeHero("home", "20:10"), body: { type: "box", layout: "vertical", spacing: "md", backgroundColor: "#F3FBF7", contents: [
-    { type: "text", text: "สวัสดีครับ 👋", weight: "bold", size: "xl", color: "#0D735B" },
-    { type: "text", text: "คุณ" + name + " เชื่อมต่อ Milo แล้ว", size: "sm", color: "#4B756B", wrap: true },
-    { type: "text", text: "ก่อนเริ่มใช้งาน ขอจัดค่าพื้นฐานให้ไมโลสักนิดนะครับ", size: "sm", color: "#6D8D86", wrap: true },
-    { type: "box", layout: "vertical", spacing: "sm", margin: "md", paddingAll: "12px", cornerRadius: "lg", backgroundColor: "#FFFFFF", contents: [
-      { type: "text", text: "สิ่งที่จะตั้งค่า", size: "xs", weight: "bold", color: "#2D675B" },
-      { type: "text", text: "• บัญชีส่วนตัวและยอดเริ่มต้น\n• หมวดหมู่รายรับ / รายจ่าย\n• งบประมาณและรายการประจำ\n• ปฏิทิน เตือน และสรุปอัตโนมัติ", size: "xs", color: "#708E87", wrap: true, margin: "sm" },
-    ] },
-  ] }, footer: { type: "box", layout: "vertical", spacing: "sm", backgroundColor: "#F3FBF7", contents: [
-    { type: "button", style: "primary", color: "#159A75", action: { type: "message", label: "เริ่มตั้งค่า", text: "เริ่มตั้งค่า" } },
-    { type: "button", style: "link", color: "#4E8A7D", action: { type: "message", label: "ตั้งค่าภายหลัง", text: "ตั้งค่า" } },
-  ] } } }] }) });
+  const contents = [
+    miloBrandHeader("ยินดีต้อนรับสู่ Milo", "ตั้งค่าครั้งเดียว แล้วเริ่มจดได้เลย"),
+    miloWelcomeBubble(`สวัสดีคุณ${name} เชื่อมต่อ Milo เรียบร้อยแล้วครับ`),
+    {
+      type: "box", layout: "vertical", spacing: "sm", paddingAll: "14px", cornerRadius: "xl", backgroundColor: MILO_COLORS.surface,
+      contents: [
+        { type: "text", text: "สิ่งที่จะตั้งค่า", size: "sm", weight: "bold", color: MILO_COLORS.text },
+        miloInfoRow("บัญชีส่วนตัว", "ยอดเริ่มต้น", "mint"),
+        miloInfoRow("หมวดหมู่", "รายรับ / รายจ่าย", "lavender"),
+        miloInfoRow("งบประมาณ", "รายการประจำ", "pink"),
+        miloInfoRow("ปฏิทินและเตือน", "สรุปอัตโนมัติ", "blue"),
+      ],
+    },
+  ];
+  return callLine("/v2/bot/message/reply", credentials, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      replyToken,
+      messages: [{
+        type: "flex",
+        altText: "ตั้งค่า Milo ก่อนเริ่มใช้งาน",
+        contents: miloBubble(contents, [
+          miloPrimaryButton("เริ่มตั้งค่า", "เริ่มตั้งค่า"),
+          miloSecondaryButton("ตั้งค่าภายหลัง", "ตั้งค่า"),
+        ]),
+      }],
+    }),
+  });
 }
 
 export async function replyMiloSettings(replyToken: string, credentials = lineCredentials()) {
-  const items = [["💰 บัญชี / ยอดเริ่มต้น", "ยอดเงินเริ่มต้น 0 บาท", "ตั้งยอดเงินเริ่มต้น 0 บาท"], ["🏷️ หมวดหมู่", "เพิ่มหรือลบหมวดรายรับ / รายจ่าย", "หมวดหมู่"], ["🎯 งบประมาณ", "กำหนดงบตามหมวดและรอบงบ", "งบประมาณ"], ["🔁 รายการประจำ", "ตั้งรายรับ / รายจ่ายที่เกิดซ้ำ", "รายการประจำ"], ["📅 ปฏิทิน / เตือน", "จัดการนัดหมายและการแจ้งเตือน", "ปฏิทิน"], ["📊 สรุปอัตโนมัติ", "ดูภาพรวมการเงินช่วงต่าง ๆ", "สรุปเดือนนี้"]] as const;
-  const cards = items.map(([title, desc, text]) => ({ type: "box", layout: "horizontal", spacing: "sm", paddingAll: "10px", cornerRadius: "md", backgroundColor: "#FFFFFF", contents: [{ type: "box", layout: "vertical", flex: 1, contents: [{ type: "text", text: title, size: "sm", weight: "bold", color: "#315F58" }, { type: "text", text: desc, size: "xxs", color: "#8AA49E", wrap: true, margin: "xs" }] }, { type: "button", style: "link", height: "sm", flex: 0, action: { type: "message", label: "เปิด", text } }] }));
-  return callLine("/v2/bot/message/reply", credentials, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ replyToken, messages: [{ type: "flex", altText: "ตั้งค่า Milo", contents: { type: "bubble", size: "mega", hero: miloThemeHero("settings-help", "20:7"), body: { type: "box", layout: "vertical", spacing: "md", backgroundColor: "#F7FCFA", contents: [{ type: "text", text: "⚙️ ตั้งค่า Milo", weight: "bold", size: "xl", color: "#0D735B" }, { type: "text", text: "จัดการค่าการเงินและการใช้งานจากหน้านี้ได้เลยครับ", size: "xs", color: "#75958D", wrap: true }, ...cards] }, footer: { type: "box", layout: "vertical", backgroundColor: "#F7FCFA", contents: [{ type: "button", style: "primary", color: "#159A75", action: { type: "message", label: "เริ่มใช้งาน Milo", text: "เริ่มใช้งาน" } }] } } }] }) });
+  const contents = [
+    miloBrandHeader("ตั้งค่า / วิธีใช้งาน", "ตั้งค่าง่าย ใช้งานสะดวก ให้ Milo ดูแลคุณเสมอ"),
+    {
+      type: "box", layout: "horizontal", spacing: "sm", contents: [
+        miloTab("ตั้งค่า", true, "ตั้งค่า"),
+        miloTab("วิธีใช้งาน", false, "วิธีใช้งาน"),
+      ],
+    },
+    miloActionTile("ข้อมูลส่วนตัว", "ยอดเงินเริ่มต้น 0 บาท", "lavender", "คน", "จัดการโปรไฟล์และยอดเริ่มต้น"),
+    miloActionTile("หมวดหมู่", "หมวดหมู่", "lavender", "M", "จัดการหมวดรายรับและรายจ่าย"),
+    miloActionTile("งบประมาณรายเดือน", "งบประมาณ", "mint", "฿", "ตั้งวงเงินในแต่ละหมวด"),
+    miloActionTile("การแจ้งเตือน", "รายการเตือน", "pink", "!", "ตั้งค่าการแจ้งเตือนและรายการประจำ"),
+    miloActionTile("วิธีใช้งาน Milo", "วิธีใช้งาน", "blue", "?", "ดูคู่มือและคำสั่งที่ใช้บ่อย"),
+  ];
+  return callLine("/v2/bot/message/reply", credentials, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      replyToken,
+      messages: [{
+        type: "flex",
+        altText: "ตั้งค่า Milo",
+        contents: miloBubble(contents, [miloPrimaryButton("เริ่มใช้งาน Milo", "เริ่มใช้งาน")]),
+      }],
+    }),
+  });
 }
 export async function replyTextWithQuickReplies(replyToken: string, text: string, actions: Array<{ label: string; text: string }>, credentials = lineCredentials()) {
   return callLine("/v2/bot/message/reply", credentials, {
@@ -152,13 +294,42 @@ export async function replyTextWithQuickReplies(replyToken: string, text: string
   });
 }
 
-export async function replyGreetingHome(replyToken: string, credentials = lineCredentials()) {
-  return replyThemedTextCard(
-    replyToken,
-    "สวัสดีครับ 👋 ผมไมโล ผู้ช่วยการเงินของคุณ\nเลือกบันทึกรายรับรายจ่าย ดูสรุป วิเคราะห์รายการ หรือจัดการเตือนได้จากปุ่มด้านล่างครับ",
-    "home",
-    credentials,
-  );
+export type MiloHomeOverview = { income: number; expense: number; balance: number; dateLabel?: string };
+
+export async function replyGreetingHome(
+  replyToken: string,
+  credentials = lineCredentials(),
+  overview?: MiloHomeOverview,
+) {
+  const contents = [
+    miloBrandHeader(),
+    miloWelcomeBubble("สวัสดีครับ วันนี้คุณมีแพลนการใช้จ่าย หรืออยากดูสรุปอะไรไหมครับ?"),
+    ...(overview ? [
+      miloSectionTitle("ภาพรวมวันนี้", overview.dateLabel),
+      {
+        type: "box", layout: "horizontal", spacing: "sm", contents: [
+          miloStatCard("รายรับ", `${overview.income.toLocaleString("th-TH")} บาท`, "mint"),
+          miloStatCard("รายจ่าย", `${overview.expense.toLocaleString("th-TH")} บาท`, "pink"),
+          miloStatCard("คงเหลือ", `${overview.balance.toLocaleString("th-TH")} บาท`, "lavender"),
+        ],
+      },
+    ] : []),
+    miloSectionTitle("เมนูหลัก", "เลือกใช้งานได้เลย"),
+    ...miloMainActionRows(),
+  ];
+  return callLine("/v2/bot/message/reply", credentials, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      replyToken,
+      messages: [{
+        type: "flex",
+        altText: "Milo ผู้ช่วยจัดการการเงินของคุณ",
+        contents: miloBubble(contents),
+        quickReply: miloThemeQuickReplies(),
+      }],
+    }),
+  });
 }
 
 export type VoiceTransactionProposal = {
@@ -238,32 +409,99 @@ export function financeReportCardText(report: FinanceReportCard) {
   return `${report.title ?? `สรุปการเงิน${periodLabel[report.period]}`}\n${report.subtitle ? `${report.subtitle}\n` : ""}รายรับ ${money(report.income)} บาท\nรายจ่าย ${money(report.expense)} บาท\nกำไร/คงเหลือ ${money(report.balance)} บาท\n${categories ? `\nรายจ่ายตามหมวด\n${categories}` : "\nยังไม่มีรายจ่ายในช่วงนี้"}`;
 }
 
-function miloFinanceBrandStrip() {
-  return { type: "box", layout: "horizontal", alignItems: "center", spacing: "sm", paddingAll: "9px", cornerRadius: "md", backgroundColor: "#FCEAF4", contents: [
-    { type: "image", url: miloFlexThemeImageUrl("summary-period"), size: "xs", aspectRatio: "1:1", aspectMode: "cover", flex: 0 },
-    { type: "box", layout: "vertical", flex: 1, contents: [
-      { type: "text", text: "MILO  •  FINANCE", size: "xxs", weight: "bold", color: "#7657AA" },
-      { type: "text", text: "น้องแมวช่วยดูแลยอดของคุณ", size: "xxs", color: "#9A7390", wrap: true },
-    ] },
-    { type: "text", text: "✦", size: "sm", color: "#5AC6AD", flex: 0 },
-  ] };
+function miloFinanceTrendCard(report: FinanceReportCard) {
+  if (!report.rows?.length || (report.period !== "week" && report.period !== "month")) return undefined;
+  const buckets = new Map<string, { label: string; income: number; expense: number }>();
+  for (const row of report.rows) {
+    if (!row.occurredAt) continue;
+    const date = row.occurredAt instanceof Date ? row.occurredAt : new Date(row.occurredAt);
+    if (!Number.isFinite(date.getTime())) continue;
+    const key = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Bangkok", year: "numeric", month: "2-digit", day: "2-digit" }).format(date);
+    const label = new Intl.DateTimeFormat("th-TH-u-nu-latn", { timeZone: "Asia/Bangkok", weekday: "short", day: "numeric" }).format(date);
+    const bucket = buckets.get(key) ?? { label, income: 0, expense: 0 };
+    const amount = Number(row.amount);
+    if (row.transactionType === "income") bucket.income += Number.isFinite(amount) ? amount : 0;
+    else bucket.expense += Number.isFinite(amount) ? amount : 0;
+    buckets.set(key, bucket);
+  }
+  const days = Array.from(buckets.entries()).sort(([a], [b]) => a.localeCompare(b)).slice(-7).map(([, value]) => value);
+  if (!days.length) return undefined;
+  const max = Math.max(...days.flatMap(day => [day.income, day.expense]), 1);
+  return {
+    type: "box",
+    layout: "vertical",
+    spacing: "sm",
+    paddingAll: "14px",
+    cornerRadius: "xl",
+    backgroundColor: MILO_COLORS.surface,
+    contents: [
+      { type: "text", text: "กราฟรายวัน", size: "lg", weight: "bold", color: MILO_COLORS.text },
+      {
+        type: "box", layout: "horizontal", spacing: "md", contents: [
+          { type: "text", text: "● รายรับ", size: "xxs", color: MILO_COLORS.greenText },
+          { type: "text", text: "● รายจ่าย", size: "xxs", color: MILO_COLORS.pinkText },
+        ],
+      },
+      ...days.map(day => ({
+        type: "box",
+        layout: "horizontal",
+        spacing: "sm",
+        alignItems: "center",
+        contents: [
+          { type: "text", text: day.label, size: "xxs", color: MILO_COLORS.muted, width: "58px" },
+          {
+            type: "box", layout: "vertical", spacing: "xs", flex: 1, contents: [
+              {
+                type: "box", layout: "horizontal", height: "6px", cornerRadius: "xl", backgroundColor: "#E3F7F0",
+                contents: [{ type: "box", layout: "vertical", width: `${Math.max(2, Math.round((day.income / max) * 100))}%`, height: "6px", cornerRadius: "xl", backgroundColor: MILO_COLORS.primaryStrong, contents: [] }],
+              },
+              {
+                type: "box", layout: "horizontal", height: "6px", cornerRadius: "xl", backgroundColor: "#FCE3ED",
+                contents: [{ type: "box", layout: "vertical", width: `${Math.max(2, Math.round((day.expense / max) * 100))}%`, height: "6px", cornerRadius: "xl", backgroundColor: MILO_COLORS.accentStrong, contents: [] }],
+              },
+            ],
+          },
+        ],
+      })),
+    ],
+  };
+}
+
+function miloFinanceSummaryContents(report: FinanceReportCard) {
+  const money = (amount: number) => amount.toLocaleString("th-TH", { maximumFractionDigits: 2 });
+  const periodLabel: Record<FinanceReportCard["period"], string> = { day: "วันนี้", week: "สัปดาห์", month: "เดือน", year: "ปี" };
+  const title = report.title ?? `สรุป${periodLabel[report.period]}`;
+  const categories = Object.entries(report.categories).sort((a, b) => b[1] - a[1]).slice(0, 3);
+  const maxCategory = Math.max(...categories.map(([, amount]) => amount), 1);
+  const tones = ["pink", "lavender", "blue"] as const;
+  const trend = miloFinanceTrendCard(report);
+
+  return [
+    miloBrandHeader(title, report.subtitle ?? (report.period === "day" ? "ภาพรวมการเงินวันนี้" : "ภาพรวมรายรับ รายจ่าย และคงเหลือ")),
+    ...(report.period === "week" || report.period === "month" ? [{
+      type: "box", layout: "horizontal", spacing: "sm", contents: [
+        miloTab("สรุปสัปดาห์", report.period === "week", "สรุปสัปดาห์นี้"),
+        miloTab("สรุปเดือน", report.period === "month", "สรุปเดือนนี้"),
+      ],
+    }] : []),
+    {
+      type: "box", layout: "horizontal", spacing: "sm", contents: [
+        miloStatCard("รายรับ", `${money(report.income)} บาท`, "mint"),
+        miloStatCard("รายจ่าย", `${money(report.expense)} บาท`, "pink"),
+        miloStatCard("คงเหลือสุทธิ", `${money(report.balance)} บาท`, "lavender"),
+      ],
+    },
+    ...(trend ? [trend] : []),
+    miloSectionTitle(report.period === "day" ? "หมวดค่าใช้จ่าย (Top 3)" : "หมวดค่าใช้จ่าย"),
+    ...(categories.length
+      ? categories.map(([name, amount], index) => miloProgressRow(name, `${money(amount)} บาท`, amount / maxCategory, tones[index] ?? "pink"))
+      : [{ type: "box", layout: "vertical", paddingAll: "14px", cornerRadius: "xl", backgroundColor: MILO_COLORS.surface, contents: [
+          { type: "text", text: "ยังไม่มีรายจ่ายในช่วงนี้", size: "sm", color: MILO_COLORS.muted, align: "center" },
+        ] }]),
+  ];
 }
 
 export async function replyFinanceReportCard(replyToken: string, report: FinanceReportCard, credentials = lineCredentials()) {
-  const money = (amount: number) => amount.toLocaleString("th-TH", { maximumFractionDigits: 2 });
-  const periodLabel: Record<FinanceReportCard["period"], string> = { day: "วันนี้", week: "สัปดาห์นี้", month: "เดือนนี้", year: "ปีนี้" };
-  const theme: MiloFlexThemeArtwork = report.period === "day" ? "summary-day" : "summary-period";
-  const categories = Object.entries(report.categories).sort((a, b) => b[1] - a[1]).slice(0, 3);
-  const categoryRows = categories.length
-    ? categories.map(([name, amount]) => ({
-        type: "box", layout: "horizontal", spacing: "sm", paddingAll: "9px", cornerRadius: "md", backgroundColor: "#FFFFFF",
-        contents: [
-          { type: "text", text: name, size: "xs", color: "#51456C", flex: 1, wrap: true },
-          { type: "text", text: `${money(amount)} บาท`, size: "xs", weight: "bold", color: "#7A58C8", align: "end" },
-        ],
-      }))
-    : [{ type: "text", text: "ยังไม่มีรายจ่ายในช่วงนี้", size: "xs", color: "#8B80A0" }];
-
   return callLine("/v2/bot/message/reply", credentials, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -272,38 +510,14 @@ export async function replyFinanceReportCard(replyToken: string, report: Finance
       messages: [{
         type: "flex",
         altText: financeReportCardText(report),
-        contents: {
-          type: "bubble",
-          size: "mega",
-          hero: miloThemeHero(theme, report.period === "day" ? "20:7" : "20:6"),
-          body: {
-            type: "box",
-            layout: "vertical",
-            spacing: "md",
-            paddingAll: "16px",
-            backgroundColor: "#F8F7FF",
-            contents: [
-              { type: "text", text: report.title ?? `สรุปการเงิน${periodLabel[report.period]}`, size: "lg", weight: "bold", color: "#33276B", wrap: true },
-              ...(report.subtitle ? [{ type: "text", text: report.subtitle, size: "xs", color: "#81779A", wrap: true }] : []),
-              { type: "box", layout: "horizontal", spacing: "sm", contents: [
-                { type: "box", layout: "vertical", flex: 1, paddingAll: "12px", cornerRadius: "md", backgroundColor: "#E6F9F3", contents: [
-                  { type: "text", text: "รายรับ", size: "xxs", color: "#318B75" },
-                  { type: "text", text: `${money(report.income)} บาท`, size: "md", weight: "bold", color: "#087B63", wrap: true },
-                ] },
-                { type: "box", layout: "vertical", flex: 1, paddingAll: "12px", cornerRadius: "md", backgroundColor: "#FDECF3", contents: [
-                  { type: "text", text: "รายจ่าย", size: "xxs", color: "#C55C87" },
-                  { type: "text", text: `${money(report.expense)} บาท`, size: "md", weight: "bold", color: "#D12C66", wrap: true },
-                ] },
-              ] },
-              { type: "box", layout: "horizontal", alignItems: "center", paddingAll: "12px", cornerRadius: "md", backgroundColor: "#EEECFF", contents: [
-                { type: "text", text: "คงเหลือสุทธิ", size: "xs", color: "#5C4C8A", flex: 1 },
-                { type: "text", text: `${money(report.balance)} บาท`, size: "md", weight: "bold", color: report.balance >= 0 ? "#087B63" : "#D12C66", align: "end" },
-              ] },
-              { type: "text", text: "หมวดค่าใช้จ่าย", size: "xs", weight: "bold", color: "#5C4C8A", margin: "sm" },
-              { type: "box", layout: "vertical", spacing: "xs", contents: categoryRows },
+        contents: miloBubble(miloFinanceSummaryContents(report), [
+          {
+            type: "box", layout: "horizontal", spacing: "sm", contents: [
+              miloSecondaryButton("ดูรายการทั้งหมด", "รายการ"),
+              miloPrimaryButton(report.period === "day" ? "แชร์สรุปวันนี้" : "ดูรายละเอียด", report.period === "day" ? "สรุปวันนี้" : "รายการ"),
             ],
           },
-        },
+        ]),
         quickReply: { items: [
           { type: "action", action: { type: "message", label: "วันนี้", text: "สรุปวันนี้" } },
           { type: "action", action: { type: "message", label: "สัปดาห์นี้", text: "สรุปสัปดาห์นี้" } },
@@ -320,121 +534,125 @@ export async function replyFinanceReportCardFallback(replyToken: string, report:
 }
 
 export async function pushFinanceReportCard(to: string, report: FinanceReportCard, credentials = lineCredentials()) {
-  const money = (amount: number) => amount.toLocaleString("th-TH", { maximumFractionDigits: 2 });
-  const categories = Object.entries(report.categories).sort((a, b) => b[1] - a[1]).slice(0, 4);
-  const categoryRows = categories.length ? categories.map(([name, amount]) => ({ type: "box", layout: "horizontal", margin: "sm", contents: [
-    { type: "text", text: name, size: "xs", color: "#675B7C", flex: 1, wrap: true },
-    { type: "text", text: `${money(amount)} บาท`, size: "xs", weight: "bold", color: "#B9517B", align: "end" },
-  ] })) : [{ type: "text", text: "ไม่มีรายการในช่วงเวลานี้", size: "xs", color: "#8A8097" }];
-  const title = report.title ?? "สรุปการเงินจากไมโล";
   return callLine("/v2/bot/message/push", credentials, {
-    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ to, messages: [{
-      type: "flex", altText: financeReportCardText(report), contents: {
-        type: "bubble", size: "mega",
-        hero: miloThemeHero(report.period === "day" ? "summary-day" : "summary-period", report.period === "day" ? "20:7" : "20:6"),
-        body: { type: "box", layout: "vertical", spacing: "md", paddingAll: "16px", backgroundColor: "#F2F0FF", contents: [
-          { type: "box", layout: "horizontal", alignItems: "center", spacing: "md", paddingAll: "12px", cornerRadius: "md", backgroundColor: "#E4F8F2", contents: [
-            { type: "box", layout: "vertical", justifyContent: "center", alignItems: "center", width: "38px", height: "38px", cornerRadius: "md", backgroundColor: "#5AC6AD", contents: [{ type: "text", text: "฿", align: "center", weight: "bold", size: "xl", color: "#FFFFFF" }] },
-            { type: "box", layout: "vertical", flex: 1, contents: [{ type: "text", text: title, weight: "bold", size: "lg", color: "#4B3D69", wrap: true }, { type: "text", text: report.subtitle ?? "สรุปอัตโนมัติตามเวลาที่ตั้งไว้", size: "xs", color: "#7B6E97", wrap: true }] },
-          ] },
-          miloFinanceBrandStrip(),
-          { type: "box", layout: "vertical", spacing: "sm", paddingAll: "14px", cornerRadius: "md", backgroundColor: "#FFFEFB", contents: [
-            { type: "box", layout: "horizontal", spacing: "sm", contents: [
-              { type: "box", layout: "vertical", flex: 1, paddingAll: "10px", cornerRadius: "md", backgroundColor: "#EAF8F4", contents: [{ type: "text", text: "รายรับ", size: "xxs", color: "#5B8E81" }, { type: "text", text: `${money(report.income)} บาท`, size: "sm", weight: "bold", color: "#267C68", wrap: true }] },
-              { type: "box", layout: "vertical", flex: 1, paddingAll: "10px", cornerRadius: "md", backgroundColor: "#FDECF2", contents: [{ type: "text", text: "รายจ่าย", size: "xxs", color: "#A57086" }, { type: "text", text: `${money(report.expense)} บาท`, size: "sm", weight: "bold", color: "#BB527C", wrap: true }] },
-            ] },
-            { type: "box", layout: "horizontal", paddingAll: "10px", cornerRadius: "md", backgroundColor: "#EEEAF8", contents: [{ type: "text", text: "กำไร / คงเหลือ", size: "xs", color: "#6B6080", flex: 1 }, { type: "text", text: `${money(report.balance)} บาท`, size: "sm", weight: "bold", color: "#4D4263", align: "end" }] },
-            { type: "separator", color: "#E9E4F1" },
-            { type: "text", text: "รายจ่ายตามหมวด", size: "xs", weight: "bold", color: "#76688E" },
-            { type: "box", layout: "vertical", paddingAll: "10px", cornerRadius: "md", backgroundColor: "#FFF7FA", contents: categoryRows },
-          ] },
-        ] },
-      },
-    }] }),
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      to,
+      messages: [{
+        type: "flex",
+        altText: financeReportCardText(report),
+        contents: miloBubble(miloFinanceSummaryContents(report), [
+          {
+            type: "box", layout: "horizontal", spacing: "sm", contents: [
+              miloSecondaryButton("ดูรายการทั้งหมด", "รายการ"),
+              miloPrimaryButton("ดูรายละเอียด", report.period === "day" ? "สรุปวันนี้" : "สรุปเดือนนี้"),
+            ],
+          },
+        ]),
+      }],
+    }),
   });
 }
 
 export async function replyPostSaveSummary(replyToken: string, summary: PostSaveSummary, credentials = lineCredentials()) {
   const isExpense = summary.transactionType === "expense";
-  const label = isExpense ? "รายจ่าย" : "รายรับ";
   const categoryLabel = isExpense && summary.category === "อาหาร" ? "ค่าอาหาร" : summary.category;
-  const accent = isExpense ? "#C9578A" : "#24977B";
-  const softAccent = isExpense ? "#FDE9F1" : "#E2F8F0";
+  const accent = isExpense ? MILO_COLORS.accentStrong : MILO_COLORS.primaryStrong;
+  const timestamp = new Intl.DateTimeFormat("th-TH-u-nu-latn", {
+    dateStyle: "medium",
+    timeStyle: "short",
+    timeZone: "Asia/Bangkok",
+  }).format(summary.occurredAt);
+
+  const contents = [
+    miloBrandHeader(),
+    {
+      type: "box",
+      layout: "horizontal",
+      alignItems: "center",
+      spacing: "md",
+      paddingAll: "14px",
+      cornerRadius: "xl",
+      backgroundColor: MILO_COLORS.surfaceMint,
+      contents: [
+        {
+          type: "box",
+          layout: "vertical",
+          justifyContent: "center",
+          alignItems: "center",
+          width: "42px",
+          height: "42px",
+          cornerRadius: "xl",
+          backgroundColor: MILO_COLORS.primaryStrong,
+          contents: [{ type: "text", text: "✓", size: "xl", weight: "bold", color: "#FFFFFF", align: "center" }],
+        },
+        {
+          type: "box",
+          layout: "vertical",
+          flex: 1,
+          contents: [
+            { type: "text", text: "บันทึกสำเร็จ", size: "xl", weight: "bold", color: MILO_COLORS.text },
+            { type: "text", text: mascotExpenseCopy(summary.transactionType, summary.amount), size: "xs", color: MILO_COLORS.muted, wrap: true, margin: "xs" },
+          ],
+        },
+      ],
+    },
+    {
+      type: "box",
+      layout: "vertical",
+      spacing: "md",
+      paddingAll: "16px",
+      cornerRadius: "xl",
+      backgroundColor: MILO_COLORS.surface,
+      contents: [
+        { type: "text", text: `${isExpense ? "รายจ่าย" : "รายรับ"} • ${categoryLabel}`, size: "sm", weight: "bold", color: accent },
+        { type: "text", text: `${summary.amount.toLocaleString("th-TH")} บาท`, size: "3xl", weight: "bold", color: accent },
+        miloInfoRow("รายการที่จด", summary.note?.trim() || categoryLabel, "lavender"),
+        miloInfoRow("วันที่ - เวลา", timestamp, "blue"),
+        miloInfoRow("หมวดหมู่", categoryLabel, isExpense ? "pink" : "mint"),
+        ...(summary.budgetLimit > 0 && summary.budgetPercent !== undefined
+          ? [miloProgressRow(
+              `งบหมวด${categoryLabel}`,
+              `${summary.budgetSpent.toLocaleString("th-TH")} / ${summary.budgetLimit.toLocaleString("th-TH")} บาท`,
+              summary.budgetLimit > 0 ? summary.budgetSpent / summary.budgetLimit : 0,
+              summary.budgetPercent >= 100 ? "pink" : "mint",
+            )]
+          : []),
+        miloSectionTitle("สรุปยอดวันนี้"),
+        {
+          type: "box", layout: "horizontal", spacing: "sm", contents: [
+            miloStatCard("รายรับ", `${summary.dailyIncome.toLocaleString("th-TH")} บาท`, "mint"),
+            miloStatCard("รายจ่าย", `${summary.dailyExpense.toLocaleString("th-TH")} บาท`, "pink"),
+            miloStatCard("ยอดคงเหลือวันนี้", `${summary.dailyBalance.toLocaleString("th-TH")} บาท`, "lavender"),
+          ],
+        },
+      ],
+    },
+  ];
+
   return callLine("/v2/bot/message/reply", credentials, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ replyToken, messages: [{
-      type: "flex", altText: postSaveSummaryText(summary),
-      contents: {
-        type: "bubble", size: "mega",
-        hero: miloThemeHero("save-complete", "20:7"),
-        body: { type: "box", layout: "vertical", spacing: "md", paddingAll: "16px", backgroundColor: "#F2F0FF", contents: [
-          { type: "box", layout: "horizontal", alignItems: "center", spacing: "md", paddingAll: "12px", cornerRadius: "md", backgroundColor: "#E4F8F2", contents: [
-            { type: "box", layout: "vertical", justifyContent: "center", alignItems: "center", width: "38px", height: "38px", cornerRadius: "md", backgroundColor: "#5AC6AD", contents: [{ type: "text", text: "✓", align: "center", weight: "bold", size: "xl", color: "#FFFFFF" }] },
-            { type: "box", layout: "vertical", flex: 1, contents: [
-              { type: "text", text: "บันทึกสำเร็จ", weight: "bold", size: "lg", color: "#4B3D69" },
-              { type: "text", text: mascotExpenseCopy(summary.transactionType, summary.amount), size: "xs", wrap: true, color: "#7B6E97" },
-            ] },
-          ] },
-          { type: "box", layout: "vertical", spacing: "md", paddingAll: "16px", cornerRadius: "md", backgroundColor: "#FFFEFB", contents: [
-            { type: "box", layout: "horizontal", alignItems: "center", contents: [
-              { type: "text", text: `${isExpense ? "รายจ่าย" : "รายรับ"}  •  ${categoryLabel}`, size: "sm", weight: "bold", color: accent, flex: 1 },
-              { type: "text", text: "บันทึกแล้ว", size: "xxs", color: "#8B809B", align: "end" },
-            ] },
-            { type: "text", text: `${summary.amount.toLocaleString("th-TH")} บาท`, size: "xxl", weight: "bold", color: "#3F3552" },
-            ...(summary.note?.trim() ? [{ type: "text", text: `รายการที่จด: ${summary.note.trim()}`, size: "sm", color: "#675B7C", wrap: true }] : []),
-            { type: "text", text: "วันที่ - เวลา", size: "xs", weight: "bold", color: "#76688E", margin: "md" },
-            { type: "text", text: new Intl.DateTimeFormat("th-TH", { dateStyle: "medium", timeStyle: "short", timeZone: "Asia/Bangkok" }).format(summary.occurredAt), size: "sm", color: "#4D4263" },
-            ...(summary.budgetLimit > 0 && summary.budgetPercent !== undefined ? [{ type: "box", layout: "vertical", spacing: "sm", margin: "md", paddingAll: "12px", cornerRadius: "md", backgroundColor: "#F3FBF8", contents: [
-              { type: "text", text: "สถานะงบประมาณหมวดหมู่", size: "xs", weight: "bold", color: "#267C68" },
-              { type: "box", layout: "horizontal", alignItems: "center", spacing: "sm", contents: [{ type: "text", text: categoryLabel, size: "sm", color: "#4D4263", flex: 1 }, { type: "text", text: `ใช้ไป ${summary.budgetPercent}%`, size: "sm", weight: "bold", color: "#267C68", align: "end" }] },
-              { type: "text", text: `(${summary.budgetSpent.toLocaleString("th-TH")} / ${summary.budgetLimit.toLocaleString("th-TH")} บาท)`, size: "xxs", color: "#6B6080", align: "end" },
-              { type: "text", text: budgetStatusCopy(summary.category, summary.budgetSpent, summary.budgetLimit), size: "xxs", color: "#A85C74", wrap: true },
-            ] }] : []),
-            { type: "separator", color: "#E9E4F1" },
-            { type: "text", text: "สรุปยอดวันนี้", size: "xs", weight: "bold", color: "#76688E" },
-            { type: "box", layout: "horizontal", spacing: "sm", contents: [
-              { type: "box", layout: "vertical", flex: 1, paddingAll: "10px", cornerRadius: "md", backgroundColor: "#EAF8F4", contents: [{ type: "text", text: "รายรับ", size: "xxs", color: "#5B8E81" }, { type: "text", text: `${summary.dailyIncome.toLocaleString("th-TH")} บาท`, size: "sm", weight: "bold", color: "#267C68" }] },
-              { type: "box", layout: "vertical", flex: 1, paddingAll: "10px", cornerRadius: "md", backgroundColor: "#FDECF2", contents: [{ type: "text", text: "รายจ่าย", size: "xxs", color: "#A57086" }, { type: "text", text: `${summary.dailyExpense.toLocaleString("th-TH")} บาท`, size: "sm", weight: "bold", color: "#BB527C" }] },
-            ] },
-            { type: "box", layout: "horizontal", alignItems: "center", paddingAll: "11px", cornerRadius: "md", backgroundColor: softAccent, contents: [
-              { type: "text", text: "ยอดคงเหลือวันนี้", size: "xs", color: "#6B6080", flex: 1 },
-              { type: "text", text: `${summary.dailyBalance.toLocaleString("th-TH")} บาท`, size: "sm", weight: "bold", color: "#4D4263", align: "end" },
-            ] },
-          ] },
-        ] },
-        footer: { type: "box", layout: "vertical", paddingAll: "16px", backgroundColor: "#F2F0FF", contents: [
-          { type: "box", layout: "horizontal", spacing: "sm", contents: [
-            { type: "button", style: "secondary", height: "sm", action: { type: "message", label: "ลบรายการล่าสุด", text: "ลบรายการล่าสุด" } },
-            { type: "button", style: "primary", color: "#7657AA", height: "sm", action: { type: "message", label: "ดูรายการ", text: "รายการ" } },
-          ] },
-          { type: "button", style: "primary", color: "#7657AA", height: "sm", action: { type: "message", label: "ดูสรุปยอดวันนี้", text: "สรุปวันนี้" } },
-        ] },
-      },
-      },
-    ] }),
+    body: JSON.stringify({
+      replyToken,
+      messages: [{
+        type: "flex",
+        altText: postSaveSummaryText(summary),
+        contents: miloBubble(contents, [
+          {
+            type: "box", layout: "horizontal", spacing: "sm", contents: [
+              miloSecondaryButton("ดูรายการ", "รายการ"),
+              miloSecondaryButton("แก้ไข", "รายการ"),
+              miloSecondaryButton("ลบ", "ลบรายการล่าสุด"),
+            ],
+          },
+          miloPrimaryButton("บันทึกรายการถัดไป", "จดบันทึก"),
+        ]),
+      }],
+    }),
   });
 }
-
-export async function replyPostSaveSummaryImage(replyToken: string, summary: PostSaveSummary, credentials = lineCredentials()) {
-  const imageUrl = miloSaveResultImageUrl(summary);
-  return callLine("/v2/bot/message/reply", credentials, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ replyToken, messages: [{
-      type: "image",
-      originalContentUrl: imageUrl,
-      previewImageUrl: imageUrl,
-      quickReply: { items: [
-        { type: "action", action: { type: "message", label: "ยกเลิกรายการล่าสุด", text: "ยกเลิกรายการล่าสุด" } },
-        { type: "action", action: { type: "message", label: "สรุปวันนี้", text: "สรุปวันนี้" } },
-      ] },
-    }] }),
-  });
-}
-
-/** Compatibility alias retained for callers/tests; now image-only by design. */
-export const replyPostSaveSummaryFallback = replyPostSaveSummaryImage;
 
 export async function replyVoiceCategoryChoices(replyToken: string, credentials = lineCredentials()) {
   const popular = ["อาหาร", "เดินทาง", "ค่าสาธารณูปโภค", "ช้อปปิ้ง", "สุขภาพ"];
@@ -581,21 +799,66 @@ export async function getProfile(source: LineSource, credentials = lineCredentia
 export type MiloListRow = { id: number; title: string; detail: string; actionLabel?: string; actionText?: string };
 
 async function replyMiloListBubble(replyToken: string, title: string, subtitle: string, rows: MiloListRow[], artwork: MiloFlexThemeArtwork, credentials = lineCredentials()) {
-  const contents = rows.slice(0, 10).map(row => ({
-    type: "box", layout: "horizontal", spacing: "sm", paddingAll: "10px", cornerRadius: "lg", backgroundColor: "#FFFFFF",
+  const cards = rows.slice(0, 10).map(row => ({
+    type: "box",
+    layout: "horizontal",
+    spacing: "sm",
+    alignItems: "center",
+    paddingAll: "12px",
+    cornerRadius: "xl",
+    backgroundColor: MILO_COLORS.surface,
     contents: [
-      { type: "box", layout: "vertical", flex: 1, contents: [
-        { type: "text", text: ("#" + row.id + " " + row.title).slice(0, 120), size: "sm", weight: "bold", color: "#315F58", wrap: true },
-        { type: "text", text: row.detail.slice(0, 180), size: "xxs", color: "#789891", wrap: true, margin: "xs" },
-      ] },
-      ...(row.actionText ? [{ type: "button", style: "secondary", height: "sm", flex: 0, action: { type: "message", label: (row.actionLabel ?? "ยกเลิก").slice(0, 20), text: row.actionText.slice(0, 300) } }] : []),
+      {
+        type: "box",
+        layout: "vertical",
+        flex: 1,
+        contents: [
+          { type: "text", text: row.title.slice(0, 120), size: "sm", weight: "bold", color: MILO_COLORS.text, wrap: true },
+          { type: "text", text: row.detail.slice(0, 180), size: "xxs", color: MILO_COLORS.muted, wrap: true, margin: "xs" },
+          { type: "text", text: `#${row.id}`, size: "xxs", color: MILO_COLORS.secondary, margin: "xs" },
+        ],
+      },
+      ...(row.actionText ? [{
+        type: "button",
+        style: "secondary",
+        height: "sm",
+        flex: 0,
+        action: {
+          type: "message",
+          label: (row.actionLabel ?? "ยกเลิก").slice(0, 20),
+          text: row.actionText.slice(0, 300),
+        },
+      }] : []),
     ],
   }));
-  return callLine("/v2/bot/message/reply", credentials, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ replyToken, messages: [{ type: "flex", altText: title, contents: { type: "bubble", size: "mega", hero: miloThemeHero(artwork, "20:7"), body: { type: "box", layout: "vertical", spacing: "md", backgroundColor: "#F8F7FF", contents: [
-    { type: "text", text: title, size: "xl", weight: "bold", color: "#0D735B" },
-    { type: "text", text: subtitle, size: "xs", color: "#789891", wrap: true },
-    ...(contents.length ? contents : [{ type: "text", text: "ยังไม่มีรายการครับ", size: "sm", color: "#789891", margin: "md" }]),
-  ] } } }] }) });
+
+  const heading = artwork === "transactions"
+    ? "รายการล่าสุด"
+    : title.replace(/^[^ก-๙A-Za-z0-9]+/, "").trim();
+
+  const contents = [
+    miloBrandHeader(heading, subtitle),
+    ...(artwork === "utility" ? [{
+      type: "box", layout: "horizontal", spacing: "sm", contents: [
+        miloTab("ตั้งเตือน", title.includes("เตือน"), "รายการเตือน"),
+        miloTab("เก็บไฟล์", false, "คลังไฟล์"),
+        miloTab("Export", false, "ส่งออก CSV"),
+      ],
+    }] : []),
+    ...(cards.length ? cards : [{
+      type: "box", layout: "vertical", paddingAll: "16px", cornerRadius: "xl", backgroundColor: MILO_COLORS.surface,
+      contents: [{ type: "text", text: "ยังไม่มีรายการครับ", size: "sm", color: MILO_COLORS.muted, align: "center" }],
+    }]),
+  ];
+
+  return callLine("/v2/bot/message/reply", credentials, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      replyToken,
+      messages: [{ type: "flex", altText: title, contents: miloBubble(contents) }],
+    }),
+  });
 }
 
 export async function replyTransactionList(replyToken: string, rows: MiloListRow[], credentials = lineCredentials()) {
