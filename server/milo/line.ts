@@ -262,7 +262,7 @@ export function financeReportCardText(report: FinanceReportCard) {
 
 function miloFinanceBrandStrip() {
   return { type: "box", layout: "horizontal", alignItems: "center", spacing: "sm", paddingAll: "9px", cornerRadius: "md", backgroundColor: "#FCEAF4", contents: [
-    { type: "image", url: miloRichMenuImageUrl("summary"), size: "xs", aspectRatio: "1:1", aspectMode: "cover", flex: 0 },
+    { type: "image", url: miloFlexThemeImageUrl("summary-period"), size: "xs", aspectRatio: "1:1", aspectMode: "cover", flex: 0 },
     { type: "box", layout: "vertical", flex: 1, contents: [
       { type: "text", text: "MILO  •  FINANCE", size: "xxs", weight: "bold", color: "#7657AA" },
       { type: "text", text: "น้องแมวช่วยดูแลยอดของคุณ", size: "xxs", color: "#9A7390", wrap: true },

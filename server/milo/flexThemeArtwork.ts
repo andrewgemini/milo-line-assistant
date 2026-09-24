@@ -29,6 +29,10 @@ export function flexThemeForCommand(command: MiloCommand): MiloFlexThemeArtwork 
       return "menu";
     case "financeReport":
       return command.period === "day" ? "summary-day" : "summary-period";
+    case "todayOverview":
+    case "morningBrief":
+    case "eveningSummary":
+      return "summary-day";
     case "aiSummary":
     case "budgetOverview":
     case "categoryList":
@@ -44,6 +48,22 @@ export function flexThemeForCommand(command: MiloCommand): MiloFlexThemeArtwork 
     case "recurringCreate":
     case "recurringList":
     case "recurringStatus":
+    case "groupGuide":
+    case "vaultStatus":
+    case "documentPacket":
+    case "documentIssues":
+    case "todo":
+    case "todoList":
+    case "todoComplete":
+    case "pendingBillList":
+    case "pendingBillPay":
+    case "pendingBillCancel":
+    case "followUp":
+    case "note":
+    case "calendarCreate":
+    case "calendarConnect":
+    case "calendarDisconnect":
+    case "calendarStatus":
       return "utility";
     case "settingGuide":
     case "help":

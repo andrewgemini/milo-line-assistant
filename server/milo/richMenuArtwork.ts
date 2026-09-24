@@ -53,8 +53,10 @@ export const RICH_MENU_ARTWORK = {
 
 export type RichMenuArtwork = keyof typeof RICH_MENU_ARTWORK;
 
-export function artworkForCommand(command: MiloCommand): RichMenuArtwork | undefined {
-  return command.type === "greeting" ? "overview" : undefined;
+export function artworkForCommand(_command: MiloCommand): RichMenuArtwork | undefined {
+  // Legacy artwork remains available for direct compatibility tests only.
+  // Active LINE command routing is fully handled by native/themed Flex responses.
+  return undefined;
 }
 
 /**

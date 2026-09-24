@@ -6,7 +6,7 @@ import { replyRichMenu } from "./line";
 afterEach(() => vi.restoreAllMocks());
 describe("rich menu artwork and advertised commands", () => {
   it.each(["จดบันทึก","สรุป","สรุปวันนี้","สรุปสัปดาห์นี้","สรุปเดือนนี้","สรุปปีนี้","วิเคราะห์","งบประมาณ","รายการ","หมวดหมู่","ตั้งค่า","วิธีใช้งาน"])("%s uses native LINE output instead of artwork", text => expect(artworkForCommand(parseMiloCommand(text))).toBeUndefined());
-  it("keeps artwork only for the explicit greeting flow", () => expect(artworkForCommand(parseMiloCommand("สวัสดีไมโล"))).toBe("overview"));
+  it("does not route greeting through legacy artwork", () => expect(artworkForCommand(parseMiloCommand("สวัสดีไมโล"))).toBeUndefined());
   it("maps every deployed rich-menu action to a supported command", () => {
     const config=JSON.parse(readFileSync("shared/richmenu.json","utf8"));
     expect(config.areas).toHaveLength(20);

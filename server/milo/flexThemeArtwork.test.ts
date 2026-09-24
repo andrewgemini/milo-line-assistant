@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { parseMiloCommand } from "./commandParser";
 import { flexThemeForCommand, MILO_FLEX_THEME_ARTWORK, miloFlexThemeImageUrl } from "./flexThemeArtwork";
 
@@ -32,5 +32,38 @@ describe("Milo Flex Theme artwork", () => {
   it("builds public URLs for hero and full screen variants", () => {
     expect(miloFlexThemeImageUrl("transactions")).toBe("https://milo-line-assistant.onrender.com/milo-flex/heroes/transactions.png");
     expect(miloFlexThemeImageUrl("transactions", "screen")).toBe("https://milo-line-assistant.onrender.com/milo-flex/screens/transactions.png");
+  });
+
+  it("covers every deployed rich-menu action with the new Milo theme family", () => {
+    const config = JSON.parse(readFileSync("shared/richmenu.json", "utf8")) as {
+      areas: Array<{ action: { label: string; text: string } }>;
+    };
+    const expected: Record<string, string> = {
+      "จดบันทึก": "menu",
+      "สแกนใบเสร็จ": "menu",
+      "บันทึกเสียง": "menu",
+      "วันนี้": "summary-day",
+      "สัปดาห์นี้": "summary-period",
+      "เดือนนี้": "summary-period",
+      "วิเคราะห์": "analysis-budget",
+      "งบประมาณ": "analysis-budget",
+      "รายการ": "transactions",
+      "หมวดหมู่": "analysis-budget",
+      "เตือน": "utility",
+      "ปฏิทิน": "utility",
+      "งาน": "utility",
+      "บิลรอจ่าย": "utility",
+      "รายการประจำ": "utility",
+      "ส่งออก": "utility",
+      "เอกสาร": "utility",
+      "คลังไฟล์": "utility",
+      "ผู้ช่วยกลุ่ม": "utility",
+      "เมนูเพิ่ม": "settings-help",
+    };
+    expect(config.areas).toHaveLength(20);
+    for (const area of config.areas) {
+      const command = parseMiloCommand(area.action.text, new Date("2026-09-24T12:00:00Z"));
+      expect(flexThemeForCommand(command), area.action.label).toBe(expected[area.action.label]);
+    }
   });
 });

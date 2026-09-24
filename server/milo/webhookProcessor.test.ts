@@ -216,9 +216,9 @@ describe("LINE webhook processor", () => {
       message: { id: "today-1", type: "text", text: "วันนี้มีอะไร" },
     }, "{}");
 
-    expect(replyText).toHaveBeenCalledTimes(1);
-    expect(replyText).toHaveBeenCalledWith("token", expect.stringContaining("วันนี้ของฉัน"));
-    expect(replyText).toHaveBeenCalledWith("token", expect.stringContaining("ค่าไฟ"));
+    expect(replyThemedTextCard).toHaveBeenCalledTimes(1);
+    expect(replyThemedTextCard).toHaveBeenCalledWith("token", expect.stringContaining("วันนี้ของฉัน"), "summary-day");
+    expect(replyThemedTextCard).toHaveBeenCalledWith("token", expect.stringContaining("ค่าไฟ"), "summary-day");
   });
 
   it("summarizes this month's document packet from the current chat", async () => {
@@ -234,7 +234,7 @@ describe("LINE webhook processor", () => {
     await processEvent({ type: "message", webhookEventId: "evt-doc-packet", timestamp: Date.now(), replyToken: "token", source: { type: "user", userId: "U1" }, message: { id: "doc-packet", type: "text", text: "สรุปเอกสารเดือนนี้" } }, "{}");
 
     expect(db.listVaultDocumentsForChat).toHaveBeenCalledWith("U1", "U1", "user", expect.any(Date), expect.any(Date));
-    expect(replyText).toHaveBeenCalledWith("token", expect.stringContaining("ต้องตรวจ 1"));
+    expect(replyThemedTextCard).toHaveBeenCalledWith("token", expect.stringContaining("ต้องตรวจ 1"), "utility");
   });
 
   it("stops duplicate media before storing or analyzing it again", async () => {
@@ -470,9 +470,10 @@ describe("LINE webhook processor", () => {
     const event = (id: string, text: string) => ({ type: "message" as const, webhookEventId: `evt-${id}`, timestamp: Date.now(), replyToken: "token", source: { type: "user" as const, userId: "U1" }, message: { id, type: "text" as const, text } });
     await processEvent(event("todo-list", "ดูงาน"), "{}");
     expect(db.listTodosForChat).toHaveBeenCalledWith("U1", "U1", "user");
-    expect(replyText).toHaveBeenCalledWith("token", expect.stringContaining("ส่งรายงาน"));
+    expect(replyThemedTextCard).toHaveBeenCalledWith("token", expect.stringContaining("ส่งรายงาน"), "utility");
     await processEvent(event("todo-done", "เสร็จงาน 9"), "{}");
     expect(db.completeTodoForChat).toHaveBeenCalledWith(9, "U1", "U1", "user");
+    expect(replyThemedTextCard).toHaveBeenCalledWith("token", expect.stringContaining("เสร็จ"), "utility");
   });
 
   it("lists upcoming calendar events from the same LINE chat", async () => {
@@ -494,8 +495,8 @@ describe("LINE webhook processor", () => {
     vi.mocked(replyText).mockResolvedValue(new Response());
     await processEvent({ type: "message", webhookEventId: "evt-calendar-create", timestamp: new Date("2026-09-14T02:00:00.000Z").getTime(), replyToken: "token", source: { type: "user", userId: "U1" }, message: { id: "cal-1", type: "text", text: "ลงปฏิทิน ประชุมทีมพรุ่งนี้ 10:30" } }, "{}");
     expect(db.createCalendarEvent).toHaveBeenCalledWith(expect.objectContaining({ lineChatId: "U1", createdByLineUserId: "U1", title: "ประชุมทีม", sourceMessageId: "cal-1" }));
-    expect(replyText).toHaveBeenCalledWith("token", expect.stringContaining("#88"));
-    expect(replyText).toHaveBeenCalledWith("token", expect.stringContaining("ซิงก์เข้า Google Calendar แล้ว"));
+    expect(replyThemedTextCard).toHaveBeenCalledWith("token", expect.stringContaining("#88"), "utility");
+    expect(replyThemedTextCard).toHaveBeenCalledWith("token", expect.stringContaining("ซิงก์เข้า Google Calendar แล้ว"), "utility");
   });
 
   it("searches a shared group vault within the current LINE group", async () => {
@@ -518,8 +519,8 @@ describe("LINE webhook processor", () => {
     vi.mocked(replyText).mockResolvedValue(new Response());
     await processEvent({ type: "message", webhookEventId: "evt-vault-status", timestamp: Date.now(), replyToken: "token", source: { type: "user", userId: "U1" }, message: { id: "vault-status-1", type: "text", text: "สถานะคลัง" } }, "{}");
     expect(db.vaultStorageStatus).toHaveBeenCalledWith("U1", "U1", "user");
-    expect(replyText).toHaveBeenCalledWith("token", expect.stringContaining("เก็บถาวร 11 รายการ"));
-    expect(replyText).toHaveBeenCalledWith("token", expect.stringContaining("ต้องอัปโหลดซ้ำ 1 รายการ"));
+    expect(replyThemedTextCard).toHaveBeenCalledWith("token", expect.stringContaining("เก็บถาวร 11 รายการ"), "utility");
+    expect(replyThemedTextCard).toHaveBeenCalledWith("token", expect.stringContaining("ต้องอัปโหลดซ้ำ 1 รายการ"), "utility");
   });
 
   it("stores a receipt analysis then records its confirmed expense with amount, category, date and merchant note", async () => {

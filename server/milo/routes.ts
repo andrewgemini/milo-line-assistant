@@ -1,9 +1,7 @@
 import { waitUntil } from "@vercel/functions";
-import { artworkForCommand } from "./richMenuArtwork";
 import { flexThemeForCommand } from "./flexThemeArtwork";
 import { buildCalendarIcsUrl, buildGoogleCalendarUrl } from "./calendar";
 import { buildGoogleCalendarConnectUrl, disconnectGoogleCalendar, googleCalendarConnectionStatus, syncGoogleCalendarEventCreate, syncGoogleCalendarEventDelete } from "./googleCalendar";
-import { replyRichMenu } from "./line";
 import express, { type Express, type Request, type Response } from "express";
 import { sdk } from "../_core/sdk";
 import { transcribeAudio } from "../_core/voiceTranscription";
@@ -879,11 +877,7 @@ async function handleText(event: LineEvent, lineChatId: string, lineUserId: stri
         });
       }
     }
-    const artwork = artworkForCommand(command);
-    if (artwork) {
-      try { await replyRichMenu(event.replyToken, message, artwork); }
-      catch { await replyText(event.replyToken, message); }
-    } else await replyText(event.replyToken, message);
+    await replyText(event.replyToken, message);
   }
 }
 

@@ -2176,14 +2176,6 @@ var RICH_MENU_ARTWORK = {
     "source": "ChatGPT Image Sep 12, 2026, 03_33_22 PM (8).png"
   }
 };
-function artworkForCommand(command) {
-  return command.type === "greeting" ? "overview" : void 0;
-}
-function artworkMessages(key) {
-  const base = process.env.MILO_PUBLIC_URL || "https://milo-line-assistant.onrender.com";
-  const url = new URL("/richmenu/" + RICH_MENU_ARTWORK[key].file, base).href;
-  return [{ type: "image", originalContentUrl: url, previewImageUrl: url.replace(/\.png$/, "-preview.jpg") }];
-}
 
 // server/milo/richMenuDataImage.ts
 import crypto2 from "node:crypto";
@@ -2350,21 +2342,11 @@ function compactText(value) {
   const normalized = clean(value).slice(0, 1e3);
   return normalized || "\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E21\u0E35\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E2A\u0E33\u0E2B\u0E23\u0E31\u0E1A\u0E41\u0E2A\u0E14\u0E07\u0E1C\u0E25";
 }
-function encode(key, text2) {
-  const payload = JSON.stringify({ key, text: compactText(text2) });
-  return deflateRawSync(Buffer.from(payload, "utf8"), { level: 9 }).toString("base64url");
-}
 function sign(data) {
   return crypto2.createHmac("sha256", secret()).update(data).digest("hex");
 }
 function isDynamicRichMenuArtwork(key) {
   return DATA_KEYS.has(key);
-}
-function buildRichMenuDataImageUrl(key, text2) {
-  if (!isDynamicRichMenuArtwork(key)) throw new Error(`Artwork ${key} is not data-driven`);
-  const base = (process.env.MILO_APP_BASE_URL ?? process.env.MILO_SAVE_RESULT_IMAGE_BASE_URL ?? "https://milo-line-assistant.onrender.com").replace(/\/+$/, "");
-  const data = encode(key, text2);
-  return `${base}/api/milo/rich-menu-card.png?data=${encodeURIComponent(data)}&sig=${sign(data)}&render=richmenu-data-v1`;
 }
 function decode(req) {
   const data = typeof req.query.data === "string" ? req.query.data : "";
@@ -2493,6 +2475,10 @@ function flexThemeForCommand(command) {
       return "menu";
     case "financeReport":
       return command.period === "day" ? "summary-day" : "summary-period";
+    case "todayOverview":
+    case "morningBrief":
+    case "eveningSummary":
+      return "summary-day";
     case "aiSummary":
     case "budgetOverview":
     case "categoryList":
@@ -2508,6 +2494,22 @@ function flexThemeForCommand(command) {
     case "recurringCreate":
     case "recurringList":
     case "recurringStatus":
+    case "groupGuide":
+    case "vaultStatus":
+    case "documentPacket":
+    case "documentIssues":
+    case "todo":
+    case "todoList":
+    case "todoComplete":
+    case "pendingBillList":
+    case "pendingBillPay":
+    case "pendingBillCancel":
+    case "followUp":
+    case "note":
+    case "calendarCreate":
+    case "calendarConnect":
+    case "calendarDisconnect":
+    case "calendarStatus":
       return "utility";
     case "settingGuide":
     case "help":
@@ -2541,10 +2543,6 @@ async function callLine(path5, credentials, init) {
   return response;
 }
 var MILO_RICH_MENU_IMAGE_BASE_URL = (process.env.MILO_RICH_MENU_IMAGE_BASE_URL ?? "https://milo-line-assistant.onrender.com/milo-richmenu").replace(/\/+$/, "");
-function miloRichMenuImageUrl(key) {
-  const extension = key === "save-complete-preview" ? "jpg" : "png";
-  return `${MILO_RICH_MENU_IMAGE_BASE_URL}/${key}.${extension}`;
-}
 async function replyText(replyToken, text2, credentials = lineCredentials()) {
   return callLine("/v2/bot/message/reply", credentials, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ replyToken, messages: [{ type: "text", text: text2.slice(0, 5e3) }] }) });
 }
@@ -2699,7 +2697,7 @@ ${categories}` : "\n\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E21\u0E35\u0E23\u0E32
 }
 function miloFinanceBrandStrip() {
   return { type: "box", layout: "horizontal", alignItems: "center", spacing: "sm", paddingAll: "9px", cornerRadius: "md", backgroundColor: "#FCEAF4", contents: [
-    { type: "image", url: miloRichMenuImageUrl("summary"), size: "xs", aspectRatio: "1:1", aspectMode: "cover", flex: 0 },
+    { type: "image", url: miloFlexThemeImageUrl("summary-period"), size: "xs", aspectRatio: "1:1", aspectMode: "cover", flex: 0 },
     { type: "box", layout: "vertical", flex: 1, contents: [
       { type: "text", text: "MILO  \u2022  FINANCE", size: "xxs", weight: "bold", color: "#7657AA" },
       { type: "text", text: "\u0E19\u0E49\u0E2D\u0E07\u0E41\u0E21\u0E27\u0E0A\u0E48\u0E27\u0E22\u0E14\u0E39\u0E41\u0E25\u0E22\u0E2D\u0E14\u0E02\u0E2D\u0E07\u0E04\u0E38\u0E13", size: "xxs", color: "#9A7390", wrap: true }
@@ -3011,28 +3009,6 @@ async function getProfile(source, credentials = lineCredentials()) {
   const path5 = source.type === "group" ? `/v2/bot/group/${source.groupId}/member/${source.userId}` : `/v2/bot/room/${source.roomId}/member/${source.userId}`;
   const response = await callLine(path5, credentials, { method: "GET" });
   return await response.json();
-}
-async function replyRichMenu(replyToken, text2, artwork, credentials = lineCredentials()) {
-  const [staticImage] = artworkMessages(artwork);
-  if (!staticImage) throw new Error("Milo rich-menu artwork is unavailable");
-  const image = isDynamicRichMenuArtwork(artwork) ? { type: "image", originalContentUrl: buildRichMenuDataImageUrl(artwork, text2), previewImageUrl: buildRichMenuDataImageUrl(artwork, text2) } : staticImage;
-  return callLine("/v2/bot/message/reply", credentials, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      replyToken,
-      messages: [{
-        ...image,
-        quickReply: { items: [
-          { type: "action", action: { type: "message", label: "\u0E27\u0E31\u0E19\u0E19\u0E35\u0E49", text: "\u0E2A\u0E23\u0E38\u0E1B\u0E27\u0E31\u0E19\u0E19\u0E35\u0E49" } },
-          { type: "action", action: { type: "message", label: "\u0E2A\u0E31\u0E1B\u0E14\u0E32\u0E2B\u0E4C\u0E19\u0E35\u0E49", text: "\u0E2A\u0E23\u0E38\u0E1B\u0E2A\u0E31\u0E1B\u0E14\u0E32\u0E2B\u0E4C\u0E19\u0E35\u0E49" } },
-          { type: "action", action: { type: "message", label: "\u0E40\u0E14\u0E37\u0E2D\u0E19\u0E19\u0E35\u0E49", text: "\u0E2A\u0E23\u0E38\u0E1B\u0E40\u0E14\u0E37\u0E2D\u0E19\u0E19\u0E35\u0E49" } },
-          { type: "action", action: { type: "message", label: "\u0E1B\u0E35\u0E19\u0E35\u0E49", text: "\u0E2A\u0E23\u0E38\u0E1B\u0E1B\u0E35\u0E19\u0E35\u0E49" } },
-          { type: "action", action: { type: "uri", label: "\u0E40\u0E1B\u0E34\u0E14\u0E41\u0E14\u0E0A\u0E1A\u0E2D\u0E23\u0E4C\u0E14", uri: new URL("/dashboard", process.env.MILO_PUBLIC_URL || "https://milo-line-assistant.onrender.com").href } }
-        ] }
-      }]
-    })
-  });
 }
 async function replyMiloListBubble(replyToken, title, subtitle, rows, artwork, credentials = lineCredentials()) {
   const contents = rows.slice(0, 10).map((row) => ({
@@ -8897,14 +8873,7 @@ ${incomeSection}
         });
       }
     }
-    const artwork = artworkForCommand(command);
-    if (artwork) {
-      try {
-        await replyRichMenu(event.replyToken, message, artwork);
-      } catch {
-        await replyText(event.replyToken, message);
-      }
-    } else await replyText(event.replyToken, message);
+    await replyText(event.replyToken, message);
   }
 }
 var MediaProcessingError = class extends Error {
