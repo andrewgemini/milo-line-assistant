@@ -29,6 +29,26 @@ describe("Milo Flex Theme artwork", () => {
     expect(flexThemeForCommand(parseMiloCommand(text))).toBe(expected);
   });
 
+  it("themes remaining conversational result commands consistently", () => {
+    expect(flexThemeForCommand({ type: "reminderCancel", id: 7 })).toBe("utility");
+    expect(flexThemeForCommand({ type: "calendarCancel", id: 8 })).toBe("utility");
+    expect(flexThemeForCommand({ type: "captureCancel" })).toBe("utility");
+    expect(flexThemeForCommand({ type: "transactionSearch", query: "กาแฟ" })).toBe("transactions");
+    expect(flexThemeForCommand({ type: "transactionDelete", id: 9 })).toBe("transactions");
+    expect(flexThemeForCommand({ type: "transactionUpdate", id: 10, amount: 99 })).toBe("transactions");
+    expect(flexThemeForCommand({ type: "budget", category: "อาหาร", amount: 5000 })).toBe("analysis-budget");
+    expect(flexThemeForCommand({ type: "budgetCycleStart", day: 14 })).toBe("analysis-budget");
+    expect(flexThemeForCommand({ type: "openingBalance", amount: 1000 })).toBe("analysis-budget");
+    expect(flexThemeForCommand({ type: "categoryAdd", name: "กาแฟ", transactionType: "expense" })).toBe("analysis-budget");
+    expect(flexThemeForCommand({ type: "imageEdit", field: "amount", value: 80 })).toBe("utility");
+    expect(flexThemeForCommand({ type: "imageConfirm" })).toBe("utility");
+    expect(flexThemeForCommand({ type: "pdfConfirm" })).toBe("utility");
+    expect(flexThemeForCommand({ type: "voiceConfirm" })).toBe("utility");
+    expect(flexThemeForCommand({ type: "voiceEditPrompt" })).toBe("utility");
+    expect(flexThemeForCommand({ type: "invalid", message: "ข้อมูลไม่ครบ" })).toBe("settings-help");
+    expect(flexThemeForCommand({ type: "unknown" })).toBeUndefined();
+  });
+
   it("builds public URLs for hero and full screen variants", () => {
     expect(miloFlexThemeImageUrl("transactions")).toBe("https://milo-line-assistant.onrender.com/milo-flex/heroes/transactions.png");
     expect(miloFlexThemeImageUrl("transactions", "screen")).toBe("https://milo-line-assistant.onrender.com/milo-flex/screens/transactions.png");

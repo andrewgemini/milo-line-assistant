@@ -77,13 +77,13 @@ vi.mock("./googleCalendar", () => ({
 vi.mock("../_core/voiceTranscription", () => ({ transcribeAudio: vi.fn() }));
 vi.mock("./financialAssistant", () => ({ generateFinancialInsight: vi.fn(), suggestExpenseCategory: vi.fn() }));
 vi.mock("./line", () => ({
-  replyRichMenu: vi.fn(), replyThemedTextCard: vi.fn(), replyTransactionList: vi.fn(), replyReminderList: vi.fn(), replyCalendarList: vi.fn(), replyGreetingHome: vi.fn(), replyMiloOnboarding: vi.fn(), replyMiloSettings: vi.fn(), getMessageContent: vi.fn(), getProfile: vi.fn(), lineCredentials: vi.fn(() => ({ channelSecret: "test-secret", channelAccessToken: "test-token" })), pushText: vi.fn(), pushTextWithQuickReplies: vi.fn(), replyMention: vi.fn(), replyText: vi.fn(), replyTextWithQuickReplies: vi.fn(),
+  replyThemedTextCard: vi.fn(), replyTransactionList: vi.fn(), replyReminderList: vi.fn(), replyCalendarList: vi.fn(), replyGreetingHome: vi.fn(), replyMiloOnboarding: vi.fn(), replyMiloSettings: vi.fn(), getMessageContent: vi.fn(), getProfile: vi.fn(), lineCredentials: vi.fn(() => ({ channelSecret: "test-secret", channelAccessToken: "test-token" })), pushText: vi.fn(), pushTextWithQuickReplies: vi.fn(), replyMention: vi.fn(), replyText: vi.fn(), replyTextWithQuickReplies: vi.fn(),
   replyVoiceProposal: vi.fn(), replyPostSaveSummary: vi.fn(), replyPostSaveSummaryImage: vi.fn(), replyPostSaveSummaryFallback: vi.fn(), replyVoiceCategoryChoices: vi.fn(), postSaveSummaryText: vi.fn((summary: { amount: number }) => `รายจ่าย ${summary.amount} บาท`), replyFinanceReportCard: vi.fn(), replyFinanceReportCardFallback: vi.fn(), financeReportCardText: vi.fn(() => "สรุปการเงินวันนี้"),
   sourceIdentity: vi.fn(() => ({ lineChatId: "G1", lineUserId: "U1", scope: "group" })), verifyLineSignature: vi.fn(),
 }));
 
 import * as db from "../db";
-import { replyRichMenu, replyThemedTextCard, replyReminderList, replyTransactionList, replyCalendarList, replyGreetingHome, replyMiloSettings, getMessageContent, getProfile, pushTextWithQuickReplies, replyFinanceReportCard, replyMention, replyPostSaveSummary, replyPostSaveSummaryImage, replyPostSaveSummaryFallback, replyText, replyTextWithQuickReplies, replyVoiceCategoryChoices, replyVoiceProposal, sourceIdentity, verifyLineSignature } from "./line";
+import { replyThemedTextCard, replyReminderList, replyTransactionList, replyCalendarList, replyGreetingHome, replyMiloSettings, getMessageContent, getProfile, pushTextWithQuickReplies, replyFinanceReportCard, replyMention, replyPostSaveSummary, replyPostSaveSummaryImage, replyPostSaveSummaryFallback, replyText, replyTextWithQuickReplies, replyVoiceCategoryChoices, replyVoiceProposal, sourceIdentity, verifyLineSignature } from "./line";
 import { storageGetSignedUrl, storagePut } from "../storage";
 import { analyzeImage } from "./imageAnalysis";
 import { analyzePdfBuffer } from "./pdfAnalysis";
@@ -298,7 +298,7 @@ describe("LINE webhook processor", () => {
     vi.mocked(sourceIdentity).mockReturnValueOnce({ lineChatId: "U1", lineUserId: "U1", scope: "user" });
     vi.mocked(replyText).mockResolvedValue(new Response());
     await processEvent({ type: "message", webhookEventId: "evt-invalid-budget", timestamp: Date.now(), replyToken: "token", source: { type: "user", userId: "U1" }, message: { id: "m3", type: "text", text: "ตั้งงบ อาหาร" } }, "{}");
-    expect(replyText).toHaveBeenCalledWith("token", "รูปแบบงบประมาณ: ตั้งงบ อาหาร 5000 บาท");
+    expect(replyThemedTextCard).toHaveBeenCalledWith("token", "รูปแบบงบประมาณ: ตั้งงบ อาหาร 5000 บาท", "settings-help");
   });
 
   it("replies with a helpful validation message for an incomplete category command", async () => {
@@ -307,7 +307,7 @@ describe("LINE webhook processor", () => {
     vi.mocked(sourceIdentity).mockReturnValueOnce({ lineChatId: "U1", lineUserId: "U1", scope: "user" });
     vi.mocked(replyText).mockResolvedValue(new Response());
     await processEvent({ type: "message", webhookEventId: "evt-invalid-category", timestamp: Date.now(), replyToken: "token", source: { type: "user", userId: "U1" }, message: { id: "m4", type: "text", text: "เพิ่มหมวด" } }, "{}");
-    expect(replyText).toHaveBeenCalledWith("token", "กรุณาระบุชื่อหมวด เช่น เพิ่มหมวดรายจ่าย เดินทาง");
+    expect(replyThemedTextCard).toHaveBeenCalledWith("token", "กรุณาระบุชื่อหมวด เช่น เพิ่มหมวดรายจ่าย เดินทาง", "settings-help");
   });
 
   it("uses three contextual quick replies for an unknown finance intent", async () => {
@@ -330,7 +330,7 @@ describe("LINE webhook processor", () => {
     vi.mocked(replyText).mockResolvedValue(new Response());
     await processEvent({ type: "message", webhookEventId: "evt-undo-latest", timestamp: Date.now(), replyToken: "token", source: { type: "user", userId: "U1" }, message: { id: "undo-1", type: "text", text: "ยกเลิกรายการล่าสุด" } }, "{}");
     expect(db.deleteLatestTransaction).toHaveBeenCalledWith({ lineUserId: "U1", financeAccountId: 7 });
-    expect(replyText).toHaveBeenCalledWith("token", expect.stringContaining("#77"));
+    expect(replyThemedTextCard).toHaveBeenCalledWith("token", expect.stringContaining("#77"), "transactions");
   });
 
   it("returns a LINE User ID only to a private chat for dashboard linking", async () => {
@@ -385,7 +385,7 @@ describe("LINE webhook processor", () => {
 
     expect(db.createReminder).not.toHaveBeenCalled();
     expect(db.setImageExtractionStatus).not.toHaveBeenCalledWith(901, "accepted");
-    expect(replyText).toHaveBeenCalledWith("token", expect.stringContaining("Pro"));
+    expect(replyThemedTextCard).toHaveBeenCalledWith("token", expect.stringContaining("Pro"), "utility");
   });
 
   it("persists and replies to the help-menu text workflows in a private chat", async () => {
@@ -427,7 +427,7 @@ describe("LINE webhook processor", () => {
     expect(db.listTransactionCategories).toHaveBeenCalledWith("U1", 7);
     expect(replyPostSaveSummary).toHaveBeenCalledWith("token", expect.objectContaining({ transactionType: "expense", amount: 65, category: "อาหาร", dailyExpense: 65 }));
     expect(replyPostSaveSummaryImage).not.toHaveBeenCalled();
-    expect(replyRichMenu).not.toHaveBeenCalled();
+
     expect(replyThemedTextCard).toHaveBeenCalledWith("token", expect.stringContaining("Milo ช่วยคุณจบงานใน LINE แชทเดียวครับ"), "settings-help");
     expect(replyReminderList).toHaveBeenCalled();
   });
@@ -569,8 +569,8 @@ describe("LINE webhook processor", () => {
 
     expect(db.updateProposedImageExtractionJson).toHaveBeenCalledWith(30, expect.stringContaining('"amount":150'));
     expect(db.createTransaction).not.toHaveBeenCalled();
-    expect(replyText).toHaveBeenCalledWith("token", expect.stringContaining("ยังไม่บันทึก"));
-    expect(replyText).toHaveBeenCalledWith("token", expect.stringContaining("150"));
+    expect(replyThemedTextCard).toHaveBeenCalledWith("token", expect.stringContaining("ยังไม่บันทึก"), "utility");
+    expect(replyThemedTextCard).toHaveBeenCalledWith("token", expect.stringContaining("150"), "utility");
   });
   it("does not record a receipt with an unreadable date until the user supplies an explicit date", async () => {
     const incompleteReceipt = {
@@ -586,7 +586,7 @@ describe("LINE webhook processor", () => {
     await processEvent({ type: "message", webhookEventId: "evt-unknown-date", timestamp: Date.now(), replyToken: "token", source: { type: "user", userId: "U1" }, message: { id: "txt-2", type: "text", text: "ยืนยันค่าใช้จ่าย" } }, "{}");
     expect(db.createTransaction).not.toHaveBeenCalled();
     expect(db.setImageExtractionStatus).not.toHaveBeenCalled();
-    expect(replyText).toHaveBeenCalledWith("token", expect.stringContaining("จึงยังไม่บันทึก"));
+    expect(replyThemedTextCard).toHaveBeenCalledWith("token", expect.stringContaining("จึงยังไม่บันทึก"), "utility");
   });
 
   it("does not silently replace a missing receipt date with the upload date", async () => {
@@ -608,7 +608,7 @@ describe("LINE webhook processor", () => {
 
     expect(db.createTransaction).not.toHaveBeenCalled();
     expect(db.setImageExtractionStatus).not.toHaveBeenCalledWith(44, "accepted");
-    expect(replyText).toHaveBeenCalledWith("token", expect.stringContaining("จึงยังไม่บันทึก"));
+    expect(replyThemedTextCard).toHaveBeenCalledWith("token", expect.stringContaining("จึงยังไม่บันทึก"), "utility");
   });
 
   it("stores a PDF proposal and confirms multiple valid expense rows with the PDF linked as evidence", async () => {
@@ -646,7 +646,7 @@ describe("LINE webhook processor", () => {
     expect(db.linkTransactionAttachment).toHaveBeenCalledWith({ transactionId: 201, vaultItemId: 33, lineUserId: "U1", label: "PDF ต้นฉบับ" });
     expect(db.linkTransactionAttachment).toHaveBeenCalledWith({ transactionId: 202, vaultItemId: 33, lineUserId: "U1", label: "PDF ต้นฉบับ" });
     expect(db.setImageExtractionStatus).toHaveBeenCalledWith(40, "accepted");
-    expect(replyText).toHaveBeenCalledWith("token", expect.stringContaining("บันทึกรายจ่ายจาก PDF แล้ว 2 รายการ"));
+    expect(replyThemedTextCard).toHaveBeenCalledWith("token", expect.stringContaining("บันทึกรายจ่ายจาก PDF แล้ว 2 รายการ"), "utility");
   });
 
   it.each(["จ่ายค่าแท็กซี่ 120 บาท", "สวัสดีครับ"])("previews voice %s without saving and offers confirmation only for a transaction", async (text) => {
@@ -741,7 +741,7 @@ describe("LINE webhook processor", () => {
     expect(replyFinanceReportCard).toHaveBeenCalledWith("token", expect.objectContaining({ period: "week", expense: 615, categories: { อาหาร: 565, ทั่วไป: 50 } }));
     expect(replyFinanceReportCard).toHaveBeenCalledWith("token", expect.objectContaining({ period: "month", expense: 615, categories: { อาหาร: 565, ทั่วไป: 50 } }));
     expect(replyText).not.toHaveBeenCalled();
-    expect(replyRichMenu).not.toHaveBeenCalled();
+
   });
 
   it("sets a category budget and compares the next natural-language expense against that budget", async () => {
@@ -905,7 +905,7 @@ describe("rich menu webhook regression", () => {
   const event = (text: string) => ({ type: "message", webhookEventId: "richmenu-test", timestamp: Date.now(), replyToken: "token", source: { type: "user" as const, userId: "U1" }, message: { id: "menu", type: "text" as const, text } });
   it.each([["จดบันทึก","menu"],["งบประมาณ","analysis-budget"],["หมวดหมู่","analysis-budget"],["วิธีใช้งาน","settings-help"]] as const)("%s replies with the matching Milo themed Flex card", async (text, artwork) => {
     await processEvent(event(text), "{}");
-    expect(replyRichMenu).not.toHaveBeenCalled();
+
     expect(replyThemedTextCard).toHaveBeenCalledWith("token", expect.any(String), artwork);
     expect(db.finishWebhookEvent).toHaveBeenCalledWith("richmenu-test", "processed");
   });
@@ -917,14 +917,14 @@ describe("rich menu webhook regression", () => {
   it("ตั้งค่า opens the Milo settings hub", async () => {
     await processEvent(event("ตั้งค่า"), "{}");
     expect(replyMiloSettings).toHaveBeenCalledWith("token");
-    expect(replyRichMenu).not.toHaveBeenCalled();
+
     expect(replyText).not.toHaveBeenCalled();
   });
   it("สวัสดีไมโล greets and opens the main action shortcuts", async () => {
     vi.mocked(replyGreetingHome).mockResolvedValue(new Response());
     await processEvent(event("สวัสดีไมโล"), "{}");
     expect(replyGreetingHome).toHaveBeenCalledWith("token");
-    expect(replyRichMenu).not.toHaveBeenCalled();
+
     expect(replyText).not.toHaveBeenCalled();
     expect(db.finishWebhookEvent).toHaveBeenCalledWith("richmenu-test", "processed");
   });
@@ -934,7 +934,7 @@ describe("rich menu webhook regression", () => {
     await processEvent(event(text), "{}");
     expect(db.listBudgets).not.toHaveBeenCalled();
     expect(db.listTransactions).not.toHaveBeenCalled();
-    expect(replyRichMenu).not.toHaveBeenCalled();
+
     expect(replyText).toHaveBeenCalledWith("token", expect.stringContaining("ยังไม่พบบัญชี"));
   });
   it("analysis computes actual account data and replies natively", async () => {
@@ -942,7 +942,7 @@ describe("rich menu webhook regression", () => {
     await processEvent(event("วิเคราะห์"), "{}");
     expect(db.financeReport).toHaveBeenCalledWith("U1", "month", expect.any(Date), 7);
     expect(generateFinancialInsight).toHaveBeenCalled();
-    expect(replyRichMenu).not.toHaveBeenCalled();
+
     expect(replyThemedTextCard).toHaveBeenCalledWith("token", expect.stringContaining("ข้อมูลจริง"), "analysis-budget");
   });
   it.each([["สรุป","year"],["สรุปวันนี้","day"],["สรุปสัปดาห์นี้","week"],["สรุปเดือนนี้","month"],["สรุปปีนี้","year"]])("%s loads the requested period", async (text,period) => {
@@ -954,7 +954,7 @@ describe("rich menu webhook regression", () => {
     vi.mocked(db.listBudgets).mockResolvedValue([{category:"อาหาร",amount:"5000"}] as never);
     vi.mocked(db.financeBudgetCycleReport).mockResolvedValue({key:"2026-09",period:"budget-cycle",categories:{อาหาร:125},income:0,expense:125,balance:-125,rows:[]} as never);
     await processEvent(event("งบประมาณ"), "{}");
-    expect(replyRichMenu).not.toHaveBeenCalled();
+
     expect(replyThemedTextCard).toHaveBeenCalledWith("token", expect.stringContaining("ใช้ไป 125 / งบ 5,000"), "analysis-budget");
   });
   it("falls back to useful text when artwork is rejected", async () => {

@@ -1,5 +1,3 @@
-import { artworkMessages, type RichMenuArtwork } from "./richMenuArtwork";
-import { buildRichMenuDataImageUrl, isDynamicRichMenuArtwork } from "./richMenuDataImage";
 import { budgetStatusCopy } from "./budgetStatus";
 import { miloFlexThemeImageUrl, type MiloFlexThemeArtwork } from "./flexThemeArtwork";
 import crypto from "node:crypto";
@@ -35,15 +33,6 @@ async function callLine(path: string, credentials: LineCredentials, init: Reques
   return response;
 }
 
-const MILO_RICH_MENU_IMAGE_BASE_URL = (process.env.MILO_RICH_MENU_IMAGE_BASE_URL ?? "https://milo-line-assistant.onrender.com/milo-richmenu").replace(/\/+$/, "");
-
-export type MiloRichMenuImageKey = "home" | "analysis" | "record" | "wallet" | "settings" | "summary" | "save-complete" | "save-complete-preview";
-
-export function miloRichMenuImageUrl(key: MiloRichMenuImageKey) {
-  const extension = key === "save-complete-preview" ? "jpg" : "png";
-  return `${MILO_RICH_MENU_IMAGE_BASE_URL}/${key}.${extension}`;
-}
-
 export function miloSaveResultImageUrl(summary: PostSaveSummary) {
   const appBaseUrl = (process.env.MILO_SAVE_RESULT_IMAGE_BASE_URL ?? "https://milo-line-assistant.onrender.com").replace(/\/+$/, "");
   const params = new URLSearchParams({
@@ -58,17 +47,6 @@ export function miloSaveResultImageUrl(summary: PostSaveSummary) {
     render: "glyph-v3",
   });
   return `${appBaseUrl}/api/milo/save-result.png?${params.toString()}`;
-}
-export async function replyImage(replyToken: string, key: MiloRichMenuImageKey, credentials = lineCredentials()) {
-  const url = miloRichMenuImageUrl(key);
-  return callLine("/v2/bot/message/reply", credentials, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      replyToken,
-      messages: [{ type: "image", originalContentUrl: url, previewImageUrl: url }],
-    }),
-  });
 }
 export async function replyText(replyToken: string, text: string, credentials = lineCredentials()) {
   return callLine("/v2/bot/message/reply", credentials, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ replyToken, messages: [{ type: "text", text: text.slice(0, 5000) }] }) });
@@ -600,30 +578,6 @@ export async function getProfile(source: LineSource, credentials = lineCredentia
   return (await response.json()) as { displayName: string };
 }
 
-export async function replyRichMenu(replyToken: string, text: string, artwork: RichMenuArtwork, credentials = lineCredentials()) {
-  const [staticImage] = artworkMessages(artwork);
-  if (!staticImage) throw new Error("Milo rich-menu artwork is unavailable");
-  const image = isDynamicRichMenuArtwork(artwork)
-    ? { type: "image", originalContentUrl: buildRichMenuDataImageUrl(artwork, text), previewImageUrl: buildRichMenuDataImageUrl(artwork, text) }
-    : staticImage;
-  return callLine("/v2/bot/message/reply", credentials, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      replyToken,
-      messages: [{
-        ...image,
-        quickReply: { items: [
-          { type: "action", action: { type: "message", label: "วันนี้", text: "สรุปวันนี้" } },
-          { type: "action", action: { type: "message", label: "สัปดาห์นี้", text: "สรุปสัปดาห์นี้" } },
-          { type: "action", action: { type: "message", label: "เดือนนี้", text: "สรุปเดือนนี้" } },
-          { type: "action", action: { type: "message", label: "ปีนี้", text: "สรุปปีนี้" } },
-          { type: "action", action: { type: "uri", label: "เปิดแดชบอร์ด", uri: new URL("/dashboard", process.env.MILO_PUBLIC_URL || "https://milo-line-assistant.onrender.com").href } },
-        ] },
-      }],
-    }),
-  });
-}
 export type MiloListRow = { id: number; title: string; detail: string; actionLabel?: string; actionText?: string };
 
 async function replyMiloListBubble(replyToken: string, title: string, subtitle: string, rows: MiloListRow[], artwork: MiloFlexThemeArtwork, credentials = lineCredentials()) {

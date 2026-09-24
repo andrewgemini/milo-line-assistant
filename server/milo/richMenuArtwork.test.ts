@@ -1,12 +1,9 @@
-import { describe, it, expect, vi, afterEach } from "vitest";
+import { describe, it, expect } from "vitest";
 import { existsSync, readFileSync, statSync } from "node:fs";
-import { RICH_MENU_ARTWORK, artworkForCommand } from "./richMenuArtwork";
+import { RICH_MENU_ARTWORK } from "./richMenuArtwork";
 import { parseMiloCommand } from "./commandParser";
-import { replyRichMenu } from "./line";
-afterEach(() => vi.restoreAllMocks());
 describe("rich menu artwork and advertised commands", () => {
-  it.each(["จดบันทึก","สรุป","สรุปวันนี้","สรุปสัปดาห์นี้","สรุปเดือนนี้","สรุปปีนี้","วิเคราะห์","งบประมาณ","รายการ","หมวดหมู่","ตั้งค่า","วิธีใช้งาน"])("%s uses native LINE output instead of artwork", text => expect(artworkForCommand(parseMiloCommand(text))).toBeUndefined());
-  it("does not route greeting through legacy artwork", () => expect(artworkForCommand(parseMiloCommand("สวัสดีไมโล"))).toBeUndefined());
+
   it("maps every deployed rich-menu action to a supported command", () => {
     const config=JSON.parse(readFileSync("shared/richmenu.json","utf8"));
     expect(config.areas).toHaveLength(20);
@@ -14,23 +11,8 @@ describe("rich menu artwork and advertised commands", () => {
       expect(area.action.type).toBe("message");
       const command = parseMiloCommand(area.action.text);
       expect(command.type).not.toBe("invalid");
-      expect(artworkForCommand(command)).toBeUndefined();
+
     }
-  });
-  it.each([
-    ["analysis", "สรุปวิเคราะห์การเงินจริง"],
-    ["budget", "งบจริง 5000"],
-    ["transactions", "รายการจริง 80 บาท"],
-    ["categories", "หมวดจริง อาหาร"],
-  ] as const)("dynamic data artwork uses the signed renderer for %s without a text message", async (key,text) => {
-    const fetchMock=vi.spyOn(globalThis,"fetch").mockResolvedValue(new Response());
-    await replyRichMenu("r",text,key,{channelAccessToken:"test",channelSecret:"test"});
-    const payload=JSON.parse(String(fetchMock.mock.calls[0][1]?.body));
-    expect(payload.messages).toHaveLength(1);
-    expect(payload.messages[0].type).toBe("image");
-    expect(payload.messages[0].originalContentUrl).toContain("/api/milo/rich-menu-card.png?");
-    expect(payload.messages[0].originalContentUrl).toContain("render=richmenu-data-v1");
-    expect(payload.messages[0].quickReply.items).toHaveLength(5);
   });
   it("ships previews below LINE's 1 MB limit", () => {
     for(const entry of Object.values(RICH_MENU_ARTWORK)) expect(statSync("client/public/richmenu/"+entry.file.replace(".png","-preview.jpg")).size).toBeLessThan(1000000);
@@ -44,18 +26,5 @@ describe("rich menu artwork and advertised commands", () => {
     const cmd = parseMiloCommand("เตือน จ่ายค่าเน็ต ทุกเดือนวันที่ 25 เวลา 09:00", new Date("2026-09-12T08:00:00Z"));
     expect(cmd).toMatchObject({type:"reminder",data:{recurrenceType:"month",recurrenceDayOfMonth:25,nextRunAt:new Date("2026-09-25T02:00:00Z")}});
   });
-  it.each(["record", "settings", "help", "overview"] as const)(
-    "sends static %s artwork as one image-only message with usable actions",
-    async key => {
-      const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response());
-      await replyRichMenu("r", "ข้อมูลจริงที่ใช้เฉพาะ fallback", key, { channelAccessToken: "test", channelSecret: "test" });
-      const payload = JSON.parse(String(fetchMock.mock.calls[0][1]?.body));
-      expect(payload.messages).toHaveLength(1);
-      expect(payload.messages[0].type).toBe("image");
-      expect(payload.messages[0].text).toBeUndefined();
-      expect(payload.messages[0].originalContentUrl).toBe(`https://milo-line-assistant.onrender.com/richmenu/${RICH_MENU_ARTWORK[key].file}`);
-      expect(payload.messages[0].quickReply.items).toHaveLength(5);
-    },
-  );
 
 });

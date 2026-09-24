@@ -8,11 +8,13 @@ afterEach(() => vi.unstubAllEnvs());
 describe("production API entrypoint", () => {
   it("serves health, tRPC and the signed webhook without opening its own listener", async () => {
     vi.stubEnv("LINE_CHANNEL_SECRET", "test-secret");
+    vi.stubEnv("OAUTH_SERVER_URL", "");
+    vi.stubEnv("VITE_APP_ID", "");
     const server = app.listen(0, "127.0.0.1");
     await new Promise<void>(resolve => server.once("listening", resolve));
     const base = "http://127.0.0.1:" + (server.address() as AddressInfo).port;
     try {
-      expect(await (await fetch(base + "/api/health")).json()).toMatchObject({ service: "milo" });
+      expect(await (await fetch(base + "/api/health")).json()).toMatchObject({ service: "milo", readiness: { dashboardExternalOAuthConfigured: false } });
       expect(await (await fetch(base + "/api/health", { headers: { "x-vercel-oidc-token": "request-oidc-token" } })).json()).toMatchObject({
         imageAnalysisMode: expect.stringContaining("vercel-ai-gateway-oidc"),
         voiceConfigured: true,
@@ -22,6 +24,9 @@ describe("production API entrypoint", () => {
       });
       expect((await fetch(base + "/api/trpc/auth.me")).status).toBe(200);
       expect((await fetch(base + "/api/milo/export")).status).toBe(401);
+      const disabledOAuth = await fetch(base + "/api/oauth/callback?code=test&state=test");
+      expect(disabledOAuth.status).toBe(503);
+      expect(await disabledOAuth.json()).toMatchObject({ error: expect.stringContaining("External OAuth is not configured") });
       const body = JSON.stringify({ events: [] });
       for (const path of ["/api/line/webhook"]) {
         const invalid = await fetch(base + path, { method: "POST", headers: { "content-type": "application/json" }, body });

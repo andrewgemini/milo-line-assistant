@@ -12,6 +12,11 @@ function getQueryParam(req: Request, key: string): string | undefined {
 
 export function registerOAuthRoutes(app: Express) {
   app.get("/api/oauth/callback", async (req: Request, res: Response) => {
+    if (!process.env.OAUTH_SERVER_URL?.trim() || !process.env.VITE_APP_ID?.trim()) {
+      res.status(503).json({ error: "External OAuth is not configured. Use the Milo admin login at /dashboard." });
+      return;
+    }
+
     const code = getQueryParam(req, "code");
     const state = getQueryParam(req, "state");
 

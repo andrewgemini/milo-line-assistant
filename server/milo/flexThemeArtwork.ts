@@ -35,41 +35,67 @@ export function flexThemeForCommand(command: MiloCommand): MiloFlexThemeArtwork 
       return "summary-day";
     case "aiSummary":
     case "budgetOverview":
+    case "budget":
+    case "budgetCycleStart":
+    case "openingBalance":
+    case "categoryAdd":
+    case "categoryRemove":
     case "categoryList":
       return "analysis-budget";
+    case "transactionSearch":
     case "transactionList":
+    case "transactionUndo":
+    case "transactionDelete":
+    case "transactionUpdate":
       return "transactions";
+    case "expense":
+    case "income":
+      return "save-complete";
+    case "imageConfirm":
+    case "pdfConfirm":
+    case "voiceConfirm":
     case "reminder":
     case "reminderList":
+    case "reminderCancel":
+    case "calendarCreate":
     case "calendarList":
+    case "calendarCancel":
+    case "calendarConnect":
+    case "calendarDisconnect":
+    case "calendarStatus":
+    case "groupGuide":
     case "vault":
+    case "vaultStatus":
+    case "documentPacket":
+    case "documentIssues":
+    case "captureDraft":
+    case "captureConfirm":
+    case "captureCancel":
+    case "followUp":
+    case "pendingBillList":
+    case "pendingBillPay":
+    case "pendingBillCancel":
+    case "note":
+    case "todo":
+    case "todoList":
+    case "todoComplete":
     case "search":
+    case "mention":
     case "exportFinance":
     case "recurringCreate":
     case "recurringList":
     case "recurringStatus":
-    case "groupGuide":
-    case "vaultStatus":
-    case "documentPacket":
-    case "documentIssues":
-    case "todo":
-    case "todoList":
-    case "todoComplete":
-    case "pendingBillList":
-    case "pendingBillPay":
-    case "pendingBillCancel":
-    case "followUp":
-    case "note":
-    case "calendarCreate":
-    case "calendarConnect":
-    case "calendarDisconnect":
-    case "calendarStatus":
+    case "imageEdit":
+    case "voiceEditPrompt":
+    case "voiceEdit":
+    case "voiceCategoryChange":
       return "utility";
     case "settingGuide":
     case "help":
     case "dashboardGuide":
+    case "invalid":
       return "settings-help";
-    default:
+    case "unknown":
       return undefined;
   }
 }

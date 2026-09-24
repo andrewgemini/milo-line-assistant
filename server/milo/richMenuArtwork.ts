@@ -1,5 +1,3 @@
-import type { MiloCommand } from "./commandParser";
-
 export const RICH_MENU_ARTWORK = {
   "report-year": {
     "file": "report-year.png",
@@ -53,18 +51,3 @@ export const RICH_MENU_ARTWORK = {
 
 export type RichMenuArtwork = keyof typeof RICH_MENU_ARTWORK;
 
-export function artworkForCommand(_command: MiloCommand): RichMenuArtwork | undefined {
-  // Legacy artwork remains available for direct compatibility tests only.
-  // Active LINE command routing is fully handled by native/themed Flex responses.
-  return undefined;
-}
-
-/**
- * Rich-menu artwork is intentionally one image message only.
- * Any explanatory text must be used only as a fallback when LINE rejects the image reply.
- */
-export function artworkMessages(key: RichMenuArtwork) {
-  const base = process.env.MILO_PUBLIC_URL || "https://milo-line-assistant.onrender.com";
-  const url = new URL("/richmenu/" + RICH_MENU_ARTWORK[key].file, base).href;
-  return [{ type: "image", originalContentUrl: url, previewImageUrl: url.replace(/\.png$/, "-preview.jpg") }];
-}

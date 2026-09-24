@@ -12,20 +12,35 @@ export { COOKIE_NAME, ONE_YEAR_MS } from "@shared/const";
 // call would desync it from an in-flight login and the callback would reject it
 // with "invalid oauth state". It returns void by design, so there is no URL to
 // stash across renders.
-export const startLogin = () => {
-  const oauthPortalUrl = import.meta.env.VITE_OAUTH_PORTAL_URL;
-  const appId = import.meta.env.VITE_APP_ID;
-  const redirectUri = `${window.location.origin}/api/oauth/callback`;
+export function buildLoginTarget(origin: string, oauthPortalUrl?: string, appId?: string, nonce = crypto.randomUUID()) {
+  const portal = oauthPortalUrl?.trim();
+  const applicationId = appId?.trim();
+  if (!portal || !applicationId) {
+    return { mode: "local-admin" as const, url: new URL("/dashboard", origin).href };
+  }
 
-  const nonce = crypto.randomUUID();
-  document.cookie = `${OAUTH_STATE_COOKIE}=${nonce}; Path=/; Max-Age=600; SameSite=None; Secure`;
+  const redirectUri = new URL("/api/oauth/callback", origin).href;
   const state = encodeOAuthState({ redirectUri, nonce });
-
-  const url = new URL(`${oauthPortalUrl}/app-auth`);
-  url.searchParams.set("appId", appId);
+  const url = new URL(`${portal.replace(/\/+$/, "")}/app-auth`);
+  url.searchParams.set("appId", applicationId);
   url.searchParams.set("redirectUri", redirectUri);
   url.searchParams.set("state", state);
   url.searchParams.set("type", "signIn");
+  return { mode: "external-oauth" as const, url: url.href, state, nonce };
+}
 
-  window.location.href = url.toString();
+export const startLogin = () => {
+  const target = buildLoginTarget(
+    window.location.origin,
+    import.meta.env.VITE_OAUTH_PORTAL_URL,
+    import.meta.env.VITE_APP_ID,
+  );
+
+  if (target.mode === "local-admin") {
+    window.location.replace(target.url);
+    return;
+  }
+
+  document.cookie = `${OAUTH_STATE_COOKIE}=${target.nonce}; Path=/; Max-Age=600; SameSite=None; Secure`;
+  window.location.href = target.url;
 };
