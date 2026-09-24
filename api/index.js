@@ -2445,6 +2445,32 @@ function miloInfoRow(label, value, tone = "lavender") {
     ]
   };
 }
+function miloDetailRow(text2, tone = "lavender", marker = "\u2022") {
+  const t2 = TONES[tone];
+  return {
+    type: "box",
+    layout: "horizontal",
+    spacing: "sm",
+    alignItems: "center",
+    paddingAll: "11px",
+    cornerRadius: "lg",
+    backgroundColor: MILO_COLORS.surface,
+    contents: [
+      {
+        type: "box",
+        layout: "vertical",
+        justifyContent: "center",
+        alignItems: "center",
+        width: "28px",
+        height: "28px",
+        cornerRadius: "xl",
+        backgroundColor: t2.bg,
+        contents: [{ type: "text", text: marker.slice(0, 2), size: "xs", weight: "bold", color: t2.fg, align: "center" }]
+      },
+      { type: "text", text: text2.slice(0, 420), size: "sm", color: MILO_COLORS.text, wrap: true, flex: 1 }
+    ]
+  };
+}
 function miloProgressRow(label, amountText, ratio, tone = "pink") {
   const t2 = TONES[tone];
   const pct = Math.max(0, Math.min(100, Math.round(ratio * 100)));
@@ -2584,6 +2610,25 @@ function miloTextPanel(text2) {
     contents: [{ type: "text", text: text2.slice(0, 3500), size: "sm", color: MILO_COLORS.text, wrap: true }]
   };
 }
+function miloStructuredText(text2, tone = "lavender") {
+  const lines = text2.split(/\r?\n/).map((line) => line.trim()).filter(Boolean).slice(0, 14);
+  if (lines.length <= 1) return [miloTextPanel(text2)];
+  const [heading, ...details] = lines;
+  return [
+    miloSectionTitle(heading.replace(/^[^ก-๙A-Za-z0-9]+/, "").trim() || "\u0E23\u0E32\u0E22\u0E25\u0E30\u0E40\u0E2D\u0E35\u0E22\u0E14"),
+    ...details.map((line, index2) => miloDetailRow(line.replace(/^[•·\-]\s*/, ""), tone, index2 < 9 ? String(index2 + 1) : "\u2022"))
+  ];
+}
+function analysisBudgetMode(text2) {
+  if (/หมวดราย|เพิ่มหมวด|ลบหมวด|หมวดหมู่/.test(text2)) return "category";
+  if (/งบประมาณ|ตั้งงบ|รอบงบ|ใช้ไป/.test(text2)) return "budget";
+  return "analysis";
+}
+function utilityMode(text2) {
+  if (/ส่งออก|CSV|Excel|\.xlsx|\.csv|https?:\/\//i.test(text2)) return "export";
+  if (/คลัง|เก็บ|ไฟล์|เอกสาร|อัปโหลด|storage|ค้นหา/i.test(text2)) return "vault";
+  return "reminder";
+}
 function miloThemedContents(artwork, text2) {
   if (artwork === "home") {
     return [
@@ -2610,89 +2655,99 @@ function miloThemedContents(artwork, text2) {
     ];
   }
   if (artwork === "analysis-budget") {
+    const mode = analysisBudgetMode(text2);
     return [
-      miloBrandHeader("\u0E27\u0E34\u0E40\u0E04\u0E23\u0E32\u0E30\u0E2B\u0E4C\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22", "\u0E07\u0E1A\u0E1B\u0E23\u0E30\u0E21\u0E32\u0E13\u0E41\u0E25\u0E30\u0E2B\u0E21\u0E27\u0E14\u0E2B\u0E21\u0E39\u0E48"),
+      miloPageHeader(mode === "analysis" ? "\u0E27\u0E34\u0E40\u0E04\u0E23\u0E32\u0E30\u0E2B\u0E4C\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22" : mode === "budget" ? "\u0E07\u0E1A\u0E1B\u0E23\u0E30\u0E21\u0E32\u0E13" : "\u0E2B\u0E21\u0E27\u0E14\u0E2B\u0E21\u0E39\u0E48", "\u0E20\u0E32\u0E1E\u0E23\u0E27\u0E21\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E08\u0E23\u0E34\u0E07\u0E02\u0E2D\u0E07\u0E04\u0E38\u0E13"),
       {
         type: "box",
         layout: "horizontal",
         spacing: "sm",
         contents: [
-          miloTab("\u0E27\u0E34\u0E40\u0E04\u0E23\u0E32\u0E30\u0E2B\u0E4C", true, "\u0E27\u0E34\u0E40\u0E04\u0E23\u0E32\u0E30\u0E2B\u0E4C"),
-          miloTab("\u0E07\u0E1A\u0E1B\u0E23\u0E30\u0E21\u0E32\u0E13", false, "\u0E07\u0E1A\u0E1B\u0E23\u0E30\u0E21\u0E32\u0E13"),
-          miloTab("\u0E2B\u0E21\u0E27\u0E14\u0E2B\u0E21\u0E39\u0E48", false, "\u0E2B\u0E21\u0E27\u0E14\u0E2B\u0E21\u0E39\u0E48")
+          miloTab("\u0E27\u0E34\u0E40\u0E04\u0E23\u0E32\u0E30\u0E2B\u0E4C", mode === "analysis", "\u0E27\u0E34\u0E40\u0E04\u0E23\u0E32\u0E30\u0E2B\u0E4C"),
+          miloTab("\u0E07\u0E1A\u0E1B\u0E23\u0E30\u0E21\u0E32\u0E13", mode === "budget", "\u0E07\u0E1A\u0E1B\u0E23\u0E30\u0E21\u0E32\u0E13"),
+          miloTab("\u0E2B\u0E21\u0E27\u0E14\u0E2B\u0E21\u0E39\u0E48", mode === "category", "\u0E2B\u0E21\u0E27\u0E14\u0E2B\u0E21\u0E39\u0E48")
         ]
       },
-      miloTextPanel(text2),
+      ...miloStructuredText(text2, mode === "analysis" ? "blue" : mode === "budget" ? "mint" : "lavender"),
       {
         type: "box",
         layout: "horizontal",
         spacing: "sm",
         contents: [
-          miloActionTile("\u0E2A\u0E23\u0E38\u0E1B\u0E40\u0E14\u0E37\u0E2D\u0E19", "\u0E2A\u0E23\u0E38\u0E1B\u0E40\u0E14\u0E37\u0E2D\u0E19\u0E19\u0E35\u0E49", "lavender", "30"),
+          miloActionTile("\u0E2A\u0E23\u0E38\u0E1B\u0E40\u0E14\u0E37\u0E2D\u0E19", "\u0E2A\u0E23\u0E38\u0E1B\u0E40\u0E14\u0E37\u0E2D\u0E19\u0E19\u0E35\u0E49", "lavender", "\u25A6"),
           miloActionTile("\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E25\u0E48\u0E32\u0E2A\u0E38\u0E14", "\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23", "blue", "\u2261")
         ]
       }
     ];
   }
   if (artwork === "utility") {
+    const mode = utilityMode(text2);
     return [
-      miloBrandHeader("\u0E1C\u0E39\u0E49\u0E0A\u0E48\u0E27\u0E22\u0E08\u0E31\u0E14\u0E01\u0E32\u0E23", "\u0E15\u0E31\u0E49\u0E07\u0E40\u0E15\u0E37\u0E2D\u0E19 \u2022 \u0E40\u0E01\u0E47\u0E1A\u0E44\u0E1F\u0E25\u0E4C \u2022 Export"),
+      miloPageHeader(mode === "reminder" ? "\u0E15\u0E31\u0E49\u0E07\u0E40\u0E15\u0E37\u0E2D\u0E19" : mode === "vault" ? "\u0E04\u0E25\u0E31\u0E07\u0E44\u0E1F\u0E25\u0E4C" : "Export", "\u0E40\u0E15\u0E37\u0E2D\u0E19 \u2022 \u0E40\u0E01\u0E47\u0E1A\u0E44\u0E1F\u0E25\u0E4C \u2022 \u0E2A\u0E48\u0E07\u0E2D\u0E2D\u0E01\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25"),
       {
         type: "box",
         layout: "horizontal",
         spacing: "sm",
         contents: [
-          miloTab("\u0E15\u0E31\u0E49\u0E07\u0E40\u0E15\u0E37\u0E2D\u0E19", true, "\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E40\u0E15\u0E37\u0E2D\u0E19"),
-          miloTab("\u0E40\u0E01\u0E47\u0E1A\u0E44\u0E1F\u0E25\u0E4C", false, "\u0E04\u0E25\u0E31\u0E07\u0E44\u0E1F\u0E25\u0E4C"),
-          miloTab("Export", false, "\u0E2A\u0E48\u0E07\u0E2D\u0E2D\u0E01 CSV")
+          miloTab("\u0E15\u0E31\u0E49\u0E07\u0E40\u0E15\u0E37\u0E2D\u0E19", mode === "reminder", "\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E40\u0E15\u0E37\u0E2D\u0E19"),
+          miloTab("\u0E40\u0E01\u0E47\u0E1A\u0E44\u0E1F\u0E25\u0E4C", mode === "vault", "\u0E04\u0E25\u0E31\u0E07\u0E44\u0E1F\u0E25\u0E4C"),
+          miloTab("Export", mode === "export", "\u0E2A\u0E48\u0E07\u0E2D\u0E2D\u0E01 CSV")
         ]
       },
-      miloTextPanel(text2),
-      miloPrimaryButton("\u0E40\u0E1E\u0E34\u0E48\u0E21\u0E01\u0E32\u0E23\u0E15\u0E31\u0E49\u0E07\u0E40\u0E15\u0E37\u0E2D\u0E19", "\u0E15\u0E31\u0E49\u0E07\u0E40\u0E15\u0E37\u0E2D\u0E19")
+      ...miloStructuredText(text2, mode === "reminder" ? "pink" : mode === "vault" ? "blue" : "lavender"),
+      ...mode === "reminder" ? [miloPrimaryButton("\u0E40\u0E1E\u0E34\u0E48\u0E21\u0E01\u0E32\u0E23\u0E15\u0E31\u0E49\u0E07\u0E40\u0E15\u0E37\u0E2D\u0E19", "\u0E15\u0E31\u0E49\u0E07\u0E40\u0E15\u0E37\u0E2D\u0E19")] : []
     ];
   }
   if (artwork === "settings-help") {
+    const helpActive = /ช่วย|วิธีใช้|ตัวอย่าง|คำสั่ง|จดบันทึก/.test(text2);
     return [
-      miloBrandHeader("\u0E15\u0E31\u0E49\u0E07\u0E04\u0E48\u0E32 / \u0E27\u0E34\u0E18\u0E35\u0E43\u0E0A\u0E49\u0E07\u0E32\u0E19", "\u0E08\u0E31\u0E14\u0E01\u0E32\u0E23 Milo \u0E43\u0E2B\u0E49\u0E40\u0E2B\u0E21\u0E32\u0E30\u0E01\u0E31\u0E1A\u0E04\u0E38\u0E13"),
+      miloPageHeader(helpActive ? "\u0E27\u0E34\u0E18\u0E35\u0E43\u0E0A\u0E49\u0E07\u0E32\u0E19" : "\u0E15\u0E31\u0E49\u0E07\u0E04\u0E48\u0E32", "\u0E08\u0E31\u0E14\u0E01\u0E32\u0E23 Milo \u0E43\u0E2B\u0E49\u0E40\u0E2B\u0E21\u0E32\u0E30\u0E01\u0E31\u0E1A\u0E04\u0E38\u0E13"),
       {
         type: "box",
         layout: "horizontal",
         spacing: "sm",
         contents: [
-          miloTab("\u0E15\u0E31\u0E49\u0E07\u0E04\u0E48\u0E32", true, "\u0E15\u0E31\u0E49\u0E07\u0E04\u0E48\u0E32"),
-          miloTab("\u0E27\u0E34\u0E18\u0E35\u0E43\u0E0A\u0E49\u0E07\u0E32\u0E19", false, "\u0E27\u0E34\u0E18\u0E35\u0E43\u0E0A\u0E49\u0E07\u0E32\u0E19")
+          miloTab("\u0E15\u0E31\u0E49\u0E07\u0E04\u0E48\u0E32", !helpActive, "\u0E15\u0E31\u0E49\u0E07\u0E04\u0E48\u0E32"),
+          miloTab("\u0E27\u0E34\u0E18\u0E35\u0E43\u0E0A\u0E49\u0E07\u0E32\u0E19", helpActive, "\u0E27\u0E34\u0E18\u0E35\u0E43\u0E0A\u0E49\u0E07\u0E32\u0E19")
         ]
       },
-      miloTextPanel(text2),
-      miloActionTile("\u0E2B\u0E21\u0E27\u0E14\u0E2B\u0E21\u0E39\u0E48", "\u0E2B\u0E21\u0E27\u0E14\u0E2B\u0E21\u0E39\u0E48", "lavender", "M"),
-      miloActionTile("\u0E07\u0E1A\u0E1B\u0E23\u0E30\u0E21\u0E32\u0E13\u0E23\u0E32\u0E22\u0E40\u0E14\u0E37\u0E2D\u0E19", "\u0E07\u0E1A\u0E1B\u0E23\u0E30\u0E21\u0E32\u0E13", "mint", "\u0E3F"),
-      miloActionTile("\u0E01\u0E32\u0E23\u0E41\u0E08\u0E49\u0E07\u0E40\u0E15\u0E37\u0E2D\u0E19", "\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E40\u0E15\u0E37\u0E2D\u0E19", "pink", "!")
+      ...miloStructuredText(text2, "lavender"),
+      {
+        type: "box",
+        layout: "horizontal",
+        spacing: "sm",
+        contents: [
+          miloMenuTile("\u0E2B\u0E21\u0E27\u0E14\u0E2B\u0E21\u0E39\u0E48", "\u0E2B\u0E21\u0E27\u0E14\u0E2B\u0E21\u0E39\u0E48", "lavender", "M"),
+          miloMenuTile("\u0E07\u0E1A\u0E1B\u0E23\u0E30\u0E21\u0E32\u0E13", "\u0E07\u0E1A\u0E1B\u0E23\u0E30\u0E21\u0E32\u0E13", "mint", "\u0E3F"),
+          miloMenuTile("\u0E41\u0E08\u0E49\u0E07\u0E40\u0E15\u0E37\u0E2D\u0E19", "\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E40\u0E15\u0E37\u0E2D\u0E19", "pink", "!")
+        ]
+      }
     ];
   }
   if (artwork === "transactions") {
     return [
-      miloBrandHeader("\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E25\u0E48\u0E32\u0E2A\u0E38\u0E14", "\u0E14\u0E39\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E22\u0E49\u0E2D\u0E19\u0E2B\u0E25\u0E31\u0E07\u0E02\u0E2D\u0E07\u0E04\u0E38\u0E13"),
-      miloTextPanel(text2),
+      miloPageHeader("\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E25\u0E48\u0E32\u0E2A\u0E38\u0E14", "\u0E14\u0E39\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E22\u0E49\u0E2D\u0E19\u0E2B\u0E25\u0E31\u0E07\u0E02\u0E2D\u0E07\u0E04\u0E38\u0E13"),
+      ...miloStructuredText(text2, "blue"),
       miloPrimaryButton("\u0E14\u0E39\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E17\u0E31\u0E49\u0E07\u0E2B\u0E21\u0E14", "\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23")
     ];
   }
   if (artwork === "summary-day") {
     return [
-      miloBrandHeader("\u0E2A\u0E23\u0E38\u0E1B\u0E27\u0E31\u0E19\u0E19\u0E35\u0E49", "\u0E20\u0E32\u0E1E\u0E23\u0E27\u0E21\u0E23\u0E32\u0E22\u0E23\u0E31\u0E1A \u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22 \u0E41\u0E25\u0E30\u0E04\u0E07\u0E40\u0E2B\u0E25\u0E37\u0E2D"),
-      miloTextPanel(text2),
+      miloPageHeader("\u0E2A\u0E23\u0E38\u0E1B\u0E27\u0E31\u0E19\u0E19\u0E35\u0E49", "\u0E20\u0E32\u0E1E\u0E23\u0E27\u0E21\u0E23\u0E32\u0E22\u0E23\u0E31\u0E1A \u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22 \u0E41\u0E25\u0E30\u0E04\u0E07\u0E40\u0E2B\u0E25\u0E37\u0E2D"),
+      ...miloStructuredText(text2, "lavender"),
       miloPrimaryButton("\u0E14\u0E39\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E17\u0E31\u0E49\u0E07\u0E2B\u0E21\u0E14", "\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23")
     ];
   }
   if (artwork === "summary-period") {
     return [
-      miloBrandHeader("\u0E2A\u0E23\u0E38\u0E1B\u0E2A\u0E31\u0E1B\u0E14\u0E32\u0E2B\u0E4C / \u0E2A\u0E23\u0E38\u0E1B\u0E40\u0E14\u0E37\u0E2D\u0E19", "\u0E40\u0E1B\u0E23\u0E35\u0E22\u0E1A\u0E40\u0E17\u0E35\u0E22\u0E1A\u0E20\u0E32\u0E1E\u0E23\u0E27\u0E21\u0E01\u0E32\u0E23\u0E40\u0E07\u0E34\u0E19"),
-      miloTextPanel(text2),
+      miloPageHeader("\u0E2A\u0E23\u0E38\u0E1B\u0E2A\u0E31\u0E1B\u0E14\u0E32\u0E2B\u0E4C / \u0E2A\u0E23\u0E38\u0E1B\u0E40\u0E14\u0E37\u0E2D\u0E19", "\u0E40\u0E1B\u0E23\u0E35\u0E22\u0E1A\u0E40\u0E17\u0E35\u0E22\u0E1A\u0E20\u0E32\u0E1E\u0E23\u0E27\u0E21\u0E01\u0E32\u0E23\u0E40\u0E07\u0E34\u0E19"),
+      ...miloStructuredText(text2, "lavender"),
       miloPrimaryButton("\u0E14\u0E39\u0E23\u0E32\u0E22\u0E25\u0E30\u0E40\u0E2D\u0E35\u0E22\u0E14", "\u0E2A\u0E23\u0E38\u0E1B\u0E40\u0E14\u0E37\u0E2D\u0E19\u0E19\u0E35\u0E49")
     ];
   }
   return [
-    miloBrandHeader("\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E2A\u0E33\u0E40\u0E23\u0E47\u0E08", "Milo \u0E40\u0E01\u0E47\u0E1A\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E19\u0E35\u0E49\u0E44\u0E27\u0E49\u0E43\u0E2B\u0E49\u0E41\u0E25\u0E49\u0E27"),
-    miloTextPanel(text2)
+    miloPageHeader("\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E2A\u0E33\u0E40\u0E23\u0E47\u0E08", "Milo \u0E40\u0E01\u0E47\u0E1A\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E19\u0E35\u0E49\u0E44\u0E27\u0E49\u0E43\u0E2B\u0E49\u0E41\u0E25\u0E49\u0E27"),
+    ...miloStructuredText(text2, "mint")
   ];
 }
 async function replyThemedTextCard(replyToken, text2, artwork, credentials = lineCredentials()) {
@@ -2751,7 +2806,7 @@ async function replyMiloOnboarding(replyToken, displayName, credentials = lineCr
 }
 async function replyMiloSettings(replyToken, credentials = lineCredentials()) {
   const contents = [
-    miloBrandHeader("\u0E15\u0E31\u0E49\u0E07\u0E04\u0E48\u0E32 / \u0E27\u0E34\u0E18\u0E35\u0E43\u0E0A\u0E49\u0E07\u0E32\u0E19", "\u0E15\u0E31\u0E49\u0E07\u0E04\u0E48\u0E32\u0E07\u0E48\u0E32\u0E22 \u0E43\u0E0A\u0E49\u0E07\u0E32\u0E19\u0E2A\u0E30\u0E14\u0E27\u0E01 \u0E43\u0E2B\u0E49 Milo \u0E14\u0E39\u0E41\u0E25\u0E04\u0E38\u0E13\u0E40\u0E2A\u0E21\u0E2D"),
+    miloPageHeader("\u0E15\u0E31\u0E49\u0E07\u0E04\u0E48\u0E32 / \u0E27\u0E34\u0E18\u0E35\u0E43\u0E0A\u0E49\u0E07\u0E32\u0E19", "\u0E15\u0E31\u0E49\u0E07\u0E04\u0E48\u0E32\u0E07\u0E48\u0E32\u0E22 \u0E43\u0E0A\u0E49\u0E07\u0E32\u0E19\u0E2A\u0E30\u0E14\u0E27\u0E01 \u0E43\u0E2B\u0E49 Milo \u0E14\u0E39\u0E41\u0E25\u0E04\u0E38\u0E13\u0E40\u0E2A\u0E21\u0E2D"),
     {
       type: "box",
       layout: "horizontal",

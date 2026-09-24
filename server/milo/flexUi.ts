@@ -321,6 +321,33 @@ export function miloInfoRow(label: string, value: string, tone: MiloTone = "lave
   };
 }
 
+export function miloDetailRow(text: string, tone: MiloTone = "lavender", marker = "•") {
+  const t = TONES[tone];
+  return {
+    type: "box",
+    layout: "horizontal",
+    spacing: "sm",
+    alignItems: "center",
+    paddingAll: "11px",
+    cornerRadius: "lg",
+    backgroundColor: MILO_COLORS.surface,
+    contents: [
+      {
+        type: "box",
+        layout: "vertical",
+        justifyContent: "center",
+        alignItems: "center",
+        width: "28px",
+        height: "28px",
+        cornerRadius: "xl",
+        backgroundColor: t.bg,
+        contents: [{ type: "text", text: marker.slice(0, 2), size: "xs", weight: "bold", color: t.fg, align: "center" }],
+      },
+      { type: "text", text: text.slice(0, 420), size: "sm", color: MILO_COLORS.text, wrap: true, flex: 1 },
+    ],
+  };
+}
+
 export function miloProgressRow(label: string, amountText: string, ratio: number, tone: MiloTone = "pink") {
   const t = TONES[tone];
   const pct = Math.max(0, Math.min(100, Math.round(ratio * 100)));

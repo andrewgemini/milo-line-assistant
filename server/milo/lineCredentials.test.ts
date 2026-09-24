@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { getMessageContent, mascotExpenseCopy, pushFinanceReportCard, replyFinanceReportCard, replyGreetingHome, replyMiloSettings, replyPostSaveSummary, replyCalendarList, replyReminderList, replyTransactionList, replyVoiceCategoryChoices, replyVoiceProposal, replyVoiceProposalFallback } from "./line";
+import { getMessageContent, mascotExpenseCopy, pushFinanceReportCard, replyFinanceReportCard, replyGreetingHome, replyMiloSettings, replyPostSaveSummary, replyCalendarList, replyReminderList, replyThemedTextCard, replyTransactionList, replyVoiceCategoryChoices, replyVoiceProposal, replyVoiceProposalFallback } from "./line";
 
 describe("LINE credentials", () => {
   afterEach(() => vi.restoreAllMocks());
@@ -146,6 +146,28 @@ describe("LINE credentials", () => {
     expect(String(init.body)).toContain("งบประมาณรายเดือน");
     expect(String(init.body)).toContain("การแจ้งเตือน");
     expect(String(init.body)).toContain("วิธีใช้งาน Milo");
+    expect(String(init.body)).not.toContain("/milo-flex/heroes/");
+  });
+
+  it.each([
+    ["analysis-budget", "สรุปวิเคราะห์การเงิน\nข้อมูลเพียงพอ\n• ค่าอาหารสูงสุด", "วิเคราะห์รายจ่าย", "วิเคราะห์"],
+    ["analysis-budget", "📊 งบประมาณรอบเดือนนี้\n• อาหาร: ใช้ไป 125 / งบ 5,000 บาท", "งบประมาณ", "ใช้ไป 125 / งบ 5,000 บาท"],
+    ["analysis-budget", "หมวดรายจ่ายมาตรฐาน\n• อาหาร\n• เดินทาง", "หมวดหมู่", "เดินทาง"],
+    ["utility", "ตั้งเตือน #7 เรียบร้อย\nประชุมทีม\nครั้งถัดไป: 26 ก.ย. 2569 10:00", "ตั้งเตือน", "ประชุมทีม"],
+    ["utility", "🗂️ สถานะคลังในแชทนี้\nทั้งหมด 11 รายการ\nเก็บถาวร 10 รายการ", "คลังไฟล์", "เก็บถาวร 10 รายการ"],
+    ["utility", "ส่งออกข้อมูล CSV ได้จากลิงก์นี้ภายใน 10 นาที\nhttps://example.com/export.csv", "Export", "เปิดลิงก์"],
+    ["settings-help", "Milo ช่วยคุณจบงานใน LINE แชทเดียวครับ\nตัวอย่าง: กินกาแฟ 80\nพิมพ์ ช่วย ได้ทุกเมื่อ", "วิธีใช้งาน", "ตัวอย่าง: กินกาแฟ 80"],
+    ["transactions", "พบ 2 รายการ\n#7 · จ่าย 80 บาท · อาหาร\n#8 · รับ 500 บาท · เงินคืน", "รายการล่าสุด", "จ่าย 80 บาท"],
+  ] as const)("renders %s as structured native Flex without screenshot artwork", async (artwork, text, expectedTitle, expectedDetail) => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(null, { status: 200 }));
+    await replyThemedTextCard("reply-token", text, artwork, { channelSecret: "secret", channelAccessToken: "token" });
+    const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
+    const payload = JSON.parse(String(init.body)) as { messages: Array<{ type: string; contents?: { hero?: unknown } }> };
+    expect(payload.messages[0]?.type).toBe("flex");
+    expect(payload.messages[0]?.contents?.hero).toBeUndefined();
+    expect(String(init.body)).toContain(expectedTitle);
+    expect(String(init.body)).toContain(expectedDetail);
+    expect(String(init.body)).toContain("milo-maneki-original.png");
     expect(String(init.body)).not.toContain("/milo-flex/heroes/");
   });
 

@@ -5,6 +5,7 @@ import {
   miloActionTile,
   miloBrandHeader,
   miloBubble,
+  miloDetailRow,
   miloInfoRow,
   miloMenuTile,
   miloPageHeader,
@@ -104,6 +105,28 @@ function miloTextPanel(text: string) {
   };
 }
 
+function miloStructuredText(text: string, tone: "mint" | "pink" | "lavender" | "blue" = "lavender") {
+  const lines = text.split(/\r?\n/).map(line => line.trim()).filter(Boolean).slice(0, 14);
+  if (lines.length <= 1) return [miloTextPanel(text)];
+  const [heading, ...details] = lines;
+  return [
+    miloSectionTitle(heading.replace(/^[^ก-๙A-Za-z0-9]+/, "").trim() || "รายละเอียด"),
+    ...details.map((line, index) => miloDetailRow(line.replace(/^[•·\-]\s*/, ""), tone, index < 9 ? String(index + 1) : "•")),
+  ];
+}
+
+function analysisBudgetMode(text: string) {
+  if (/หมวดราย|เพิ่มหมวด|ลบหมวด|หมวดหมู่/.test(text)) return "category" as const;
+  if (/งบประมาณ|ตั้งงบ|รอบงบ|ใช้ไป/.test(text)) return "budget" as const;
+  return "analysis" as const;
+}
+
+function utilityMode(text: string) {
+  if (/ส่งออก|CSV|Excel|\.xlsx|\.csv|https?:\/\//i.test(text)) return "export" as const;
+  if (/คลัง|เก็บ|ไฟล์|เอกสาร|อัปโหลด|storage|ค้นหา/i.test(text)) return "vault" as const;
+  return "reminder" as const;
+}
+
 function miloThemedContents(artwork: MiloFlexThemeArtwork, text: string) {
   if (artwork === "home") {
     return [
@@ -127,77 +150,84 @@ function miloThemedContents(artwork: MiloFlexThemeArtwork, text: string) {
     ];
   }
   if (artwork === "analysis-budget") {
+    const mode = analysisBudgetMode(text);
     return [
-      miloBrandHeader("วิเคราะห์รายจ่าย", "งบประมาณและหมวดหมู่"),
+      miloPageHeader(mode === "analysis" ? "วิเคราะห์รายจ่าย" : mode === "budget" ? "งบประมาณ" : "หมวดหมู่", "ภาพรวมข้อมูลจริงของคุณ"),
       {
         type: "box", layout: "horizontal", spacing: "sm", contents: [
-          miloTab("วิเคราะห์", true, "วิเคราะห์"),
-          miloTab("งบประมาณ", false, "งบประมาณ"),
-          miloTab("หมวดหมู่", false, "หมวดหมู่"),
+          miloTab("วิเคราะห์", mode === "analysis", "วิเคราะห์"),
+          miloTab("งบประมาณ", mode === "budget", "งบประมาณ"),
+          miloTab("หมวดหมู่", mode === "category", "หมวดหมู่"),
         ],
       },
-      miloTextPanel(text),
+      ...miloStructuredText(text, mode === "analysis" ? "blue" : mode === "budget" ? "mint" : "lavender"),
       {
         type: "box", layout: "horizontal", spacing: "sm", contents: [
-          miloActionTile("สรุปเดือน", "สรุปเดือนนี้", "lavender", "30"),
+          miloActionTile("สรุปเดือน", "สรุปเดือนนี้", "lavender", "▦"),
           miloActionTile("รายการล่าสุด", "รายการ", "blue", "≡"),
         ],
       },
     ];
   }
   if (artwork === "utility") {
+    const mode = utilityMode(text);
     return [
-      miloBrandHeader("ผู้ช่วยจัดการ", "ตั้งเตือน • เก็บไฟล์ • Export"),
+      miloPageHeader(mode === "reminder" ? "ตั้งเตือน" : mode === "vault" ? "คลังไฟล์" : "Export", "เตือน • เก็บไฟล์ • ส่งออกข้อมูล"),
       {
         type: "box", layout: "horizontal", spacing: "sm", contents: [
-          miloTab("ตั้งเตือน", true, "รายการเตือน"),
-          miloTab("เก็บไฟล์", false, "คลังไฟล์"),
-          miloTab("Export", false, "ส่งออก CSV"),
+          miloTab("ตั้งเตือน", mode === "reminder", "รายการเตือน"),
+          miloTab("เก็บไฟล์", mode === "vault", "คลังไฟล์"),
+          miloTab("Export", mode === "export", "ส่งออก CSV"),
         ],
       },
-      miloTextPanel(text),
-      miloPrimaryButton("เพิ่มการตั้งเตือน", "ตั้งเตือน"),
+      ...miloStructuredText(text, mode === "reminder" ? "pink" : mode === "vault" ? "blue" : "lavender"),
+      ...(mode === "reminder" ? [miloPrimaryButton("เพิ่มการตั้งเตือน", "ตั้งเตือน")] : []),
     ];
   }
   if (artwork === "settings-help") {
+    const helpActive = /ช่วย|วิธีใช้|ตัวอย่าง|คำสั่ง|จดบันทึก/.test(text);
     return [
-      miloBrandHeader("ตั้งค่า / วิธีใช้งาน", "จัดการ Milo ให้เหมาะกับคุณ"),
+      miloPageHeader(helpActive ? "วิธีใช้งาน" : "ตั้งค่า", "จัดการ Milo ให้เหมาะกับคุณ"),
       {
         type: "box", layout: "horizontal", spacing: "sm", contents: [
-          miloTab("ตั้งค่า", true, "ตั้งค่า"),
-          miloTab("วิธีใช้งาน", false, "วิธีใช้งาน"),
+          miloTab("ตั้งค่า", !helpActive, "ตั้งค่า"),
+          miloTab("วิธีใช้งาน", helpActive, "วิธีใช้งาน"),
         ],
       },
-      miloTextPanel(text),
-      miloActionTile("หมวดหมู่", "หมวดหมู่", "lavender", "M"),
-      miloActionTile("งบประมาณรายเดือน", "งบประมาณ", "mint", "฿"),
-      miloActionTile("การแจ้งเตือน", "รายการเตือน", "pink", "!"),
+      ...miloStructuredText(text, "lavender"),
+      {
+        type: "box", layout: "horizontal", spacing: "sm", contents: [
+          miloMenuTile("หมวดหมู่", "หมวดหมู่", "lavender", "M"),
+          miloMenuTile("งบประมาณ", "งบประมาณ", "mint", "฿"),
+          miloMenuTile("แจ้งเตือน", "รายการเตือน", "pink", "!"),
+        ],
+      },
     ];
   }
   if (artwork === "transactions") {
     return [
-      miloBrandHeader("รายการล่าสุด", "ดูรายการย้อนหลังของคุณ"),
-      miloTextPanel(text),
+      miloPageHeader("รายการล่าสุด", "ดูรายการย้อนหลังของคุณ"),
+      ...miloStructuredText(text, "blue"),
       miloPrimaryButton("ดูรายการทั้งหมด", "รายการ"),
     ];
   }
   if (artwork === "summary-day") {
     return [
-      miloBrandHeader("สรุปวันนี้", "ภาพรวมรายรับ รายจ่าย และคงเหลือ"),
-      miloTextPanel(text),
+      miloPageHeader("สรุปวันนี้", "ภาพรวมรายรับ รายจ่าย และคงเหลือ"),
+      ...miloStructuredText(text, "lavender"),
       miloPrimaryButton("ดูรายการทั้งหมด", "รายการ"),
     ];
   }
   if (artwork === "summary-period") {
     return [
-      miloBrandHeader("สรุปสัปดาห์ / สรุปเดือน", "เปรียบเทียบภาพรวมการเงิน"),
-      miloTextPanel(text),
+      miloPageHeader("สรุปสัปดาห์ / สรุปเดือน", "เปรียบเทียบภาพรวมการเงิน"),
+      ...miloStructuredText(text, "lavender"),
       miloPrimaryButton("ดูรายละเอียด", "สรุปเดือนนี้"),
     ];
   }
   return [
-    miloBrandHeader("บันทึกสำเร็จ", "Milo เก็บรายการนี้ไว้ให้แล้ว"),
-    miloTextPanel(text),
+    miloPageHeader("บันทึกสำเร็จ", "Milo เก็บรายการนี้ไว้ให้แล้ว"),
+    ...miloStructuredText(text, "mint"),
   ];
 }
 
@@ -259,7 +289,7 @@ export async function replyMiloOnboarding(replyToken: string, displayName?: stri
 
 export async function replyMiloSettings(replyToken: string, credentials = lineCredentials()) {
   const contents = [
-    miloBrandHeader("ตั้งค่า / วิธีใช้งาน", "ตั้งค่าง่าย ใช้งานสะดวก ให้ Milo ดูแลคุณเสมอ"),
+    miloPageHeader("ตั้งค่า / วิธีใช้งาน", "ตั้งค่าง่าย ใช้งานสะดวก ให้ Milo ดูแลคุณเสมอ"),
     {
       type: "box", layout: "horizontal", spacing: "sm", contents: [
         miloTab("ตั้งค่า", true, "ตั้งค่า"),
