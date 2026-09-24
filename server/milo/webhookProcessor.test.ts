@@ -77,13 +77,13 @@ vi.mock("./googleCalendar", () => ({
 vi.mock("../_core/voiceTranscription", () => ({ transcribeAudio: vi.fn() }));
 vi.mock("./financialAssistant", () => ({ generateFinancialInsight: vi.fn(), suggestExpenseCategory: vi.fn() }));
 vi.mock("./line", () => ({
-  replyRichMenu: vi.fn(), replyTransactionList: vi.fn(), replyReminderList: vi.fn(), replyCalendarList: vi.fn(), replyGreetingHome: vi.fn(), replyMiloOnboarding: vi.fn(), replyMiloSettings: vi.fn(), getMessageContent: vi.fn(), getProfile: vi.fn(), lineCredentials: vi.fn(() => ({ channelSecret: "test-secret", channelAccessToken: "test-token" })), pushText: vi.fn(), pushTextWithQuickReplies: vi.fn(), replyMention: vi.fn(), replyText: vi.fn(), replyTextWithQuickReplies: vi.fn(),
+  replyRichMenu: vi.fn(), replyThemedTextCard: vi.fn(), replyTransactionList: vi.fn(), replyReminderList: vi.fn(), replyCalendarList: vi.fn(), replyGreetingHome: vi.fn(), replyMiloOnboarding: vi.fn(), replyMiloSettings: vi.fn(), getMessageContent: vi.fn(), getProfile: vi.fn(), lineCredentials: vi.fn(() => ({ channelSecret: "test-secret", channelAccessToken: "test-token" })), pushText: vi.fn(), pushTextWithQuickReplies: vi.fn(), replyMention: vi.fn(), replyText: vi.fn(), replyTextWithQuickReplies: vi.fn(),
   replyVoiceProposal: vi.fn(), replyPostSaveSummary: vi.fn(), replyPostSaveSummaryImage: vi.fn(), replyPostSaveSummaryFallback: vi.fn(), replyVoiceCategoryChoices: vi.fn(), postSaveSummaryText: vi.fn((summary: { amount: number }) => `รายจ่าย ${summary.amount} บาท`), replyFinanceReportCard: vi.fn(), replyFinanceReportCardFallback: vi.fn(), financeReportCardText: vi.fn(() => "สรุปการเงินวันนี้"),
   sourceIdentity: vi.fn(() => ({ lineChatId: "G1", lineUserId: "U1", scope: "group" })), verifyLineSignature: vi.fn(),
 }));
 
 import * as db from "../db";
-import { replyRichMenu, replyReminderList, replyTransactionList, replyCalendarList, replyGreetingHome, replyMiloSettings, getMessageContent, getProfile, pushTextWithQuickReplies, replyFinanceReportCard, replyMention, replyPostSaveSummary, replyPostSaveSummaryImage, replyPostSaveSummaryFallback, replyText, replyTextWithQuickReplies, replyVoiceCategoryChoices, replyVoiceProposal, sourceIdentity, verifyLineSignature } from "./line";
+import { replyRichMenu, replyThemedTextCard, replyReminderList, replyTransactionList, replyCalendarList, replyGreetingHome, replyMiloSettings, getMessageContent, getProfile, pushTextWithQuickReplies, replyFinanceReportCard, replyMention, replyPostSaveSummary, replyPostSaveSummaryImage, replyPostSaveSummaryFallback, replyText, replyTextWithQuickReplies, replyVoiceCategoryChoices, replyVoiceProposal, sourceIdentity, verifyLineSignature } from "./line";
 import { storageGetSignedUrl, storagePut } from "../storage";
 import { analyzeImage } from "./imageAnalysis";
 import { analyzePdfBuffer } from "./pdfAnalysis";
@@ -428,7 +428,7 @@ describe("LINE webhook processor", () => {
     expect(replyPostSaveSummary).toHaveBeenCalledWith("token", expect.objectContaining({ transactionType: "expense", amount: 65, category: "อาหาร", dailyExpense: 65 }));
     expect(replyPostSaveSummaryImage).not.toHaveBeenCalled();
     expect(replyRichMenu).not.toHaveBeenCalled();
-    expect(replyText).toHaveBeenCalledWith("token", expect.stringContaining("Milo ช่วยคุณจบงานใน LINE แชทเดียวครับ"));
+    expect(replyThemedTextCard).toHaveBeenCalledWith("token", expect.stringContaining("Milo ช่วยคุณจบงานใน LINE แชทเดียวครับ"), "settings-help");
     expect(replyReminderList).toHaveBeenCalled();
   });
 
@@ -506,8 +506,8 @@ describe("LINE webhook processor", () => {
     vi.mocked(replyText).mockResolvedValue(new Response());
     await processEvent({ type: "message", webhookEventId: "evt-group-vault-search", timestamp: Date.now(), replyToken: "token", source: { type: "group", groupId: "G1", userId: "U1" }, message: { id: "g-search-1", type: "text", text: "@ไมโล ค้นหา ใบเสนอราคา" } }, "{}");
     expect(db.searchVaultForChat).toHaveBeenCalledWith("U1", "G1", "group", "ใบเสนอราคา");
-    expect(replyText).toHaveBeenCalledWith("token", expect.stringContaining("ใบเสนอราคาลูกค้า A"));
-    expect(replyText).toHaveBeenCalledWith("token", expect.stringContaining("เก็บถาวร"));
+    expect(replyThemedTextCard).toHaveBeenCalledWith("token", expect.stringContaining("ใบเสนอราคาลูกค้า A"), "utility");
+    expect(replyThemedTextCard).toHaveBeenCalledWith("token", expect.stringContaining("เก็บถาวร"), "utility");
   });
 
   it("reports durable-vault coverage without overclaiming missing media storage", async () => {
@@ -902,10 +902,10 @@ describe("rich menu webhook regression", () => {
     vi.mocked(db.listTransactionCategories).mockResolvedValue([]);
   });
   const event = (text: string) => ({ type: "message", webhookEventId: "richmenu-test", timestamp: Date.now(), replyToken: "token", source: { type: "user" as const, userId: "U1" }, message: { id: "menu", type: "text" as const, text } });
-  it.each(["จดบันทึก","งบประมาณ","หมวดหมู่","วิธีใช้งาน"])("%s replies with native LINE output instead of artwork", async text => {
+  it.each([["จดบันทึก","menu"],["งบประมาณ","analysis-budget"],["หมวดหมู่","analysis-budget"],["วิธีใช้งาน","settings-help"]] as const)("%s replies with the matching Milo themed Flex card", async (text, artwork) => {
     await processEvent(event(text), "{}");
     expect(replyRichMenu).not.toHaveBeenCalled();
-    expect(replyText).toHaveBeenCalledWith("token", expect.any(String));
+    expect(replyThemedTextCard).toHaveBeenCalledWith("token", expect.any(String), artwork);
     expect(db.finishWebhookEvent).toHaveBeenCalledWith("richmenu-test", "processed");
   });
   it("รายการ replies with the real transaction list", async () => {
@@ -942,7 +942,7 @@ describe("rich menu webhook regression", () => {
     expect(db.financeReport).toHaveBeenCalledWith("U1", "month", expect.any(Date), 7);
     expect(generateFinancialInsight).toHaveBeenCalled();
     expect(replyRichMenu).not.toHaveBeenCalled();
-    expect(replyText).toHaveBeenCalledWith("token", expect.stringContaining("ข้อมูลจริง"));
+    expect(replyThemedTextCard).toHaveBeenCalledWith("token", expect.stringContaining("ข้อมูลจริง"), "analysis-budget");
   });
   it.each([["สรุป","year"],["สรุปวันนี้","day"],["สรุปสัปดาห์นี้","week"],["สรุปเดือนนี้","month"],["สรุปปีนี้","year"]])("%s loads the requested period", async (text,period) => {
     await processEvent(event(text), "{}");
@@ -954,10 +954,10 @@ describe("rich menu webhook regression", () => {
     vi.mocked(db.financeBudgetCycleReport).mockResolvedValue({key:"2026-09",period:"budget-cycle",categories:{อาหาร:125},income:0,expense:125,balance:-125,rows:[]} as never);
     await processEvent(event("งบประมาณ"), "{}");
     expect(replyRichMenu).not.toHaveBeenCalled();
-    expect(replyText).toHaveBeenCalledWith("token",expect.stringContaining("ใช้ไป 125 / งบ 5,000"));
+    expect(replyThemedTextCard).toHaveBeenCalledWith("token", expect.stringContaining("ใช้ไป 125 / งบ 5,000"), "analysis-budget");
   });
   it("falls back to useful text when artwork is rejected", async () => {
-    vi.mocked(replyRichMenu).mockRejectedValueOnce(new Error("image rejected"));
+    vi.mocked(replyThemedTextCard).mockRejectedValueOnce(new Error("flex rejected"));
     await processEvent(event("จดบันทึก"), "{}");
     expect(replyText).toHaveBeenCalledWith("token", expect.stringContaining("จดบันทึก"));
   });
@@ -975,6 +975,6 @@ describe("rich menu webhook regression", () => {
     await processEvent(event("evt-rec", "ตั้งจดอัตโนมัติ ค่าเช่า 5000 ทุกเดือนวันที่ 1 09:00"), "{}");
     expect(db.createRecurringTransaction).toHaveBeenCalledWith(expect.objectContaining({ financeAccountId: 7, amount: 5000, recurrenceType: "month" }));
     await processEvent(event("evt-export", "ส่งออก CSV"), "{}");
-    expect(replyText).toHaveBeenCalledWith("token", expect.stringContaining("https://example.com/export"));
+    expect(replyThemedTextCard).toHaveBeenCalledWith("token", expect.stringContaining("https://example.com/export"), "utility");
   });
 });

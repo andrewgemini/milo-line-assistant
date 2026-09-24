@@ -2468,245 +2468,66 @@ function budgetStatusCopy(category, spent, limit) {
   return metrics.isOverBudget ? `\u0E2B\u0E21\u0E27\u0E14${category}\u0E17\u0E30\u0E25\u0E38\u0E44\u0E1B ${metrics.overPercent}% \u0E19\u0E48\u0E30\u0E08\u0E4A\u0E30 \u0E40\u0E1A\u0E32\u0E44\u0E14\u0E49\u0E40\u0E1A\u0E32 \u0E40\u0E2B\u0E21\u0E35\u0E22\u0E27` : `\u0E2B\u0E21\u0E27\u0E14${category}\u0E43\u0E0A\u0E49\u0E44\u0E1B ${metrics.usagePercent}% \u0E02\u0E2D\u0E07\u0E07\u0E1A\u0E41\u0E25\u0E49\u0E27\u0E19\u0E48\u0E30\u0E08\u0E4A\u0E30`;
 }
 
-// server/milo/financeReportImage.ts
-import crypto3 from "node:crypto";
-import sharp2 from "sharp";
-var WIDTH2 = 1080;
-var HEIGHT2 = 1350;
-var money = (value) => value.toLocaleString("th-TH-u-nu-latn", { maximumFractionDigits: 2 });
-var periodLabel = {
-  day: "\u0E27\u0E31\u0E19\u0E19\u0E35\u0E49",
-  week: "\u0E2A\u0E31\u0E1B\u0E14\u0E32\u0E2B\u0E4C\u0E19\u0E35\u0E49",
-  month: "\u0E40\u0E14\u0E37\u0E2D\u0E19\u0E19\u0E35\u0E49",
-  year: "\u0E1B\u0E35\u0E19\u0E35\u0E49"
+// server/milo/flexThemeArtwork.ts
+var MILO_FLEX_THEME_ARTWORK = {
+  home: { file: "home.png" },
+  menu: { file: "menu.png" },
+  "save-complete": { file: "save-complete.png" },
+  "summary-day": { file: "summary-day.png" },
+  "summary-period": { file: "summary-period.png" },
+  "analysis-budget": { file: "analysis-budget.png" },
+  transactions: { file: "transactions.png" },
+  utility: { file: "utility.png" },
+  "settings-help": { file: "settings-help.png" }
 };
-function secret2() {
-  return process.env.LINE_CHANNEL_SECRET?.trim() || process.env.SESSION_SECRET?.trim() || "milo-report-image-v1";
+var DEFAULT_BASE_URL = "https://milo-line-assistant.onrender.com";
+function miloFlexThemeImageUrl(key, variant = "hero") {
+  const base = (process.env.MILO_PUBLIC_URL || DEFAULT_BASE_URL).replace(/\/+$/, "");
+  return new URL(`/milo-flex/${variant === "hero" ? "heroes" : "screens"}/${MILO_FLEX_THEME_ARTWORK[key].file}`, base).href;
 }
-function iso(value) {
-  if (!value) return void 0;
-  const date = value instanceof Date ? value : new Date(value);
-  return Number.isFinite(date.getTime()) ? date.toISOString() : void 0;
-}
-function encodePayload(input) {
-  const categories = Object.fromEntries(Object.entries(input.categories).filter(([name, amount]) => name.trim() && Number.isFinite(Number(amount)) && Number(amount) >= 0).sort((a, b) => Number(b[1]) - Number(a[1])).slice(0, 6).map(([name, amount]) => [name.slice(0, 40), Number(amount)]));
-  const rows = (input.rows ?? []).slice(0, 5).map((row) => ({
-    transactionType: row.transactionType,
-    amount: Number(row.amount),
-    category: String(row.category ?? "\u0E17\u0E31\u0E48\u0E27\u0E44\u0E1B").slice(0, 36),
-    note: row.note ? String(row.note).slice(0, 48) : void 0,
-    occurredAt: iso(row.occurredAt)
-  })).filter((row) => Number.isFinite(row.amount) && row.amount >= 0);
-  return Buffer.from(JSON.stringify({
-    period: input.period,
-    income: Number(input.income),
-    expense: Number(input.expense),
-    balance: Number(input.balance),
-    categories,
-    transactionCount: Number(input.transactionCount ?? input.rows?.length ?? 0),
-    start: iso(input.start),
-    end: iso(input.end),
-    rows,
-    title: input.title?.slice(0, 80),
-    subtitle: input.subtitle?.slice(0, 120)
-  })).toString("base64url");
-}
-function sign2(payload) {
-  return crypto3.createHmac("sha256", secret2()).update(payload).digest("hex");
-}
-function buildFinanceReportImageUrl(input) {
-  const base = (process.env.MILO_SAVE_RESULT_IMAGE_BASE_URL ?? process.env.MILO_APP_BASE_URL ?? "https://milo-line-assistant.onrender.com").replace(/\/+$/, "");
-  const data = encodePayload(input);
-  return `${base}/api/milo/finance-report.png?data=${encodeURIComponent(data)}&sig=${sign2(data)}&render=summary-v4`;
-}
-function validNumber(value) {
-  const n = Number(value);
-  return Number.isFinite(n) && Math.abs(n) <= 1e12 ? n : void 0;
-}
-function decodeInput(req) {
-  const data = typeof req.query.data === "string" ? req.query.data : "";
-  const supplied = typeof req.query.sig === "string" ? req.query.sig : "";
-  if (!data || data.length > 8e3 || !supplied) return void 0;
-  const expected = sign2(data);
-  const a = Buffer.from(supplied);
-  const b = Buffer.from(expected);
-  if (a.length !== b.length || !crypto3.timingSafeEqual(a, b)) return void 0;
-  try {
-    const parsed = JSON.parse(Buffer.from(data, "base64url").toString("utf8"));
-    if (!parsed.period || !["day", "week", "month", "year"].includes(parsed.period)) return void 0;
-    const income = validNumber(parsed.income);
-    const expense = validNumber(parsed.expense);
-    const balance = validNumber(parsed.balance);
-    if (income === void 0 || expense === void 0 || balance === void 0) return void 0;
-    const categories = {};
-    for (const [name, amount] of Object.entries(parsed.categories ?? {}).slice(0, 6)) {
-      const n = validNumber(amount);
-      if (name.trim() && n !== void 0 && n >= 0) categories[name.trim().slice(0, 40)] = n;
-    }
-    const rows = (parsed.rows ?? []).slice(0, 5).flatMap((raw) => {
-      const amount = validNumber(raw.amount);
-      if (amount === void 0 || amount < 0 || raw.transactionType !== "income" && raw.transactionType !== "expense") return [];
-      return [{ transactionType: raw.transactionType, amount, category: String(raw.category ?? "\u0E17\u0E31\u0E48\u0E27\u0E44\u0E1B").slice(0, 36), note: raw.note ? String(raw.note).slice(0, 48) : void 0, occurredAt: iso(raw.occurredAt) }];
-    });
-    return {
-      period: parsed.period,
-      income,
-      expense,
-      balance,
-      categories,
-      transactionCount: Math.max(0, Math.floor(Number(parsed.transactionCount ?? rows.length) || 0)),
-      start: iso(parsed.start),
-      end: iso(parsed.end),
-      rows,
-      title: parsed.title?.slice(0, 80),
-      subtitle: parsed.subtitle?.slice(0, 120)
-    };
-  } catch {
-    return void 0;
+function flexThemeForCommand(command) {
+  switch (command.type) {
+    case "greeting":
+      return "home";
+    case "recordGuide":
+      return "menu";
+    case "financeReport":
+      return command.period === "day" ? "summary-day" : "summary-period";
+    case "aiSummary":
+    case "budgetOverview":
+    case "categoryList":
+      return "analysis-budget";
+    case "transactionList":
+      return "transactions";
+    case "reminder":
+    case "reminderList":
+    case "calendarList":
+    case "vault":
+    case "search":
+    case "exportFinance":
+    case "recurringCreate":
+    case "recurringList":
+    case "recurringStatus":
+      return "utility";
+    case "settingGuide":
+    case "help":
+    case "dashboardGuide":
+      return "settings-help";
+    default:
+      return void 0;
   }
-}
-function textLayer(text2, options) {
-  return { input: vectorTextSvg(text2, { width: options.width, fontSize: options.fontSize, color: options.color, bold: options.bold, align: options.align }), left: options.left, top: options.top, blend: "over" };
-}
-function periodRange(input) {
-  if (!input.start) return `\u0E20\u0E32\u0E1E\u0E23\u0E27\u0E21\u0E23\u0E32\u0E22\u0E23\u0E31\u0E1A - \u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22${periodLabel[input.period]}`;
-  const start = new Date(input.start);
-  if (!Number.isFinite(start.getTime())) return `\u0E20\u0E32\u0E1E\u0E23\u0E27\u0E21\u0E23\u0E32\u0E22\u0E23\u0E31\u0E1A - \u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22${periodLabel[input.period]}`;
-  const formatter = new Intl.DateTimeFormat("th-TH-u-nu-latn", input.period === "year" ? { year: "numeric", timeZone: "Asia/Bangkok" } : input.period === "month" ? { month: "long", year: "numeric", timeZone: "Asia/Bangkok" } : { day: "numeric", month: "short", year: "numeric", timeZone: "Asia/Bangkok" });
-  if (input.period === "day" || input.period === "month" || input.period === "year") return formatter.format(start);
-  const end = input.end ? new Date(new Date(input.end).getTime() - 1) : void 0;
-  return end && Number.isFinite(end.getTime()) ? `${formatter.format(start)} \u2013 ${formatter.format(end)}` : formatter.format(start);
-}
-function insightCopy(input) {
-  if ((input.transactionCount ?? 0) === 0) return "\u0E40\u0E23\u0E34\u0E48\u0E21\u0E08\u0E14\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23 \u0E41\u0E25\u0E49\u0E27\u0E44\u0E21\u0E42\u0E25\u0E08\u0E30\u0E0A\u0E48\u0E27\u0E22\u0E2A\u0E23\u0E38\u0E1B\u0E43\u0E2B\u0E49\u0E40\u0E2B\u0E47\u0E19\u0E20\u0E32\u0E1E\u0E0A\u0E31\u0E14\u0E02\u0E36\u0E49\u0E19\u0E04\u0E23\u0E31\u0E1A";
-  if (input.balance < 0) return `\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22\u0E21\u0E32\u0E01\u0E01\u0E27\u0E48\u0E32\u0E23\u0E32\u0E22\u0E23\u0E31\u0E1A ${money(Math.abs(input.balance))} \u0E1A\u0E32\u0E17 \u0E25\u0E2D\u0E07\u0E14\u0E39\u0E2B\u0E21\u0E27\u0E14\u0E17\u0E35\u0E48\u0E43\u0E0A\u0E49\u0E2A\u0E39\u0E07\u0E2A\u0E38\u0E14\u0E01\u0E48\u0E2D\u0E19\u0E19\u0E30\u0E04\u0E23\u0E31\u0E1A`;
-  if (input.income > 0) {
-    const rate = Math.max(0, Math.round(input.balance / input.income * 100));
-    return `\u0E0A\u0E48\u0E27\u0E07\u0E19\u0E35\u0E49\u0E22\u0E31\u0E07\u0E40\u0E2B\u0E25\u0E37\u0E2D ${money(input.balance)} \u0E1A\u0E32\u0E17 \u0E04\u0E34\u0E14\u0E40\u0E1B\u0E47\u0E19\u0E1B\u0E23\u0E30\u0E21\u0E32\u0E13 ${rate}% \u0E02\u0E2D\u0E07\u0E23\u0E32\u0E22\u0E23\u0E31\u0E1A\u0E04\u0E23\u0E31\u0E1A`;
-  }
-  return `\u0E0A\u0E48\u0E27\u0E07\u0E19\u0E35\u0E49\u0E21\u0E35\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22 ${money(input.expense)} \u0E1A\u0E32\u0E17 \u0E44\u0E21\u0E42\u0E25\u0E0A\u0E48\u0E27\u0E22\u0E41\u0E22\u0E01\u0E2B\u0E21\u0E27\u0E14\u0E44\u0E27\u0E49\u0E43\u0E2B\u0E49\u0E41\u0E25\u0E49\u0E27\u0E04\u0E23\u0E31\u0E1A`;
-}
-function displayRowDate(value) {
-  if (!value) return "";
-  const date = new Date(value);
-  if (!Number.isFinite(date.getTime())) return "";
-  return new Intl.DateTimeFormat("th-TH-u-nu-latn", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "Asia/Bangkok" }).format(date);
-}
-function financeReportShapesSvg(input) {
-  const categories = Object.entries(input.categories).sort((a, b) => b[1] - a[1]).slice(0, 5);
-  const maxCategory = Math.max(...categories.map(([, amount]) => amount), 1);
-  const categoryBars = categories.map(([, amount], index2) => {
-    const y = 594 + index2 * 58;
-    const width = Math.max(12, Math.round(350 * Math.min(1, amount / maxCategory)));
-    return `<rect x="132" y="${y + 28}" width="350" height="14" rx="7" fill="#EAF4EF"/><rect x="132" y="${y + 28}" width="${width}" height="14" rx="7" fill="${index2 === 0 ? "#32C88A" : "#8EDDBF"}"/>`;
-  }).join("");
-  const total = Math.max(input.income + input.expense, 1);
-  const incomeWidth = Math.max(8, Math.round(255 * input.income / total));
-  const expenseWidth = Math.max(8, Math.round(255 * input.expense / total));
-  return Buffer.from(`<svg width="${WIDTH2}" height="${HEIGHT2}" viewBox="0 0 ${WIDTH2} ${HEIGHT2}" xmlns="http://www.w3.org/2000/svg">
-    <defs><filter id="shadow"><feDropShadow dx="0" dy="8" stdDeviation="14" flood-color="#3E8A69" flood-opacity=".16"/></filter></defs>
-    <rect x="60" y="188" width="960" height="1012" rx="38" fill="#FFFDF8" fill-opacity=".97" filter="url(#shadow)"/>
-    <rect x="92" y="282" width="276" height="150" rx="28" fill="#E6FFF2"/>
-    <rect x="402" y="282" width="276" height="150" rx="28" fill="#FFE9F1"/>
-    <rect x="712" y="282" width="276" height="150" rx="28" fill="#EEE8FF"/>
-    <rect x="92" y="466" width="522" height="402" rx="30" fill="#F8FFFB" stroke="#BDEDD7" stroke-width="2"/>
-    <rect x="642" y="466" width="346" height="402" rx="30" fill="#FFF8FC" stroke="#F1C8D8" stroke-width="2"/>
-    <rect x="92" y="892" width="896" height="232" rx="30" fill="#FBF9FF" stroke="#DDD1F3" stroke-width="2"/>
-    <rect x="92" y="1140" width="896" height="44" rx="22" fill="#E7FAF1"/>
-    <circle cx="815" cy="616" r="88" fill="none" stroke="#E4F5EE" stroke-width="24"/>
-    <circle cx="815" cy="616" r="88" fill="none" stroke="#39C98D" stroke-width="24" stroke-linecap="round" stroke-dasharray="350 560" transform="rotate(-90 815 616)"/>
-    <rect x="690" y="742" width="255" height="14" rx="7" fill="#E5F2ED"/><rect x="690" y="742" width="${incomeWidth}" height="14" rx="7" fill="#35C78C"/>
-    <rect x="690" y="792" width="255" height="14" rx="7" fill="#F8E4EC"/><rect x="690" y="792" width="${expenseWidth}" height="14" rx="7" fill="#EB78A1"/>
-    ${categoryBars}
-  </svg>`);
-}
-async function renderFinanceReportImage(input) {
-  const referenceKey = `report-${input.period}`;
-  const reference = await loadRichMenuReference(referenceKey);
-  const title = input.title?.trim() || `\u0E2A\u0E23\u0E38\u0E1B\u0E01\u0E32\u0E23\u0E40\u0E07\u0E34\u0E19${periodLabel[input.period]}`;
-  const subtitle = input.subtitle?.trim() || periodRange(input);
-  const categories = Object.entries(input.categories).sort((a, b) => b[1] - a[1]).slice(0, 5);
-  const rows = (input.rows ?? []).slice(0, 4).map((row) => ({ ...row, amount: Number(row.amount), occurredAt: iso(row.occurredAt) }));
-  const transactionCount = input.transactionCount ?? input.rows?.length ?? 0;
-  const savingsRate = input.income > 0 ? Math.round(input.balance / input.income * 100) : 0;
-  const topCategory = categories[0];
-  const layers = [
-    textLayer(title, { left: 108, top: 210, width: 650, fontSize: 38, color: "#214A3D", bold: true }),
-    textLayer(subtitle, { left: 108, top: 250, width: 760, fontSize: 20, color: "#6D8C81" }),
-    textLayer("\u0E23\u0E32\u0E22\u0E23\u0E31\u0E1A", { left: 112, top: 310, width: 220, fontSize: 20, color: "#548B7B" }),
-    textLayer(`${money(input.income)} \u0E1A\u0E32\u0E17`, { left: 112, top: 350, width: 230, fontSize: 34, color: "#16875F", bold: true }),
-    textLayer("\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22", { left: 422, top: 310, width: 220, fontSize: 20, color: "#A46A82" }),
-    textLayer(`${money(input.expense)} \u0E1A\u0E32\u0E17`, { left: 422, top: 350, width: 230, fontSize: 34, color: "#CF4F80", bold: true }),
-    textLayer("\u0E04\u0E07\u0E40\u0E2B\u0E25\u0E37\u0E2D", { left: 732, top: 310, width: 220, fontSize: 20, color: "#74668D" }),
-    textLayer(`${money(input.balance)} \u0E1A\u0E32\u0E17`, { left: 732, top: 350, width: 230, fontSize: 34, color: input.balance >= 0 ? "#3C7562" : "#C05076", bold: true }),
-    textLayer("\u0E2A\u0E31\u0E14\u0E2A\u0E48\u0E27\u0E19\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22\u0E15\u0E32\u0E21\u0E2B\u0E21\u0E27\u0E14", { left: 112, top: 494, width: 450, fontSize: 26, color: "#355E50", bold: true }),
-    textLayer("\u0E20\u0E32\u0E1E\u0E23\u0E27\u0E21", { left: 682, top: 494, width: 250, fontSize: 26, color: "#624F76", bold: true }),
-    textLayer("\u0E2D\u0E31\u0E15\u0E23\u0E32\u0E04\u0E07\u0E40\u0E2B\u0E25\u0E37\u0E2D", { left: 706, top: 540, width: 220, fontSize: 19, color: "#8B7895" }),
-    textLayer(`${savingsRate}%`, { left: 706, top: 574, width: 220, fontSize: 48, color: savingsRate >= 0 ? "#25936D" : "#C45F82", bold: true }),
-    textLayer("\u0E23\u0E32\u0E22\u0E23\u0E31\u0E1A", { left: 690, top: 704, width: 100, fontSize: 18, color: "#508B7B" }),
-    textLayer("\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22", { left: 690, top: 754, width: 100, fontSize: 18, color: "#A96B83" }),
-    textLayer("\u0E08\u0E33\u0E19\u0E27\u0E19\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23", { left: 690, top: 814, width: 230, fontSize: 18, color: "#85758F" }),
-    textLayer(`${transactionCount.toLocaleString("th-TH-u-nu-latn")} \u0E23\u0E32\u0E22\u0E01\u0E32\u0E23`, { left: 690, top: 840, width: 230, fontSize: 28, color: "#4E435F", bold: true }),
-    textLayer(topCategory ? `\u0E2B\u0E21\u0E27\u0E14\u0E2A\u0E39\u0E07\u0E2A\u0E38\u0E14: ${topCategory[0]}` : "\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E21\u0E35\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22", { left: 690, top: 866, width: 250, fontSize: 18, color: "#765F72", bold: true }),
-    textLayer("\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E25\u0E48\u0E32\u0E2A\u0E38\u0E14", { left: 112, top: 914, width: 330, fontSize: 26, color: "#4B4260", bold: true })
-  ];
-  if (!categories.length) {
-    layers.push(textLayer("\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E21\u0E35\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22\u0E43\u0E19\u0E0A\u0E48\u0E27\u0E07\u0E19\u0E35\u0E49", { left: 105, top: 620, width: 470, fontSize: 27, color: "#849B96" }));
-  } else {
-    categories.forEach(([name, amount], index2) => {
-      const y = 540 + index2 * 58;
-      const share = input.expense > 0 ? Math.round(amount / input.expense * 100) : 0;
-      layers.push(
-        textLayer(name, { left: 112, top: y, width: 180, fontSize: 21, color: "#5E716C", bold: index2 === 0 }),
-        textLayer(`${money(amount)} \u0E1A\u0E32\u0E17 \u2022 ${share}%`, { left: 350, top: y, width: 220, fontSize: 20, color: "#A45A75", bold: true, align: "right" })
-      );
-    });
-  }
-  if (!rows.length) {
-    layers.push(textLayer("\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E21\u0E35\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E43\u0E19\u0E0A\u0E48\u0E27\u0E07\u0E40\u0E27\u0E25\u0E32\u0E19\u0E35\u0E49", { left: 112, top: 970, width: 760, fontSize: 25, color: "#8A8097" }));
-  } else {
-    rows.forEach((row, index2) => {
-      const y = 960 + index2 * 40;
-      const label = (row.note?.trim() || row.category).slice(0, 34);
-      const signed = row.transactionType === "income" ? "+" : "-";
-      layers.push(
-        textLayer(label, { left: 112, top: y, width: 410, fontSize: 20, color: "#5D536B", bold: index2 === 0 }),
-        textLayer(`${signed}${money(Number(row.amount))} \u0E1A\u0E32\u0E17`, { left: 530, top: y, width: 185, fontSize: 20, color: row.transactionType === "income" ? "#2E9577" : "#C35F82", bold: true, align: "right" }),
-        textLayer(displayRowDate(row.occurredAt), { left: 742, top: y, width: 210, fontSize: 18, color: "#94879E", align: "right" })
-      );
-    });
-  }
-  layers.push(
-    textLayer("Milo \u0E41\u0E19\u0E30\u0E19\u0E33", { left: 112, top: 1150, width: 140, fontSize: 17, color: "#2E9577", bold: true }),
-    textLayer(insightCopy({ ...input, transactionCount }), { left: 252, top: 1150, width: 700, fontSize: 16, color: "#5A6B66" })
-  );
-  return sharp2(reference).resize(WIDTH2, HEIGHT2, { fit: "fill" }).composite([{ input: financeReportShapesSvg({ ...input, transactionCount }), blend: "over" }, ...layers]).png().toBuffer();
-}
-function registerFinanceReportImageRoute(app2) {
-  app2.get("/api/milo/finance-report.png", async (req, res) => {
-    const input = decodeInput(req);
-    if (!input) return res.status(401).type("text/plain").send("Invalid finance report image link");
-    try {
-      const image = await renderFinanceReportImage(input);
-      res.set({ "Content-Type": "image/png", "Cache-Control": "private, no-store, max-age=0" });
-      return res.status(200).send(image);
-    } catch (error) {
-      console.error("[Milo Finance Report Image] render failed", error);
-      return res.status(500).type("text/plain").send("Unable to render finance report image");
-    }
-  });
 }
 
 // server/milo/line.ts
-import crypto4 from "node:crypto";
+import crypto3 from "node:crypto";
 function lineCredentials() {
   return { channelSecret: process.env.LINE_CHANNEL_SECRET ?? "", channelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN ?? "" };
 }
 function verifyLineSignature(body, signature, secret3) {
   if (!signature || !secret3) return false;
-  const computed = Buffer.from(crypto4.createHmac("sha256", secret3).update(body).digest("base64"));
+  const computed = Buffer.from(crypto3.createHmac("sha256", secret3).update(body).digest("base64"));
   const supplied = Buffer.from(signature);
-  return computed.length === supplied.length && crypto4.timingSafeEqual(computed, supplied);
+  return computed.length === supplied.length && crypto3.timingSafeEqual(computed, supplied);
 }
 function sourceIdentity(source) {
   if (source.type === "user") return { lineChatId: source.userId, lineUserId: source.userId, scope: "user" };
@@ -2727,10 +2548,72 @@ function miloRichMenuImageUrl(key) {
 async function replyText(replyToken, text2, credentials = lineCredentials()) {
   return callLine("/v2/bot/message/reply", credentials, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ replyToken, messages: [{ type: "text", text: text2.slice(0, 5e3) }] }) });
 }
+function miloThemeHero(key, aspectRatio = "20:8") {
+  return {
+    type: "image",
+    url: miloFlexThemeImageUrl(key),
+    size: "full",
+    aspectRatio,
+    aspectMode: "cover"
+  };
+}
+function miloThemeQuickReplies() {
+  return {
+    items: [
+      { type: "action", action: { type: "message", label: "\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01", text: "\u0E08\u0E14\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01" } },
+      { type: "action", action: { type: "message", label: "\u0E27\u0E31\u0E19\u0E19\u0E35\u0E49", text: "\u0E2A\u0E23\u0E38\u0E1B\u0E27\u0E31\u0E19\u0E19\u0E35\u0E49" } },
+      { type: "action", action: { type: "message", label: "\u0E27\u0E34\u0E40\u0E04\u0E23\u0E32\u0E30\u0E2B\u0E4C", text: "\u0E27\u0E34\u0E40\u0E04\u0E23\u0E32\u0E30\u0E2B\u0E4C" } },
+      { type: "action", action: { type: "message", label: "\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23", text: "\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23" } },
+      { type: "action", action: { type: "message", label: "\u0E15\u0E31\u0E49\u0E07\u0E04\u0E48\u0E32", text: "\u0E15\u0E31\u0E49\u0E07\u0E04\u0E48\u0E32" } }
+    ]
+  };
+}
+async function replyThemedTextCard(replyToken, text2, artwork, credentials = lineCredentials()) {
+  const detectedUrl = text2.match(/https?:\/\/[^\s]+/)?.[0]?.replace(/[),.]+$/, "");
+  const footer = detectedUrl ? {
+    type: "box",
+    layout: "vertical",
+    paddingAll: "14px",
+    backgroundColor: "#F8F7FF",
+    contents: [{
+      type: "button",
+      style: "primary",
+      color: "#7A58C8",
+      action: { type: "uri", label: "\u0E40\u0E1B\u0E34\u0E14\u0E25\u0E34\u0E07\u0E01\u0E4C", uri: detectedUrl }
+    }]
+  } : void 0;
+  return callLine("/v2/bot/message/reply", credentials, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      replyToken,
+      messages: [{
+        type: "flex",
+        altText: text2.slice(0, 400),
+        contents: {
+          type: "bubble",
+          size: "mega",
+          hero: miloThemeHero(artwork),
+          body: {
+            type: "box",
+            layout: "vertical",
+            spacing: "md",
+            paddingAll: "16px",
+            backgroundColor: "#F8F7FF",
+            contents: [
+              { type: "text", text: text2.slice(0, 3500), size: "sm", color: "#3E3560", wrap: true }
+            ]
+          },
+          footer
+        },
+        quickReply: miloThemeQuickReplies()
+      }]
+    })
+  });
+}
 async function replyMiloOnboarding(replyToken, displayName, credentials = lineCredentials()) {
-  const imageUrl = new URL("/richmenu/greeting-home.png", process.env.MILO_PUBLIC_URL || "https://milo-line-assistant.onrender.com").href;
   const name = displayName?.trim() ? displayName.trim().slice(0, 40) : "\u0E04\u0E38\u0E13";
-  return callLine("/v2/bot/message/reply", credentials, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ replyToken, messages: [{ type: "flex", altText: "\u0E15\u0E31\u0E49\u0E07\u0E04\u0E48\u0E32 Milo \u0E01\u0E48\u0E2D\u0E19\u0E40\u0E23\u0E34\u0E48\u0E21\u0E43\u0E0A\u0E49\u0E07\u0E32\u0E19", contents: { type: "bubble", size: "mega", hero: { type: "image", url: imageUrl, size: "full", aspectRatio: "20:11", aspectMode: "cover" }, body: { type: "box", layout: "vertical", spacing: "md", backgroundColor: "#F3FBF7", contents: [
+  return callLine("/v2/bot/message/reply", credentials, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ replyToken, messages: [{ type: "flex", altText: "\u0E15\u0E31\u0E49\u0E07\u0E04\u0E48\u0E32 Milo \u0E01\u0E48\u0E2D\u0E19\u0E40\u0E23\u0E34\u0E48\u0E21\u0E43\u0E0A\u0E49\u0E07\u0E32\u0E19", contents: { type: "bubble", size: "mega", hero: miloThemeHero("home", "20:10"), body: { type: "box", layout: "vertical", spacing: "md", backgroundColor: "#F3FBF7", contents: [
     { type: "text", text: "\u0E2A\u0E27\u0E31\u0E2A\u0E14\u0E35\u0E04\u0E23\u0E31\u0E1A \u{1F44B}", weight: "bold", size: "xl", color: "#0D735B" },
     { type: "text", text: "\u0E04\u0E38\u0E13" + name + " \u0E40\u0E0A\u0E37\u0E48\u0E2D\u0E21\u0E15\u0E48\u0E2D Milo \u0E41\u0E25\u0E49\u0E27", size: "sm", color: "#4B756B", wrap: true },
     { type: "text", text: "\u0E01\u0E48\u0E2D\u0E19\u0E40\u0E23\u0E34\u0E48\u0E21\u0E43\u0E0A\u0E49\u0E07\u0E32\u0E19 \u0E02\u0E2D\u0E08\u0E31\u0E14\u0E04\u0E48\u0E32\u0E1E\u0E37\u0E49\u0E19\u0E10\u0E32\u0E19\u0E43\u0E2B\u0E49\u0E44\u0E21\u0E42\u0E25\u0E2A\u0E31\u0E01\u0E19\u0E34\u0E14\u0E19\u0E30\u0E04\u0E23\u0E31\u0E1A", size: "sm", color: "#6D8D86", wrap: true },
@@ -2746,7 +2629,7 @@ async function replyMiloOnboarding(replyToken, displayName, credentials = lineCr
 async function replyMiloSettings(replyToken, credentials = lineCredentials()) {
   const items = [["\u{1F4B0} \u0E1A\u0E31\u0E0D\u0E0A\u0E35 / \u0E22\u0E2D\u0E14\u0E40\u0E23\u0E34\u0E48\u0E21\u0E15\u0E49\u0E19", "\u0E22\u0E2D\u0E14\u0E40\u0E07\u0E34\u0E19\u0E40\u0E23\u0E34\u0E48\u0E21\u0E15\u0E49\u0E19 0 \u0E1A\u0E32\u0E17", "\u0E15\u0E31\u0E49\u0E07\u0E22\u0E2D\u0E14\u0E40\u0E07\u0E34\u0E19\u0E40\u0E23\u0E34\u0E48\u0E21\u0E15\u0E49\u0E19 0 \u0E1A\u0E32\u0E17"], ["\u{1F3F7}\uFE0F \u0E2B\u0E21\u0E27\u0E14\u0E2B\u0E21\u0E39\u0E48", "\u0E40\u0E1E\u0E34\u0E48\u0E21\u0E2B\u0E23\u0E37\u0E2D\u0E25\u0E1A\u0E2B\u0E21\u0E27\u0E14\u0E23\u0E32\u0E22\u0E23\u0E31\u0E1A / \u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22", "\u0E2B\u0E21\u0E27\u0E14\u0E2B\u0E21\u0E39\u0E48"], ["\u{1F3AF} \u0E07\u0E1A\u0E1B\u0E23\u0E30\u0E21\u0E32\u0E13", "\u0E01\u0E33\u0E2B\u0E19\u0E14\u0E07\u0E1A\u0E15\u0E32\u0E21\u0E2B\u0E21\u0E27\u0E14\u0E41\u0E25\u0E30\u0E23\u0E2D\u0E1A\u0E07\u0E1A", "\u0E07\u0E1A\u0E1B\u0E23\u0E30\u0E21\u0E32\u0E13"], ["\u{1F501} \u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E1B\u0E23\u0E30\u0E08\u0E33", "\u0E15\u0E31\u0E49\u0E07\u0E23\u0E32\u0E22\u0E23\u0E31\u0E1A / \u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22\u0E17\u0E35\u0E48\u0E40\u0E01\u0E34\u0E14\u0E0B\u0E49\u0E33", "\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E1B\u0E23\u0E30\u0E08\u0E33"], ["\u{1F4C5} \u0E1B\u0E0F\u0E34\u0E17\u0E34\u0E19 / \u0E40\u0E15\u0E37\u0E2D\u0E19", "\u0E08\u0E31\u0E14\u0E01\u0E32\u0E23\u0E19\u0E31\u0E14\u0E2B\u0E21\u0E32\u0E22\u0E41\u0E25\u0E30\u0E01\u0E32\u0E23\u0E41\u0E08\u0E49\u0E07\u0E40\u0E15\u0E37\u0E2D\u0E19", "\u0E1B\u0E0F\u0E34\u0E17\u0E34\u0E19"], ["\u{1F4CA} \u0E2A\u0E23\u0E38\u0E1B\u0E2D\u0E31\u0E15\u0E42\u0E19\u0E21\u0E31\u0E15\u0E34", "\u0E14\u0E39\u0E20\u0E32\u0E1E\u0E23\u0E27\u0E21\u0E01\u0E32\u0E23\u0E40\u0E07\u0E34\u0E19\u0E0A\u0E48\u0E27\u0E07\u0E15\u0E48\u0E32\u0E07 \u0E46", "\u0E2A\u0E23\u0E38\u0E1B\u0E40\u0E14\u0E37\u0E2D\u0E19\u0E19\u0E35\u0E49"]];
   const cards = items.map(([title, desc2, text2]) => ({ type: "box", layout: "horizontal", spacing: "sm", paddingAll: "10px", cornerRadius: "md", backgroundColor: "#FFFFFF", contents: [{ type: "box", layout: "vertical", flex: 1, contents: [{ type: "text", text: title, size: "sm", weight: "bold", color: "#315F58" }, { type: "text", text: desc2, size: "xxs", color: "#8AA49E", wrap: true, margin: "xs" }] }, { type: "button", style: "link", height: "sm", flex: 0, action: { type: "message", label: "\u0E40\u0E1B\u0E34\u0E14", text: text2 } }] }));
-  return callLine("/v2/bot/message/reply", credentials, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ replyToken, messages: [{ type: "flex", altText: "\u0E15\u0E31\u0E49\u0E07\u0E04\u0E48\u0E32 Milo", contents: { type: "bubble", size: "mega", body: { type: "box", layout: "vertical", spacing: "md", backgroundColor: "#F7FCFA", contents: [{ type: "text", text: "\u2699\uFE0F \u0E15\u0E31\u0E49\u0E07\u0E04\u0E48\u0E32 Milo", weight: "bold", size: "xl", color: "#0D735B" }, { type: "text", text: "\u0E08\u0E31\u0E14\u0E01\u0E32\u0E23\u0E04\u0E48\u0E32\u0E01\u0E32\u0E23\u0E40\u0E07\u0E34\u0E19\u0E41\u0E25\u0E30\u0E01\u0E32\u0E23\u0E43\u0E0A\u0E49\u0E07\u0E32\u0E19\u0E08\u0E32\u0E01\u0E2B\u0E19\u0E49\u0E32\u0E19\u0E35\u0E49\u0E44\u0E14\u0E49\u0E40\u0E25\u0E22\u0E04\u0E23\u0E31\u0E1A", size: "xs", color: "#75958D", wrap: true }, ...cards] }, footer: { type: "box", layout: "vertical", backgroundColor: "#F7FCFA", contents: [{ type: "button", style: "primary", color: "#159A75", action: { type: "message", label: "\u0E40\u0E23\u0E34\u0E48\u0E21\u0E43\u0E0A\u0E49\u0E07\u0E32\u0E19 Milo", text: "\u0E40\u0E23\u0E34\u0E48\u0E21\u0E43\u0E0A\u0E49\u0E07\u0E32\u0E19" } }] } } }] }) });
+  return callLine("/v2/bot/message/reply", credentials, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ replyToken, messages: [{ type: "flex", altText: "\u0E15\u0E31\u0E49\u0E07\u0E04\u0E48\u0E32 Milo", contents: { type: "bubble", size: "mega", hero: miloThemeHero("settings-help", "20:7"), body: { type: "box", layout: "vertical", spacing: "md", backgroundColor: "#F7FCFA", contents: [{ type: "text", text: "\u2699\uFE0F \u0E15\u0E31\u0E49\u0E07\u0E04\u0E48\u0E32 Milo", weight: "bold", size: "xl", color: "#0D735B" }, { type: "text", text: "\u0E08\u0E31\u0E14\u0E01\u0E32\u0E23\u0E04\u0E48\u0E32\u0E01\u0E32\u0E23\u0E40\u0E07\u0E34\u0E19\u0E41\u0E25\u0E30\u0E01\u0E32\u0E23\u0E43\u0E0A\u0E49\u0E07\u0E32\u0E19\u0E08\u0E32\u0E01\u0E2B\u0E19\u0E49\u0E32\u0E19\u0E35\u0E49\u0E44\u0E14\u0E49\u0E40\u0E25\u0E22\u0E04\u0E23\u0E31\u0E1A", size: "xs", color: "#75958D", wrap: true }, ...cards] }, footer: { type: "box", layout: "vertical", backgroundColor: "#F7FCFA", contents: [{ type: "button", style: "primary", color: "#159A75", action: { type: "message", label: "\u0E40\u0E23\u0E34\u0E48\u0E21\u0E43\u0E0A\u0E49\u0E07\u0E32\u0E19 Milo", text: "\u0E40\u0E23\u0E34\u0E48\u0E21\u0E43\u0E0A\u0E49\u0E07\u0E32\u0E19" } }] } } }] }) });
 }
 async function replyTextWithQuickReplies(replyToken, text2, actions, credentials = lineCredentials()) {
   return callLine("/v2/bot/message/reply", credentials, {
@@ -2756,13 +2639,12 @@ async function replyTextWithQuickReplies(replyToken, text2, actions, credentials
   });
 }
 async function replyGreetingHome(replyToken, credentials = lineCredentials()) {
-  const base = process.env.MILO_PUBLIC_URL || "https://milo-line-assistant.onrender.com";
-  const imageUrl = new URL("/richmenu/greeting-home.png", base).href;
-  return callLine("/v2/bot/message/reply", credentials, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ replyToken, messages: [{ type: "image", originalContentUrl: imageUrl, previewImageUrl: imageUrl }] })
-  });
+  return replyThemedTextCard(
+    replyToken,
+    "\u0E2A\u0E27\u0E31\u0E2A\u0E14\u0E35\u0E04\u0E23\u0E31\u0E1A \u{1F44B} \u0E1C\u0E21\u0E44\u0E21\u0E42\u0E25 \u0E1C\u0E39\u0E49\u0E0A\u0E48\u0E27\u0E22\u0E01\u0E32\u0E23\u0E40\u0E07\u0E34\u0E19\u0E02\u0E2D\u0E07\u0E04\u0E38\u0E13\n\u0E40\u0E25\u0E37\u0E2D\u0E01\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E23\u0E32\u0E22\u0E23\u0E31\u0E1A\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22 \u0E14\u0E39\u0E2A\u0E23\u0E38\u0E1B \u0E27\u0E34\u0E40\u0E04\u0E23\u0E32\u0E30\u0E2B\u0E4C\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23 \u0E2B\u0E23\u0E37\u0E2D\u0E08\u0E31\u0E14\u0E01\u0E32\u0E23\u0E40\u0E15\u0E37\u0E2D\u0E19\u0E44\u0E14\u0E49\u0E08\u0E32\u0E01\u0E1B\u0E38\u0E48\u0E21\u0E14\u0E49\u0E32\u0E19\u0E25\u0E48\u0E32\u0E07\u0E04\u0E23\u0E31\u0E1A",
+    "home",
+    credentials
+  );
 }
 var MILO_VOICE_CAT_IMAGE_URL = (process.env.MILO_VOICE_CAT_IMAGE_URL ?? "https://milo-line-assistant.onrender.com/milo-voice-proposal-cat.webp").trim();
 function voiceQuickReply() {
@@ -2826,16 +2708,62 @@ function miloFinanceBrandStrip() {
   ] };
 }
 async function replyFinanceReportCard(replyToken, report, credentials = lineCredentials()) {
-  const imageUrl = buildFinanceReportImageUrl(report);
+  const money4 = (amount) => amount.toLocaleString("th-TH", { maximumFractionDigits: 2 });
+  const periodLabel2 = { day: "\u0E27\u0E31\u0E19\u0E19\u0E35\u0E49", week: "\u0E2A\u0E31\u0E1B\u0E14\u0E32\u0E2B\u0E4C\u0E19\u0E35\u0E49", month: "\u0E40\u0E14\u0E37\u0E2D\u0E19\u0E19\u0E35\u0E49", year: "\u0E1B\u0E35\u0E19\u0E35\u0E49" };
+  const theme = report.period === "day" ? "summary-day" : "summary-period";
+  const categories = Object.entries(report.categories).sort((a, b) => b[1] - a[1]).slice(0, 3);
+  const categoryRows = categories.length ? categories.map(([name, amount]) => ({
+    type: "box",
+    layout: "horizontal",
+    spacing: "sm",
+    paddingAll: "9px",
+    cornerRadius: "md",
+    backgroundColor: "#FFFFFF",
+    contents: [
+      { type: "text", text: name, size: "xs", color: "#51456C", flex: 1, wrap: true },
+      { type: "text", text: `${money4(amount)} \u0E1A\u0E32\u0E17`, size: "xs", weight: "bold", color: "#7A58C8", align: "end" }
+    ]
+  })) : [{ type: "text", text: "\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E21\u0E35\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22\u0E43\u0E19\u0E0A\u0E48\u0E27\u0E07\u0E19\u0E35\u0E49", size: "xs", color: "#8B80A0" }];
   return callLine("/v2/bot/message/reply", credentials, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
       replyToken,
       messages: [{
-        type: "image",
-        originalContentUrl: imageUrl,
-        previewImageUrl: imageUrl,
+        type: "flex",
+        altText: financeReportCardText(report),
+        contents: {
+          type: "bubble",
+          size: "mega",
+          hero: miloThemeHero(theme, report.period === "day" ? "20:7" : "20:6"),
+          body: {
+            type: "box",
+            layout: "vertical",
+            spacing: "md",
+            paddingAll: "16px",
+            backgroundColor: "#F8F7FF",
+            contents: [
+              { type: "text", text: report.title ?? `\u0E2A\u0E23\u0E38\u0E1B\u0E01\u0E32\u0E23\u0E40\u0E07\u0E34\u0E19${periodLabel2[report.period]}`, size: "lg", weight: "bold", color: "#33276B", wrap: true },
+              ...report.subtitle ? [{ type: "text", text: report.subtitle, size: "xs", color: "#81779A", wrap: true }] : [],
+              { type: "box", layout: "horizontal", spacing: "sm", contents: [
+                { type: "box", layout: "vertical", flex: 1, paddingAll: "12px", cornerRadius: "md", backgroundColor: "#E6F9F3", contents: [
+                  { type: "text", text: "\u0E23\u0E32\u0E22\u0E23\u0E31\u0E1A", size: "xxs", color: "#318B75" },
+                  { type: "text", text: `${money4(report.income)} \u0E1A\u0E32\u0E17`, size: "md", weight: "bold", color: "#087B63", wrap: true }
+                ] },
+                { type: "box", layout: "vertical", flex: 1, paddingAll: "12px", cornerRadius: "md", backgroundColor: "#FDECF3", contents: [
+                  { type: "text", text: "\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22", size: "xxs", color: "#C55C87" },
+                  { type: "text", text: `${money4(report.expense)} \u0E1A\u0E32\u0E17`, size: "md", weight: "bold", color: "#D12C66", wrap: true }
+                ] }
+              ] },
+              { type: "box", layout: "horizontal", alignItems: "center", paddingAll: "12px", cornerRadius: "md", backgroundColor: "#EEECFF", contents: [
+                { type: "text", text: "\u0E04\u0E07\u0E40\u0E2B\u0E25\u0E37\u0E2D\u0E2A\u0E38\u0E17\u0E18\u0E34", size: "xs", color: "#5C4C8A", flex: 1 },
+                { type: "text", text: `${money4(report.balance)} \u0E1A\u0E32\u0E17`, size: "md", weight: "bold", color: report.balance >= 0 ? "#087B63" : "#D12C66", align: "end" }
+              ] },
+              { type: "text", text: "\u0E2B\u0E21\u0E27\u0E14\u0E04\u0E48\u0E32\u0E43\u0E0A\u0E49\u0E08\u0E48\u0E32\u0E22", size: "xs", weight: "bold", color: "#5C4C8A", margin: "sm" },
+              { type: "box", layout: "vertical", spacing: "xs", contents: categoryRows }
+            ]
+          }
+        },
         quickReply: { items: [
           { type: "action", action: { type: "message", label: "\u0E27\u0E31\u0E19\u0E19\u0E35\u0E49", text: "\u0E2A\u0E23\u0E38\u0E1B\u0E27\u0E31\u0E19\u0E19\u0E35\u0E49" } },
           { type: "action", action: { type: "message", label: "\u0E2A\u0E31\u0E1B\u0E14\u0E32\u0E2B\u0E4C\u0E19\u0E35\u0E49", text: "\u0E2A\u0E23\u0E38\u0E1B\u0E2A\u0E31\u0E1B\u0E14\u0E32\u0E2B\u0E4C\u0E19\u0E35\u0E49" } },
@@ -2866,7 +2794,7 @@ async function pushFinanceReportCard(to, report, credentials = lineCredentials()
       contents: {
         type: "bubble",
         size: "mega",
-        hero: { type: "image", url: miloRichMenuImageUrl("summary"), size: "full", aspectRatio: "20:9", aspectMode: "cover" },
+        hero: miloThemeHero(report.period === "day" ? "summary-day" : "summary-period", report.period === "day" ? "20:7" : "20:6"),
         body: { type: "box", layout: "vertical", spacing: "md", paddingAll: "16px", backgroundColor: "#F2F0FF", contents: [
           { type: "box", layout: "horizontal", alignItems: "center", spacing: "md", paddingAll: "12px", cornerRadius: "md", backgroundColor: "#E4F8F2", contents: [
             { type: "box", layout: "vertical", justifyContent: "center", alignItems: "center", width: "38px", height: "38px", cornerRadius: "md", backgroundColor: "#5AC6AD", contents: [{ type: "text", text: "\u0E3F", align: "center", weight: "bold", size: "xl", color: "#FFFFFF" }] },
@@ -2904,7 +2832,7 @@ async function replyPostSaveSummary(replyToken, summary, credentials = lineCrede
         contents: {
           type: "bubble",
           size: "mega",
-          hero: { type: "image", url: miloRichMenuImageUrl("save-complete"), size: "full", aspectRatio: "20:5", aspectMode: "cover" },
+          hero: miloThemeHero("save-complete", "20:7"),
           body: { type: "box", layout: "vertical", spacing: "md", paddingAll: "16px", backgroundColor: "#F2F0FF", contents: [
             { type: "box", layout: "horizontal", alignItems: "center", spacing: "md", paddingAll: "12px", cornerRadius: "md", backgroundColor: "#E4F8F2", contents: [
               { type: "box", layout: "vertical", justifyContent: "center", alignItems: "center", width: "38px", height: "38px", cornerRadius: "md", backgroundColor: "#5AC6AD", contents: [{ type: "text", text: "\u2713", align: "center", weight: "bold", size: "xl", color: "#FFFFFF" }] },
@@ -3106,7 +3034,7 @@ async function replyRichMenu(replyToken, text2, artwork, credentials = lineCrede
     })
   });
 }
-async function replyMiloListBubble(replyToken, title, subtitle, rows, credentials = lineCredentials()) {
+async function replyMiloListBubble(replyToken, title, subtitle, rows, artwork, credentials = lineCredentials()) {
   const contents = rows.slice(0, 10).map((row) => ({
     type: "box",
     layout: "horizontal",
@@ -3122,20 +3050,20 @@ async function replyMiloListBubble(replyToken, title, subtitle, rows, credential
       ...row.actionText ? [{ type: "button", style: "secondary", height: "sm", flex: 0, action: { type: "message", label: (row.actionLabel ?? "\u0E22\u0E01\u0E40\u0E25\u0E34\u0E01").slice(0, 20), text: row.actionText.slice(0, 300) } }] : []
     ]
   }));
-  return callLine("/v2/bot/message/reply", credentials, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ replyToken, messages: [{ type: "flex", altText: title, contents: { type: "bubble", size: "mega", body: { type: "box", layout: "vertical", spacing: "md", backgroundColor: "#F3FBF7", contents: [
+  return callLine("/v2/bot/message/reply", credentials, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ replyToken, messages: [{ type: "flex", altText: title, contents: { type: "bubble", size: "mega", hero: miloThemeHero(artwork, "20:7"), body: { type: "box", layout: "vertical", spacing: "md", backgroundColor: "#F8F7FF", contents: [
     { type: "text", text: title, size: "xl", weight: "bold", color: "#0D735B" },
     { type: "text", text: subtitle, size: "xs", color: "#789891", wrap: true },
     ...contents.length ? contents : [{ type: "text", text: "\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E21\u0E35\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E04\u0E23\u0E31\u0E1A", size: "sm", color: "#789891", margin: "md" }]
   ] } } }] }) });
 }
 async function replyTransactionList(replyToken, rows, credentials = lineCredentials()) {
-  return replyMiloListBubble(replyToken, "\u{1F4CB} \u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E25\u0E48\u0E32\u0E2A\u0E38\u0E14", "\u0E41\u0E15\u0E30\u0E1B\u0E38\u0E48\u0E21\u0E14\u0E49\u0E32\u0E19\u0E02\u0E27\u0E32\u0E40\u0E1E\u0E37\u0E48\u0E2D\u0E25\u0E1A\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E17\u0E35\u0E48\u0E15\u0E49\u0E2D\u0E07\u0E01\u0E32\u0E23", rows.map((row) => ({ ...row, actionLabel: "\u0E25\u0E1A", actionText: "\u0E25\u0E1A\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23 #" + row.id })), credentials);
+  return replyMiloListBubble(replyToken, "\u{1F4CB} \u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E25\u0E48\u0E32\u0E2A\u0E38\u0E14", "\u0E41\u0E15\u0E30\u0E1B\u0E38\u0E48\u0E21\u0E14\u0E49\u0E32\u0E19\u0E02\u0E27\u0E32\u0E40\u0E1E\u0E37\u0E48\u0E2D\u0E25\u0E1A\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E17\u0E35\u0E48\u0E15\u0E49\u0E2D\u0E07\u0E01\u0E32\u0E23", rows.map((row) => ({ ...row, actionLabel: "\u0E25\u0E1A", actionText: "\u0E25\u0E1A\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23 #" + row.id })), "transactions", credentials);
 }
 async function replyReminderList(replyToken, rows, credentials = lineCredentials()) {
-  return replyMiloListBubble(replyToken, "\u{1F514} \u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E40\u0E15\u0E37\u0E2D\u0E19", "\u0E41\u0E15\u0E48\u0E25\u0E30\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E21\u0E35\u0E1B\u0E38\u0E48\u0E21\u0E22\u0E01\u0E40\u0E25\u0E34\u0E01\u0E43\u0E2B\u0E49\u0E01\u0E14\u0E44\u0E14\u0E49\u0E17\u0E31\u0E19\u0E17\u0E35", rows.map((row) => ({ ...row, actionLabel: "\u0E22\u0E01\u0E40\u0E25\u0E34\u0E01", actionText: "\u0E22\u0E01\u0E40\u0E25\u0E34\u0E01\u0E40\u0E15\u0E37\u0E2D\u0E19 #" + row.id })), credentials);
+  return replyMiloListBubble(replyToken, "\u{1F514} \u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E40\u0E15\u0E37\u0E2D\u0E19", "\u0E41\u0E15\u0E48\u0E25\u0E30\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E21\u0E35\u0E1B\u0E38\u0E48\u0E21\u0E22\u0E01\u0E40\u0E25\u0E34\u0E01\u0E43\u0E2B\u0E49\u0E01\u0E14\u0E44\u0E14\u0E49\u0E17\u0E31\u0E19\u0E17\u0E35", rows.map((row) => ({ ...row, actionLabel: "\u0E22\u0E01\u0E40\u0E25\u0E34\u0E01", actionText: "\u0E22\u0E01\u0E40\u0E25\u0E34\u0E01\u0E40\u0E15\u0E37\u0E2D\u0E19 #" + row.id })), "utility", credentials);
 }
 async function replyCalendarList(replyToken, rows, credentials = lineCredentials()) {
-  return replyMiloListBubble(replyToken, "\u{1F4C5} \u0E1B\u0E0F\u0E34\u0E17\u0E34\u0E19 Milo", "\u0E19\u0E31\u0E14\u0E2B\u0E21\u0E32\u0E22\u0E17\u0E35\u0E48\u0E01\u0E33\u0E25\u0E31\u0E07\u0E08\u0E30\u0E16\u0E36\u0E07 \u0E41\u0E15\u0E30\u0E22\u0E01\u0E40\u0E25\u0E34\u0E01\u0E44\u0E14\u0E49\u0E08\u0E32\u0E01\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23", rows.map((row) => ({ ...row, actionLabel: "\u0E22\u0E01\u0E40\u0E25\u0E34\u0E01", actionText: "\u0E22\u0E01\u0E40\u0E25\u0E34\u0E01\u0E19\u0E31\u0E14 #" + row.id })), credentials);
+  return replyMiloListBubble(replyToken, "\u{1F4C5} \u0E1B\u0E0F\u0E34\u0E17\u0E34\u0E19 Milo", "\u0E19\u0E31\u0E14\u0E2B\u0E21\u0E32\u0E22\u0E17\u0E35\u0E48\u0E01\u0E33\u0E25\u0E31\u0E07\u0E08\u0E30\u0E16\u0E36\u0E07 \u0E41\u0E15\u0E30\u0E22\u0E01\u0E40\u0E25\u0E34\u0E01\u0E44\u0E14\u0E49\u0E08\u0E32\u0E01\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23", rows.map((row) => ({ ...row, actionLabel: "\u0E22\u0E01\u0E40\u0E25\u0E34\u0E01", actionText: "\u0E22\u0E01\u0E40\u0E25\u0E34\u0E01\u0E19\u0E31\u0E14 #" + row.id })), "utility", credentials);
 }
 
 // server/milo/reminderDelivery.ts
@@ -3752,7 +3680,7 @@ async function generateFinancialInsight(input) {
 }
 
 // server/adminPassword.ts
-import crypto5 from "node:crypto";
+import crypto4 from "node:crypto";
 import mysql2 from "mysql2/promise";
 var SCRYPT_N = 16384;
 var SCRYPT_R = 8;
@@ -3783,14 +3711,14 @@ async function ensurePasswordColumn(db) {
 }
 function scrypt(password, salt) {
   return new Promise((resolve, reject) => {
-    crypto5.scrypt(password, salt, KEYLEN, { N: SCRYPT_N, r: SCRYPT_R, p: SCRYPT_P }, (error, derived) => {
+    crypto4.scrypt(password, salt, KEYLEN, { N: SCRYPT_N, r: SCRYPT_R, p: SCRYPT_P }, (error, derived) => {
       if (error) reject(error);
       else resolve(derived);
     });
   });
 }
 async function hashAdminPassword(password) {
-  const salt = crypto5.randomBytes(SALT_BYTES);
+  const salt = crypto4.randomBytes(SALT_BYTES);
   const derived = await scrypt(password, salt);
   return `scrypt$${SCRYPT_N}$${SCRYPT_R}$${SCRYPT_P}$${salt.toString("hex")}$${derived.toString("hex")}`;
 }
@@ -3805,9 +3733,9 @@ async function verifyAdminPassword(password, encoded) {
   const costP = Number(p);
   if (!salt.length || !expected.length || !Number.isInteger(costN) || !Number.isInteger(costR) || !Number.isInteger(costP) || costN < 1024 || costR < 1 || costP < 1 || expected.length !== KEYLEN) return false;
   const derived = await new Promise((resolve, reject) => {
-    crypto5.scrypt(password, salt, expected.length, { N: costN, r: costR, p: costP }, (error, value) => error ? reject(error) : resolve(value));
+    crypto4.scrypt(password, salt, expected.length, { N: costN, r: costR, p: costP }, (error, value) => error ? reject(error) : resolve(value));
   });
-  return crypto5.timingSafeEqual(expected, derived);
+  return crypto4.timingSafeEqual(expected, derived);
 }
 function configuredUsername() {
   const username = (process.env.ADMIN_USERNAME ?? "").trim();
@@ -4312,7 +4240,7 @@ function registerStorageProxy(app2) {
 import { waitUntil } from "@vercel/functions";
 
 // server/milo/calendar.ts
-import crypto6 from "node:crypto";
+import crypto5 from "node:crypto";
 var BANGKOK_OFFSET_MS2 = 7 * 60 * 60 * 1e3;
 function bangkokParts2(date) {
   const shifted = new Date(date.getTime() + BANGKOK_OFFSET_MS2);
@@ -4427,13 +4355,13 @@ function signingSecret() {
   return value;
 }
 function calendarSignature(id, expires) {
-  return crypto6.createHmac("sha256", signingSecret()).update(`${id}:${expires}`).digest("hex");
+  return crypto5.createHmac("sha256", signingSecret()).update(`${id}:${expires}`).digest("hex");
 }
 function safeEqual(left, right) {
   if (!left || !right) return false;
   const a = Buffer.from(left);
   const b = Buffer.from(right);
-  return a.length === b.length && crypto6.timingSafeEqual(a, b);
+  return a.length === b.length && crypto5.timingSafeEqual(a, b);
 }
 function buildCalendarIcsUrl(id, ttlSeconds = 7 * 24 * 60 * 60) {
   const base = process.env.MILO_PUBLIC_URL?.trim() || "https://milo-line-assistant.onrender.com";
@@ -4536,11 +4464,11 @@ function signingKey(env = process.env) {
   if (!secret3) throw new Error("Google Calendar token encryption key is not configured");
   return createHash("sha256").update(secret3).digest();
 }
-function sign3(value, env = process.env) {
+function sign2(value, env = process.env) {
   return createHmac("sha256", signingKey(env)).update(value).digest("base64url");
 }
 function signaturesMatch(value, signature, env = process.env) {
-  const expected = Buffer.from(sign3(value, env));
+  const expected = Buffer.from(sign2(value, env));
   const actual = Buffer.from(signature);
   return expected.length === actual.length && timingSafeEqual(expected, actual);
 }
@@ -4563,7 +4491,7 @@ function signedState(lineUserId, env = process.env) {
     expiresAt: Date.now() + 10 * 6e4,
     nonce: randomBytes(12).toString("base64url")
   })).toString("base64url");
-  return `${payload}.${sign3(payload, env)}`;
+  return `${payload}.${sign2(payload, env)}`;
 }
 function verifyState(state, env = process.env) {
   const separator = state.lastIndexOf(".");
@@ -4582,7 +4510,7 @@ function verifyState(state, env = process.env) {
 function buildGoogleCalendarConnectUrl(lineUserId, env = process.env) {
   if (!googleCalendarRuntimeStatus(env).configured) return void 0;
   const expires = Math.floor(Date.now() / 1e3) + 10 * 60;
-  const signature = sign3(`${lineUserId}:${expires}`, env);
+  const signature = sign2(`${lineUserId}:${expires}`, env);
   const url = new URL("/api/milo/google/calendar/connect", publicBaseUrl(env));
   url.searchParams.set("lineUserId", lineUserId);
   url.searchParams.set("expires", String(expires));
@@ -5614,7 +5542,7 @@ import fs2 from "node:fs";
 import os from "node:os";
 import path3 from "node:path";
 import { createRequire } from "node:module";
-import sharp3 from "sharp";
+import sharp2 from "sharp";
 import { createWorker } from "tesseract.js";
 
 // server/milo/thaiReceiptParser.ts
@@ -5974,9 +5902,9 @@ function decodeDataUrl(dataUrl) {
 }
 async function buildReceiptHeaderDataUrl(dataUrl) {
   const input = decodeDataUrl(dataUrl);
-  const trimmed = await sharp3(input).rotate().trim({ threshold: 10 }).png().toBuffer({ resolveWithObject: true });
+  const trimmed = await sharp2(input).rotate().trim({ threshold: 10 }).png().toBuffer({ resolveWithObject: true });
   const headerHeight = Math.max(1, Math.floor(trimmed.info.height * 0.45));
-  const header = await sharp3(trimmed.data).extract({ left: 0, top: 0, width: trimmed.info.width, height: headerHeight }).resize({ width: 3200, fit: "inside", withoutEnlargement: false, kernel: sharp3.kernel.lanczos3 }).sharpen({ sigma: 1.1 }).png().toBuffer();
+  const header = await sharp2(trimmed.data).extract({ left: 0, top: 0, width: trimmed.info.width, height: headerHeight }).resize({ width: 3200, fit: "inside", withoutEnlargement: false, kernel: sharp2.kernel.lanczos3 }).sharpen({ sigma: 1.1 }).png().toBuffer();
   return `data:image/png;base64,${header.toString("base64")}`;
 }
 function normalizeDigits(text2) {
@@ -6154,17 +6082,17 @@ async function analyzeImageWithOcr(dataUrl) {
   if (!ocrAssetsReady()) throw new Error(`OCR language data is unavailable at ${DATA_DIR}`);
   fs2.mkdirSync(CACHE_DIR, { recursive: true });
   const input = decodeDataUrl(dataUrl);
-  const base = sharp3(input).rotate().resize({ width: 2e3, fit: "inside", withoutEnlargement: false, kernel: sharp3.kernel.lanczos3 }).grayscale().normalize().sharpen({ sigma: 1.05 });
-  const meta = await sharp3(input).rotate().metadata();
+  const base = sharp2(input).rotate().resize({ width: 2e3, fit: "inside", withoutEnlargement: false, kernel: sharp2.kernel.lanczos3 }).grayscale().normalize().sharpen({ sigma: 1.05 });
+  const meta = await sharp2(input).rotate().metadata();
   const imageHeight = meta.height || 0;
   const topCropHeight = imageHeight > 0 ? Math.max(1, Math.floor(imageHeight * 0.72)) : 0;
-  const topFocus = topCropHeight > 0 ? sharp3(input).rotate().extract({ left: 0, top: 0, width: meta.width || 1, height: topCropHeight }).resize({ width: 3e3, fit: "inside", withoutEnlargement: false, kernel: sharp3.kernel.lanczos3 }).grayscale().normalize().sharpen({ sigma: 1.15 }) : void 0;
-  const trimmed = await sharp3(input).rotate().trim({ threshold: 12 }).png().toBuffer({ resolveWithObject: true });
+  const topFocus = topCropHeight > 0 ? sharp2(input).rotate().extract({ left: 0, top: 0, width: meta.width || 1, height: topCropHeight }).resize({ width: 3e3, fit: "inside", withoutEnlargement: false, kernel: sharp2.kernel.lanczos3 }).grayscale().normalize().sharpen({ sigma: 1.15 }) : void 0;
+  const trimmed = await sharp2(input).rotate().trim({ threshold: 12 }).png().toBuffer({ resolveWithObject: true });
   const trimmedHeaderHeight = Math.max(1, Math.floor(trimmed.info.height * 0.62));
-  const trimmedHeader = sharp3(trimmed.data).extract({ left: 0, top: 0, width: trimmed.info.width, height: trimmedHeaderHeight }).resize({ width: 3200, fit: "inside", withoutEnlargement: false, kernel: sharp3.kernel.lanczos3 }).grayscale().normalize().sharpen({ sigma: 1.2 });
+  const trimmedHeader = sharp2(trimmed.data).extract({ left: 0, top: 0, width: trimmed.info.width, height: trimmedHeaderHeight }).resize({ width: 3200, fit: "inside", withoutEnlargement: false, kernel: sharp2.kernel.lanczos3 }).grayscale().normalize().sharpen({ sigma: 1.2 });
   const dateBandTop = Math.floor(trimmed.info.height * 0.12);
   const dateBandHeight = Math.max(1, Math.floor(trimmed.info.height * 0.14));
-  const dateBand = sharp3(trimmed.data).extract({ left: 0, top: dateBandTop, width: trimmed.info.width, height: dateBandHeight }).resize({ width: 3600, fit: "inside", withoutEnlargement: false, kernel: sharp3.kernel.lanczos3 }).grayscale().normalize().sharpen({ sigma: 1.35 });
+  const dateBand = sharp2(trimmed.data).extract({ left: 0, top: dateBandTop, width: trimmed.info.width, height: dateBandHeight }).resize({ width: 3600, fit: "inside", withoutEnlargement: false, kernel: sharp2.kernel.lanczos3 }).grayscale().normalize().sharpen({ sigma: 1.35 });
   const variants = [
     { label: "date-band-sparse", bytes: await dateBand.clone().linear(1.22, -18).png().toBuffer(), psm: "7" },
     { label: "date-band-threshold", bytes: await dateBand.clone().threshold(176).png().toBuffer(), psm: "7" },
@@ -6821,7 +6749,7 @@ ${text2}` }
 }
 
 // server/milo/financeExport.ts
-import crypto7 from "node:crypto";
+import crypto6 from "node:crypto";
 import * as XLSX from "xlsx";
 function exportSecret() {
   const value = process.env.LINE_CHANNEL_SECRET?.trim() || process.env.CRON_SECRET?.trim() || process.env.SESSION_SECRET?.trim();
@@ -6831,17 +6759,17 @@ function exportSecret() {
 function signaturePayload(lineUserId, financeAccountId, format, expires) {
   return `${lineUserId}|${financeAccountId}|${format}|${expires}`;
 }
-function sign4(lineUserId, financeAccountId, format, expires) {
-  return crypto7.createHmac("sha256", exportSecret()).update(signaturePayload(lineUserId, financeAccountId, format, expires)).digest("hex");
+function sign3(lineUserId, financeAccountId, format, expires) {
+  return crypto6.createHmac("sha256", exportSecret()).update(signaturePayload(lineUserId, financeAccountId, format, expires)).digest("hex");
 }
 function safeEqual2(a, b) {
   const aa = Buffer.from(a);
   const bb = Buffer.from(b);
-  return aa.length === bb.length && crypto7.timingSafeEqual(aa, bb);
+  return aa.length === bb.length && crypto6.timingSafeEqual(aa, bb);
 }
 function buildFinanceExportUrl(input) {
   const expires = Math.floor(Date.now() / 1e3) + Math.min(Math.max(input.ttlSeconds ?? 600, 60), 3600);
-  const sig = sign4(input.lineUserId, input.financeAccountId, input.format, expires);
+  const sig = sign3(input.lineUserId, input.financeAccountId, input.format, expires);
   const base = (process.env.MILO_APP_BASE_URL ?? process.env.MILO_SAVE_RESULT_IMAGE_BASE_URL ?? "https://milo-line-assistant.onrender.com").replace(/\/+$/, "");
   const params = new URLSearchParams({ user: input.lineUserId, account: String(input.financeAccountId), format: input.format, expires: String(expires), sig });
   return `${base}/api/milo/export?${params.toString()}`;
@@ -6877,7 +6805,7 @@ function registerFinanceExportRoute(app2) {
       const expires = Number(req.query.expires ?? 0);
       const supplied = String(req.query.sig ?? "");
       if (!lineUserId || !Number.isInteger(financeAccountId) || financeAccountId <= 0 || !Number.isInteger(expires) || expires < Math.floor(Date.now() / 1e3) || !supplied) return res.status(401).type("text/plain").send("Export link expired or invalid");
-      const expected = sign4(lineUserId, financeAccountId, format, expires);
+      const expected = sign3(lineUserId, financeAccountId, format, expires);
       if (!safeEqual2(supplied, expected)) return res.status(401).type("text/plain").send("Export link expired or invalid");
       const access = await getFinanceAccountAccess(financeAccountId, lineUserId);
       if (!access) return res.status(403).type("text/plain").send("No access to this finance account");
@@ -7952,7 +7880,7 @@ function thaiDate2(value) {
 function thaiTime2(value) {
   return new Intl.DateTimeFormat("th-TH", { timeZone: "Asia/Bangkok", hour: "2-digit", minute: "2-digit" }).format(new Date(value));
 }
-function money2(value) {
+function money(value) {
   return Number(value).toLocaleString("th-TH", { maximumFractionDigits: 2 });
 }
 function shouldDeliverDailyDigest(lastRunAt, reference) {
@@ -7975,10 +7903,10 @@ ${activeTodos.slice(0, 8).map((item) => `\u2022 #${item.id} ${item.title}${item.
 ${input.reminders.slice(0, 8).map((item) => `\u2022 ${item.nextRunAt ? thaiTime2(item.nextRunAt) : "--:--"} \u2022 ${item.title}`).join("\n")}`);
   if (input.bills.length) lines.push(`
 \u{1F9FE} \u0E1A\u0E34\u0E25\u0E23\u0E2D\u0E08\u0E48\u0E32\u0E22 ${input.bills.length} \u0E23\u0E32\u0E22\u0E01\u0E32\u0E23
-${input.bills.slice(0, 5).map((item) => `\u2022 #${item.id} ${item.title} ${money2(item.amount)} \u0E1A\u0E32\u0E17 \u2022 ${thaiTime2(item.dueAt)}`).join("\n")}`);
+${input.bills.slice(0, 5).map((item) => `\u2022 #${item.id} ${item.title} ${money(item.amount)} \u0E1A\u0E32\u0E17 \u2022 ${thaiTime2(item.dueAt)}`).join("\n")}`);
   if (input.finance) lines.push(`
 \u{1F4B0} \u0E01\u0E32\u0E23\u0E40\u0E07\u0E34\u0E19\u0E27\u0E31\u0E19\u0E19\u0E35\u0E49
-\u0E23\u0E31\u0E1A ${money2(input.finance.income)} \u0E1A\u0E32\u0E17 \u2022 \u0E08\u0E48\u0E32\u0E22 ${money2(input.finance.expense)} \u0E1A\u0E32\u0E17 \u2022 \u0E04\u0E07\u0E40\u0E2B\u0E25\u0E37\u0E2D ${money2(input.finance.balance)} \u0E1A\u0E32\u0E17`);
+\u0E23\u0E31\u0E1A ${money(input.finance.income)} \u0E1A\u0E32\u0E17 \u2022 \u0E08\u0E48\u0E32\u0E22 ${money(input.finance.expense)} \u0E1A\u0E32\u0E17 \u2022 \u0E04\u0E07\u0E40\u0E2B\u0E25\u0E37\u0E2D ${money(input.finance.balance)} \u0E1A\u0E32\u0E17`);
   lines.push("\n\u0E1E\u0E34\u0E21\u0E1E\u0E4C \u201C\u0E27\u0E31\u0E19\u0E19\u0E35\u0E49\u0E21\u0E35\u0E2D\u0E30\u0E44\u0E23\u201D \u0E40\u0E1E\u0E37\u0E48\u0E2D\u0E14\u0E39 Timeline \u0E23\u0E27\u0E21\u0E44\u0E14\u0E49\u0E17\u0E38\u0E01\u0E40\u0E21\u0E37\u0E48\u0E2D\u0E04\u0E23\u0E31\u0E1A");
   return lines.join("\n");
 }
@@ -7991,10 +7919,10 @@ ${completed.slice(0, 8).map((item) => `\u2022 #${item.id} ${item.title}`).join("
   else lines.push("\n\u2705 \u0E07\u0E32\u0E19\u0E17\u0E35\u0E48\u0E40\u0E2A\u0E23\u0E47\u0E08\u0E27\u0E31\u0E19\u0E19\u0E35\u0E49 \u2022 \u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E21\u0E35\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E17\u0E35\u0E48\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E44\u0E27\u0E49");
   if (input.finance) lines.push(`
 \u{1F4B0} \u0E01\u0E32\u0E23\u0E40\u0E07\u0E34\u0E19
-\u0E23\u0E31\u0E1A ${money2(input.finance.income)} \u0E1A\u0E32\u0E17 \u2022 \u0E08\u0E48\u0E32\u0E22 ${money2(input.finance.expense)} \u0E1A\u0E32\u0E17 \u2022 \u0E2A\u0E38\u0E17\u0E18\u0E34 ${money2(input.finance.balance)} \u0E1A\u0E32\u0E17`);
+\u0E23\u0E31\u0E1A ${money(input.finance.income)} \u0E1A\u0E32\u0E17 \u2022 \u0E08\u0E48\u0E32\u0E22 ${money(input.finance.expense)} \u0E1A\u0E32\u0E17 \u2022 \u0E2A\u0E38\u0E17\u0E18\u0E34 ${money(input.finance.balance)} \u0E1A\u0E32\u0E17`);
   if (input.bills.length) lines.push(`
 \u{1F9FE} \u0E1A\u0E34\u0E25\u0E17\u0E35\u0E48\u0E22\u0E31\u0E07\u0E23\u0E2D\u0E08\u0E48\u0E32\u0E22 ${input.bills.length} \u0E23\u0E32\u0E22\u0E01\u0E32\u0E23
-${input.bills.slice(0, 5).map((item) => `\u2022 #${item.id} ${item.title} ${money2(item.amount)} \u0E1A\u0E32\u0E17`).join("\n")}`);
+${input.bills.slice(0, 5).map((item) => `\u2022 #${item.id} ${item.title} ${money(item.amount)} \u0E1A\u0E32\u0E17`).join("\n")}`);
   if (input.todos.length) lines.push(`
 \u{1F4CC} \u0E07\u0E32\u0E19\u0E17\u0E35\u0E48\u0E22\u0E31\u0E07\u0E04\u0E49\u0E32\u0E07 ${input.todos.length} \u0E23\u0E32\u0E22\u0E01\u0E32\u0E23
 ${input.todos.slice(0, 8).map((item) => `\u2022 #${item.id} ${item.title}${item.dueAt ? ` \u2022 ${thaiDate2(item.dueAt)} ${thaiTime2(item.dueAt)}` : ""}`).join("\n")}`);
@@ -8957,6 +8885,18 @@ ${incomeSection}
     }
   }
   if (event.replyToken) {
+    const themeArtwork = flexThemeForCommand(command);
+    if (themeArtwork) {
+      try {
+        await replyThemedTextCard(event.replyToken, message, themeArtwork);
+        return;
+      } catch (error) {
+        console.error("[Milo Theme] themed Flex reply failed; using fallback", {
+          command: command.type,
+          error: error instanceof Error ? error.message : "unknown"
+        });
+      }
+    }
     const artwork = artworkForCommand(command);
     if (artwork) {
       try {
@@ -9496,8 +9436,8 @@ function registerMiloCron(app2) {
 // server/milo/saveResultImage.ts
 import { readFile as readFile2 } from "node:fs/promises";
 import path4 from "node:path";
-import sharp4 from "sharp";
-var money3 = (value) => normalizeRenderText(value.toLocaleString("th-TH-u-nu-latn", { maximumFractionDigits: 2 }));
+import sharp3 from "sharp";
+var money2 = (value) => normalizeRenderText(value.toLocaleString("th-TH-u-nu-latn", { maximumFractionDigits: 2 }));
 var thaiDateTime2 = (value) => normalizeRenderText(new Intl.DateTimeFormat("th-TH-u-nu-latn", {
   day: "2-digit",
   month: "short",
@@ -9595,7 +9535,7 @@ function buildSaveResultSvg(input) {
 
     <text x="80" y="444" font-size="24" font-weight="600" fill="#4B6173">${escapeXml(thaiDateTime2(occurredAt))}</text>
     <text x="80" y="510" font-size="47" font-weight="800" fill="#163D3C">${escapeXml(item)}</text>
-    <text x="844" y="510" text-anchor="end" font-size="55" font-weight="900" fill="${accent}">\u0E3F${money3(amount)}</text>
+    <text x="844" y="510" text-anchor="end" font-size="55" font-weight="900" fill="${accent}">\u0E3F${money2(amount)}</text>
     <line x1="78" y1="535" x2="855" y2="535" stroke="#8ADDC0" stroke-width="3"/>
 
     ${budgetLimit > 0 ? `
@@ -9605,11 +9545,11 @@ function buildSaveResultSvg(input) {
       <text x="150" y="630" font-size="30" font-weight="800" fill="#173F3B">\u0E07\u0E1A\u0E2B\u0E21\u0E27\u0E14${escapeXml(category)}</text>
 
       <text x="90" y="681" font-size="19" fill="#526979">\u0E43\u0E0A\u0E49\u0E44\u0E1B</text>
-      <text x="90" y="725" font-size="39" font-weight="900" fill="${accent}">\u0E3F${money3(budgetSpent)}</text>
+      <text x="90" y="725" font-size="39" font-weight="900" fill="${accent}">\u0E3F${money2(budgetSpent)}</text>
       <text x="378" y="681" font-size="19" fill="#526979">\u0E07\u0E1A\u0E17\u0E31\u0E49\u0E07\u0E2B\u0E21\u0E14</text>
-      <text x="378" y="725" font-size="34" font-weight="800" fill="#149A68">\u0E3F${money3(budgetLimit)}</text>
+      <text x="378" y="725" font-size="34" font-weight="800" fill="#149A68">\u0E3F${money2(budgetLimit)}</text>
       <text x="646" y="681" font-size="19" fill="#526979">${remainingLabel}</text>
-      <text x="646" y="725" font-size="34" font-weight="800" fill="${metrics.isOverBudget ? "#F51D72" : "#149A68"}">\u0E3F${money3(remainingAmount)}</text>
+      <text x="646" y="725" font-size="34" font-weight="800" fill="${metrics.isOverBudget ? "#F51D72" : "#149A68"}">\u0E3F${money2(remainingAmount)}</text>
 
       <rect x="90" y="760" width="660" height="24" rx="12" fill="#DDEFE8"/>
       <rect x="90" y="760" width="${usageWidth}" height="24" rx="12" fill="url(#progress)"/>
@@ -9622,7 +9562,7 @@ function buildSaveResultSvg(input) {
 
     <rect x="70" y="910" width="792" height="132" rx="34" fill="#FFFFFF" stroke="#D4F3E5" stroke-width="2" filter="url(#shadow)"/>
     <text x="108" y="958" font-size="27" font-weight="700" fill="#3D5870">\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E43\u0E2B\u0E49\u0E41\u0E25\u0E49\u0E27\u0E19\u0E48\u0E30\u0E08\u0E4A\u0E30</text>
-    <text x="108" y="1004" font-size="25" fill="#3D5870">${escapeXml(item)} \u2022 ${escapeXml(categoryLabel)} \u2022 ${money3(amount)} \u0E1A\u0E32\u0E17</text>
+    <text x="108" y="1004" font-size="25" fill="#3D5870">${escapeXml(item)} \u2022 ${escapeXml(categoryLabel)} \u2022 ${money2(amount)} \u0E1A\u0E32\u0E17</text>
   </svg>`;
 }
 function vectorLayer(text2, options) {
@@ -9650,18 +9590,18 @@ function buildThaiTextLayers(input) {
     vectorLayer(`\u2022 ${categoryLabel}`, { left: 273, top: 344, width: 560, fontSize: 34, color: "#183D3A", bold: true }),
     vectorLayer(thaiDateTime2(input.occurredAt), { left: 80, top: 411, width: 760, fontSize: 24, color: "#4B6173", bold: true }),
     ...itemLines.length > 1 ? itemLines.slice(0, 2).map((line, index2) => vectorLayer(line, { left: 80, top: 452 + index2 * 34, width: 470, fontSize: 27, color: "#163D3C", bold: true })) : [vectorLayer(item, { left: 80, top: 457, width: 470, fontSize: itemFontSize, color: "#163D3C", bold: true })],
-    vectorLayer(`\u0E3F${money3(input.amount)}`, { left: 555, top: 453, width: 289, fontSize: 55, color: accent, bold: true, align: "right" })
+    vectorLayer(`\u0E3F${money2(input.amount)}`, { left: 555, top: 453, width: 289, fontSize: 55, color: accent, bold: true, align: "right" })
   ];
   if (input.budgetLimit > 0) {
     layers.push(
       vectorLayer("\u0E3F", { left: 91, top: 599, width: 40, fontSize: 24, color: "#FFFFFF", bold: true, align: "center" }),
       vectorLayer(`\u0E07\u0E1A\u0E2B\u0E21\u0E27\u0E14${category}`, { left: 150, top: 593, width: 650, fontSize: 30, color: "#173F3B", bold: true }),
       vectorLayer("\u0E43\u0E0A\u0E49\u0E44\u0E1B", { left: 90, top: 651, width: 200, fontSize: 19, color: "#526979" }),
-      vectorLayer(`\u0E3F${money3(input.budgetSpent)}`, { left: 90, top: 683, width: 240, fontSize: 39, color: accent, bold: true }),
+      vectorLayer(`\u0E3F${money2(input.budgetSpent)}`, { left: 90, top: 683, width: 240, fontSize: 39, color: accent, bold: true }),
       vectorLayer("\u0E07\u0E1A\u0E17\u0E31\u0E49\u0E07\u0E2B\u0E21\u0E14", { left: 378, top: 651, width: 220, fontSize: 19, color: "#526979" }),
-      vectorLayer(`\u0E3F${money3(input.budgetLimit)}`, { left: 378, top: 683, width: 230, fontSize: 34, color: "#149A68", bold: true }),
+      vectorLayer(`\u0E3F${money2(input.budgetLimit)}`, { left: 378, top: 683, width: 230, fontSize: 34, color: "#149A68", bold: true }),
       vectorLayer(remainingLabel, { left: 646, top: 651, width: 190, fontSize: 19, color: "#526979" }),
-      vectorLayer(`\u0E3F${money3(remainingAmount)}`, { left: 646, top: 683, width: 190, fontSize: 34, color: metrics.isOverBudget ? "#F51D72" : "#149A68", bold: true }),
+      vectorLayer(`\u0E3F${money2(remainingAmount)}`, { left: 646, top: 683, width: 190, fontSize: 34, color: metrics.isOverBudget ? "#F51D72" : "#149A68", bold: true }),
       vectorLayer(budgetStatusCopy(category, input.budgetSpent, input.budgetLimit), { left: 90, top: 792, width: 735, fontSize: 23, color: metrics.isOverBudget ? "#D94A6E" : "#32685C", bold: true })
     );
   } else {
@@ -9670,7 +9610,7 @@ function buildThaiTextLayers(input) {
       vectorLayer("\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E19\u0E35\u0E49\u0E16\u0E39\u0E01\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E14\u0E49\u0E27\u0E22\u0E22\u0E2D\u0E14\u0E41\u0E25\u0E30\u0E40\u0E27\u0E25\u0E32\u0E08\u0E23\u0E34\u0E07\u0E40\u0E23\u0E35\u0E22\u0E1A\u0E23\u0E49\u0E2D\u0E22\u0E41\u0E25\u0E49\u0E27", { left: 100, top: 661, width: 730, fontSize: 22, color: "#526979" })
     );
   }
-  const footerText = display.secondary || `${item} \u2022 ${categoryLabel} \u2022 ${money3(input.amount)} \u0E1A\u0E32\u0E17`;
+  const footerText = display.secondary || `${item} \u2022 ${categoryLabel} \u2022 ${money2(input.amount)} \u0E1A\u0E32\u0E17`;
   const footerLines = wrapGraphemes(footerText, 48, 2);
   layers.push(
     vectorLayer("\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E43\u0E2B\u0E49\u0E41\u0E25\u0E49\u0E27\u0E19\u0E48\u0E30\u0E08\u0E4A\u0E30", { left: 108, top: 931, width: 650, fontSize: 27, color: "#3D5870", bold: true }),
@@ -9710,12 +9650,213 @@ function registerSaveResultImageRoute(app2) {
       const svg = buildSaveResultSvg({ transactionType, item, category, amount, occurredAt, budgetSpent, budgetLimit });
       const shapesOnlySvg = svg.replace(/<text\b[^>]*>[\s\S]*?<\/text>/g, "");
       const textLayers = buildThaiTextLayers({ transactionType, item, category, amount, occurredAt, budgetSpent, budgetLimit });
-      const output = await sharp4(template).composite([{ input: Buffer.from(shapesOnlySvg), top: 0, left: 0 }, ...textLayers]).png().toBuffer();
+      const output = await sharp3(template).composite([{ input: Buffer.from(shapesOnlySvg), top: 0, left: 0 }, ...textLayers]).png().toBuffer();
       res.set({ "Content-Type": "image/png", "Cache-Control": "private, no-store, max-age=0" });
       return res.status(200).send(output);
     } catch (error) {
       console.error("[Milo Save Image] render failed", error);
       return res.status(500).type("text/plain").send("Unable to render save result");
+    }
+  });
+}
+
+// server/milo/financeReportImage.ts
+import crypto7 from "node:crypto";
+import sharp4 from "sharp";
+var WIDTH2 = 1080;
+var HEIGHT2 = 1350;
+var money3 = (value) => value.toLocaleString("th-TH-u-nu-latn", { maximumFractionDigits: 2 });
+var periodLabel = {
+  day: "\u0E27\u0E31\u0E19\u0E19\u0E35\u0E49",
+  week: "\u0E2A\u0E31\u0E1B\u0E14\u0E32\u0E2B\u0E4C\u0E19\u0E35\u0E49",
+  month: "\u0E40\u0E14\u0E37\u0E2D\u0E19\u0E19\u0E35\u0E49",
+  year: "\u0E1B\u0E35\u0E19\u0E35\u0E49"
+};
+function secret2() {
+  return process.env.LINE_CHANNEL_SECRET?.trim() || process.env.SESSION_SECRET?.trim() || "milo-report-image-v1";
+}
+function iso(value) {
+  if (!value) return void 0;
+  const date = value instanceof Date ? value : new Date(value);
+  return Number.isFinite(date.getTime()) ? date.toISOString() : void 0;
+}
+function sign4(payload) {
+  return crypto7.createHmac("sha256", secret2()).update(payload).digest("hex");
+}
+function validNumber(value) {
+  const n = Number(value);
+  return Number.isFinite(n) && Math.abs(n) <= 1e12 ? n : void 0;
+}
+function decodeInput(req) {
+  const data = typeof req.query.data === "string" ? req.query.data : "";
+  const supplied = typeof req.query.sig === "string" ? req.query.sig : "";
+  if (!data || data.length > 8e3 || !supplied) return void 0;
+  const expected = sign4(data);
+  const a = Buffer.from(supplied);
+  const b = Buffer.from(expected);
+  if (a.length !== b.length || !crypto7.timingSafeEqual(a, b)) return void 0;
+  try {
+    const parsed = JSON.parse(Buffer.from(data, "base64url").toString("utf8"));
+    if (!parsed.period || !["day", "week", "month", "year"].includes(parsed.period)) return void 0;
+    const income = validNumber(parsed.income);
+    const expense = validNumber(parsed.expense);
+    const balance = validNumber(parsed.balance);
+    if (income === void 0 || expense === void 0 || balance === void 0) return void 0;
+    const categories = {};
+    for (const [name, amount] of Object.entries(parsed.categories ?? {}).slice(0, 6)) {
+      const n = validNumber(amount);
+      if (name.trim() && n !== void 0 && n >= 0) categories[name.trim().slice(0, 40)] = n;
+    }
+    const rows = (parsed.rows ?? []).slice(0, 5).flatMap((raw) => {
+      const amount = validNumber(raw.amount);
+      if (amount === void 0 || amount < 0 || raw.transactionType !== "income" && raw.transactionType !== "expense") return [];
+      return [{ transactionType: raw.transactionType, amount, category: String(raw.category ?? "\u0E17\u0E31\u0E48\u0E27\u0E44\u0E1B").slice(0, 36), note: raw.note ? String(raw.note).slice(0, 48) : void 0, occurredAt: iso(raw.occurredAt) }];
+    });
+    return {
+      period: parsed.period,
+      income,
+      expense,
+      balance,
+      categories,
+      transactionCount: Math.max(0, Math.floor(Number(parsed.transactionCount ?? rows.length) || 0)),
+      start: iso(parsed.start),
+      end: iso(parsed.end),
+      rows,
+      title: parsed.title?.slice(0, 80),
+      subtitle: parsed.subtitle?.slice(0, 120)
+    };
+  } catch {
+    return void 0;
+  }
+}
+function textLayer(text2, options) {
+  return { input: vectorTextSvg(text2, { width: options.width, fontSize: options.fontSize, color: options.color, bold: options.bold, align: options.align }), left: options.left, top: options.top, blend: "over" };
+}
+function periodRange(input) {
+  if (!input.start) return `\u0E20\u0E32\u0E1E\u0E23\u0E27\u0E21\u0E23\u0E32\u0E22\u0E23\u0E31\u0E1A - \u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22${periodLabel[input.period]}`;
+  const start = new Date(input.start);
+  if (!Number.isFinite(start.getTime())) return `\u0E20\u0E32\u0E1E\u0E23\u0E27\u0E21\u0E23\u0E32\u0E22\u0E23\u0E31\u0E1A - \u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22${periodLabel[input.period]}`;
+  const formatter = new Intl.DateTimeFormat("th-TH-u-nu-latn", input.period === "year" ? { year: "numeric", timeZone: "Asia/Bangkok" } : input.period === "month" ? { month: "long", year: "numeric", timeZone: "Asia/Bangkok" } : { day: "numeric", month: "short", year: "numeric", timeZone: "Asia/Bangkok" });
+  if (input.period === "day" || input.period === "month" || input.period === "year") return formatter.format(start);
+  const end = input.end ? new Date(new Date(input.end).getTime() - 1) : void 0;
+  return end && Number.isFinite(end.getTime()) ? `${formatter.format(start)} \u2013 ${formatter.format(end)}` : formatter.format(start);
+}
+function insightCopy(input) {
+  if ((input.transactionCount ?? 0) === 0) return "\u0E40\u0E23\u0E34\u0E48\u0E21\u0E08\u0E14\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23 \u0E41\u0E25\u0E49\u0E27\u0E44\u0E21\u0E42\u0E25\u0E08\u0E30\u0E0A\u0E48\u0E27\u0E22\u0E2A\u0E23\u0E38\u0E1B\u0E43\u0E2B\u0E49\u0E40\u0E2B\u0E47\u0E19\u0E20\u0E32\u0E1E\u0E0A\u0E31\u0E14\u0E02\u0E36\u0E49\u0E19\u0E04\u0E23\u0E31\u0E1A";
+  if (input.balance < 0) return `\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22\u0E21\u0E32\u0E01\u0E01\u0E27\u0E48\u0E32\u0E23\u0E32\u0E22\u0E23\u0E31\u0E1A ${money3(Math.abs(input.balance))} \u0E1A\u0E32\u0E17 \u0E25\u0E2D\u0E07\u0E14\u0E39\u0E2B\u0E21\u0E27\u0E14\u0E17\u0E35\u0E48\u0E43\u0E0A\u0E49\u0E2A\u0E39\u0E07\u0E2A\u0E38\u0E14\u0E01\u0E48\u0E2D\u0E19\u0E19\u0E30\u0E04\u0E23\u0E31\u0E1A`;
+  if (input.income > 0) {
+    const rate = Math.max(0, Math.round(input.balance / input.income * 100));
+    return `\u0E0A\u0E48\u0E27\u0E07\u0E19\u0E35\u0E49\u0E22\u0E31\u0E07\u0E40\u0E2B\u0E25\u0E37\u0E2D ${money3(input.balance)} \u0E1A\u0E32\u0E17 \u0E04\u0E34\u0E14\u0E40\u0E1B\u0E47\u0E19\u0E1B\u0E23\u0E30\u0E21\u0E32\u0E13 ${rate}% \u0E02\u0E2D\u0E07\u0E23\u0E32\u0E22\u0E23\u0E31\u0E1A\u0E04\u0E23\u0E31\u0E1A`;
+  }
+  return `\u0E0A\u0E48\u0E27\u0E07\u0E19\u0E35\u0E49\u0E21\u0E35\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22 ${money3(input.expense)} \u0E1A\u0E32\u0E17 \u0E44\u0E21\u0E42\u0E25\u0E0A\u0E48\u0E27\u0E22\u0E41\u0E22\u0E01\u0E2B\u0E21\u0E27\u0E14\u0E44\u0E27\u0E49\u0E43\u0E2B\u0E49\u0E41\u0E25\u0E49\u0E27\u0E04\u0E23\u0E31\u0E1A`;
+}
+function displayRowDate(value) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return "";
+  return new Intl.DateTimeFormat("th-TH-u-nu-latn", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "Asia/Bangkok" }).format(date);
+}
+function financeReportShapesSvg(input) {
+  const categories = Object.entries(input.categories).sort((a, b) => b[1] - a[1]).slice(0, 5);
+  const maxCategory = Math.max(...categories.map(([, amount]) => amount), 1);
+  const categoryBars = categories.map(([, amount], index2) => {
+    const y = 594 + index2 * 58;
+    const width = Math.max(12, Math.round(350 * Math.min(1, amount / maxCategory)));
+    return `<rect x="132" y="${y + 28}" width="350" height="14" rx="7" fill="#EAF4EF"/><rect x="132" y="${y + 28}" width="${width}" height="14" rx="7" fill="${index2 === 0 ? "#32C88A" : "#8EDDBF"}"/>`;
+  }).join("");
+  const total = Math.max(input.income + input.expense, 1);
+  const incomeWidth = Math.max(8, Math.round(255 * input.income / total));
+  const expenseWidth = Math.max(8, Math.round(255 * input.expense / total));
+  return Buffer.from(`<svg width="${WIDTH2}" height="${HEIGHT2}" viewBox="0 0 ${WIDTH2} ${HEIGHT2}" xmlns="http://www.w3.org/2000/svg">
+    <defs><filter id="shadow"><feDropShadow dx="0" dy="8" stdDeviation="14" flood-color="#3E8A69" flood-opacity=".16"/></filter></defs>
+    <rect x="60" y="188" width="960" height="1012" rx="38" fill="#FFFDF8" fill-opacity=".97" filter="url(#shadow)"/>
+    <rect x="92" y="282" width="276" height="150" rx="28" fill="#E6FFF2"/>
+    <rect x="402" y="282" width="276" height="150" rx="28" fill="#FFE9F1"/>
+    <rect x="712" y="282" width="276" height="150" rx="28" fill="#EEE8FF"/>
+    <rect x="92" y="466" width="522" height="402" rx="30" fill="#F8FFFB" stroke="#BDEDD7" stroke-width="2"/>
+    <rect x="642" y="466" width="346" height="402" rx="30" fill="#FFF8FC" stroke="#F1C8D8" stroke-width="2"/>
+    <rect x="92" y="892" width="896" height="232" rx="30" fill="#FBF9FF" stroke="#DDD1F3" stroke-width="2"/>
+    <rect x="92" y="1140" width="896" height="44" rx="22" fill="#E7FAF1"/>
+    <circle cx="815" cy="616" r="88" fill="none" stroke="#E4F5EE" stroke-width="24"/>
+    <circle cx="815" cy="616" r="88" fill="none" stroke="#39C98D" stroke-width="24" stroke-linecap="round" stroke-dasharray="350 560" transform="rotate(-90 815 616)"/>
+    <rect x="690" y="742" width="255" height="14" rx="7" fill="#E5F2ED"/><rect x="690" y="742" width="${incomeWidth}" height="14" rx="7" fill="#35C78C"/>
+    <rect x="690" y="792" width="255" height="14" rx="7" fill="#F8E4EC"/><rect x="690" y="792" width="${expenseWidth}" height="14" rx="7" fill="#EB78A1"/>
+    ${categoryBars}
+  </svg>`);
+}
+async function renderFinanceReportImage(input) {
+  const referenceKey = `report-${input.period}`;
+  const reference = await loadRichMenuReference(referenceKey);
+  const title = input.title?.trim() || `\u0E2A\u0E23\u0E38\u0E1B\u0E01\u0E32\u0E23\u0E40\u0E07\u0E34\u0E19${periodLabel[input.period]}`;
+  const subtitle = input.subtitle?.trim() || periodRange(input);
+  const categories = Object.entries(input.categories).sort((a, b) => b[1] - a[1]).slice(0, 5);
+  const rows = (input.rows ?? []).slice(0, 4).map((row) => ({ ...row, amount: Number(row.amount), occurredAt: iso(row.occurredAt) }));
+  const transactionCount = input.transactionCount ?? input.rows?.length ?? 0;
+  const savingsRate = input.income > 0 ? Math.round(input.balance / input.income * 100) : 0;
+  const topCategory = categories[0];
+  const layers = [
+    textLayer(title, { left: 108, top: 210, width: 650, fontSize: 38, color: "#214A3D", bold: true }),
+    textLayer(subtitle, { left: 108, top: 250, width: 760, fontSize: 20, color: "#6D8C81" }),
+    textLayer("\u0E23\u0E32\u0E22\u0E23\u0E31\u0E1A", { left: 112, top: 310, width: 220, fontSize: 20, color: "#548B7B" }),
+    textLayer(`${money3(input.income)} \u0E1A\u0E32\u0E17`, { left: 112, top: 350, width: 230, fontSize: 34, color: "#16875F", bold: true }),
+    textLayer("\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22", { left: 422, top: 310, width: 220, fontSize: 20, color: "#A46A82" }),
+    textLayer(`${money3(input.expense)} \u0E1A\u0E32\u0E17`, { left: 422, top: 350, width: 230, fontSize: 34, color: "#CF4F80", bold: true }),
+    textLayer("\u0E04\u0E07\u0E40\u0E2B\u0E25\u0E37\u0E2D", { left: 732, top: 310, width: 220, fontSize: 20, color: "#74668D" }),
+    textLayer(`${money3(input.balance)} \u0E1A\u0E32\u0E17`, { left: 732, top: 350, width: 230, fontSize: 34, color: input.balance >= 0 ? "#3C7562" : "#C05076", bold: true }),
+    textLayer("\u0E2A\u0E31\u0E14\u0E2A\u0E48\u0E27\u0E19\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22\u0E15\u0E32\u0E21\u0E2B\u0E21\u0E27\u0E14", { left: 112, top: 494, width: 450, fontSize: 26, color: "#355E50", bold: true }),
+    textLayer("\u0E20\u0E32\u0E1E\u0E23\u0E27\u0E21", { left: 682, top: 494, width: 250, fontSize: 26, color: "#624F76", bold: true }),
+    textLayer("\u0E2D\u0E31\u0E15\u0E23\u0E32\u0E04\u0E07\u0E40\u0E2B\u0E25\u0E37\u0E2D", { left: 706, top: 540, width: 220, fontSize: 19, color: "#8B7895" }),
+    textLayer(`${savingsRate}%`, { left: 706, top: 574, width: 220, fontSize: 48, color: savingsRate >= 0 ? "#25936D" : "#C45F82", bold: true }),
+    textLayer("\u0E23\u0E32\u0E22\u0E23\u0E31\u0E1A", { left: 690, top: 704, width: 100, fontSize: 18, color: "#508B7B" }),
+    textLayer("\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22", { left: 690, top: 754, width: 100, fontSize: 18, color: "#A96B83" }),
+    textLayer("\u0E08\u0E33\u0E19\u0E27\u0E19\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23", { left: 690, top: 814, width: 230, fontSize: 18, color: "#85758F" }),
+    textLayer(`${transactionCount.toLocaleString("th-TH-u-nu-latn")} \u0E23\u0E32\u0E22\u0E01\u0E32\u0E23`, { left: 690, top: 840, width: 230, fontSize: 28, color: "#4E435F", bold: true }),
+    textLayer(topCategory ? `\u0E2B\u0E21\u0E27\u0E14\u0E2A\u0E39\u0E07\u0E2A\u0E38\u0E14: ${topCategory[0]}` : "\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E21\u0E35\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22", { left: 690, top: 866, width: 250, fontSize: 18, color: "#765F72", bold: true }),
+    textLayer("\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E25\u0E48\u0E32\u0E2A\u0E38\u0E14", { left: 112, top: 914, width: 330, fontSize: 26, color: "#4B4260", bold: true })
+  ];
+  if (!categories.length) {
+    layers.push(textLayer("\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E21\u0E35\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22\u0E43\u0E19\u0E0A\u0E48\u0E27\u0E07\u0E19\u0E35\u0E49", { left: 105, top: 620, width: 470, fontSize: 27, color: "#849B96" }));
+  } else {
+    categories.forEach(([name, amount], index2) => {
+      const y = 540 + index2 * 58;
+      const share = input.expense > 0 ? Math.round(amount / input.expense * 100) : 0;
+      layers.push(
+        textLayer(name, { left: 112, top: y, width: 180, fontSize: 21, color: "#5E716C", bold: index2 === 0 }),
+        textLayer(`${money3(amount)} \u0E1A\u0E32\u0E17 \u2022 ${share}%`, { left: 350, top: y, width: 220, fontSize: 20, color: "#A45A75", bold: true, align: "right" })
+      );
+    });
+  }
+  if (!rows.length) {
+    layers.push(textLayer("\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E21\u0E35\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E43\u0E19\u0E0A\u0E48\u0E27\u0E07\u0E40\u0E27\u0E25\u0E32\u0E19\u0E35\u0E49", { left: 112, top: 970, width: 760, fontSize: 25, color: "#8A8097" }));
+  } else {
+    rows.forEach((row, index2) => {
+      const y = 960 + index2 * 40;
+      const label = (row.note?.trim() || row.category).slice(0, 34);
+      const signed = row.transactionType === "income" ? "+" : "-";
+      layers.push(
+        textLayer(label, { left: 112, top: y, width: 410, fontSize: 20, color: "#5D536B", bold: index2 === 0 }),
+        textLayer(`${signed}${money3(Number(row.amount))} \u0E1A\u0E32\u0E17`, { left: 530, top: y, width: 185, fontSize: 20, color: row.transactionType === "income" ? "#2E9577" : "#C35F82", bold: true, align: "right" }),
+        textLayer(displayRowDate(row.occurredAt), { left: 742, top: y, width: 210, fontSize: 18, color: "#94879E", align: "right" })
+      );
+    });
+  }
+  layers.push(
+    textLayer("Milo \u0E41\u0E19\u0E30\u0E19\u0E33", { left: 112, top: 1150, width: 140, fontSize: 17, color: "#2E9577", bold: true }),
+    textLayer(insightCopy({ ...input, transactionCount }), { left: 252, top: 1150, width: 700, fontSize: 16, color: "#5A6B66" })
+  );
+  return sharp4(reference).resize(WIDTH2, HEIGHT2, { fit: "fill" }).composite([{ input: financeReportShapesSvg({ ...input, transactionCount }), blend: "over" }, ...layers]).png().toBuffer();
+}
+function registerFinanceReportImageRoute(app2) {
+  app2.get("/api/milo/finance-report.png", async (req, res) => {
+    const input = decodeInput(req);
+    if (!input) return res.status(401).type("text/plain").send("Invalid finance report image link");
+    try {
+      const image = await renderFinanceReportImage(input);
+      res.set({ "Content-Type": "image/png", "Cache-Control": "private, no-store, max-age=0" });
+      return res.status(200).send(image);
+    } catch (error) {
+      console.error("[Milo Finance Report Image] render failed", error);
+      return res.status(500).type("text/plain").send("Unable to render finance report image");
     }
   });
 }

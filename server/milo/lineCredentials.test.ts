@@ -20,18 +20,15 @@ describe("LINE credentials", () => {
     expect(data.userId).toBeTruthy();
   }, 20_000);
 
-  it("sends the new Milo greeting artwork as exactly one image message", async () => {
+  it("sends the supplied Milo home artwork as a functional Flex hero", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(null, { status: 200 }));
     await replyGreetingHome("reply-token", { channelSecret: "secret", channelAccessToken: "token" });
     const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
-    const payload = JSON.parse(String(init.body)) as { messages: Array<{ type: string; originalContentUrl?: string; previewImageUrl?: string; quickReply?: unknown }> };
+    const payload = JSON.parse(String(init.body)) as { messages: Array<{ type: string; contents?: { hero?: { url?: string } }; quickReply?: { items?: Array<{ action?: { text?: string } }> } }> };
     expect(payload.messages).toHaveLength(1);
-    expect(payload.messages[0]).toMatchObject({
-      type: "image",
-      originalContentUrl: "https://milo-line-assistant.onrender.com/richmenu/greeting-home.png",
-      previewImageUrl: "https://milo-line-assistant.onrender.com/richmenu/greeting-home.png",
-    });
-    expect(payload.messages[0]?.quickReply).toBeUndefined();
+    expect(payload.messages[0]?.type).toBe("flex");
+    expect(payload.messages[0]?.contents?.hero?.url).toBe("https://milo-line-assistant.onrender.com/milo-flex/heroes/home.png");
+    expect(payload.messages[0]?.quickReply?.items?.map(item => item.action?.text)).toEqual(["จดบันทึก", "สรุปวันนี้", "วิเคราะห์", "รายการ", "ตั้งค่า"]);
   });
 
   it("uses the LINE data API domain for message media rather than the Messaging API domain", async () => {
@@ -99,7 +96,7 @@ describe("LINE credentials", () => {
     expect(mascotExpenseCopy("expense", 501)).toContain("บันทึกไว้แล้ว");
   });
 
-  it("sends the dynamic summary as one image message only with period quick replies", async () => {
+  it("sends a themed Flex summary with live totals and period quick replies", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(null, { status: 200 }));
     await replyFinanceReportCard("reply-token", {
       period: "week", income: 0, expense: 615, balance: -615, transactionCount: 3,
@@ -107,13 +104,13 @@ describe("LINE credentials", () => {
       rows: [{ transactionType: "expense", amount: 565, category: "อาหาร", note: "กินข้าว", occurredAt: new Date("2026-09-12T05:00:00.000Z") }],
     }, { channelSecret: "secret", channelAccessToken: "token" });
     const init = fetchMock.mock.calls[0]?.[1] as RequestInit;
-    const payload = JSON.parse(String(init.body)) as { messages: Array<{ type: string; originalContentUrl?: string; text?: string; quickReply?: { items: Array<{ action: { text: string } }> } }> };
+    const payload = JSON.parse(String(init.body)) as { messages: Array<{ type: string; contents?: { hero?: { url?: string } }; quickReply?: { items: Array<{ action: { text: string } }> } }> };
     expect(payload.messages).toHaveLength(1);
-    expect(payload.messages[0]?.type).toBe("image");
-    expect(payload.messages[0]?.originalContentUrl).toContain("/api/milo/finance-report.png?");
-    expect(payload.messages[0]?.originalContentUrl).toContain("render=summary-v4");
-    expect(payload.messages[0]?.originalContentUrl).not.toContain("report-week.png");
-    expect(payload.messages[0]?.text).toBeUndefined();
+    expect(payload.messages[0]?.type).toBe("flex");
+    expect(payload.messages[0]?.contents?.hero?.url).toBe("https://milo-line-assistant.onrender.com/milo-flex/heroes/summary-period.png");
+    expect(String(init.body)).toContain("615 บาท");
+    expect(String(init.body)).toContain("565 บาท");
+    expect(String(init.body)).toContain("อาหาร");
     expect(payload.messages[0]?.quickReply?.items.map(item => item.action.text)).toEqual(["สรุปวันนี้", "สรุปสัปดาห์นี้", "สรุปเดือนนี้", "สรุปปีนี้"]);
   });
 
@@ -126,7 +123,7 @@ describe("LINE credentials", () => {
     expect(String(init.body)).toContain("MILO  •  FINANCE");
     expect(String(init.body)).toContain("1,200 บาท");
     expect(String(init.body)).toContain("อาหาร");
-    expect(String(init.body)).toContain("milo-richmenu/summary.png");
+    expect(String(init.body)).toContain("milo-flex/heroes/summary-period.png");
   });
 
   it("offers popular categories as Quick Reply actions when editing a voice proposal", async () => {

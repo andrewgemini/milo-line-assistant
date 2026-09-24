@@ -1,5 +1,6 @@
 import { waitUntil } from "@vercel/functions";
 import { artworkForCommand } from "./richMenuArtwork";
+import { flexThemeForCommand } from "./flexThemeArtwork";
 import { buildCalendarIcsUrl, buildGoogleCalendarUrl } from "./calendar";
 import { buildGoogleCalendarConnectUrl, disconnectGoogleCalendar, googleCalendarConnectionStatus, syncGoogleCalendarEventCreate, syncGoogleCalendarEventDelete } from "./googleCalendar";
 import { replyRichMenu } from "./line";
@@ -28,7 +29,7 @@ import { deserializeCapturePlan, formatCapturePreview, serializeCapturePlan } fr
 import { bangkokDayRange, formatTodayOverview } from "./todayOverview";
 import { formatEveningSummary, formatMorningBrief, shouldDeliverDailyDigest } from "./personalDigest";
 import { STANDARD_EXPENSE_CATEGORIES, STANDARD_INCOME_CATEGORIES } from "./financeCategories";
-import { financeReportCardText, getMessageContent, getProfile, lineCredentials, postSaveSummaryText, pushText, pushTextWithQuickReplies, replyCalendarList, replyFinanceReportCard, replyFinanceReportCardFallback, replyGreetingHome, replyMention, replyMiloOnboarding, replyMiloSettings, replyPostSaveSummary, replyReminderList, replyText, replyTransactionList, replyPostSaveSummaryFallback, replyTextWithQuickReplies, replyVoiceCategoryChoices, replyVoiceProposal, replyVoiceProposalFallback, sourceIdentity, type LineEvent, type VoiceTransactionProposal, verifyLineSignature } from "./line";
+import { financeReportCardText, getMessageContent, getProfile, lineCredentials, postSaveSummaryText, pushText, pushTextWithQuickReplies, replyCalendarList, replyFinanceReportCard, replyFinanceReportCardFallback, replyGreetingHome, replyMention, replyMiloOnboarding, replyMiloSettings, replyPostSaveSummary, replyReminderList, replyText, replyThemedTextCard, replyTransactionList, replyPostSaveSummaryFallback, replyTextWithQuickReplies, replyVoiceCategoryChoices, replyVoiceProposal, replyVoiceProposalFallback, sourceIdentity, type LineEvent, type VoiceTransactionProposal, verifyLineSignature } from "./line";
 
 function helpText() {
   return "Milo ช่วยคุณจบงานใน LINE แชทเดียวครับ\n🔔 เตือน: เตือนประชุมพรุ่งนี้ 10:00 / เตือนดื่มน้ำทุก 30 นาที / รายการเตือน\n🎯 ตามงาน: ช่วยตามงาน Proposal ลูกค้า B / ช่วยตามงานส่งใบเสนอราคา อีก 24 ชั่วโมง\n☀️ วันนี้: วันนี้มีอะไร / สรุปเช้า / สรุปเย็น / บิลรอจ่าย / จ่ายบิล #เลขรายการ\n🗂️ เก็บ: เก็บ https://example.com #งาน / ค้นหา ใบเสนอราคา / สถานะคลัง\n📦 เอกสาร: สรุปเอกสารเดือนนี้ / ไฟล์ที่ต้องตรวจ\n🧠 จดหลายอย่าง: พรุ่งนี้บ่ายสองประชุมลูกค้า ค่าแท็กซี่ 300 ช่วยเตือนด้วย\n📅 ปฏิทิน: ลงปฏิทิน ประชุมทีมพรุ่งนี้ 10:00 / ดูปฏิทิน\n👥 กลุ่ม LINE: @ไมโล ผู้ช่วยกลุ่ม / @ไมโล แจ้งส่งงานด้วยถึง @สมชาย\n✅ งาน: งาน ส่งสรุปรายสัปดาห์ / ดูงาน / เสร็จงาน #12 / โน้ต รหัส Wi-Fi\n💰 การเงิน: กินกาแฟ 80 / เงินเดือนเข้า 35000 / ตั้งงบ อาหาร 5000 / สรุปเดือนนี้\n📷🎙️ ส่งรูปใบเสร็จหรือเสียงให้ไมโลอ่าน แล้วตรวจและยืนยันก่อนบันทึก\n\nพิมพ์ “ช่วย” ได้ทุกเมื่อครับ";
@@ -866,6 +867,18 @@ async function handleText(event: LineEvent, lineChatId: string, lineUserId: stri
     }
   }
   if (event.replyToken) {
+    const themeArtwork = flexThemeForCommand(command);
+    if (themeArtwork) {
+      try {
+        await replyThemedTextCard(event.replyToken, message, themeArtwork);
+        return;
+      } catch (error) {
+        console.error("[Milo Theme] themed Flex reply failed; using fallback", {
+          command: command.type,
+          error: error instanceof Error ? error.message : "unknown",
+        });
+      }
+    }
     const artwork = artworkForCommand(command);
     if (artwork) {
       try { await replyRichMenu(event.replyToken, message, artwork); }
