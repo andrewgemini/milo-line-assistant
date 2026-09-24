@@ -2,6 +2,7 @@
 import { generateGoogleGeminiJson, googleGeminiConfigured } from "../_core/googleGemini";
 import { ENV } from "../_core/env";
 import { analyzeImageWithOcr, buildReceiptHeaderDataUrl, ocrAssetsReady } from "./ocrImageAnalysis";
+import { reviewOcrAnalysisWithSystemOne, systemOneImageReviewConfigured, type SystemOneOcrReview } from "./systemOneImageReview";
 import { extractThaiSlipDateTime, isPlausibleReceiptMerchant, normalizeThaiMerchantName, receiptMerchantQuality } from "./thaiReceiptParser";
 
 export type ImageProposal = {
@@ -323,11 +324,19 @@ function imageGatewayMode(env: NodeJS.ProcessEnv = process.env, requestToken?: s
 }
 
 export function imageAnalysisMode(requestToken?: string) {
-  if (googleGeminiConfigured()) return ocrAssetsReady() ? "google-gemini-vision+ocr-fallback" : "google-gemini-vision";
-  if (ENV.forgeApiKey) return ocrAssetsReady() ? "forge-vision+ocr-fallback" : "forge-vision";
+  const ocrReady = ocrAssetsReady();
+  if (ocrReady && systemOneImageReviewConfigured()) {
+    if (googleGeminiConfigured()) return "ocr+openthai-systemone-primary+google-gemini-vision-fallback";
+    if (ENV.forgeApiKey) return "ocr+openthai-systemone-primary+forge-vision-fallback";
+    const gatewayFallback = imageGatewayMode(process.env, requestToken);
+    if (gatewayFallback) return `ocr+openthai-systemone-primary+${gatewayFallback}-fallback`;
+    return "ocr+openthai-systemone-primary";
+  }
+  if (googleGeminiConfigured()) return ocrReady ? "ocr-primary+google-gemini-vision-fallback" : "google-gemini-vision";
+  if (ENV.forgeApiKey) return ocrReady ? "ocr-primary+forge-vision-fallback" : "forge-vision";
   const gatewayMode = imageGatewayMode(process.env, requestToken);
-  if (gatewayMode) return ocrAssetsReady() ? `${gatewayMode}+ocr-fallback` : gatewayMode;
-  return ocrAssetsReady() ? "ocr-fallback" : "unconfigured";
+  if (gatewayMode) return ocrReady ? `ocr-primary+${gatewayMode}-fallback` : gatewayMode;
+  return ocrReady ? "ocr-only" : "unconfigured";
 }
 
 export async function imageAnalysisRuntimeStatus(requestToken?: string) {
@@ -423,10 +432,96 @@ function trustedOcrBankSlipFallback(analysis: ImageAnalysis) {
   return analysis.confidence >= 0.75 && Boolean(proposal.dateText) && hasTransactionIdentity;
 }
 
+function systemOnePrimaryReady(analysis: ImageAnalysis, review: SystemOneOcrReview) {
+  if (!review.accepted || review.needsVision) return false;
+  const proposal = analysis.proposals[0];
+  if (!proposal) return false;
+  if (review.documentType === "bank_slip") {
+    return proposal.kind === "expense"
+      && proposal.amount > 0
+      && Boolean(proposal.dateText)
+      && Boolean(proposal.receiptNumber || (proposal.merchant && proposal.timeText));
+  }
+  if (review.documentType === "receipt") {
+    return proposal.kind === "expense"
+      && proposal.amount > 0
+      && Boolean(proposal.dateText)
+      && Boolean(proposal.merchant);
+  }
+  if (review.documentType === "appointment") {
+    return proposal.kind === "reminder" && Boolean(proposal.dateText);
+  }
+  return false;
+}
+
+function applySystemOneOcrReview(analysis: ImageAnalysis, review: SystemOneOcrReview): ImageAnalysis {
+  const proposal = analysis.proposals[0];
+  if (!proposal) return analysis;
+  const reviewedProposal: ImageProposal = {
+    ...proposal,
+    documentType: review.documentType,
+    category: proposal.kind === "expense" ? review.category : proposal.category,
+    paymentMethod: review.documentType === "bank_slip" ? (proposal.paymentMethod || "โอนเงิน") : proposal.paymentMethod,
+  };
+  const label = review.documentType === "bank_slip" ? "สลิป" : review.documentType === "receipt" ? "ใบเสร็จ" : "ใบนัด";
+  return {
+    ...analysis,
+    summary: `OpenThai-SystemOne ตรวจข้อมูล OCR แล้ว: ${label}${reviewedProposal.amount > 0 ? ` ยอด ${reviewedProposal.amount.toLocaleString("th-TH")} บาท` : ""}${reviewedProposal.dateText ? ` วันที่ ${reviewedProposal.dateText}` : ""} — กรุณาตรวจสอบก่อนยืนยัน`,
+    confidence: Math.max(analysis.confidence, review.confidence),
+    proposals: [reviewedProposal, ...analysis.proposals.slice(1)],
+  };
+}
+
 export async function analyzeImage(dataUrl: string, options: { gatewayToken?: string } = {}): Promise<ImageAnalysis> {
   let providerError: unknown;
   let providerAnalysis: ImageAnalysis | undefined;
   let directVisionAnalysis: ImageAnalysis | undefined;
+  let primaryOcrAnalysis: ImageAnalysis | undefined;
+
+  if (ocrAssetsReady()) {
+    try {
+      primaryOcrAnalysis = await analyzeImageWithOcr(dataUrl);
+      console.info("[Milo Image] OCR primary pass completed", {
+        confidence: primaryOcrAnalysis.confidence,
+        documentType: primaryOcrAnalysis.proposals[0]?.documentType || "unknown",
+        amount: primaryOcrAnalysis.proposals[0]?.amount || 0,
+        dateText: primaryOcrAnalysis.proposals[0]?.dateText || "",
+      });
+
+      if (systemOneImageReviewConfigured()) {
+        try {
+          const review = await reviewOcrAnalysisWithSystemOne(primaryOcrAnalysis);
+          if (systemOnePrimaryReady(primaryOcrAnalysis, review)) {
+            const selected = sanitizeAnalysisMerchants(applySystemOneOcrReview(primaryOcrAnalysis, review));
+            console.info("[Milo Image] OpenThai-SystemOne accepted OCR as primary analysis", {
+              model: review.model,
+              confidence: review.confidence,
+              documentType: review.documentType,
+              category: review.category,
+            });
+            return selected;
+          }
+          console.info("[Milo Image] OpenThai-SystemOne requested Gemini Vision fallback", {
+            model: review.model,
+            confidence: review.confidence,
+            documentType: review.documentType,
+          });
+        } catch (systemOneError) {
+          providerError = systemOneError;
+          console.warn("[Milo Image] OpenThai-SystemOne OCR review failed; using Gemini Vision fallback", {
+            error: systemOneError instanceof Error ? systemOneError.message : "unknown",
+          });
+        }
+      } else {
+        console.info("[Milo Image] OpenThai-SystemOne is not configured; using Gemini Vision fallback");
+      }
+    } catch (ocrError) {
+      providerError = ocrError;
+      console.warn("[Milo Image] OCR primary pass failed; using Gemini Vision fallback", {
+        error: ocrError instanceof Error ? ocrError.message : "unknown",
+      });
+    }
+  }
 
   if (googleGeminiConfigured()) {
     try {
@@ -459,7 +554,7 @@ export async function analyzeImage(dataUrl: string, options: { gatewayToken?: st
       // replies and can replace the printed time with the phone screenshot clock.
       if (providerAnalysis.proposals.some(item => item.documentType === "receipt" && item.kind === "expense" && (!item.dateText || !item.timeText))) {
         try {
-          const ocrDate = await analyzeImageWithOcr(dataUrl);
+          const ocrDate = primaryOcrAnalysis ?? await analyzeImageWithOcr(dataUrl);
           const gp = providerAnalysis.proposals[0];
           const op = ocrDate.proposals[0];
           if (gp && op?.documentType === "receipt" && op.dateText) {
@@ -537,7 +632,7 @@ export async function analyzeImage(dataUrl: string, options: { gatewayToken?: st
       }
     }
 
-    const ocrAnalysis = await analyzeImageWithOcr(dataUrl);
+    const ocrAnalysis = primaryOcrAnalysis ?? await analyzeImageWithOcr(dataUrl);
     if (!providerAnalysis) {
       // During a temporary Gemini outage, only accept OCR-only financial data when
       // the document is a strongly identified bank slip. The webhook still saves

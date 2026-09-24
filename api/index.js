@@ -511,8 +511,8 @@ function financeReportWindow(period, reference = /* @__PURE__ */ new Date()) {
 function summarizeFinanceRows(rows) {
   const income = rows.filter((row) => row.transactionType === "income").reduce((sum, row) => sum + Number(row.amount), 0);
   const expense = rows.filter((row) => row.transactionType === "expense").reduce((sum, row) => sum + Number(row.amount), 0);
-  const categories = rows.filter((row) => row.transactionType === "expense").reduce((all, row) => ({ ...all, [row.category]: (all[row.category] ?? 0) + Number(row.amount) }), {});
-  return { income, expense, balance: income - expense, transactionCount: rows.length, categories };
+  const categories2 = rows.filter((row) => row.transactionType === "expense").reduce((all, row) => ({ ...all, [row.category]: (all[row.category] ?? 0) + Number(row.amount) }), {});
+  return { income, expense, balance: income - expense, transactionCount: rows.length, categories: categories2 };
 }
 function buildFinanceReport(rows, period, reference = /* @__PURE__ */ new Date()) {
   const { start, end } = financeReportWindow(period, reference);
@@ -1450,9 +1450,9 @@ async function financeSummary(lineUserId, financeAccountId) {
   const rows = await listTransactions(lineUserId, new Date(now.getFullYear(), now.getMonth(), 1), new Date(now.getFullYear(), now.getMonth() + 1, 1), false, financeAccountId);
   const income = rows.filter((row) => row.transactionType === "income").reduce((sum, row) => sum + Number(row.amount), 0);
   const expense = rows.filter((row) => row.transactionType === "expense").reduce((sum, row) => sum + Number(row.amount), 0);
-  const categories = rows.filter((row) => row.transactionType === "expense").reduce((all, row) => ({ ...all, [row.category]: (all[row.category] ?? 0) + Number(row.amount) }), {});
+  const categories2 = rows.filter((row) => row.transactionType === "expense").reduce((all, row) => ({ ...all, [row.category]: (all[row.category] ?? 0) + Number(row.amount) }), {});
   const balanceSnapshot = await getBalanceSnapshot(lineUserId, financeAccountId);
-  return { income, expense, balance: income - expense, openingBalance: balanceSnapshot.openingBalance, availableBalance: balanceSnapshot.availableBalance, categories };
+  return { income, expense, balance: income - expense, openingBalance: balanceSnapshot.openingBalance, availableBalance: balanceSnapshot.availableBalance, categories: categories2 };
 }
 async function getOpeningBalance(lineUserId, financeAccountId) {
   const db = await requireDb();
@@ -2917,15 +2917,15 @@ ${mascotExpenseCopy(summary.transactionType, summary.amount)}
 function financeReportCardText(report) {
   const periodLabel2 = { day: "\u0E27\u0E31\u0E19\u0E19\u0E35\u0E49", week: "\u0E2A\u0E31\u0E1B\u0E14\u0E32\u0E2B\u0E4C\u0E19\u0E35\u0E49", month: "\u0E40\u0E14\u0E37\u0E2D\u0E19\u0E19\u0E35\u0E49", year: "\u0E1B\u0E35\u0E19\u0E35\u0E49" };
   const money4 = (amount) => amount.toLocaleString("th-TH", { maximumFractionDigits: 2 });
-  const categories = Object.entries(report.categories).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([name, amount]) => `\u2022 ${name} ${money4(amount)} \u0E1A\u0E32\u0E17`).join("\n");
+  const categories2 = Object.entries(report.categories).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([name, amount]) => `\u2022 ${name} ${money4(amount)} \u0E1A\u0E32\u0E17`).join("\n");
   return `${report.title ?? `\u0E2A\u0E23\u0E38\u0E1B\u0E01\u0E32\u0E23\u0E40\u0E07\u0E34\u0E19${periodLabel2[report.period]}`}
 ${report.subtitle ? `${report.subtitle}
 ` : ""}\u0E23\u0E32\u0E22\u0E23\u0E31\u0E1A ${money4(report.income)} \u0E1A\u0E32\u0E17
 \u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22 ${money4(report.expense)} \u0E1A\u0E32\u0E17
 \u0E01\u0E33\u0E44\u0E23/\u0E04\u0E07\u0E40\u0E2B\u0E25\u0E37\u0E2D ${money4(report.balance)} \u0E1A\u0E32\u0E17
-${categories ? `
+${categories2 ? `
 \u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22\u0E15\u0E32\u0E21\u0E2B\u0E21\u0E27\u0E14
-${categories}` : "\n\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E21\u0E35\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22\u0E43\u0E19\u0E0A\u0E48\u0E27\u0E07\u0E19\u0E35\u0E49"}`;
+${categories2}` : "\n\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E21\u0E35\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22\u0E43\u0E19\u0E0A\u0E48\u0E27\u0E07\u0E19\u0E35\u0E49"}`;
 }
 function miloFinanceTrendCard(report) {
   if (!report.rows?.length || report.period !== "week" && report.period !== "month") return void 0;
@@ -3003,8 +3003,8 @@ function miloFinanceSummaryContents(report) {
   const money4 = (amount) => amount.toLocaleString("th-TH", { maximumFractionDigits: 2 });
   const periodLabel2 = { day: "\u0E27\u0E31\u0E19\u0E19\u0E35\u0E49", week: "\u0E2A\u0E31\u0E1B\u0E14\u0E32\u0E2B\u0E4C", month: "\u0E40\u0E14\u0E37\u0E2D\u0E19", year: "\u0E1B\u0E35" };
   const title = report.title ?? `\u0E2A\u0E23\u0E38\u0E1B${periodLabel2[report.period]}`;
-  const categories = Object.entries(report.categories).sort((a, b) => b[1] - a[1]).slice(0, 3);
-  const maxCategory = Math.max(...categories.map(([, amount]) => amount), 1);
+  const categories2 = Object.entries(report.categories).sort((a, b) => b[1] - a[1]).slice(0, 3);
+  const maxCategory = Math.max(...categories2.map(([, amount]) => amount), 1);
   const tones = ["pink", "lavender", "blue"];
   const trend = miloFinanceTrendCard(report);
   const compactPeriod = report.period === "week" || report.period === "month";
@@ -3042,7 +3042,7 @@ function miloFinanceSummaryContents(report) {
     }],
     ...trend ? [trend] : [],
     miloSectionTitle(report.period === "day" ? "\u0E2B\u0E21\u0E27\u0E14\u0E04\u0E48\u0E32\u0E43\u0E0A\u0E49\u0E08\u0E48\u0E32\u0E22 (Top 3)" : "\u0E2B\u0E21\u0E27\u0E14\u0E04\u0E48\u0E32\u0E43\u0E0A\u0E49\u0E08\u0E48\u0E32\u0E22"),
-    ...categories.length ? categories.map(([name, amount], index2) => miloProgressRow(name, `${money4(amount)} \u0E1A\u0E32\u0E17`, amount / maxCategory, tones[index2] ?? "pink")) : [{ type: "box", layout: "vertical", paddingAll: "14px", cornerRadius: "xl", backgroundColor: MILO_COLORS.surface, contents: [
+    ...categories2.length ? categories2.map(([name, amount], index2) => miloProgressRow(name, `${money4(amount)} \u0E1A\u0E32\u0E17`, amount / maxCategory, tones[index2] ?? "pink")) : [{ type: "box", layout: "vertical", paddingAll: "14px", cornerRadius: "xl", backgroundColor: MILO_COLORS.surface, contents: [
       { type: "text", text: "\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E21\u0E35\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22\u0E43\u0E19\u0E0A\u0E48\u0E27\u0E07\u0E19\u0E35\u0E49", size: "sm", color: MILO_COLORS.muted, align: "center" }
     ] }]
   ];
@@ -3694,8 +3694,8 @@ var JevProvider = class {
     return Boolean(this.config.jevApiKey);
   }
   async classifyExpenseCategory(note, allowedCategories) {
-    const categories = Array.from(new Set(allowedCategories.map((item) => item.trim()).filter(Boolean)));
-    if (!this.config.jevApiKey || categories.length === 0) {
+    const categories2 = Array.from(new Set(allowedCategories.map((item) => item.trim()).filter(Boolean)));
+    if (!this.config.jevApiKey || categories2.length === 0) {
       throw new Error("Jev API key is not configured");
     }
     const response = await getClient(this.config).systemOne({
@@ -3704,13 +3704,13 @@ var JevProvider = class {
       questions: {
         category: choice(
           "\u0E40\u0E25\u0E37\u0E2D\u0E01\u0E2B\u0E21\u0E27\u0E14\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22\u0E17\u0E35\u0E48\u0E15\u0E23\u0E07\u0E01\u0E31\u0E1A\u0E02\u0E49\u0E2D\u0E04\u0E27\u0E32\u0E21\u0E21\u0E32\u0E01\u0E17\u0E35\u0E48\u0E2A\u0E38\u0E14 \u0E42\u0E14\u0E22\u0E40\u0E25\u0E37\u0E2D\u0E01\u0E44\u0E14\u0E49\u0E40\u0E09\u0E1E\u0E32\u0E30\u0E15\u0E31\u0E27\u0E40\u0E25\u0E37\u0E2D\u0E01\u0E17\u0E35\u0E48\u0E01\u0E33\u0E2B\u0E19\u0E14 \u0E2B\u0E32\u0E01\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E44\u0E21\u0E48\u0E0A\u0E31\u0E14\u0E40\u0E08\u0E19\u0E43\u0E2B\u0E49\u0E40\u0E25\u0E37\u0E2D\u0E01 \u0E17\u0E31\u0E48\u0E27\u0E44\u0E1B\u0E40\u0E21\u0E37\u0E48\u0E2D\u0E21\u0E35\u0E15\u0E31\u0E27\u0E40\u0E25\u0E37\u0E2D\u0E01\u0E19\u0E35\u0E49",
-          Object.fromEntries(categories.map((category2) => [category2, null]))
+          Object.fromEntries(categories2.map((category2) => [category2, null]))
         )
       }
     });
     const answer = response.answers.category;
     const category = answer.choice;
-    if (!categories.includes(category)) throw new Error("Jev returned an unknown expense category");
+    if (!categories2.includes(category)) throw new Error("Jev returned an unknown expense category");
     return {
       category,
       confidence: answer.confidence,
@@ -3941,7 +3941,7 @@ var schema = {
 function deterministicFinancialInsight(input) {
   const periodLabel2 = { day: "\u0E27\u0E31\u0E19\u0E19\u0E35\u0E49", week: "\u0E2A\u0E31\u0E1B\u0E14\u0E32\u0E2B\u0E4C\u0E19\u0E35\u0E49", month: "\u0E40\u0E14\u0E37\u0E2D\u0E19\u0E19\u0E35\u0E49", year: "\u0E1B\u0E35\u0E19\u0E35\u0E49" };
   const money4 = (value) => Number(value).toLocaleString("th-TH-u-nu-latn", { maximumFractionDigits: 2 });
-  const categories = Object.entries(input.categories).filter(([, amount]) => Number(amount) > 0).sort((a, b) => Number(b[1]) - Number(a[1]));
+  const categories2 = Object.entries(input.categories).filter(([, amount]) => Number(amount) > 0).sort((a, b) => Number(b[1]) - Number(a[1]));
   const dataSufficiency = input.transactionCount === 0 ? "insufficient" : input.transactionCount < 5 ? "limited" : "adequate";
   if (input.transactionCount === 0) {
     return {
@@ -3952,13 +3952,13 @@ function deterministicFinancialInsight(input) {
       suggestedActions: ["\u0E40\u0E23\u0E34\u0E48\u0E21\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E23\u0E32\u0E22\u0E23\u0E31\u0E1A\u0E41\u0E25\u0E30\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22 \u0E41\u0E25\u0E49\u0E27\u0E01\u0E25\u0E31\u0E1A\u0E21\u0E32\u0E1E\u0E34\u0E21\u0E1E\u0E4C \u201C\u0E27\u0E34\u0E40\u0E04\u0E23\u0E32\u0E30\u0E2B\u0E4C\u201D \u0E2D\u0E35\u0E01\u0E04\u0E23\u0E31\u0E49\u0E07"]
     };
   }
-  const top = categories[0];
+  const top = categories2[0];
   const share = top && input.expense > 0 ? Math.round(Number(top[1]) / input.expense * 100) : 0;
   const highlights = [];
   if (input.balance < 0) highlights.push(`\u0E22\u0E2D\u0E14\u0E2A\u0E38\u0E17\u0E18\u0E34\u0E40\u0E1B\u0E47\u0E19\u0E25\u0E1A ${money4(Math.abs(input.balance))} \u0E1A\u0E32\u0E17`);
   else highlights.push(`\u0E22\u0E2D\u0E14\u0E2A\u0E38\u0E17\u0E18\u0E34\u0E04\u0E07\u0E40\u0E2B\u0E25\u0E37\u0E2D ${money4(input.balance)} \u0E1A\u0E32\u0E17`);
   if (top) highlights.push(`\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22\u0E2A\u0E39\u0E07\u0E2A\u0E38\u0E14\u0E04\u0E37\u0E2D\u0E2B\u0E21\u0E27\u0E14${top[0]} ${money4(Number(top[1]))} \u0E1A\u0E32\u0E17${share ? ` (\u0E1B\u0E23\u0E30\u0E21\u0E32\u0E13 ${share}% \u0E02\u0E2D\u0E07\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22)` : ""}`);
-  const categoryObservations = categories.slice(0, 3).map(([category, amount]) => ({
+  const categoryObservations = categories2.slice(0, 3).map(([category, amount]) => ({
     category,
     observation: input.expense > 0 ? `${money4(Number(amount))} \u0E1A\u0E32\u0E17 \u0E2B\u0E23\u0E37\u0E2D\u0E1B\u0E23\u0E30\u0E21\u0E32\u0E13 ${Math.round(Number(amount) / input.expense * 100)}% \u0E02\u0E2D\u0E07\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22` : `${money4(Number(amount))} \u0E1A\u0E32\u0E17`
   }));
@@ -5490,9 +5490,9 @@ function getLanguageName(langCode) {
   };
   return langMap[langCode] || langCode;
 }
-async function fetchWithTimeout(url, init, timeoutMs) {
+async function fetchWithTimeout(url, init, timeoutMs2) {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  const timeout = setTimeout(() => controller.abort(), timeoutMs2);
   try {
     return await fetch(url, { ...init, signal: controller.signal });
   } finally {
@@ -6266,11 +6266,11 @@ function enrichThaiReceiptProposal(text2, proposal) {
 var DATA_DIR = path2.join(process.cwd(), "api", "tessdata");
 var CACHE_DIR = path2.join(os.tmpdir(), "milo-tesscache");
 var requireOcr = createRequire(import.meta.url);
-async function withOcrDeadline(work, stage, timeoutMs = 3e4) {
+async function withOcrDeadline(work, stage, timeoutMs2 = 3e4) {
   let timer;
   try {
     return await Promise.race([work, new Promise((_, reject) => {
-      timer = setTimeout(() => reject(new Error(`OCR ${stage} timed out after ${timeoutMs}ms`)), timeoutMs);
+      timer = setTimeout(() => reject(new Error(`OCR ${stage} timed out after ${timeoutMs2}ms`)), timeoutMs2);
     })]);
   } finally {
     clearTimeout(timer);
@@ -6558,6 +6558,114 @@ async function analyzeImageWithOcr(dataUrl) {
   }
 }
 
+// server/milo/systemOneImageReview.ts
+var categories = {
+  \u0E2D\u0E32\u0E2B\u0E32\u0E23: "\u0E2D\u0E32\u0E2B\u0E32\u0E23 \u0E40\u0E04\u0E23\u0E37\u0E48\u0E2D\u0E07\u0E14\u0E37\u0E48\u0E21 \u0E23\u0E49\u0E32\u0E19\u0E2D\u0E32\u0E2B\u0E32\u0E23 \u0E04\u0E32\u0E40\u0E1F\u0E48",
+  \u0E40\u0E14\u0E34\u0E19\u0E17\u0E32\u0E07: "\u0E04\u0E48\u0E32\u0E40\u0E14\u0E34\u0E19\u0E17\u0E32\u0E07 \u0E19\u0E49\u0E33\u0E21\u0E31\u0E19 \u0E23\u0E16\u0E44\u0E1F \u0E23\u0E16\u0E42\u0E14\u0E22\u0E2A\u0E32\u0E23 \u0E17\u0E32\u0E07\u0E14\u0E48\u0E27\u0E19",
+  \u0E04\u0E48\u0E32\u0E2A\u0E32\u0E18\u0E32\u0E23\u0E13\u0E39\u0E1B\u0E42\u0E20\u0E04: "\u0E04\u0E48\u0E32\u0E44\u0E1F \u0E04\u0E48\u0E32\u0E19\u0E49\u0E33 \u0E42\u0E17\u0E23\u0E28\u0E31\u0E1E\u0E17\u0E4C \u0E2D\u0E34\u0E19\u0E40\u0E17\u0E2D\u0E23\u0E4C\u0E40\u0E19\u0E47\u0E15",
+  \u0E2A\u0E38\u0E02\u0E20\u0E32\u0E1E: "\u0E42\u0E23\u0E07\u0E1E\u0E22\u0E32\u0E1A\u0E32\u0E25 \u0E04\u0E25\u0E34\u0E19\u0E34\u0E01 \u0E22\u0E32 \u0E2A\u0E38\u0E02\u0E20\u0E32\u0E1E",
+  \u0E01\u0E32\u0E23\u0E28\u0E36\u0E01\u0E29\u0E32: "\u0E04\u0E48\u0E32\u0E40\u0E23\u0E35\u0E22\u0E19 \u0E2B\u0E19\u0E31\u0E07\u0E2A\u0E37\u0E2D \u0E04\u0E2D\u0E23\u0E4C\u0E2A\u0E01\u0E32\u0E23\u0E28\u0E36\u0E01\u0E29\u0E32",
+  \u0E1A\u0E31\u0E19\u0E40\u0E17\u0E34\u0E07: "\u0E20\u0E32\u0E1E\u0E22\u0E19\u0E15\u0E23\u0E4C \u0E40\u0E01\u0E21 \u0E40\u0E1E\u0E25\u0E07 \u0E1A\u0E23\u0E34\u0E01\u0E32\u0E23\u0E1A\u0E31\u0E19\u0E40\u0E17\u0E34\u0E07",
+  \u0E0A\u0E49\u0E2D\u0E1B\u0E1B\u0E34\u0E49\u0E07: "\u0E0B\u0E37\u0E49\u0E2D\u0E2A\u0E34\u0E19\u0E04\u0E49\u0E32 \u0E2B\u0E49\u0E32\u0E07 \u0E23\u0E49\u0E32\u0E19\u0E04\u0E49\u0E32\u0E1B\u0E25\u0E35\u0E01 \u0E02\u0E2D\u0E07\u0E43\u0E0A\u0E49",
+  \u0E17\u0E48\u0E2D\u0E07\u0E40\u0E17\u0E35\u0E48\u0E22\u0E27: "\u0E42\u0E23\u0E07\u0E41\u0E23\u0E21 \u0E40\u0E17\u0E35\u0E48\u0E22\u0E27\u0E1A\u0E34\u0E19 \u0E01\u0E32\u0E23\u0E17\u0E48\u0E2D\u0E07\u0E40\u0E17\u0E35\u0E48\u0E22\u0E27",
+  \u0E17\u0E31\u0E48\u0E27\u0E44\u0E1B: "\u0E04\u0E48\u0E32\u0E43\u0E0A\u0E49\u0E08\u0E48\u0E32\u0E22\u0E17\u0E35\u0E48\u0E44\u0E21\u0E48\u0E40\u0E02\u0E49\u0E32\u0E2B\u0E21\u0E27\u0E14\u0E2D\u0E37\u0E48\u0E19"
+};
+function timeoutMs(env) {
+  const parsed = Number(env.MILO_SYSTEMONE_IMAGE_TIMEOUT_MS || "9000");
+  return Number.isFinite(parsed) ? Math.max(2e3, Math.min(parsed, 2e4)) : 9e3;
+}
+function systemOneImageReviewConfigured(env = process.env) {
+  return openThaiSystemOneConfigured(env);
+}
+async function reviewOcrAnalysisWithSystemOne(analysis, env = process.env) {
+  if (!openThaiSystemOneConfigured(env)) throw new Error("OpenThai-SystemOne is not configured");
+  const p = analysis.proposals[0];
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs(env));
+  try {
+    const key = openThaiSystemOneApiKey(env);
+    const response = await fetch(openThaiSystemOneUrl(env), {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        ...key ? { apikey: key } : {}
+      },
+      body: JSON.stringify({
+        state: {
+          product: "Milo LINE finance assistant",
+          source: "local OCR result from a user-supplied image",
+          ocr_summary: analysis.summary.slice(0, 1200),
+          ocr_confidence: analysis.confidence,
+          proposed_kind: p?.kind || "unknown",
+          proposed_document_type: p?.documentType || "unknown",
+          merchant: p?.merchant || "",
+          date: p?.dateText || "",
+          time: p?.timeText || "",
+          amount: p?.amount || 0,
+          currency: p?.currency || "",
+          category: p?.category || "",
+          payment_method: p?.paymentMethod || "",
+          reference: p?.receiptNumber || "",
+          line_items: (p?.lineItems || []).slice(0, 12),
+          rule: "Do not invent missing values. Validate only what OCR already extracted. Choose needs_vision whenever important financial fields look incomplete or contradictory."
+        },
+        model: openThaiSystemOneModel(env),
+        questions: {
+          document_type: {
+            type: "choice",
+            instructions: "\u0E15\u0E23\u0E27\u0E08\u0E1B\u0E23\u0E30\u0E40\u0E20\u0E17\u0E40\u0E2D\u0E01\u0E2A\u0E32\u0E23\u0E08\u0E32\u0E01\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25 OCR \u0E17\u0E35\u0E48\u0E21\u0E35\u0E2D\u0E22\u0E39\u0E48 \u0E2B\u0E49\u0E32\u0E21\u0E40\u0E14\u0E32\u0E08\u0E32\u0E01\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E17\u0E35\u0E48\u0E44\u0E21\u0E48\u0E21\u0E35",
+            criteria: {
+              bank_slip: "\u0E2A\u0E25\u0E34\u0E1B\u0E42\u0E2D\u0E19\u0E2B\u0E23\u0E37\u0E2D\u0E0A\u0E33\u0E23\u0E30\u0E40\u0E07\u0E34\u0E19\u0E08\u0E32\u0E01\u0E18\u0E19\u0E32\u0E04\u0E32\u0E23/PromptPay \u0E41\u0E25\u0E30\u0E21\u0E35\u0E2B\u0E25\u0E31\u0E01\u0E10\u0E32\u0E19\u0E18\u0E38\u0E23\u0E01\u0E23\u0E23\u0E21",
+              receipt: "\u0E43\u0E1A\u0E40\u0E2A\u0E23\u0E47\u0E08\u0E2B\u0E23\u0E37\u0E2D\u0E2B\u0E25\u0E31\u0E01\u0E10\u0E32\u0E19\u0E0B\u0E37\u0E49\u0E2D\u0E2A\u0E34\u0E19\u0E04\u0E49\u0E32/\u0E1A\u0E23\u0E34\u0E01\u0E32\u0E23",
+              appointment: "\u0E43\u0E1A\u0E19\u0E31\u0E14\u0E2B\u0E23\u0E37\u0E2D\u0E15\u0E32\u0E23\u0E32\u0E07\u0E19\u0E31\u0E14\u0E2B\u0E21\u0E32\u0E22",
+              unknown: "\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E44\u0E21\u0E48\u0E1E\u0E2D\u0E2B\u0E23\u0E37\u0E2D\u0E44\u0E21\u0E48\u0E40\u0E02\u0E49\u0E32\u0E1B\u0E23\u0E30\u0E40\u0E20\u0E17\u0E02\u0E49\u0E32\u0E07\u0E15\u0E49\u0E19"
+            }
+          },
+          category: {
+            type: "choice",
+            instructions: "\u0E16\u0E49\u0E32\u0E40\u0E1B\u0E47\u0E19\u0E04\u0E48\u0E32\u0E43\u0E0A\u0E49\u0E08\u0E48\u0E32\u0E22 \u0E40\u0E25\u0E37\u0E2D\u0E01\u0E2B\u0E21\u0E27\u0E14\u0E17\u0E35\u0E48\u0E40\u0E2B\u0E21\u0E32\u0E30\u0E17\u0E35\u0E48\u0E2A\u0E38\u0E14\u0E08\u0E32\u0E01\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25 OCR \u0E40\u0E17\u0E48\u0E32\u0E19\u0E31\u0E49\u0E19",
+            criteria: categories
+          },
+          quality: {
+            type: "choice",
+            instructions: "\u0E15\u0E31\u0E14\u0E2A\u0E34\u0E19\u0E27\u0E48\u0E32\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25 OCR \u0E40\u0E1E\u0E35\u0E22\u0E07\u0E1E\u0E2D\u0E43\u0E2B\u0E49\u0E2A\u0E23\u0E49\u0E32\u0E07\u0E02\u0E49\u0E2D\u0E40\u0E2A\u0E19\u0E2D\u0E40\u0E1E\u0E37\u0E48\u0E2D\u0E23\u0E2D\u0E1C\u0E39\u0E49\u0E43\u0E0A\u0E49\u0E22\u0E37\u0E19\u0E22\u0E31\u0E19\u0E2B\u0E23\u0E37\u0E2D\u0E04\u0E27\u0E23\u0E43\u0E0A\u0E49 Vision \u0E2D\u0E48\u0E32\u0E19\u0E20\u0E32\u0E1E\u0E0B\u0E49\u0E33",
+            criteria: {
+              accept_ocr: "\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E2A\u0E33\u0E04\u0E31\u0E0D\u0E17\u0E35\u0E48\u0E08\u0E33\u0E40\u0E1B\u0E47\u0E19\u0E2A\u0E2D\u0E14\u0E04\u0E25\u0E49\u0E2D\u0E07\u0E41\u0E25\u0E30\u0E04\u0E23\u0E1A\u0E1E\u0E2D\u0E2A\u0E33\u0E2B\u0E23\u0E31\u0E1A\u0E40\u0E2A\u0E19\u0E2D\u0E43\u0E2B\u0E49\u0E1C\u0E39\u0E49\u0E43\u0E0A\u0E49\u0E15\u0E23\u0E27\u0E08\u0E22\u0E37\u0E19\u0E22\u0E31\u0E19 \u0E42\u0E14\u0E22\u0E44\u0E21\u0E48\u0E15\u0E49\u0E2D\u0E07\u0E40\u0E14\u0E32",
+              needs_vision: "\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E2A\u0E33\u0E04\u0E31\u0E0D\u0E2B\u0E32\u0E22 \u0E02\u0E31\u0E14\u0E41\u0E22\u0E49\u0E07 \u0E04\u0E27\u0E32\u0E21\u0E21\u0E31\u0E48\u0E19\u0E43\u0E08\u0E15\u0E48\u0E33 \u0E2B\u0E23\u0E37\u0E2D\u0E04\u0E27\u0E23\u0E14\u0E39\u0E20\u0E32\u0E1E\u0E08\u0E23\u0E34\u0E07\u0E01\u0E48\u0E2D\u0E19\u0E40\u0E2A\u0E19\u0E2D\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E01\u0E32\u0E23\u0E40\u0E07\u0E34\u0E19"
+            }
+          }
+        },
+        permutations: Number(env.OPENTHAI_SYSTEMONE_PERMUTATIONS || "1")
+      }),
+      signal: controller.signal
+    });
+    if (!response.ok) {
+      const detail = (await response.text().catch(() => "")).slice(0, 300);
+      throw new Error(`OpenThai-SystemOne image review HTTP ${response.status}${detail ? `: ${detail}` : ""}`);
+    }
+    const payload = await response.json();
+    const docAnswer = payload.answers?.document_type;
+    const categoryAnswer = payload.answers?.category;
+    const qualityAnswer = payload.answers?.quality;
+    const documentType = ["bank_slip", "receipt", "appointment", "unknown"].includes(docAnswer?.choice || "") ? docAnswer.choice : "unknown";
+    const category = Object.prototype.hasOwnProperty.call(categories, categoryAnswer?.choice || "") ? categoryAnswer.choice : "\u0E17\u0E31\u0E48\u0E27\u0E44\u0E1B";
+    const qualityConfidence = Number(qualityAnswer?.confidence || 0);
+    const documentConfidence = Number(docAnswer?.confidence || 0);
+    const confidence = Math.min(1, Math.max(0, Math.min(qualityConfidence || 0, documentConfidence || qualityConfidence || 0)));
+    const accepted = qualityAnswer?.choice === "accept_ocr" && confidence >= 0.72 && documentType !== "unknown";
+    return {
+      accepted,
+      needsVision: !accepted,
+      confidence,
+      documentType,
+      category,
+      model: payload.model || openThaiSystemOneModel(env)
+    };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 // server/milo/imageAnalysis.ts
 var schema2 = {
   type: "object",
@@ -6832,11 +6940,19 @@ function imageGatewayMode(env = process.env, requestToken) {
   return void 0;
 }
 function imageAnalysisMode(requestToken) {
-  if (googleGeminiConfigured()) return ocrAssetsReady() ? "google-gemini-vision+ocr-fallback" : "google-gemini-vision";
-  if (ENV.forgeApiKey) return ocrAssetsReady() ? "forge-vision+ocr-fallback" : "forge-vision";
+  const ocrReady = ocrAssetsReady();
+  if (ocrReady && systemOneImageReviewConfigured()) {
+    if (googleGeminiConfigured()) return "ocr+openthai-systemone-primary+google-gemini-vision-fallback";
+    if (ENV.forgeApiKey) return "ocr+openthai-systemone-primary+forge-vision-fallback";
+    const gatewayFallback = imageGatewayMode(process.env, requestToken);
+    if (gatewayFallback) return `ocr+openthai-systemone-primary+${gatewayFallback}-fallback`;
+    return "ocr+openthai-systemone-primary";
+  }
+  if (googleGeminiConfigured()) return ocrReady ? "ocr-primary+google-gemini-vision-fallback" : "google-gemini-vision";
+  if (ENV.forgeApiKey) return ocrReady ? "ocr-primary+forge-vision-fallback" : "forge-vision";
   const gatewayMode = imageGatewayMode(process.env, requestToken);
-  if (gatewayMode) return ocrAssetsReady() ? `${gatewayMode}+ocr-fallback` : gatewayMode;
-  return ocrAssetsReady() ? "ocr-fallback" : "unconfigured";
+  if (gatewayMode) return ocrReady ? `ocr-primary+${gatewayMode}-fallback` : gatewayMode;
+  return ocrReady ? "ocr-only" : "unconfigured";
 }
 async function imageAnalysisRuntimeStatus(requestToken) {
   const mode = imageAnalysisMode(requestToken);
@@ -6917,10 +7033,86 @@ function trustedOcrBankSlipFallback(analysis) {
   const hasTransactionIdentity = Boolean(proposal.receiptNumber || proposal.merchant && proposal.timeText);
   return analysis.confidence >= 0.75 && Boolean(proposal.dateText) && hasTransactionIdentity;
 }
+function systemOnePrimaryReady(analysis, review) {
+  if (!review.accepted || review.needsVision) return false;
+  const proposal = analysis.proposals[0];
+  if (!proposal) return false;
+  if (review.documentType === "bank_slip") {
+    return proposal.kind === "expense" && proposal.amount > 0 && Boolean(proposal.dateText) && Boolean(proposal.receiptNumber || proposal.merchant && proposal.timeText);
+  }
+  if (review.documentType === "receipt") {
+    return proposal.kind === "expense" && proposal.amount > 0 && Boolean(proposal.dateText) && Boolean(proposal.merchant);
+  }
+  if (review.documentType === "appointment") {
+    return proposal.kind === "reminder" && Boolean(proposal.dateText);
+  }
+  return false;
+}
+function applySystemOneOcrReview(analysis, review) {
+  const proposal = analysis.proposals[0];
+  if (!proposal) return analysis;
+  const reviewedProposal = {
+    ...proposal,
+    documentType: review.documentType,
+    category: proposal.kind === "expense" ? review.category : proposal.category,
+    paymentMethod: review.documentType === "bank_slip" ? proposal.paymentMethod || "\u0E42\u0E2D\u0E19\u0E40\u0E07\u0E34\u0E19" : proposal.paymentMethod
+  };
+  const label = review.documentType === "bank_slip" ? "\u0E2A\u0E25\u0E34\u0E1B" : review.documentType === "receipt" ? "\u0E43\u0E1A\u0E40\u0E2A\u0E23\u0E47\u0E08" : "\u0E43\u0E1A\u0E19\u0E31\u0E14";
+  return {
+    ...analysis,
+    summary: `OpenThai-SystemOne \u0E15\u0E23\u0E27\u0E08\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25 OCR \u0E41\u0E25\u0E49\u0E27: ${label}${reviewedProposal.amount > 0 ? ` \u0E22\u0E2D\u0E14 ${reviewedProposal.amount.toLocaleString("th-TH")} \u0E1A\u0E32\u0E17` : ""}${reviewedProposal.dateText ? ` \u0E27\u0E31\u0E19\u0E17\u0E35\u0E48 ${reviewedProposal.dateText}` : ""} \u2014 \u0E01\u0E23\u0E38\u0E13\u0E32\u0E15\u0E23\u0E27\u0E08\u0E2A\u0E2D\u0E1A\u0E01\u0E48\u0E2D\u0E19\u0E22\u0E37\u0E19\u0E22\u0E31\u0E19`,
+    confidence: Math.max(analysis.confidence, review.confidence),
+    proposals: [reviewedProposal, ...analysis.proposals.slice(1)]
+  };
+}
 async function analyzeImage(dataUrl, options = {}) {
   let providerError;
   let providerAnalysis;
   let directVisionAnalysis;
+  let primaryOcrAnalysis;
+  if (ocrAssetsReady()) {
+    try {
+      primaryOcrAnalysis = await analyzeImageWithOcr(dataUrl);
+      console.info("[Milo Image] OCR primary pass completed", {
+        confidence: primaryOcrAnalysis.confidence,
+        documentType: primaryOcrAnalysis.proposals[0]?.documentType || "unknown",
+        amount: primaryOcrAnalysis.proposals[0]?.amount || 0,
+        dateText: primaryOcrAnalysis.proposals[0]?.dateText || ""
+      });
+      if (systemOneImageReviewConfigured()) {
+        try {
+          const review = await reviewOcrAnalysisWithSystemOne(primaryOcrAnalysis);
+          if (systemOnePrimaryReady(primaryOcrAnalysis, review)) {
+            const selected = sanitizeAnalysisMerchants(applySystemOneOcrReview(primaryOcrAnalysis, review));
+            console.info("[Milo Image] OpenThai-SystemOne accepted OCR as primary analysis", {
+              model: review.model,
+              confidence: review.confidence,
+              documentType: review.documentType,
+              category: review.category
+            });
+            return selected;
+          }
+          console.info("[Milo Image] OpenThai-SystemOne requested Gemini Vision fallback", {
+            model: review.model,
+            confidence: review.confidence,
+            documentType: review.documentType
+          });
+        } catch (systemOneError) {
+          providerError = systemOneError;
+          console.warn("[Milo Image] OpenThai-SystemOne OCR review failed; using Gemini Vision fallback", {
+            error: systemOneError instanceof Error ? systemOneError.message : "unknown"
+          });
+        }
+      } else {
+        console.info("[Milo Image] OpenThai-SystemOne is not configured; using Gemini Vision fallback");
+      }
+    } catch (ocrError) {
+      providerError = ocrError;
+      console.warn("[Milo Image] OCR primary pass failed; using Gemini Vision fallback", {
+        error: ocrError instanceof Error ? ocrError.message : "unknown"
+      });
+    }
+  }
   if (googleGeminiConfigured()) {
     try {
       const analysis = await analyzeImageWithGoogle(dataUrl);
@@ -6950,7 +7142,7 @@ async function analyzeImage(dataUrl, options = {}) {
       }
       if (providerAnalysis.proposals.some((item) => item.documentType === "receipt" && item.kind === "expense" && (!item.dateText || !item.timeText))) {
         try {
-          const ocrDate = await analyzeImageWithOcr(dataUrl);
+          const ocrDate = primaryOcrAnalysis ?? await analyzeImageWithOcr(dataUrl);
           const gp = providerAnalysis.proposals[0];
           const op = ocrDate.proposals[0];
           if (gp && op?.documentType === "receipt" && op.dateText) {
@@ -7022,7 +7214,7 @@ async function analyzeImage(dataUrl, options = {}) {
         });
       }
     }
-    const ocrAnalysis = await analyzeImageWithOcr(dataUrl);
+    const ocrAnalysis = primaryOcrAnalysis ?? await analyzeImageWithOcr(dataUrl);
     if (!providerAnalysis) {
       if (googleGeminiConfigured() && !trustedOcrBankSlipFallback(ocrAnalysis)) {
         throw new Error("Image AI temporarily unavailable; OCR could not verify this slip strongly enough");
@@ -8409,14 +8601,14 @@ function formatDate(date) {
 function formatFinanceReport(report) {
   const money4 = (amount) => amount.toLocaleString("th-TH", { maximumFractionDigits: 2 });
   const label = { day: "\u0E27\u0E31\u0E19\u0E19\u0E35\u0E49", week: "\u0E2A\u0E31\u0E1B\u0E14\u0E32\u0E2B\u0E4C\u0E19\u0E35\u0E49", month: "\u0E40\u0E14\u0E37\u0E2D\u0E19\u0E19\u0E35\u0E49", year: "\u0E1B\u0E35\u0E19\u0E35\u0E49" };
-  const categories = Object.entries(report.categories).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([name, amount]) => `\u2022 ${name} ${money4(amount)} \u0E1A\u0E32\u0E17`).join("\n");
+  const categories2 = Object.entries(report.categories).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([name, amount]) => `\u2022 ${name} ${money4(amount)} \u0E1A\u0E32\u0E17`).join("\n");
   return `\u0E2A\u0E23\u0E38\u0E1B\u0E01\u0E32\u0E23\u0E40\u0E07\u0E34\u0E19${label[report.period]}
 \u0E23\u0E32\u0E22\u0E23\u0E31\u0E1A ${money4(report.income)} \u0E1A\u0E32\u0E17
 \u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22 ${money4(report.expense)} \u0E1A\u0E32\u0E17
 \u0E01\u0E33\u0E44\u0E23/\u0E04\u0E07\u0E40\u0E2B\u0E25\u0E37\u0E2D ${money4(report.balance)} \u0E1A\u0E32\u0E17
-${categories ? `
+${categories2 ? `
 \u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22\u0E15\u0E32\u0E21\u0E2B\u0E21\u0E27\u0E14
-${categories}` : "\n\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E21\u0E35\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22\u0E43\u0E19\u0E0A\u0E48\u0E27\u0E07\u0E19\u0E35\u0E49"}`;
+${categories2}` : "\n\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E21\u0E35\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22\u0E43\u0E19\u0E0A\u0E48\u0E27\u0E07\u0E19\u0E35\u0E49"}`;
 }
 function formatFinancialInsight(insight) {
   const quality = insight.dataSufficiency === "adequate" ? "\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E40\u0E1E\u0E35\u0E22\u0E07\u0E1E\u0E2D\u0E2A\u0E33\u0E2B\u0E23\u0E31\u0E1A\u0E27\u0E34\u0E40\u0E04\u0E23\u0E32\u0E30\u0E2B\u0E4C\u0E40\u0E1A\u0E37\u0E49\u0E2D\u0E07\u0E15\u0E49\u0E19" : insight.dataSufficiency === "limited" ? "\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E22\u0E31\u0E07\u0E21\u0E35\u0E44\u0E21\u0E48\u0E21\u0E32\u0E01 \u0E08\u0E36\u0E07\u0E40\u0E1B\u0E47\u0E19\u0E02\u0E49\u0E2D\u0E2A\u0E31\u0E07\u0E40\u0E01\u0E15\u0E40\u0E1A\u0E37\u0E49\u0E2D\u0E07\u0E15\u0E49\u0E19" : "\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E21\u0E35\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E40\u0E1E\u0E35\u0E22\u0E07\u0E1E\u0E2D\u0E2A\u0E33\u0E2B\u0E23\u0E31\u0E1A\u0E27\u0E34\u0E40\u0E04\u0E23\u0E32\u0E30\u0E2B\u0E4C";
@@ -9126,9 +9318,9 @@ ${url}`;
     const removed = await removeExpenseCategory(lineUserId, command.name, command.transactionType, financeScope.financeAccountId);
     message = removed ? `\u0E25\u0E1A\u0E2B\u0E21\u0E27\u0E14${command.transactionType === "income" ? "\u0E23\u0E32\u0E22\u0E23\u0E31\u0E1A" : "\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22"} \u201C${command.name}\u201D \u0E41\u0E25\u0E49\u0E27` : `\u0E44\u0E21\u0E48\u0E1E\u0E1A\u0E2B\u0E21\u0E27\u0E14 \u201C${command.name}\u201D \u0E17\u0E35\u0E48\u0E08\u0E30\u0E25\u0E1A`;
   } else if (command.type === "categoryList") {
-    const categories = await listTransactionCategories(lineUserId, financeScope.financeAccountId);
-    const customExpense = categories.filter((item) => item.transactionType === "expense" && !STANDARD_EXPENSE_CATEGORIES.includes(item.name));
-    const customIncome = categories.filter((item) => item.transactionType === "income" && !STANDARD_INCOME_CATEGORIES.includes(item.name));
+    const categories2 = await listTransactionCategories(lineUserId, financeScope.financeAccountId);
+    const customExpense = categories2.filter((item) => item.transactionType === "expense" && !STANDARD_EXPENSE_CATEGORIES.includes(item.name));
+    const customIncome = categories2.filter((item) => item.transactionType === "income" && !STANDARD_INCOME_CATEGORIES.includes(item.name));
     const expenseSection = `\u0E2B\u0E21\u0E27\u0E14\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22\u0E21\u0E32\u0E15\u0E23\u0E10\u0E32\u0E19
 ${STANDARD_EXPENSE_CATEGORIES.map((name) => `\u2022 ${name}`).join("\n")}${customExpense.length ? `
 \u0E2B\u0E21\u0E27\u0E14\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22\u0E17\u0E35\u0E48\u0E04\u0E38\u0E13\u0E40\u0E1E\u0E34\u0E48\u0E21
@@ -10322,10 +10514,10 @@ function decodeInput(req) {
     const expense = validNumber(parsed.expense);
     const balance = validNumber(parsed.balance);
     if (income === void 0 || expense === void 0 || balance === void 0) return void 0;
-    const categories = {};
+    const categories2 = {};
     for (const [name, amount] of Object.entries(parsed.categories ?? {}).slice(0, 6)) {
       const n = validNumber(amount);
-      if (name.trim() && n !== void 0 && n >= 0) categories[name.trim().slice(0, 40)] = n;
+      if (name.trim() && n !== void 0 && n >= 0) categories2[name.trim().slice(0, 40)] = n;
     }
     const rows = (parsed.rows ?? []).slice(0, 5).flatMap((raw) => {
       const amount = validNumber(raw.amount);
@@ -10337,7 +10529,7 @@ function decodeInput(req) {
       income,
       expense,
       balance,
-      categories,
+      categories: categories2,
       transactionCount: Math.max(0, Math.floor(Number(parsed.transactionCount ?? rows.length) || 0)),
       start: iso(parsed.start),
       end: iso(parsed.end),
@@ -10377,9 +10569,9 @@ function displayRowDate(value) {
   return new Intl.DateTimeFormat("th-TH-u-nu-latn", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "Asia/Bangkok" }).format(date);
 }
 function financeReportShapesSvg(input) {
-  const categories = Object.entries(input.categories).sort((a, b) => b[1] - a[1]).slice(0, 5);
-  const maxCategory = Math.max(...categories.map(([, amount]) => amount), 1);
-  const categoryBars = categories.map(([, amount], index2) => {
+  const categories2 = Object.entries(input.categories).sort((a, b) => b[1] - a[1]).slice(0, 5);
+  const maxCategory = Math.max(...categories2.map(([, amount]) => amount), 1);
+  const categoryBars = categories2.map(([, amount], index2) => {
     const y = 594 + index2 * 58;
     const width = Math.max(12, Math.round(350 * Math.min(1, amount / maxCategory)));
     return `<rect x="132" y="${y + 28}" width="350" height="14" rx="7" fill="#EAF4EF"/><rect x="132" y="${y + 28}" width="${width}" height="14" rx="7" fill="${index2 === 0 ? "#32C88A" : "#8EDDBF"}"/>`;
@@ -10409,11 +10601,11 @@ async function renderFinanceReportImage(input) {
   const reference = await loadRichMenuReference(referenceKey);
   const title = input.title?.trim() || `\u0E2A\u0E23\u0E38\u0E1B\u0E01\u0E32\u0E23\u0E40\u0E07\u0E34\u0E19${periodLabel[input.period]}`;
   const subtitle = input.subtitle?.trim() || periodRange(input);
-  const categories = Object.entries(input.categories).sort((a, b) => b[1] - a[1]).slice(0, 5);
+  const categories2 = Object.entries(input.categories).sort((a, b) => b[1] - a[1]).slice(0, 5);
   const rows = (input.rows ?? []).slice(0, 4).map((row) => ({ ...row, amount: Number(row.amount), occurredAt: iso(row.occurredAt) }));
   const transactionCount = input.transactionCount ?? input.rows?.length ?? 0;
   const savingsRate = input.income > 0 ? Math.round(input.balance / input.income * 100) : 0;
-  const topCategory = categories[0];
+  const topCategory = categories2[0];
   const layers = [
     textLayer(title, { left: 108, top: 210, width: 650, fontSize: 38, color: "#214A3D", bold: true }),
     textLayer(subtitle, { left: 108, top: 250, width: 760, fontSize: 20, color: "#6D8C81" }),
@@ -10434,10 +10626,10 @@ async function renderFinanceReportImage(input) {
     textLayer(topCategory ? `\u0E2B\u0E21\u0E27\u0E14\u0E2A\u0E39\u0E07\u0E2A\u0E38\u0E14: ${topCategory[0]}` : "\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E21\u0E35\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22", { left: 690, top: 866, width: 250, fontSize: 18, color: "#765F72", bold: true }),
     textLayer("\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E25\u0E48\u0E32\u0E2A\u0E38\u0E14", { left: 112, top: 914, width: 330, fontSize: 26, color: "#4B4260", bold: true })
   ];
-  if (!categories.length) {
+  if (!categories2.length) {
     layers.push(textLayer("\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E21\u0E35\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22\u0E43\u0E19\u0E0A\u0E48\u0E27\u0E07\u0E19\u0E35\u0E49", { left: 105, top: 620, width: 470, fontSize: 27, color: "#849B96" }));
   } else {
-    categories.forEach(([name, amount], index2) => {
+    categories2.forEach(([name, amount], index2) => {
       const y = 540 + index2 * 58;
       const share = input.expense > 0 ? Math.round(amount / input.expense * 100) : 0;
       layers.push(
@@ -10673,7 +10865,7 @@ var healthHandler = async (req, res) => {
   res.status(200).json({
     status: runtime.authenticated && voice.configured && Boolean(process.env.LINE_CHANNEL_SECRET?.trim()) && Boolean(process.env.LINE_CHANNEL_ACCESS_TOKEN?.trim()) && Boolean(process.env.DATABASE_URL?.trim()) ? "ok" : "degraded",
     service: "milo",
-    release: "milo-flex-visual-parity-2026-09-24",
+    release: "milo-systemone-primary-image-2026-09-25",
     intentRoutingMode: "systemone-first+deterministic-fallback",
     systemOneConfigured: systemOneConfigured(),
     systemOneProviderOrder: systemOneProviderOrder(),
@@ -10684,7 +10876,7 @@ var healthHandler = async (req, res) => {
     systemOneRouterMinConfidence: jevRouterMinConfidence(),
     visionConfigured: runtime.authenticated,
     imageAnalysisMode: mode,
-    visionModel: mode === "ocr-fallback" ? "tesseract-tha+eng" : mode.startsWith("google-gemini") ? googleGeminiModel("vision") : process.env.MILO_VISION_MODEL || (mode.startsWith("vercel-ai-gateway") ? "google/gemini-2.5-flash" : mode.startsWith("forge-vision") ? "gemini-3-flash-preview" : "unconfigured"),
+    visionModel: mode.includes("google-gemini") ? googleGeminiModel("vision") : mode.includes("vercel-ai-gateway") ? "google/gemini-2.5-flash" : mode.includes("forge-vision") ? "gemini-3-flash-preview" : mode.startsWith("ocr") ? "tesseract-tha+eng" : process.env.MILO_VISION_MODEL || "unconfigured",
     ocrAssetsReady: runtime.ocrAssetsReady,
     voiceConfigured: voice.configured,
     voiceTranscriptionMode: voice.mode,
