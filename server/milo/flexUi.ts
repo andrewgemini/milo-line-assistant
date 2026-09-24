@@ -88,6 +88,81 @@ export function miloBrandHeader(title?: string, subtitle?: string) {
   };
 }
 
+export function miloPageHeader(title: string, subtitle?: string) {
+  return {
+    type: "box",
+    layout: "horizontal",
+    spacing: "md",
+    alignItems: "center",
+    paddingAll: "14px",
+    cornerRadius: "xl",
+    backgroundColor: MILO_COLORS.surface,
+    contents: [
+      {
+        type: "box",
+        layout: "vertical",
+        flex: 1,
+        spacing: "xs",
+        contents: [
+          { type: "text", text: title, size: "xxl", weight: "bold", color: MILO_COLORS.text, wrap: true },
+          ...(subtitle ? [{ type: "text", text: subtitle, size: "xs", color: MILO_COLORS.muted, wrap: true }] : []),
+        ],
+      },
+      {
+        type: "image",
+        url: miloMascotUrl(),
+        size: "sm",
+        aspectRatio: "1:1",
+        aspectMode: "cover",
+        flex: 0,
+      },
+    ],
+  };
+}
+
+export function miloSuccessBanner(message: string) {
+  return {
+    type: "box",
+    layout: "horizontal",
+    alignItems: "center",
+    spacing: "md",
+    paddingAll: "14px",
+    cornerRadius: "xl",
+    backgroundColor: MILO_COLORS.surfaceMint,
+    contents: [
+      {
+        type: "box",
+        layout: "vertical",
+        justifyContent: "center",
+        alignItems: "center",
+        width: "44px",
+        height: "44px",
+        cornerRadius: "xl",
+        backgroundColor: MILO_COLORS.primaryStrong,
+        contents: [{ type: "text", text: "✓", size: "xl", weight: "bold", color: "#FFFFFF", align: "center" }],
+      },
+      {
+        type: "box",
+        layout: "vertical",
+        flex: 1,
+        spacing: "xs",
+        contents: [
+          { type: "text", text: "บันทึกสำเร็จ", size: "xl", weight: "bold", color: MILO_COLORS.text },
+          { type: "text", text: message, size: "xs", color: MILO_COLORS.muted, wrap: true },
+        ],
+      },
+      {
+        type: "image",
+        url: miloMascotUrl(),
+        size: "xs",
+        aspectRatio: "1:1",
+        aspectMode: "cover",
+        flex: 0,
+      },
+    ],
+  };
+}
+
 export function miloWelcomeBubble(text: string) {
   return {
     type: "box",
@@ -139,6 +214,37 @@ export function miloSectionTitle(title: string, trailing?: string) {
     contents: [
       { type: "text", text: title, size: "lg", weight: "bold", color: MILO_COLORS.text, flex: 1, wrap: true },
       ...(trailing ? [{ type: "text", text: trailing, size: "xs", color: MILO_COLORS.muted, align: "end", wrap: true }] : []),
+    ],
+  };
+}
+
+export function miloMenuTile(label: string, command: string, tone: MiloTone, iconText: string, description?: string) {
+  const t = TONES[tone];
+  return {
+    type: "box",
+    layout: "vertical",
+    alignItems: "center",
+    justifyContent: "center",
+    flex: 1,
+    spacing: "sm",
+    paddingAll: "12px",
+    cornerRadius: "xl",
+    backgroundColor: t.bg,
+    action: { type: "message", label: label.slice(0, 20), text: command.slice(0, 300) },
+    contents: [
+      {
+        type: "box",
+        layout: "vertical",
+        justifyContent: "center",
+        alignItems: "center",
+        width: "40px",
+        height: "40px",
+        cornerRadius: "xl",
+        backgroundColor: t.icon,
+        contents: [{ type: "text", text: iconText, size: "sm", weight: "bold", color: "#FFFFFF", align: "center" }],
+      },
+      { type: "text", text: label, size: "xs", weight: "bold", color: MILO_COLORS.text, wrap: true, align: "center" },
+      ...(description ? [{ type: "text", text: description, size: "xxs", color: MILO_COLORS.muted, wrap: true, align: "center" }] : []),
     ],
   };
 }

@@ -2224,6 +2224,79 @@ function miloBrandHeader(title, subtitle) {
     ]
   };
 }
+function miloPageHeader(title, subtitle) {
+  return {
+    type: "box",
+    layout: "horizontal",
+    spacing: "md",
+    alignItems: "center",
+    paddingAll: "14px",
+    cornerRadius: "xl",
+    backgroundColor: MILO_COLORS.surface,
+    contents: [
+      {
+        type: "box",
+        layout: "vertical",
+        flex: 1,
+        spacing: "xs",
+        contents: [
+          { type: "text", text: title, size: "xxl", weight: "bold", color: MILO_COLORS.text, wrap: true },
+          ...subtitle ? [{ type: "text", text: subtitle, size: "xs", color: MILO_COLORS.muted, wrap: true }] : []
+        ]
+      },
+      {
+        type: "image",
+        url: miloMascotUrl(),
+        size: "sm",
+        aspectRatio: "1:1",
+        aspectMode: "cover",
+        flex: 0
+      }
+    ]
+  };
+}
+function miloSuccessBanner(message) {
+  return {
+    type: "box",
+    layout: "horizontal",
+    alignItems: "center",
+    spacing: "md",
+    paddingAll: "14px",
+    cornerRadius: "xl",
+    backgroundColor: MILO_COLORS.surfaceMint,
+    contents: [
+      {
+        type: "box",
+        layout: "vertical",
+        justifyContent: "center",
+        alignItems: "center",
+        width: "44px",
+        height: "44px",
+        cornerRadius: "xl",
+        backgroundColor: MILO_COLORS.primaryStrong,
+        contents: [{ type: "text", text: "\u2713", size: "xl", weight: "bold", color: "#FFFFFF", align: "center" }]
+      },
+      {
+        type: "box",
+        layout: "vertical",
+        flex: 1,
+        spacing: "xs",
+        contents: [
+          { type: "text", text: "\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E2A\u0E33\u0E40\u0E23\u0E47\u0E08", size: "xl", weight: "bold", color: MILO_COLORS.text },
+          { type: "text", text: message, size: "xs", color: MILO_COLORS.muted, wrap: true }
+        ]
+      },
+      {
+        type: "image",
+        url: miloMascotUrl(),
+        size: "xs",
+        aspectRatio: "1:1",
+        aspectMode: "cover",
+        flex: 0
+      }
+    ]
+  };
+}
 function miloWelcomeBubble(text2) {
   return {
     type: "box",
@@ -2270,6 +2343,36 @@ function miloSectionTitle(title, trailing) {
     contents: [
       { type: "text", text: title, size: "lg", weight: "bold", color: MILO_COLORS.text, flex: 1, wrap: true },
       ...trailing ? [{ type: "text", text: trailing, size: "xs", color: MILO_COLORS.muted, align: "end", wrap: true }] : []
+    ]
+  };
+}
+function miloMenuTile(label, command, tone, iconText, description) {
+  const t2 = TONES[tone];
+  return {
+    type: "box",
+    layout: "vertical",
+    alignItems: "center",
+    justifyContent: "center",
+    flex: 1,
+    spacing: "sm",
+    paddingAll: "12px",
+    cornerRadius: "xl",
+    backgroundColor: t2.bg,
+    action: { type: "message", label: label.slice(0, 20), text: command.slice(0, 300) },
+    contents: [
+      {
+        type: "box",
+        layout: "vertical",
+        justifyContent: "center",
+        alignItems: "center",
+        width: "40px",
+        height: "40px",
+        cornerRadius: "xl",
+        backgroundColor: t2.icon,
+        contents: [{ type: "text", text: iconText, size: "sm", weight: "bold", color: "#FFFFFF", align: "center" }]
+      },
+      { type: "text", text: label, size: "xs", weight: "bold", color: MILO_COLORS.text, wrap: true, align: "center" },
+      ...description ? [{ type: "text", text: description, size: "xxs", color: MILO_COLORS.muted, wrap: true, align: "center" }] : []
     ]
   };
 }
@@ -2444,8 +2547,8 @@ function miloMainActionRows() {
       layout: "horizontal",
       spacing: "sm",
       contents: [
-        miloActionTile("\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E23\u0E32\u0E22\u0E23\u0E31\u0E1A", "\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E23\u0E32\u0E22\u0E23\u0E31\u0E1A", "mint", "+", "\u0E40\u0E1E\u0E34\u0E48\u0E21\u0E23\u0E32\u0E22\u0E44\u0E14\u0E49\u0E02\u0E2D\u0E07\u0E04\u0E38\u0E13"),
-        miloActionTile("\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22", "\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22", "pink", "\u2212", "\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E04\u0E48\u0E32\u0E43\u0E0A\u0E49\u0E08\u0E48\u0E32\u0E22\u0E07\u0E48\u0E32\u0E22 \u0E46")
+        miloActionTile("\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E23\u0E32\u0E22\u0E23\u0E31\u0E1A", "\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E23\u0E32\u0E22\u0E23\u0E31\u0E1A", "mint", "\u2193", "\u0E40\u0E1E\u0E34\u0E48\u0E21\u0E23\u0E32\u0E22\u0E44\u0E14\u0E49\u0E02\u0E2D\u0E07\u0E04\u0E38\u0E13"),
+        miloActionTile("\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22", "\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22", "pink", "\u2665", "\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E04\u0E48\u0E32\u0E43\u0E0A\u0E49\u0E08\u0E48\u0E32\u0E22\u0E07\u0E48\u0E32\u0E22 \u0E46")
       ]
     },
     {
@@ -2453,8 +2556,9 @@ function miloMainActionRows() {
       layout: "horizontal",
       spacing: "sm",
       contents: [
-        miloActionTile("\u0E2A\u0E23\u0E38\u0E1B\u0E27\u0E31\u0E19\u0E19\u0E35\u0E49", "\u0E2A\u0E23\u0E38\u0E1B\u0E27\u0E31\u0E19\u0E19\u0E35\u0E49", "lavender", "\u0E27\u0E31\u0E19"),
-        miloActionTile("\u0E2A\u0E23\u0E38\u0E1B\u0E2A\u0E31\u0E1B\u0E14\u0E32\u0E2B\u0E4C", "\u0E2A\u0E23\u0E38\u0E1B\u0E2A\u0E31\u0E1B\u0E14\u0E32\u0E2B\u0E4C\u0E19\u0E35\u0E49", "lavender", "7")
+        miloMenuTile("\u0E2A\u0E23\u0E38\u0E1B\u0E27\u0E31\u0E19\u0E19\u0E35\u0E49", "\u0E2A\u0E23\u0E38\u0E1B\u0E27\u0E31\u0E19\u0E19\u0E35\u0E49", "lavender", "\u2713"),
+        miloMenuTile("\u0E2A\u0E23\u0E38\u0E1B\u0E2A\u0E31\u0E1B\u0E14\u0E32\u0E2B\u0E4C", "\u0E2A\u0E23\u0E38\u0E1B\u0E2A\u0E31\u0E1B\u0E14\u0E32\u0E2B\u0E4C\u0E19\u0E35\u0E49", "lavender", "\u25A5"),
+        miloMenuTile("\u0E2A\u0E23\u0E38\u0E1B\u0E40\u0E14\u0E37\u0E2D\u0E19", "\u0E2A\u0E23\u0E38\u0E1B\u0E40\u0E14\u0E37\u0E2D\u0E19\u0E19\u0E35\u0E49", "lavender", "\u25A6")
       ]
     },
     {
@@ -2462,17 +2566,9 @@ function miloMainActionRows() {
       layout: "horizontal",
       spacing: "sm",
       contents: [
-        miloActionTile("\u0E2A\u0E23\u0E38\u0E1B\u0E40\u0E14\u0E37\u0E2D\u0E19", "\u0E2A\u0E23\u0E38\u0E1B\u0E40\u0E14\u0E37\u0E2D\u0E19\u0E19\u0E35\u0E49", "lavender", "30"),
-        miloActionTile("\u0E27\u0E34\u0E40\u0E04\u0E23\u0E32\u0E30\u0E2B\u0E4C", "\u0E27\u0E34\u0E40\u0E04\u0E23\u0E32\u0E30\u0E2B\u0E4C", "blue", "%")
-      ]
-    },
-    {
-      type: "box",
-      layout: "horizontal",
-      spacing: "sm",
-      contents: [
-        miloActionTile("\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E25\u0E48\u0E32\u0E2A\u0E38\u0E14", "\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23", "blue", "\u2261"),
-        miloActionTile("\u0E15\u0E31\u0E49\u0E07\u0E40\u0E15\u0E37\u0E2D\u0E19", "\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E40\u0E15\u0E37\u0E2D\u0E19", "lavender", "!")
+        miloMenuTile("\u0E27\u0E34\u0E40\u0E04\u0E23\u0E32\u0E30\u0E2B\u0E4C", "\u0E27\u0E34\u0E40\u0E04\u0E23\u0E32\u0E30\u0E2B\u0E4C", "blue", "\u25D4"),
+        miloMenuTile("\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E25\u0E48\u0E32\u0E2A\u0E38\u0E14", "\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23", "blue", "\u2261"),
+        miloMenuTile("\u0E15\u0E31\u0E49\u0E07\u0E40\u0E15\u0E37\u0E2D\u0E19", "\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E40\u0E15\u0E37\u0E2D\u0E19", "lavender", "!")
       ]
     }
   ];
@@ -2506,11 +2602,11 @@ function miloThemedContents(artwork, text2) {
         layout: "horizontal",
         spacing: "sm",
         contents: [
-          miloActionTile("\u0E40\u0E01\u0E47\u0E1A\u0E44\u0E1F\u0E25\u0E4C", "\u0E04\u0E25\u0E31\u0E07\u0E44\u0E1F\u0E25\u0E4C", "blue", "F"),
-          miloActionTile("Export", "\u0E2A\u0E48\u0E07\u0E2D\u0E2D\u0E01 CSV", "blue", "\u2191")
+          miloMenuTile("\u0E40\u0E01\u0E47\u0E1A\u0E44\u0E1F\u0E25\u0E4C", "\u0E04\u0E25\u0E31\u0E07\u0E44\u0E1F\u0E25\u0E4C", "blue", "\u25A3"),
+          miloMenuTile("Export", "\u0E2A\u0E48\u0E07\u0E2D\u0E2D\u0E01 CSV", "blue", "\u2191"),
+          miloMenuTile("\u0E15\u0E31\u0E49\u0E07\u0E04\u0E48\u0E32", "\u0E15\u0E31\u0E49\u0E07\u0E04\u0E48\u0E32", "lavender", "\u2699")
         ]
-      },
-      miloActionTile("\u0E15\u0E31\u0E49\u0E07\u0E04\u0E48\u0E32", "\u0E15\u0E31\u0E49\u0E07\u0E04\u0E48\u0E32", "lavender", "S")
+      }
     ];
   }
   if (artwork === "analysis-budget") {
@@ -2856,9 +2952,10 @@ function miloFinanceSummaryContents(report) {
   const maxCategory = Math.max(...categories.map(([, amount]) => amount), 1);
   const tones = ["pink", "lavender", "blue"];
   const trend = miloFinanceTrendCard(report);
+  const compactPeriod = report.period === "week" || report.period === "month";
   return [
-    miloBrandHeader(title, report.subtitle ?? (report.period === "day" ? "\u0E20\u0E32\u0E1E\u0E23\u0E27\u0E21\u0E01\u0E32\u0E23\u0E40\u0E07\u0E34\u0E19\u0E27\u0E31\u0E19\u0E19\u0E35\u0E49" : "\u0E20\u0E32\u0E1E\u0E23\u0E27\u0E21\u0E23\u0E32\u0E22\u0E23\u0E31\u0E1A \u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22 \u0E41\u0E25\u0E30\u0E04\u0E07\u0E40\u0E2B\u0E25\u0E37\u0E2D")),
-    ...report.period === "week" || report.period === "month" ? [{
+    miloPageHeader(title, report.subtitle ?? (report.period === "day" ? "\u0E20\u0E32\u0E1E\u0E23\u0E27\u0E21\u0E01\u0E32\u0E23\u0E40\u0E07\u0E34\u0E19\u0E27\u0E31\u0E19\u0E19\u0E35\u0E49" : "\u0E20\u0E32\u0E1E\u0E23\u0E27\u0E21\u0E23\u0E32\u0E22\u0E23\u0E31\u0E1A \u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22 \u0E41\u0E25\u0E30\u0E04\u0E07\u0E40\u0E2B\u0E25\u0E37\u0E2D")),
+    ...compactPeriod ? [{
       type: "box",
       layout: "horizontal",
       spacing: "sm",
@@ -2867,7 +2964,18 @@ function miloFinanceSummaryContents(report) {
         miloTab("\u0E2A\u0E23\u0E38\u0E1B\u0E40\u0E14\u0E37\u0E2D\u0E19", report.period === "month", "\u0E2A\u0E23\u0E38\u0E1B\u0E40\u0E14\u0E37\u0E2D\u0E19\u0E19\u0E35\u0E49")
       ]
     }] : [],
-    {
+    ...compactPeriod ? [
+      {
+        type: "box",
+        layout: "horizontal",
+        spacing: "sm",
+        contents: [
+          miloStatCard("\u0E23\u0E32\u0E22\u0E23\u0E31\u0E1A", `${money4(report.income)} \u0E1A\u0E32\u0E17`, "mint"),
+          miloStatCard("\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22", `${money4(report.expense)} \u0E1A\u0E32\u0E17`, "pink")
+        ]
+      },
+      miloStatCard("\u0E04\u0E07\u0E40\u0E2B\u0E25\u0E37\u0E2D\u0E2A\u0E38\u0E17\u0E18\u0E34", `${money4(report.balance)} \u0E1A\u0E32\u0E17`, "lavender")
+    ] : [{
       type: "box",
       layout: "horizontal",
       spacing: "sm",
@@ -2876,7 +2984,7 @@ function miloFinanceSummaryContents(report) {
         miloStatCard("\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22", `${money4(report.expense)} \u0E1A\u0E32\u0E17`, "pink"),
         miloStatCard("\u0E04\u0E07\u0E40\u0E2B\u0E25\u0E37\u0E2D\u0E2A\u0E38\u0E17\u0E18\u0E34", `${money4(report.balance)} \u0E1A\u0E32\u0E17`, "lavender")
       ]
-    },
+    }],
     ...trend ? [trend] : [],
     miloSectionTitle(report.period === "day" ? "\u0E2B\u0E21\u0E27\u0E14\u0E04\u0E48\u0E32\u0E43\u0E0A\u0E49\u0E08\u0E48\u0E32\u0E22 (Top 3)" : "\u0E2B\u0E21\u0E27\u0E14\u0E04\u0E48\u0E32\u0E43\u0E0A\u0E49\u0E08\u0E48\u0E32\u0E22"),
     ...categories.length ? categories.map(([name, amount], index2) => miloProgressRow(name, `${money4(amount)} \u0E1A\u0E32\u0E17`, amount / maxCategory, tones[index2] ?? "pink")) : [{ type: "box", layout: "vertical", paddingAll: "14px", cornerRadius: "xl", backgroundColor: MILO_COLORS.surface, contents: [
@@ -2951,38 +3059,8 @@ async function replyPostSaveSummary(replyToken, summary, credentials = lineCrede
     timeZone: "Asia/Bangkok"
   }).format(summary.occurredAt);
   const contents = [
-    miloBrandHeader(),
-    {
-      type: "box",
-      layout: "horizontal",
-      alignItems: "center",
-      spacing: "md",
-      paddingAll: "14px",
-      cornerRadius: "xl",
-      backgroundColor: MILO_COLORS.surfaceMint,
-      contents: [
-        {
-          type: "box",
-          layout: "vertical",
-          justifyContent: "center",
-          alignItems: "center",
-          width: "42px",
-          height: "42px",
-          cornerRadius: "xl",
-          backgroundColor: MILO_COLORS.primaryStrong,
-          contents: [{ type: "text", text: "\u2713", size: "xl", weight: "bold", color: "#FFFFFF", align: "center" }]
-        },
-        {
-          type: "box",
-          layout: "vertical",
-          flex: 1,
-          contents: [
-            { type: "text", text: "\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E2A\u0E33\u0E40\u0E23\u0E47\u0E08", size: "xl", weight: "bold", color: MILO_COLORS.text },
-            { type: "text", text: mascotExpenseCopy(summary.transactionType, summary.amount), size: "xs", color: MILO_COLORS.muted, wrap: true, margin: "xs" }
-          ]
-        }
-      ]
-    },
+    miloPageHeader("Milo", "\u0E1C\u0E39\u0E49\u0E0A\u0E48\u0E27\u0E22\u0E08\u0E31\u0E14\u0E01\u0E32\u0E23\u0E01\u0E32\u0E23\u0E40\u0E07\u0E34\u0E19\u0E02\u0E2D\u0E07\u0E04\u0E38\u0E13"),
+    miloSuccessBanner(mascotExpenseCopy(summary.transactionType, summary.amount)),
     {
       type: "box",
       layout: "vertical",
@@ -3208,7 +3286,7 @@ async function replyMiloListBubble(replyToken, title, subtitle, rows, artwork, c
   }));
   const heading = artwork === "transactions" ? "\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E25\u0E48\u0E32\u0E2A\u0E38\u0E14" : title.replace(/^[^ก-๙A-Za-z0-9]+/, "").trim();
   const contents = [
-    miloBrandHeader(heading, subtitle),
+    miloPageHeader(heading, subtitle),
     ...artwork === "utility" ? [{
       type: "box",
       layout: "horizontal",

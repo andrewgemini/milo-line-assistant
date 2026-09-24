@@ -84,6 +84,7 @@ describe("LINE credentials", () => {
     expect(String(init.body)).toContain("ยอดคงเหลือวันนี้");
     expect(String(init.body)).toContain("720 บาท");
     expect(String(init.body)).toContain('"text":"✓"');
+    expect(String(init.body)).toContain("milo-maneki-original.png");
     expect(String(init.body)).toContain('"label":"ดูรายการ"');
     expect(String(init.body)).toContain('"label":"แก้ไข"');
     expect(String(init.body)).toContain('"label":"ลบ"');
@@ -112,6 +113,7 @@ describe("LINE credentials", () => {
     expect(payload.messages[0]?.contents?.hero).toBeUndefined();
     expect(String(init.body)).toContain("สรุปสัปดาห์");
     expect(String(init.body)).toContain("สรุปเดือน");
+    expect(String(init.body)).toContain("คงเหลือสุทธิ");
     expect(String(init.body)).toContain("615 บาท");
     expect(String(init.body)).toContain("565 บาท");
     expect(String(init.body)).toContain("อาหาร");
@@ -126,8 +128,8 @@ describe("LINE credentials", () => {
     await pushFinanceReportCard("U0123456789abcdef0123456789abcdef", { period: "week", title: "สรุปการเงินสัปดาห์ที่ผ่านมา", subtitle: "1 – 7 สิงหาคม 2569", income: 1200, expense: 300, balance: 900, categories: { อาหาร: 300 } }, { channelSecret: "secret", channelAccessToken: "token" });
     const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(url).toBe("https://api.line.me/v2/bot/message/push");
-    expect(String(init.body)).toContain('"text":"Milo"');
     expect(String(init.body)).toContain("สรุปการเงินสัปดาห์ที่ผ่านมา");
+    expect(String(init.body)).toContain("milo-maneki-original.png");
     expect(String(init.body)).toContain("สรุปสัปดาห์");
     expect(String(init.body)).toContain("1,200 บาท");
     expect(String(init.body)).toContain("อาหาร");

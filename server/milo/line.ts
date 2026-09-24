@@ -6,8 +6,11 @@ import {
   miloBrandHeader,
   miloBubble,
   miloInfoRow,
+  miloMenuTile,
+  miloPageHeader,
   miloPrimaryButton,
   miloProgressRow,
+  miloSuccessBanner,
   miloSecondaryButton,
   miloSectionTitle,
   miloStatCard,
@@ -68,26 +71,22 @@ function miloMainActionRows() {
   return [
     {
       type: "box", layout: "horizontal", spacing: "sm", contents: [
-        miloActionTile("บันทึกรายรับ", "บันทึกรายรับ", "mint", "+", "เพิ่มรายได้ของคุณ"),
-        miloActionTile("บันทึกรายจ่าย", "บันทึกรายจ่าย", "pink", "−", "บันทึกค่าใช้จ่ายง่าย ๆ"),
+        miloActionTile("บันทึกรายรับ", "บันทึกรายรับ", "mint", "↓", "เพิ่มรายได้ของคุณ"),
+        miloActionTile("บันทึกรายจ่าย", "บันทึกรายจ่าย", "pink", "♥", "บันทึกค่าใช้จ่ายง่าย ๆ"),
       ],
     },
     {
       type: "box", layout: "horizontal", spacing: "sm", contents: [
-        miloActionTile("สรุปวันนี้", "สรุปวันนี้", "lavender", "วัน"),
-        miloActionTile("สรุปสัปดาห์", "สรุปสัปดาห์นี้", "lavender", "7"),
+        miloMenuTile("สรุปวันนี้", "สรุปวันนี้", "lavender", "✓"),
+        miloMenuTile("สรุปสัปดาห์", "สรุปสัปดาห์นี้", "lavender", "▥"),
+        miloMenuTile("สรุปเดือน", "สรุปเดือนนี้", "lavender", "▦"),
       ],
     },
     {
       type: "box", layout: "horizontal", spacing: "sm", contents: [
-        miloActionTile("สรุปเดือน", "สรุปเดือนนี้", "lavender", "30"),
-        miloActionTile("วิเคราะห์", "วิเคราะห์", "blue", "%"),
-      ],
-    },
-    {
-      type: "box", layout: "horizontal", spacing: "sm", contents: [
-        miloActionTile("รายการล่าสุด", "รายการ", "blue", "≡"),
-        miloActionTile("ตั้งเตือน", "รายการเตือน", "lavender", "!"),
+        miloMenuTile("วิเคราะห์", "วิเคราะห์", "blue", "◔"),
+        miloMenuTile("รายการล่าสุด", "รายการ", "blue", "≡"),
+        miloMenuTile("ตั้งเตือน", "รายการเตือน", "lavender", "!"),
       ],
     },
   ];
@@ -120,11 +119,11 @@ function miloThemedContents(artwork: MiloFlexThemeArtwork, text: string) {
       ...miloMainActionRows(),
       {
         type: "box", layout: "horizontal", spacing: "sm", contents: [
-          miloActionTile("เก็บไฟล์", "คลังไฟล์", "blue", "F"),
-          miloActionTile("Export", "ส่งออก CSV", "blue", "↑"),
+          miloMenuTile("เก็บไฟล์", "คลังไฟล์", "blue", "▣"),
+          miloMenuTile("Export", "ส่งออก CSV", "blue", "↑"),
+          miloMenuTile("ตั้งค่า", "ตั้งค่า", "lavender", "⚙"),
         ],
       },
-      miloActionTile("ตั้งค่า", "ตั้งค่า", "lavender", "S"),
     ];
   }
   if (artwork === "analysis-budget") {
@@ -476,21 +475,30 @@ function miloFinanceSummaryContents(report: FinanceReportCard) {
   const tones = ["pink", "lavender", "blue"] as const;
   const trend = miloFinanceTrendCard(report);
 
+  const compactPeriod = report.period === "week" || report.period === "month";
   return [
-    miloBrandHeader(title, report.subtitle ?? (report.period === "day" ? "ภาพรวมการเงินวันนี้" : "ภาพรวมรายรับ รายจ่าย และคงเหลือ")),
-    ...(report.period === "week" || report.period === "month" ? [{
+    miloPageHeader(title, report.subtitle ?? (report.period === "day" ? "ภาพรวมการเงินวันนี้" : "ภาพรวมรายรับ รายจ่าย และคงเหลือ")),
+    ...(compactPeriod ? [{
       type: "box", layout: "horizontal", spacing: "sm", contents: [
         miloTab("สรุปสัปดาห์", report.period === "week", "สรุปสัปดาห์นี้"),
         miloTab("สรุปเดือน", report.period === "month", "สรุปเดือนนี้"),
       ],
     }] : []),
-    {
+    ...(compactPeriod ? [
+      {
+        type: "box", layout: "horizontal", spacing: "sm", contents: [
+          miloStatCard("รายรับ", `${money(report.income)} บาท`, "mint"),
+          miloStatCard("รายจ่าย", `${money(report.expense)} บาท`, "pink"),
+        ],
+      },
+      miloStatCard("คงเหลือสุทธิ", `${money(report.balance)} บาท`, "lavender"),
+    ] : [{
       type: "box", layout: "horizontal", spacing: "sm", contents: [
         miloStatCard("รายรับ", `${money(report.income)} บาท`, "mint"),
         miloStatCard("รายจ่าย", `${money(report.expense)} บาท`, "pink"),
         miloStatCard("คงเหลือสุทธิ", `${money(report.balance)} บาท`, "lavender"),
       ],
-    },
+    }]),
     ...(trend ? [trend] : []),
     miloSectionTitle(report.period === "day" ? "หมวดค่าใช้จ่าย (Top 3)" : "หมวดค่าใช้จ่าย"),
     ...(categories.length
@@ -566,38 +574,8 @@ export async function replyPostSaveSummary(replyToken: string, summary: PostSave
   }).format(summary.occurredAt);
 
   const contents = [
-    miloBrandHeader(),
-    {
-      type: "box",
-      layout: "horizontal",
-      alignItems: "center",
-      spacing: "md",
-      paddingAll: "14px",
-      cornerRadius: "xl",
-      backgroundColor: MILO_COLORS.surfaceMint,
-      contents: [
-        {
-          type: "box",
-          layout: "vertical",
-          justifyContent: "center",
-          alignItems: "center",
-          width: "42px",
-          height: "42px",
-          cornerRadius: "xl",
-          backgroundColor: MILO_COLORS.primaryStrong,
-          contents: [{ type: "text", text: "✓", size: "xl", weight: "bold", color: "#FFFFFF", align: "center" }],
-        },
-        {
-          type: "box",
-          layout: "vertical",
-          flex: 1,
-          contents: [
-            { type: "text", text: "บันทึกสำเร็จ", size: "xl", weight: "bold", color: MILO_COLORS.text },
-            { type: "text", text: mascotExpenseCopy(summary.transactionType, summary.amount), size: "xs", color: MILO_COLORS.muted, wrap: true, margin: "xs" },
-          ],
-        },
-      ],
-    },
+    miloPageHeader("Milo", "ผู้ช่วยจัดการการเงินของคุณ"),
+    miloSuccessBanner(mascotExpenseCopy(summary.transactionType, summary.amount)),
     {
       type: "box",
       layout: "vertical",
@@ -837,7 +815,7 @@ async function replyMiloListBubble(replyToken: string, title: string, subtitle: 
     : title.replace(/^[^ก-๙A-Za-z0-9]+/, "").trim();
 
   const contents = [
-    miloBrandHeader(heading, subtitle),
+    miloPageHeader(heading, subtitle),
     ...(artwork === "utility" ? [{
       type: "box", layout: "horizontal", spacing: "sm", contents: [
         miloTab("ตั้งเตือน", title.includes("เตือน"), "รายการเตือน"),
