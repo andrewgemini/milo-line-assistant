@@ -901,7 +901,7 @@ async function handleText(event: LineEvent, lineChatId: string, lineUserId: stri
   }
 }
 
-type MediaRuntimeContext = { gatewayToken?: string; senderDisplayName?: string };
+type MediaRuntimeContext = { gatewayToken?: string; senderDisplayName?: string; webhookRegistered?: boolean; recovery?: boolean };
 
 class MediaProcessingError extends Error {
   constructor(message: string, readonly userNotified: boolean) {
@@ -914,6 +914,20 @@ function mediaErrorMessage(error: unknown) {
   return (error instanceof Error ? error.message : "unknown media error").slice(0, 1500);
 }
 
+async function deliverMediaText(event: LineEvent, lineChatId: string, text: string) {
+  if (event.replyToken) {
+    try {
+      await replyText(event.replyToken, text);
+      return;
+    } catch (error) {
+      console.warn("[Milo Media] reply token unavailable; falling back to push", {
+        error: error instanceof Error ? error.message : "unknown",
+      });
+    }
+  }
+  await pushText(lineChatId, text);
+}
+
 async function handleMedia(event: LineEvent, lineChatId: string, lineUserId: string, scope: LineFinanceScope, runtime: MediaRuntimeContext = {}) {
   const message = event.message;
   if (!message) return;
@@ -921,8 +935,8 @@ async function handleMedia(event: LineEvent, lineChatId: string, lineUserId: str
   const isAudio = message.type === "audio";
   const isPdf = message.type === "file" && /\.pdf$/i.test(message.fileName ?? "");
   const plan = resolveMiloPlan(lineUserId, process.env, await db.isAdminLinkedLineUser(lineUserId));
-  if (isPdf && !hasMiloEntitlement(plan, "pdf")) { if (event.replyToken) await replyText(event.replyToken, entitlementMessage("pdf")); return; }
-  if (scope !== "user" && (isImage || isAudio || isPdf) && !hasMiloEntitlement(plan, "groupAccounting")) { if (event.replyToken) await replyText(event.replyToken, entitlementMessage("groupAccounting")); return; }
+  if (isPdf && !hasMiloEntitlement(plan, "pdf")) { await deliverMediaText(event, lineChatId, entitlementMessage("pdf")); return; }
+  if (scope !== "user" && (isImage || isAudio || isPdf) && !hasMiloEntitlement(plan, "groupAccounting")) { await deliverMediaText(event, lineChatId, entitlementMessage("groupAccounting")); return; }
   const mimeType = isImage ? "image/jpeg" : isAudio ? "audio/m4a" : isPdf ? "application/pdf" : "application/octet-stream";
   let bytes: Buffer;
   try {
@@ -1082,7 +1096,7 @@ async function handleMedia(event: LineEvent, lineChatId: string, lineUserId: str
       const preview = analysis.proposals.slice(0, 5).map(item => `• ${formatImageProposal(item)}`).join("\n");
       const more = analysis.proposals.length > 5 ? `\n…และอีก ${analysis.proposals.length - 5} รายการ` : "";
       const storageNote = stored?.key ? "" : "\n⚠️ PDF ต้นฉบับยังสำรองถาวรไม่สำเร็จ กรุณาส่งไฟล์ใหม่หากต้องการเก็บต้นฉบับ";
-      if (event.replyToken) await replyText(event.replyToken, `อ่าน PDF แล้ว พบรายการที่เสนอได้ ${analysis.proposals.length} รายการ\n${preview || "ยังไม่พบรายจ่ายที่อ่านได้ชัด"}${more}\nตรวจข้อมูลก่อน แล้วพิมพ์ “ยืนยัน PDF” เพื่อบันทึกเฉพาะรายการที่วันที่และยอดชัดเจน${storageNote}`);
+      await deliverMediaText(event, lineChatId, `อ่าน PDF แล้ว พบรายการที่เสนอได้ ${analysis.proposals.length} รายการ\n${preview || "ยังไม่พบรายจ่ายที่อ่านได้ชัด"}${more}\nตรวจข้อมูลก่อน แล้วพิมพ์ “ยืนยัน PDF” เพื่อบันทึกเฉพาะรายการที่วันที่และยอดชัดเจน${storageNote}`);
     } catch (error) {
       console.error("[Milo PDF] analysis failed", { messageId: message.id, error: error instanceof Error ? error.message : "unknown" });
       await persistDocumentIntelligence({
@@ -1106,7 +1120,7 @@ async function handleMedia(event: LineEvent, lineChatId: string, lineUserId: str
       vaultId, lineUserId, lineChatId, filename: message.fileName, mimeType,
       storageReady: Boolean(stored?.key), fingerprint, senderDisplayName: runtime.senderDisplayName,
     });
-    if (event.replyToken) await replyText(event.replyToken, stored?.key ? "เก็บไฟล์นี้ไว้ในคลังถาวรจนกว่าคุณจะลบแล้ว" : "รับไฟล์แล้ว แต่พื้นที่เก็บถาวรยังสำรองไฟล์ต้นฉบับไม่สำเร็จ กรุณาส่งไฟล์นี้ใหม่อีกครั้งครับ");
+    await deliverMediaText(event, lineChatId, stored?.key ? "เก็บไฟล์นี้ไว้ในคลังถาวรจนกว่าคุณจะลบแล้ว" : "รับไฟล์แล้ว แต่พื้นที่เก็บถาวรยังสำรองไฟล์ต้นฉบับไม่สำเร็จ กรุณาส่งไฟล์นี้ใหม่อีกครั้งครับ");
     return;
   }
   // Acknowledge immediately so the user is not blocked by a slow vision call and the LINE reply token is consumed safely.
@@ -1149,8 +1163,10 @@ async function handleMedia(event: LineEvent, lineChatId: string, lineUserId: str
 export async function processEvent(event: LineEvent, rawPayload: string, runtime: MediaRuntimeContext = {}) {
   const identity = sourceIdentity(event.source);
   if (!identity.lineUserId) return;
-  const accepted = await db.registerWebhookEvent({ webhookEventId: event.webhookEventId, eventType: event.type, lineChatId: identity.lineChatId, occurredAt: new Date(event.timestamp), rawPayload });
-  if (!accepted) return;
+  if (!runtime.webhookRegistered) {
+    const accepted = await db.registerWebhookEvent({ webhookEventId: event.webhookEventId, eventType: event.type, lineChatId: identity.lineChatId, occurredAt: new Date(event.timestamp), rawPayload });
+    if (!accepted) return;
+  }
   try {
     const profile = await getProfile(event.source).catch(() => undefined);
     await db.upsertLineChat(identity.lineChatId, identity.scope, profile?.displayName);
@@ -1203,13 +1219,78 @@ export async function processEvent(event: LineEvent, rawPayload: string, runtime
           catch (pushError) { console.error("[Milo Media] top-level fallback push failed", { error: pushError instanceof Error ? pushError.message : "unknown" }); }
         }
       }
-      try { await db.finishWebhookEvent(event.webhookEventId, "failed", errorMessage); }
-      catch (auditError) { console.error("[Milo Media] failed to record webhook failure", { error: auditError instanceof Error ? auditError.message : "unknown" }); }
+      try {
+        if (runtime.recovery) {
+          await db.finishWebhookEvent(event.webhookEventId, "failed", errorMessage);
+        } else {
+          await db.deferWebhookEvent(event.webhookEventId, errorMessage);
+        }
+      } catch (auditError) {
+        console.error("[Milo Media] failed to record webhook retry/failure state", { error: auditError instanceof Error ? auditError.message : "unknown" });
+      }
+      if (runtime.recovery) throw error;
       return;
     }
     await db.finishWebhookEvent(event.webhookEventId, "failed", errorMessage);
     throw error;
   }
+}
+
+function isDurableMediaEvent(event: LineEvent) {
+  return event.type === "message"
+    && Boolean(event.message)
+    && (event.message?.type === "image" || event.message?.type === "audio" || event.message?.type === "file");
+}
+
+export async function recoverPendingMediaWebhookEvents(options: { limit?: number; leaseMs?: number } = {}) {
+  const limit = Math.max(1, Math.min(options.limit ?? 5, 20));
+  const leaseMs = Math.max(30_000, options.leaseMs ?? 90_000);
+  const staleBefore = new Date(Date.now() - leaseMs);
+  const rows = await db.listRecoverableWebhookEvents(staleBefore, limit);
+  let recovered = 0;
+  let skipped = 0;
+  let failed = 0;
+
+  for (const row of rows) {
+    let event: LineEvent | undefined;
+    try {
+      const payload = JSON.parse(row.rawPayload) as { events?: LineEvent[] };
+      event = payload.events?.find(item => item.webhookEventId === row.webhookEventId);
+    } catch {
+      await db.finishWebhookEvent(row.webhookEventId, "failed", "invalid durable webhook payload");
+      failed += 1;
+      continue;
+    }
+    if (!event || !isDurableMediaEvent(event)) {
+      skipped += 1;
+      continue;
+    }
+
+    const claimed = await db.claimWebhookEvent(row.webhookEventId, staleBefore);
+    if (!claimed) {
+      skipped += 1;
+      continue;
+    }
+
+    const recoveryEvent: LineEvent = { ...event, replyToken: undefined };
+    console.warn("[Milo Media Recovery] retrying durable media event", {
+      webhookEventId: row.webhookEventId,
+      messageType: recoveryEvent.message?.type,
+      ageSeconds: Math.max(0, Math.round((Date.now() - new Date(row.occurredAt).getTime()) / 1000)),
+    });
+    try {
+      await processEvent(recoveryEvent, row.rawPayload, { webhookRegistered: true, recovery: true });
+      recovered += 1;
+    } catch (error) {
+      failed += 1;
+      console.error("[Milo Media Recovery] retry failed", {
+        webhookEventId: row.webhookEventId,
+        error: error instanceof Error ? error.message : "unknown",
+      });
+    }
+  }
+
+  return { scanned: rows.length, recovered, skipped, failed };
 }
 
 export function registerLineWebhook(app: Express) {
@@ -1235,46 +1316,96 @@ export function registerLineWebhook(app: Express) {
       return res.status(400).json({ error: "invalid json" });
     }
     const events = payload.events ?? [];
+    const rawPayload = raw.toString("utf8");
     const runtime = { gatewayToken: req.header("x-vercel-oidc-token")?.trim() || undefined };
-    console.info("[Milo Webhook] accepted", { eventCount: events.length, eventTypes: events.map(event => event.type) });
-    // Acknowledge LINE immediately. Processing may involve DB/profile lookups and external
-    // providers; holding the webhook response until those finish can make LINE retry the event.
+    const durableMediaIds = new Set<string>();
+
+    // Media jobs must be durable before LINE receives HTTP 200. If the database is
+    // unavailable, return 503 so LINE retries instead of acknowledging and losing the job.
+    try {
+      for (const event of events) {
+        if (!isDurableMediaEvent(event)) continue;
+        const identity = sourceIdentity(event.source);
+        if (!identity.lineUserId) continue;
+        const inserted = await db.registerWebhookEvent({
+          webhookEventId: event.webhookEventId,
+          eventType: event.type,
+          lineChatId: identity.lineChatId,
+          occurredAt: new Date(event.timestamp),
+          rawPayload,
+        });
+        if (!inserted) continue;
+        const claimed = await db.claimWebhookEvent(event.webhookEventId);
+        if (!claimed) throw new Error(`could not claim durable media event ${event.webhookEventId}`);
+        durableMediaIds.add(event.webhookEventId);
+      }
+    } catch (error) {
+      console.error("[Milo Webhook] durable media persistence failed before acknowledgement", {
+        error: error instanceof Error ? error.message : "unknown",
+      });
+      return res.status(503).json({ error: "media-persistence-unavailable" });
+    }
+
+    console.info("[Milo Webhook] accepted", {
+      eventCount: events.length,
+      eventTypes: events.map(event => event.type),
+      durableMediaCount: durableMediaIds.size,
+    });
     res.status(200).json({ ok: true });
-    waitUntil(
-      Promise.all(events.map(async event => {
-        let completed = false;
-        const progressTimer = setTimeout(() => {
-          if (!completed && event.type === "message" && event.message?.type === "text") {
-            const identity = sourceIdentity(event.source);
-            if (identity.lineChatId) {
-              void pushText(identity.lineChatId, "รับข้อความแล้วครับ กำลังประมวลผลให้อยู่ครับ").catch(error => {
-                console.error("[Milo Webhook] progress push failed", { error: error instanceof Error ? error.message : "unknown" });
-              });
-            }
-          }
-        }, 7000);
-        try {
-          await processEvent(event, raw.toString("utf8"), runtime);
-        } catch (error) {
+
+    const currentWork = Promise.all(events.map(async event => {
+      if (isDurableMediaEvent(event) && !durableMediaIds.has(event.webhookEventId)) return;
+
+      let completed = false;
+      const media = isDurableMediaEvent(event);
+      const progressTimer = setTimeout(() => {
+        if (!completed && event.type === "message") {
           const identity = sourceIdentity(event.source);
-          console.error("[Milo Webhook] event processing failed after acknowledgement", {
-            error: error instanceof Error ? error.message : "unknown",
-            eventType: event.type,
-            lineChatIdPresent: Boolean(identity.lineChatId),
-          });
           if (identity.lineChatId) {
-            try {
-              await pushText(identity.lineChatId, "รับข้อความแล้วครับ แต่รอบนี้ประมวลผลไม่สำเร็จ ไมโลยังไม่ได้บันทึกรายการซ้ำ กรุณาลองส่งข้อความเดิมอีกครั้งครับ");
-            } catch (pushError) {
-              console.error("[Milo Webhook] failure push failed", { error: pushError instanceof Error ? pushError.message : "unknown" });
-            }
+            const progressText = media
+              ? "ไมโลยังอ่านไฟล์นี้อยู่นะครับ ถ้าระบบรีสตาร์ต งานจะถูกทำต่ออัตโนมัติ ไม่ต้องส่งซ้ำครับ"
+              : "รับข้อความแล้วครับ กำลังประมวลผลให้อยู่ครับ";
+            void pushText(identity.lineChatId, progressText).catch(error => {
+              console.error("[Milo Webhook] progress push failed", { error: error instanceof Error ? error.message : "unknown" });
+            });
           }
-        } finally {
-          completed = true;
-          clearTimeout(progressTimer);
         }
-      })),
-    );
+      }, media ? 15_000 : 7_000);
+
+      try {
+        await processEvent(event, rawPayload, {
+          ...runtime,
+          webhookRegistered: media,
+        });
+      } catch (error) {
+        const identity = sourceIdentity(event.source);
+        console.error("[Milo Webhook] event processing failed after acknowledgement", {
+          error: error instanceof Error ? error.message : "unknown",
+          eventType: event.type,
+          lineChatIdPresent: Boolean(identity.lineChatId),
+        });
+        if (identity.lineChatId) {
+          try {
+            await pushText(identity.lineChatId, media
+              ? "ไฟล์นี้ยังประมวลผลไม่สำเร็จครับ ระบบเก็บงานไว้แล้วและจะลองทำต่ออัตโนมัติ ไม่ต้องส่งซ้ำครับ"
+              : "รับข้อความแล้วครับ แต่รอบนี้ประมวลผลไม่สำเร็จ ไมโลยังไม่ได้บันทึกรายการซ้ำ กรุณาลองส่งข้อความเดิมอีกครั้งครับ");
+          } catch (pushError) {
+            console.error("[Milo Webhook] failure push failed", { error: pushError instanceof Error ? pushError.message : "unknown" });
+          }
+        }
+      } finally {
+        completed = true;
+        clearTimeout(progressTimer);
+      }
+    }));
+
+    waitUntil(Promise.all([
+      currentWork,
+      recoverPendingMediaWebhookEvents({ limit: 3 }).catch(error => {
+        console.error("[Milo Media Recovery] opportunistic recovery failed", { error: error instanceof Error ? error.message : "unknown" });
+        return { scanned: 0, recovered: 0, skipped: 0, failed: 1 };
+      }),
+    ]));
   });
 }
 
@@ -1304,10 +1435,17 @@ export function registerMiloCron(app: Express) {
       } else {
         return res.status(405).json({ error: "method-not-allowed" });
       }
+      const mediaRecovery = await recoverPendingMediaWebhookEvents({ limit: 1 }).catch(error => ({
+        scanned: 0,
+        recovered: 0,
+        skipped: 0,
+        failed: 1,
+        error: error instanceof Error ? error.message : "unknown",
+      }));
       const result = await deliverDueReminders({ runner: "heartbeat", taskUid });
       const recurring = await deliverDueRecurringTransactions();
       await db.saveAutomationSetting({ settingKey: "reminder-delivery-primary", scheduleCronTaskUid: taskUid, isEnabled: true, lastRunAt: new Date() });
-      return sendSuccess({ ok: true, ...result, recurring });
+      return sendSuccess({ ok: true, ...result, recurring, mediaRecovery });
     } catch (error) {
       return res.status(500).json({ error: error instanceof Error ? error.message : "unknown", timestamp: new Date().toISOString() });
     }

@@ -20,6 +20,11 @@ export async function withOcrDeadline<T>(work: Promise<T>, stage: string, timeou
   } finally { clearTimeout(timer!); }
 }
 
+function ocrTotalDeadlineMs() {
+  const parsed = Number(process.env.MILO_OCR_TOTAL_TIMEOUT_MS || "28000");
+  return Number.isFinite(parsed) ? Math.max(15_000, Math.min(parsed, 60_000)) : 28_000;
+}
+
 const thaiDigitMap: Record<string, string> = {
   "๐": "0", "๑": "1", "๒": "2", "๓": "3", "๔": "4",
   "๕": "5", "๖": "6", "๗": "7", "๘": "8", "๙": "9",
@@ -333,6 +338,9 @@ function scoreAnalysis(analysis: ImageAnalysis) {
 
 export async function analyzeImageWithOcr(dataUrl: string): Promise<ImageAnalysis> {
   if (!ocrAssetsReady()) throw new Error(`OCR language data is unavailable at ${DATA_DIR}`);
+  const startedAt = Date.now();
+  const totalDeadlineMs = ocrTotalDeadlineMs();
+  const remainingMs = () => totalDeadlineMs - (Date.now() - startedAt);
   fs.mkdirSync(CACHE_DIR, { recursive: true });
   const input = decodeDataUrl(dataUrl);
   const base = sharp(input)
@@ -392,7 +400,8 @@ export async function analyzeImageWithOcr(dataUrl: string): Promise<ImageAnalysi
     if (expired) { await worker.terminate(); throw new Error("OCR initialization expired"); }
     return worker;
   });
-  const worker = await withOcrDeadline(initializing, "initialization").catch(error => { expired = true; throw error; });
+  const initBudget = Math.max(2_000, Math.min(12_000, remainingMs()));
+  const worker = await withOcrDeadline(initializing, "initialization", initBudget).catch(error => { expired = true; throw error; });
 
   try {
     await worker.setParameters({ preserve_interword_spaces: "1" } as never);
@@ -401,8 +410,27 @@ export async function analyzeImageWithOcr(dataUrl: string): Promise<ImageAnalysi
     let bestScore = -Infinity;
 
     for (const variant of variants) {
+      const remaining = remainingMs();
+      if (remaining <= 1_500) {
+        console.warn("[Milo OCR] total deadline reached before next pass", { label: variant.label, totalDeadlineMs });
+        break;
+      }
       await worker.setParameters({ tessedit_pageseg_mode: variant.psm } as never);
-      const result = await withOcrDeadline(worker.recognize(variant.bytes), "recognition");
+      let result: Awaited<ReturnType<typeof worker.recognize>>;
+      try {
+        result = await withOcrDeadline(
+          worker.recognize(variant.bytes),
+          "recognition",
+          Math.max(1_500, Math.min(8_000, remaining)),
+        );
+      } catch (error) {
+        console.warn("[Milo OCR] pass stopped by deadline", {
+          label: variant.label,
+          error: error instanceof Error ? error.message : "unknown",
+          elapsedMs: Date.now() - startedAt,
+        });
+        break;
+      }
       const raw = result.data.text || "";
       texts.push(raw);
       const analysis = analyzeOcrText(texts.join("\n"));
@@ -414,13 +442,21 @@ export async function analyzeImageWithOcr(dataUrl: string): Promise<ImageAnalysi
         documentType: analysis.proposals[0]?.documentType,
         amount: analysis.proposals[0]?.amount,
         dateText: analysis.proposals[0]?.dateText,
+        elapsedMs: Date.now() - startedAt,
       });
       if (score > bestScore) { best = analysis; bestScore = score; }
       const p = analysis.proposals[0];
       if (actionable(analysis) && p?.dateText) return analysis;
     }
 
-    if (!best) throw new Error("OCR returned no text");
+    if (!best) throw new Error(`OCR returned no usable text within ${totalDeadlineMs}ms`);
+    console.info("[Milo OCR] returning best result at deadline", {
+      elapsedMs: Date.now() - startedAt,
+      confidence: best.confidence,
+      documentType: best.proposals[0]?.documentType,
+      amount: best.proposals[0]?.amount,
+      dateText: best.proposals[0]?.dateText,
+    });
     return best;
   } finally {
     await worker.terminate();

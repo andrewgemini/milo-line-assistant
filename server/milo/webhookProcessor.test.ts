@@ -4,6 +4,8 @@ import type { AddressInfo } from "node:net";
 
 vi.mock("../db", () => ({
   registerWebhookEvent: vi.fn(),
+  claimWebhookEvent: vi.fn(),
+  listRecoverableWebhookEvents: vi.fn(),
   ensureMiloOnboardingSchema: vi.fn(),
   getMiloOnboarding: vi.fn(),
   startMiloOnboarding: vi.fn(),
@@ -13,6 +15,7 @@ vi.mock("../db", () => ({
   upsertLineChat: vi.fn(),
   upsertLineMember: vi.fn(),
   finishWebhookEvent: vi.fn(),
+  deferWebhookEvent: vi.fn(),
   findLineMemberByName: vi.fn(),
   createReminder: vi.fn(),
   listRemindersForChat: vi.fn(),
@@ -89,7 +92,7 @@ import { analyzeImage } from "./imageAnalysis";
 import { analyzePdfBuffer } from "./pdfAnalysis";
 import { transcribeAudio } from "../_core/voiceTranscription";
 import { generateFinancialInsight, suggestExpenseCategory } from "./financialAssistant";
-import { processEvent, registerLineWebhook } from "./routes";
+import { processEvent, recoverPendingMediaWebhookEvents, registerLineWebhook } from "./routes";
 
 describe("LINE webhook processor", () => {
   beforeEach(() => {
@@ -99,6 +102,9 @@ describe("LINE webhook processor", () => {
     process.env.LINE_CHANNEL_SECRET = "test-calendar-signing-secret";
     process.env.MILO_PRO_MAX_LINE_USER_IDS = "U1";
     vi.mocked(db.isAdminLinkedLineUser).mockResolvedValue(true);
+    vi.mocked(db.claimWebhookEvent).mockResolvedValue(true as never);
+    vi.mocked(db.listRecoverableWebhookEvents).mockResolvedValue([] as never);
+    vi.mocked(db.deferWebhookEvent).mockResolvedValue(undefined as never);
     vi.mocked(db.resolveFinanceAccountForLineEvent).mockResolvedValue({ account: { id: 7 }, membership: { role: "owner" } } as never);
     vi.mocked(db.canCreateFinanceTransaction).mockReturnValue(true);
     vi.mocked(db.canManageFinanceTransactions).mockReturnValue(true);
@@ -686,7 +692,7 @@ describe("LINE webhook processor", () => {
 
     expect(replyText).toHaveBeenCalledWith("token", expect.stringContaining("กำลังถอดเสียง"));
     expect(line.pushText).toHaveBeenCalledWith("U1", expect.stringContaining("ต้องแก้การตั้งค่าบริการก่อน"));
-    expect(db.finishWebhookEvent).toHaveBeenCalledWith("evt-audio-no-stt", "failed", error);
+    expect(db.deferWebhookEvent).toHaveBeenCalledWith("evt-audio-no-stt", error);
   });
 
   it("updates the pending voice transcript and returns a fresh proposal when the user chooses edit", async () => {
@@ -825,7 +831,7 @@ describe("LINE webhook processor", () => {
     await processEvent({ type: "message", webhookEventId: "evt-image-download-fail", timestamp: Date.now(), replyToken: "token", source: { type: "user", userId: "U1" }, message: { id: "img-fail", type: "image" } }, "{}");
 
     expect(replyText).toHaveBeenCalledWith("token", expect.stringContaining("รับรูปแล้ว"));
-    expect(db.finishWebhookEvent).toHaveBeenCalledWith("evt-image-download-fail", "failed", "LINE content unavailable");
+    expect(db.deferWebhookEvent).toHaveBeenCalledWith("evt-image-download-fail", "LINE content unavailable");
   });
 
   it("continues voice transcription when permanent storage is unavailable", async () => {
@@ -866,10 +872,118 @@ describe("LINE webhook processor", () => {
     } as never, "{}")).resolves.toBeUndefined();
 
     expect(replyText).toHaveBeenCalledWith("token", expect.stringContaining(expectedWord));
-    expect(db.finishWebhookEvent).toHaveBeenCalledWith(`evt-top-media-${type}`, "failed", "plan lookup unavailable");
+    expect(db.deferWebhookEvent).toHaveBeenCalledWith(`evt-top-media-${type}`, "plan lookup unavailable");
+    expect(db.finishWebhookEvent).not.toHaveBeenCalledWith(`evt-top-media-${type}`, "failed", expect.anything());
   });
 
-  it("rejects an HTTP webhook request with a missing or invalid signature", async () => {
+  it("returns 503 instead of acknowledging a media webhook when durable persistence fails", async () => {
+    vi.mocked(verifyLineSignature).mockReturnValue(true);
+    vi.mocked(sourceIdentity).mockReturnValue({ lineChatId: "U1", lineUserId: "U1", scope: "user" });
+    vi.mocked(db.registerWebhookEvent).mockRejectedValueOnce(new Error("database unavailable"));
+
+    const app = express(); registerLineWebhook(app);
+    const server = app.listen(0);
+    const port = (server.address() as AddressInfo).port;
+    const payload = JSON.stringify({
+      events: [{
+        type: "message", webhookEventId: "evt-durable-persist-fail", timestamp: Date.now(), replyToken: "token",
+        source: { type: "user", userId: "U1" }, message: { id: "img-durable-fail", type: "image" },
+      }],
+    });
+    const response = await fetch(`http://127.0.0.1:${port}/api/line/webhook`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-line-signature": "valid" },
+      body: payload,
+    });
+    await new Promise<void>(resolve => server.close(() => resolve()));
+
+    expect(response.status).toBe(503);
+    expect(db.registerWebhookEvent).toHaveBeenCalledWith(expect.objectContaining({
+      webhookEventId: "evt-durable-persist-fail",
+      eventType: "message",
+      lineChatId: "U1",
+      rawPayload: payload,
+    }));
+  });
+
+  it("recovers a persisted image job after restart without creating a transaction", async () => {
+    const event = {
+      type: "message" as const,
+      webhookEventId: "evt-recover-image",
+      timestamp: Date.now() - 120_000,
+      replyToken: "expired-token",
+      source: { type: "user" as const, userId: "U1" },
+      message: { id: "img-recover", type: "image" as const },
+    };
+    const rawPayload = JSON.stringify({ events: [event] });
+    vi.mocked(db.listRecoverableWebhookEvents).mockResolvedValue([{
+      webhookEventId: event.webhookEventId,
+      eventType: event.type,
+      lineChatId: "U1",
+      occurredAt: new Date(event.timestamp),
+      rawPayload,
+      processedAt: new Date(Date.now() - 120_000),
+      errorMessage: "worker restarted",
+    }] as never);
+    vi.mocked(db.claimWebhookEvent).mockResolvedValue(true as never);
+    vi.mocked(sourceIdentity).mockReturnValue({ lineChatId: "U1", lineUserId: "U1", scope: "user" });
+    vi.mocked(getProfile).mockResolvedValue({ displayName: "ผู้ส่ง" });
+    vi.mocked(getMessageContent).mockResolvedValue(Buffer.from("receipt-image"));
+    vi.mocked(storagePut).mockResolvedValue({ key: "milo/U1/img-recover", url: "https://storage.example/recover.jpg" });
+    vi.mocked(db.createVaultItem).mockResolvedValue(44 as never);
+    vi.mocked(analyzeImage).mockResolvedValue({
+      summary: "พบสลิป 716 บาท",
+      confidence: 0.96,
+      proposals: [{
+        kind: "expense", documentType: "bank_slip", title: "ซื้อสินค้า", merchant: "EVEANDBOY",
+        dateText: "2026-09-23", timeText: "15:16", amount: 716, currency: "บาท",
+        category: "ช้อปปิ้ง", paymentMethod: "โอนเงิน", receiptNumber: "016266151635CQR07478",
+        lineItems: [], note: "",
+      }],
+    });
+    vi.mocked(pushTextWithQuickReplies).mockResolvedValue(new Response());
+
+    const result = await recoverPendingMediaWebhookEvents({ limit: 5, leaseMs: 45_000 });
+
+    expect(result).toMatchObject({ scanned: 1, recovered: 1, failed: 0 });
+    expect(db.claimWebhookEvent).toHaveBeenCalledWith("evt-recover-image", expect.any(Date));
+    expect(db.saveImageExtraction).toHaveBeenCalledWith(44, "expense", expect.stringContaining("716"), 0.96);
+    expect(db.finishWebhookEvent).toHaveBeenCalledWith("evt-recover-image", "processed");
+    expect(db.createTransaction).not.toHaveBeenCalled();
+    expect(pushTextWithQuickReplies).toHaveBeenCalledWith("U1", expect.stringContaining("716"), expect.any(Array));
+  });
+
+  it("marks a media job failed only after its recovery attempt also fails", async () => {
+    const event = {
+      type: "message" as const,
+      webhookEventId: "evt-recover-final-fail",
+      timestamp: Date.now() - 120_000,
+      replyToken: "expired-token",
+      source: { type: "user" as const, userId: "U1" },
+      message: { id: "img-recover-fail", type: "image" as const },
+    };
+    const rawPayload = JSON.stringify({ events: [event] });
+    vi.mocked(db.listRecoverableWebhookEvents).mockResolvedValue([{
+      webhookEventId: event.webhookEventId,
+      eventType: event.type,
+      lineChatId: "U1",
+      occurredAt: new Date(event.timestamp),
+      rawPayload,
+      processedAt: new Date(Date.now() - 120_000),
+      errorMessage: "first attempt failed",
+    }] as never);
+    vi.mocked(db.claimWebhookEvent).mockResolvedValue(true as never);
+    vi.mocked(sourceIdentity).mockReturnValue({ lineChatId: "U1", lineUserId: "U1", scope: "user" });
+    vi.mocked(db.isAdminLinkedLineUser).mockRejectedValueOnce(new Error("plan lookup unavailable"));
+
+    const result = await recoverPendingMediaWebhookEvents({ limit: 5, leaseMs: 45_000 });
+
+    expect(result).toMatchObject({ scanned: 1, recovered: 0, failed: 1 });
+    expect(db.finishWebhookEvent).toHaveBeenCalledWith("evt-recover-final-fail", "failed", "plan lookup unavailable");
+    expect(db.deferWebhookEvent).not.toHaveBeenCalledWith("evt-recover-final-fail", expect.anything());
+  });
+
+  it("rejects an HTTP webhook request with a missing or invalid signature", async () => {
     vi.mocked(verifyLineSignature).mockReturnValue(false);
     const app = express(); registerLineWebhook(app);
     const server = app.listen(0);

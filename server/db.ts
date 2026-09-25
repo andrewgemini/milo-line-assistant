@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, inArray, like, lte, ne, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNull, like, lt, lte, ne, or, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import {
   auditLogs,
@@ -350,9 +350,52 @@ export async function registerWebhookEvent(input: { webhookEventId: string; even
   try {
     await db.insert(webhookEvents).values({ ...input, lineChatId: input.lineChatId ?? null });
     return true;
-  } catch {
-    return false;
+  } catch (error) {
+    const code = typeof error === "object" && error && "code" in error ? String((error as { code?: unknown }).code ?? "") : "";
+    const errno = typeof error === "object" && error && "errno" in error ? Number((error as { errno?: unknown }).errno) : 0;
+    if (code === "ER_DUP_ENTRY" || errno === 1062) return false;
+    throw error;
   }
+}
+
+export async function claimWebhookEvent(webhookEventId: string, staleBefore = new Date()) {
+  const db = await requireDb();
+  const result = await db.update(webhookEvents)
+    .set({ processedAt: new Date(), errorMessage: null })
+    .where(and(
+      eq(webhookEvents.webhookEventId, webhookEventId),
+      eq(webhookEvents.status, "received"),
+      or(isNull(webhookEvents.processedAt), lt(webhookEvents.processedAt, staleBefore)),
+    ));
+  return result[0].affectedRows > 0;
+}
+
+export async function listRecoverableWebhookEvents(staleBefore: Date, limit = 10) {
+  const db = await requireDb();
+  return db.select({
+    webhookEventId: webhookEvents.webhookEventId,
+    eventType: webhookEvents.eventType,
+    lineChatId: webhookEvents.lineChatId,
+    occurredAt: webhookEvents.occurredAt,
+    rawPayload: webhookEvents.rawPayload,
+    processedAt: webhookEvents.processedAt,
+    errorMessage: webhookEvents.errorMessage,
+  }).from(webhookEvents)
+    .where(and(
+      eq(webhookEvents.status, "received"),
+      or(isNull(webhookEvents.processedAt), lt(webhookEvents.processedAt, staleBefore)),
+    ))
+    .orderBy(asc(webhookEvents.createdAt))
+    .limit(Math.max(1, Math.min(limit, 50)));
+}
+
+export async function deferWebhookEvent(webhookEventId: string, errorMessage: string) {
+  const db = await requireDb();
+  await db.update(webhookEvents).set({
+    status: "received",
+    errorMessage: errorMessage.slice(0, 1500),
+    processedAt: new Date(),
+  }).where(eq(webhookEvents.webhookEventId, webhookEventId));
 }
 
 export async function finishWebhookEvent(webhookEventId: string, status: "processed" | "ignored" | "failed", errorMessage?: string) {
