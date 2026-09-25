@@ -876,6 +876,40 @@ describe("LINE webhook processor", () => {
     expect(db.finishWebhookEvent).not.toHaveBeenCalledWith(`evt-top-media-${type}`, "failed", expect.anything());
   });
 
+  it("accepts a freshly persisted media webhook without a redundant immediate claim", async () => {
+    vi.mocked(verifyLineSignature).mockReturnValue(true);
+    vi.mocked(sourceIdentity).mockReturnValue({ lineChatId: "U1", lineUserId: "U1", scope: "user" });
+    vi.mocked(db.registerWebhookEvent).mockResolvedValueOnce(true as never);
+    vi.mocked(getProfile).mockResolvedValue({ displayName: "ผู้ส่ง" });
+    vi.mocked(getMessageContent).mockRejectedValue(new Error("LINE content unavailable"));
+    vi.mocked(replyText).mockResolvedValue(new Response());
+
+    const app = express(); registerLineWebhook(app);
+    const server = app.listen(0);
+    const port = (server.address() as AddressInfo).port;
+    const payload = JSON.stringify({
+      events: [{
+        type: "message", webhookEventId: "evt-fresh-media-no-claim", timestamp: Date.now(), replyToken: "token",
+        source: { type: "user", userId: "U1" }, message: { id: "img-fresh-no-claim", type: "image" },
+      }],
+    });
+    const response = await fetch(`http://127.0.0.1:${port}/api/line/webhook`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-line-signature": "valid" },
+      body: payload,
+    });
+    await new Promise(resolve => setTimeout(resolve, 20));
+    await new Promise<void>(resolve => server.close(() => resolve()));
+
+    expect(response.status).toBe(200);
+    expect(db.registerWebhookEvent).toHaveBeenCalledWith(expect.objectContaining({
+      webhookEventId: "evt-fresh-media-no-claim",
+      rawPayload: payload,
+      leaseAt: expect.any(Date),
+    }));
+    expect(db.claimWebhookEvent).not.toHaveBeenCalledWith("evt-fresh-media-no-claim");
+  });
+
   it("returns 503 instead of acknowledging a media webhook when durable persistence fails", async () => {
     vi.mocked(verifyLineSignature).mockReturnValue(true);
     vi.mocked(sourceIdentity).mockReturnValue({ lineChatId: "U1", lineUserId: "U1", scope: "user" });

@@ -345,10 +345,15 @@ export async function ensureCaptureSchema() {
   return captureSchemaReady;
 }
 
-export async function registerWebhookEvent(input: { webhookEventId: string; eventType: string; lineChatId?: string; occurredAt: Date; rawPayload: string }) {
+export async function registerWebhookEvent(input: { webhookEventId: string; eventType: string; lineChatId?: string; occurredAt: Date; rawPayload: string; leaseAt?: Date }) {
   const db = await requireDb();
   try {
-    await db.insert(webhookEvents).values({ ...input, lineChatId: input.lineChatId ?? null });
+    const { leaseAt, ...event } = input;
+    await db.insert(webhookEvents).values({
+      ...event,
+      lineChatId: event.lineChatId ?? null,
+      processedAt: leaseAt ?? null,
+    });
     return true;
   } catch (error) {
     const code = typeof error === "object" && error && "code" in error ? String((error as { code?: unknown }).code ?? "") : "";

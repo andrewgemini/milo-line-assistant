@@ -1333,10 +1333,9 @@ export function registerLineWebhook(app: Express) {
           lineChatId: identity.lineChatId,
           occurredAt: new Date(event.timestamp),
           rawPayload,
+          leaseAt: new Date(),
         });
         if (!inserted) continue;
-        const claimed = await db.claimWebhookEvent(event.webhookEventId);
-        if (!claimed) throw new Error(`could not claim durable media event ${event.webhookEventId}`);
         durableMediaIds.add(event.webhookEventId);
       }
     } catch (error) {
