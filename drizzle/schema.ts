@@ -82,7 +82,7 @@ export const webhookEvents = mysqlTable("webhook_events", {
   lineChatId: varchar("lineChatId", { length: 128 }),
   occurredAt: timestamp("occurredAt").notNull(),
   rawPayload: text("rawPayload").notNull(),
-  status: mysqlEnum("status", ["received", "processed", "ignored", "failed"]).default("received").notNull(),
+  status: mysqlEnum("status", ["pending", "received", "processed", "ignored", "failed"]).default("pending").notNull(),
   errorMessage: text("errorMessage"),
   processedAt: timestamp("processedAt"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),

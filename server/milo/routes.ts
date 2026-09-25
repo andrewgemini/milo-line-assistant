@@ -1242,11 +1242,21 @@ function isDurableMediaEvent(event: LineEvent) {
     && (event.message?.type === "image" || event.message?.type === "audio" || event.message?.type === "file");
 }
 
+function mediaRecoveryMaxAgeMs() {
+  const fallback = 24 * 60 * 60 * 1000;
+  const parsed = Number(process.env.MILO_MEDIA_RECOVERY_MAX_AGE_MS || fallback);
+  return Number.isFinite(parsed)
+    ? Math.max(15 * 60 * 1000, Math.min(parsed, 7 * 24 * 60 * 60 * 1000))
+    : fallback;
+}
+
 export async function recoverPendingMediaWebhookEvents(options: { limit?: number; leaseMs?: number } = {}) {
   const limit = Math.max(1, Math.min(options.limit ?? 5, 20));
   const leaseMs = Math.max(30_000, options.leaseMs ?? 90_000);
-  const staleBefore = new Date(Date.now() - leaseMs);
-  const rows = await db.listRecoverableWebhookEvents(staleBefore, limit);
+  const now = Date.now();
+  const staleBefore = new Date(now - leaseMs);
+  const occurredAfter = new Date(now - mediaRecoveryMaxAgeMs());
+  const rows = await db.listRecoverableWebhookEvents(staleBefore, limit, occurredAfter);
   let recovered = 0;
   let skipped = 0;
   let failed = 0;

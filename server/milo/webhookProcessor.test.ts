@@ -979,6 +979,7 @@ describe("LINE webhook processor", () => {
 
     const result = await recoverPendingMediaWebhookEvents({ limit: 5, leaseMs: 45_000 });
 
+    expect(db.listRecoverableWebhookEvents).toHaveBeenCalledWith(expect.any(Date), 5, expect.any(Date));
     expect(result).toMatchObject({ scanned: 1, recovered: 1, failed: 0 });
     expect(db.claimWebhookEvent).toHaveBeenCalledWith("evt-recover-image", expect.any(Date));
     expect(db.saveImageExtraction).toHaveBeenCalledWith(44, "expense", expect.stringContaining("716"), 0.96);

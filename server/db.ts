@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gte, inArray, isNull, like, lt, lte, ne, or, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNull, like, lt, lte, ne, or, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import {
   auditLogs,
@@ -363,19 +363,26 @@ export async function registerWebhookEvent(input: { webhookEventId: string; even
   }
 }
 
+function recoverableWebhookStatus() {
+  // Production's original webhook_events table uses "pending"; newer fresh schemas
+  // use "received". Read both without attempting to write an enum value the
+  // deployed database may not support.
+  return sql`${webhookEvents.status} IN ('pending', 'received')`;
+}
+
 export async function claimWebhookEvent(webhookEventId: string, staleBefore = new Date()) {
   const db = await requireDb();
   const result = await db.update(webhookEvents)
     .set({ processedAt: new Date(), errorMessage: null })
     .where(and(
       eq(webhookEvents.webhookEventId, webhookEventId),
-      eq(webhookEvents.status, "received"),
+      recoverableWebhookStatus(),
       or(isNull(webhookEvents.processedAt), lt(webhookEvents.processedAt, staleBefore)),
     ));
   return result[0].affectedRows > 0;
 }
 
-export async function listRecoverableWebhookEvents(staleBefore: Date, limit = 10) {
+export async function listRecoverableWebhookEvents(staleBefore: Date, limit = 10, occurredAfter?: Date) {
   const db = await requireDb();
   return db.select({
     webhookEventId: webhookEvents.webhookEventId,
@@ -387,20 +394,27 @@ export async function listRecoverableWebhookEvents(staleBefore: Date, limit = 10
     errorMessage: webhookEvents.errorMessage,
   }).from(webhookEvents)
     .where(and(
-      eq(webhookEvents.status, "received"),
+      recoverableWebhookStatus(),
       or(isNull(webhookEvents.processedAt), lt(webhookEvents.processedAt, staleBefore)),
+      occurredAfter ? gte(webhookEvents.occurredAt, occurredAfter) : undefined,
     ))
-    .orderBy(asc(webhookEvents.createdAt))
+    // Prioritize the newest recoverable media first. This prevents a legacy
+    // pending backlog from delaying the user's current slip/image.
+    .orderBy(desc(webhookEvents.createdAt))
     .limit(Math.max(1, Math.min(limit, 50)));
 }
 
 export async function deferWebhookEvent(webhookEventId: string, errorMessage: string) {
   const db = await requireDb();
+  // Preserve the database's existing recoverable enum value ("pending" in the
+  // long-lived production table, "received" in newer schemas).
   await db.update(webhookEvents).set({
-    status: "received",
     errorMessage: errorMessage.slice(0, 1500),
     processedAt: new Date(),
-  }).where(eq(webhookEvents.webhookEventId, webhookEventId));
+  }).where(and(
+    eq(webhookEvents.webhookEventId, webhookEventId),
+    recoverableWebhookStatus(),
+  ));
 }
 
 export async function finishWebhookEvent(webhookEventId: string, status: "processed" | "ignored" | "failed", errorMessage?: string) {
