@@ -44,7 +44,7 @@ import { parse as parseCookieHeader } from "cookie";
 import { SignJWT, jwtVerify } from "jose";
 
 // server/db.ts
-import { and, asc, desc, eq, gte, inArray, isNull, like, lt, lte, ne, or, sql } from "drizzle-orm";
+import { and, desc, eq, gte, inArray, isNull, like, lt, lte, ne, or, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 
 // drizzle/schema.ts
@@ -130,7 +130,7 @@ var webhookEvents = mysqlTable("webhook_events", {
   lineChatId: varchar("lineChatId", { length: 128 }),
   occurredAt: timestamp("occurredAt").notNull(),
   rawPayload: text("rawPayload").notNull(),
-  status: mysqlEnum("status", ["received", "processed", "ignored", "failed"]).default("received").notNull(),
+  status: mysqlEnum("status", ["pending", "received", "processed", "ignored", "failed"]).default("pending").notNull(),
   errorMessage: text("errorMessage"),
   processedAt: timestamp("processedAt"),
   createdAt: timestamp("createdAt").defaultNow().notNull()
@@ -823,7 +823,12 @@ async function ensureCaptureSchema() {
 async function registerWebhookEvent(input) {
   const db = await requireDb();
   try {
-    await db.insert(webhookEvents).values({ ...input, lineChatId: input.lineChatId ?? null });
+    const { leaseAt, ...event } = input;
+    await db.insert(webhookEvents).values({
+      ...event,
+      lineChatId: event.lineChatId ?? null,
+      processedAt: leaseAt ?? null
+    });
     return true;
   } catch (error) {
     const code = typeof error === "object" && error && "code" in error ? String(error.code ?? "") : "";
@@ -832,16 +837,19 @@ async function registerWebhookEvent(input) {
     throw error;
   }
 }
+function recoverableWebhookStatus() {
+  return sql`${webhookEvents.status} IN ('pending', 'received')`;
+}
 async function claimWebhookEvent(webhookEventId, staleBefore = /* @__PURE__ */ new Date()) {
   const db = await requireDb();
   const result = await db.update(webhookEvents).set({ processedAt: /* @__PURE__ */ new Date(), errorMessage: null }).where(and(
     eq(webhookEvents.webhookEventId, webhookEventId),
-    eq(webhookEvents.status, "received"),
+    recoverableWebhookStatus(),
     or(isNull(webhookEvents.processedAt), lt(webhookEvents.processedAt, staleBefore))
   ));
   return result[0].affectedRows > 0;
 }
-async function listRecoverableWebhookEvents(staleBefore, limit = 10) {
+async function listRecoverableWebhookEvents(staleBefore, limit = 10, occurredAfter) {
   const db = await requireDb();
   return db.select({
     webhookEventId: webhookEvents.webhookEventId,
@@ -852,17 +860,20 @@ async function listRecoverableWebhookEvents(staleBefore, limit = 10) {
     processedAt: webhookEvents.processedAt,
     errorMessage: webhookEvents.errorMessage
   }).from(webhookEvents).where(and(
-    eq(webhookEvents.status, "received"),
-    or(isNull(webhookEvents.processedAt), lt(webhookEvents.processedAt, staleBefore))
-  )).orderBy(asc(webhookEvents.createdAt)).limit(Math.max(1, Math.min(limit, 50)));
+    recoverableWebhookStatus(),
+    or(isNull(webhookEvents.processedAt), lt(webhookEvents.processedAt, staleBefore)),
+    occurredAfter ? gte(webhookEvents.occurredAt, occurredAfter) : void 0
+  )).orderBy(desc(webhookEvents.createdAt)).limit(Math.max(1, Math.min(limit, 50)));
 }
 async function deferWebhookEvent(webhookEventId, errorMessage) {
   const db = await requireDb();
   await db.update(webhookEvents).set({
-    status: "received",
     errorMessage: errorMessage.slice(0, 1500),
     processedAt: /* @__PURE__ */ new Date()
-  }).where(eq(webhookEvents.webhookEventId, webhookEventId));
+  }).where(and(
+    eq(webhookEvents.webhookEventId, webhookEventId),
+    recoverableWebhookStatus()
+  ));
 }
 async function finishWebhookEvent(webhookEventId, status, errorMessage) {
   const db = await requireDb();
@@ -1284,13 +1295,25 @@ async function updateVaultIntelligence(input) {
 async function searchVault(lineUserId, term = "") {
   const db = await requireDb();
   const base = and(eq(vaultItems.createdByLineUserId, lineUserId), eq(vaultItems.status, "active"));
-  const where = term.trim() ? and(base, or(like(vaultItems.title, `%${term}%`), like(vaultItems.searchableText, `%${term}%`), like(vaultItems.tagsText, `%${term}%`))) : base;
+  const q = term.trim();
+  const where = q ? and(base, or(
+    like(vaultItems.title, `%${q}%`),
+    like(vaultItems.originalFilename, `%${q}%`),
+    like(vaultItems.searchableText, `%${q}%`),
+    like(vaultItems.tagsText, `%${q}%`)
+  )) : base;
   return db.select().from(vaultItems).where(where).orderBy(desc(vaultItems.createdAt)).limit(100);
 }
 async function searchVaultForChat(lineUserId, lineChatId, scope, term = "") {
   const db = await requireDb();
-  const base = scope === "user" ? and(eq(vaultItems.createdByLineUserId, lineUserId), eq(vaultItems.lineChatId, lineChatId), eq(vaultItems.status, "active")) : and(eq(vaultItems.lineChatId, lineChatId), eq(vaultItems.status, "active"));
-  const where = term.trim() ? and(base, or(like(vaultItems.title, `%${term}%`), like(vaultItems.searchableText, `%${term}%`), like(vaultItems.tagsText, `%${term}%`))) : base;
+  const base = scope === "user" ? and(eq(vaultItems.createdByLineUserId, lineUserId), eq(vaultItems.status, "active")) : and(eq(vaultItems.lineChatId, lineChatId), eq(vaultItems.status, "active"));
+  const q = term.trim();
+  const where = q ? and(base, or(
+    like(vaultItems.title, `%${q}%`),
+    like(vaultItems.originalFilename, `%${q}%`),
+    like(vaultItems.searchableText, `%${q}%`),
+    like(vaultItems.tagsText, `%${q}%`)
+  )) : base;
   return db.select().from(vaultItems).where(where).orderBy(desc(vaultItems.createdAt)).limit(100);
 }
 async function vaultStorageStatus(lineUserId, lineChatId, scope) {
@@ -5923,10 +5946,21 @@ Content-Type: ${contentType}\r
 }
 async function storagePut(relKey, data, contentType = "application/octet-stream") {
   const provider = selectedProvider();
-  if (provider === "database") return databasePut(relKey, data, contentType);
-  if (provider === "forge") return forgePut(relKey, data, contentType);
-  if (provider === "s3") return s3Put(relKey, data, contentType);
-  return googleDrivePut(relKey, data, contentType);
+  try {
+    if (provider === "database") return databasePut(relKey, data, contentType);
+    if (provider === "forge") return await forgePut(relKey, data, contentType);
+    if (provider === "s3") return await s3Put(relKey, data, contentType);
+    return await googleDrivePut(relKey, data, contentType);
+  } catch (error) {
+    if (provider !== "database" && databaseConfigured()) {
+      console.error("[Milo Storage] external upload failed; falling back to database", {
+        provider,
+        error: error instanceof Error ? error.message : "unknown"
+      });
+      return databasePut(relKey, data, contentType);
+    }
+    throw error;
+  }
 }
 function parseStoredKey(value) {
   if (value.startsWith("db:")) return { provider: "database", objectKey: value.slice(3) };
@@ -7830,7 +7864,7 @@ function parseMiloCommand(text2, now = /* @__PURE__ */ new Date()) {
   if (calendar?.type === "list") return { type: "calendarList" };
   if (calendar?.type === "cancel") return { type: "calendarCancel", id: calendar.id };
   if (/^(?:ผู้ช่วยกลุ่ม|กลุ่ม\s*LINE|กลุ่มช่วยอะไร|วิธีใช้กลุ่ม)$/i.test(value)) return { type: "groupGuide" };
-  if (/^(?:สถานะคลัง|คลังไฟล์|คลังถาวร)$/i.test(value)) return { type: "vaultStatus" };
+  if (/^(?:สถานะคลัง|คลังไฟล์|คลังถาวร|ไฟล์เก่า|ไฟล์ทั้งหมด|ดูไฟล์เก่า|ดูไฟล์ทั้งหมด)$/i.test(value)) return { type: "vaultStatus" };
   if (/^(?:สรุป(?:ชุด)?(?:เอกสาร|ไฟล์)(?:เดือนนี้)?|(?:ชุด)?เอกสารเดือนนี้(?:ครบไหม|ครบหรือยัง)?|เช็กเอกสารเดือนนี้)$/i.test(value)) return { type: "documentPacket" };
   if (/^(?:(?:เอกสาร|ไฟล์)(?:ที่)?(?:มีปัญหา|ต้องตรวจ|รอตรวจ|รอตัดสิน|อ่านไม่ได้)|ตรวจเอกสารที่มีปัญหา)$/i.test(value)) return { type: "documentIssues" };
   const recurring = recurringFrom(value, now);
@@ -7918,8 +7952,8 @@ function parseMiloCommand(text2, now = /* @__PURE__ */ new Date()) {
     const tagsText = (content.match(/#[^\s#]+/g) ?? []).join(" ") || void 0;
     return { type: "vault", title: (sourceUrl ?? content).slice(0, 80), content, itemType: sourceUrl ? "link" : "text", sourceUrl, tagsText };
   }
-  const search = value.match(/^(ค้นหา|หาไฟล์|ค้น)\s+(.+)$/i);
-  if (search) return { type: "search", query: search[2] };
+  const search = value.match(/^(?:ค้นหาไฟล์|ค้นไฟล์|หาไฟล์|เปิดไฟล์|ค้นหา|ค้น)\s+(.+)$/i);
+  if (search) return { type: "search", query: search[1].trim() };
   const mention = value.match(/^แจ้ง\s*(.+?)\s*ถึง\s*@?(.+)$/i);
   if (mention) return { type: "mention", message: mention[1].trim(), memberName: mention[2].trim() };
   const categoryAdd = value.match(/^(?:เพิ่ม|ตั้ง)หมวด(?:หมู่)?\s*(?:\s*(รายรับ|รายจ่าย))?\s*(.*)$/i);
@@ -8715,6 +8749,30 @@ ${kinds}${issueRows ? `
 \u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E17\u0E35\u0E48\u0E15\u0E49\u0E2D\u0E07\u0E15\u0E23\u0E27\u0E08
 ${issueRows}` : "\n\n\u2705 \u0E44\u0E21\u0E48\u0E21\u0E35\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E04\u0E49\u0E32\u0E07\u0E15\u0E23\u0E27\u0E08"}`;
 }
+function vaultStorageOpenUrl(storageKey) {
+  const base = process.env.MILO_PUBLIC_URL || "https://milo-line-assistant.onrender.com";
+  return new URL(`/api/milo/storage/${encodeURIComponent(storageKey)}`, base).href;
+}
+function formatVaultSearchResult(item, index2) {
+  const title = item.originalFilename || item.title || `\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23 #${item.id}`;
+  if (item.itemType === "link") {
+    return `${index2 + 1}. ${title}
+\u{1F517} ${item.sourceUrl || item.searchableText || "\u0E44\u0E21\u0E48\u0E21\u0E35\u0E25\u0E34\u0E07\u0E01\u0E4C\u0E15\u0E49\u0E19\u0E09\u0E1A\u0E31\u0E1A"}`;
+  }
+  if (item.itemType === "text") {
+    const preview = (item.searchableText || "").trim().slice(0, 180);
+    return `${index2 + 1}. ${title}${preview ? `
+\u{1F4DD} ${preview}` : ""}`;
+  }
+  if (item.storageKey) {
+    const provider = item.storageKey.startsWith("gdrive:") ? "Google Drive" : item.storageKey.startsWith("db:") ? "Database" : item.storageKey.startsWith("s3:") ? "S3" : "Storage";
+    return `${index2 + 1}. ${title}
+\u2705 \u0E40\u0E01\u0E47\u0E1A\u0E16\u0E32\u0E27\u0E23\u0E17\u0E35\u0E48 ${provider}
+\u{1F517} \u0E40\u0E1B\u0E34\u0E14\u0E44\u0E1F\u0E25\u0E4C: ${vaultStorageOpenUrl(item.storageKey)}`;
+  }
+  return `${index2 + 1}. ${title}
+\u26A0\uFE0F \u0E1E\u0E1A\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E40\u0E01\u0E48\u0E32 \u0E41\u0E15\u0E48\u0E44\u0E21\u0E48\u0E21\u0E35\u0E44\u0E1F\u0E25\u0E4C\u0E15\u0E49\u0E19\u0E09\u0E1A\u0E31\u0E1A\u0E17\u0E35\u0E48\u0E40\u0E01\u0E47\u0E1A\u0E16\u0E32\u0E27\u0E23 \u0E15\u0E49\u0E2D\u0E07\u0E2D\u0E31\u0E1B\u0E42\u0E2B\u0E25\u0E14\u0E44\u0E1F\u0E25\u0E4C\u0E19\u0E35\u0E49\u0E0B\u0E49\u0E33\u0E40\u0E1E\u0E37\u0E48\u0E2D\u0E40\u0E1B\u0E34\u0E14\u0E14\u0E32\u0E27\u0E19\u0E4C\u0E42\u0E2B\u0E25\u0E14\u0E44\u0E14\u0E49`;
+}
 async function persistDocumentIntelligence(input) {
   const intelligence = buildDocumentIntelligence(input);
   try {
@@ -9138,13 +9196,26 @@ ${syncMessage}`;
   } else if (command.type === "groupGuide") {
     message = scope === "user" ? "\u{1F465} \u0E27\u0E34\u0E18\u0E35\u0E43\u0E0A\u0E49 Milo \u0E43\u0E19\u0E01\u0E25\u0E38\u0E48\u0E21 LINE\n1) \u0E40\u0E0A\u0E34\u0E0D Milo \u0E40\u0E02\u0E49\u0E32\u0E01\u0E25\u0E38\u0E48\u0E21\n2) \u0E40\u0E23\u0E35\u0E22\u0E01\u0E14\u0E49\u0E27\u0E22 @\u0E44\u0E21\u0E42\u0E25 \u0E01\u0E48\u0E2D\u0E19\u0E04\u0E33\u0E2A\u0E31\u0E48\u0E07\u0E02\u0E49\u0E2D\u0E04\u0E27\u0E32\u0E21\n3) \u0E43\u0E0A\u0E49\u0E40\u0E15\u0E37\u0E2D\u0E19 \u0E40\u0E01\u0E47\u0E1A/\u0E04\u0E49\u0E19\u0E2B\u0E32\u0E44\u0E1F\u0E25\u0E4C \u0E1B\u0E0F\u0E34\u0E17\u0E34\u0E19 To-do \u0E41\u0E25\u0E30\u0E41\u0E17\u0E47\u0E01\u0E2A\u0E21\u0E32\u0E0A\u0E34\u0E01\u0E44\u0E14\u0E49\n\u0E15\u0E31\u0E27\u0E2D\u0E22\u0E48\u0E32\u0E07: @\u0E44\u0E21\u0E42\u0E25 \u0E40\u0E15\u0E37\u0E2D\u0E19\u0E2A\u0E48\u0E07\u0E23\u0E32\u0E22\u0E07\u0E32\u0E19\u0E1E\u0E23\u0E38\u0E48\u0E07\u0E19\u0E35\u0E49 9:00 \u0E2B\u0E23\u0E37\u0E2D @\u0E44\u0E21\u0E42\u0E25 \u0E41\u0E08\u0E49\u0E07\u0E2A\u0E48\u0E07\u0E07\u0E32\u0E19\u0E14\u0E49\u0E27\u0E22\u0E16\u0E36\u0E07 @\u0E2A\u0E21\u0E0A\u0E32\u0E22" : "\u{1F465} Milo \u0E1E\u0E23\u0E49\u0E2D\u0E21\u0E0A\u0E48\u0E27\u0E22\u0E43\u0E19\u0E01\u0E25\u0E38\u0E48\u0E21\u0E19\u0E35\u0E49\u0E04\u0E23\u0E31\u0E1A\n\u2022 @\u0E44\u0E21\u0E42\u0E25 \u0E40\u0E15\u0E37\u0E2D\u0E19\u0E1B\u0E23\u0E30\u0E0A\u0E38\u0E21\u0E1E\u0E23\u0E38\u0E48\u0E07\u0E19\u0E35\u0E49 10:00\n\u2022 @\u0E44\u0E21\u0E42\u0E25 \u0E40\u0E01\u0E47\u0E1A https://example.com #\u0E07\u0E32\u0E19\n\u2022 @\u0E44\u0E21\u0E42\u0E25 \u0E04\u0E49\u0E19\u0E2B\u0E32 \u0E43\u0E1A\u0E40\u0E2A\u0E19\u0E2D\u0E23\u0E32\u0E04\u0E32\n\u2022 @\u0E44\u0E21\u0E42\u0E25 \u0E25\u0E07\u0E1B\u0E0F\u0E34\u0E17\u0E34\u0E19 \u0E1B\u0E23\u0E30\u0E0A\u0E38\u0E21\u0E17\u0E35\u0E21\u0E1E\u0E23\u0E38\u0E48\u0E07\u0E19\u0E35\u0E49 10:00\n\u2022 @\u0E44\u0E21\u0E42\u0E25 \u0E41\u0E08\u0E49\u0E07\u0E2A\u0E48\u0E07\u0E07\u0E32\u0E19\u0E14\u0E49\u0E27\u0E22\u0E16\u0E36\u0E07 @\u0E2A\u0E21\u0E0A\u0E32\u0E22\n\u2022 \u0E2A\u0E48\u0E07\u0E23\u0E39\u0E1B/\u0E44\u0E1F\u0E25\u0E4C\u0E43\u0E19\u0E01\u0E25\u0E38\u0E48\u0E21\u0E40\u0E1E\u0E37\u0E48\u0E2D\u0E40\u0E01\u0E47\u0E1A\u0E41\u0E25\u0E30\u0E1B\u0E23\u0E30\u0E21\u0E27\u0E25\u0E1C\u0E25\u0E44\u0E14\u0E49\u0E15\u0E32\u0E21\u0E2A\u0E34\u0E17\u0E18\u0E34\u0E4C";
   } else if (command.type === "vaultStatus") {
-    const status = await vaultStorageStatus(lineUserId, lineChatId, scope);
-    message = `\u{1F5C2}\uFE0F \u0E2A\u0E16\u0E32\u0E19\u0E30\u0E04\u0E25\u0E31\u0E07\u0E43\u0E19\u0E41\u0E0A\u0E17\u0E19\u0E35\u0E49
+    const [status, recent] = await Promise.all([
+      vaultStorageStatus(lineUserId, lineChatId, scope),
+      searchVaultForChat(lineUserId, lineChatId, scope, "")
+    ]);
+    const recentText = recent.slice(0, 8).map(formatVaultSearchResult).join("\n\n");
+    const vaultScopeLabel = scope === "user" ? "\u0E04\u0E25\u0E31\u0E07\u0E2A\u0E48\u0E27\u0E19\u0E15\u0E31\u0E27\u0E17\u0E31\u0E49\u0E07\u0E2B\u0E21\u0E14\u0E02\u0E2D\u0E07\u0E04\u0E38\u0E13" : "\u0E04\u0E25\u0E31\u0E07\u0E02\u0E2D\u0E07\u0E01\u0E25\u0E38\u0E48\u0E21/\u0E2B\u0E49\u0E2D\u0E07\u0E19\u0E35\u0E49";
+    const storage = storageRuntimeStatus();
+    const providerLabel = storage.activeProvider === "google-drive" ? "Google Drive" : storage.activeProvider === "database" ? "Database" : storage.activeProvider === "s3" ? "S3-compatible" : storage.activeProvider === "forge" ? "Forge Storage" : "\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E1E\u0E23\u0E49\u0E2D\u0E21";
+    const fallbackLabel = storage.activeProvider !== "database" && storage.configuredProviders.includes("database") ? " \u2022 \u0E2A\u0E33\u0E23\u0E2D\u0E07\u0E25\u0E07 Database \u0E40\u0E21\u0E37\u0E48\u0E2D storage \u0E2B\u0E25\u0E31\u0E01\u0E21\u0E35\u0E1B\u0E31\u0E0D\u0E2B\u0E32" : "";
+    message = `\u{1F5C2}\uFE0F ${vaultScopeLabel}
 \u0E17\u0E31\u0E49\u0E07\u0E2B\u0E21\u0E14 ${status.total} \u0E23\u0E32\u0E22\u0E01\u0E32\u0E23
 \u0E40\u0E01\u0E47\u0E1A\u0E16\u0E32\u0E27\u0E23 ${status.durable} \u0E23\u0E32\u0E22\u0E01\u0E32\u0E23
-\u0E44\u0E1F\u0E25\u0E4C\u0E2A\u0E37\u0E48\u0E2D\u0E17\u0E35\u0E48\u0E15\u0E49\u0E2D\u0E07\u0E2D\u0E31\u0E1B\u0E42\u0E2B\u0E25\u0E14\u0E0B\u0E49\u0E33 ${status.mediaMissing} \u0E23\u0E32\u0E22\u0E01\u0E32\u0E23
+\u0E44\u0E1F\u0E25\u0E4C\u0E2A\u0E37\u0E48\u0E2D\u0E17\u0E35\u0E48\u0E44\u0E21\u0E48\u0E21\u0E35\u0E44\u0E1F\u0E25\u0E4C\u0E15\u0E49\u0E19\u0E09\u0E1A\u0E31\u0E1A ${status.mediaMissing} \u0E23\u0E32\u0E22\u0E01\u0E32\u0E23
+\u0E17\u0E35\u0E48\u0E40\u0E01\u0E47\u0E1A\u0E44\u0E1F\u0E25\u0E4C\u0E43\u0E2B\u0E21\u0E48: ${providerLabel}${fallbackLabel}
 
-\u0E02\u0E49\u0E2D\u0E04\u0E27\u0E32\u0E21/\u0E25\u0E34\u0E07\u0E01\u0E4C\u0E40\u0E01\u0E47\u0E1A\u0E43\u0E19\u0E10\u0E32\u0E19\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25 \u0E41\u0E25\u0E30\u0E23\u0E39\u0E1B/\u0E44\u0E1F\u0E25\u0E4C\u0E17\u0E35\u0E48\u0E21\u0E35\u0E2A\u0E33\u0E40\u0E19\u0E32 storage \u0E08\u0E30\u0E40\u0E01\u0E47\u0E1A\u0E44\u0E27\u0E49\u0E08\u0E19\u0E01\u0E27\u0E48\u0E32\u0E04\u0E38\u0E13\u0E08\u0E30\u0E25\u0E1A\u0E04\u0E23\u0E31\u0E1A`;
+${recentText ? `\u0E44\u0E1F\u0E25\u0E4C/\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E25\u0E48\u0E32\u0E2A\u0E38\u0E14
+${recentText}` : "\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E21\u0E35\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E43\u0E19\u0E04\u0E25\u0E31\u0E07"}
+
+\u0E04\u0E49\u0E19\u0E2B\u0E32\u0E44\u0E1F\u0E25\u0E4C\u0E40\u0E01\u0E48\u0E32\u0E44\u0E14\u0E49\u0E14\u0E49\u0E27\u0E22: \u0E04\u0E49\u0E19\u0E2B\u0E32\u0E44\u0E1F\u0E25\u0E4C <\u0E0A\u0E37\u0E48\u0E2D\u0E44\u0E1F\u0E25\u0E4C/\u0E23\u0E49\u0E32\u0E19/\u0E41\u0E17\u0E47\u0E01/\u0E04\u0E33\u0E2A\u0E33\u0E04\u0E31\u0E0D>
+\u0E43\u0E19\u0E41\u0E0A\u0E17\u0E2A\u0E48\u0E27\u0E19\u0E15\u0E31\u0E27 Milo \u0E08\u0E30\u0E04\u0E49\u0E19\u0E02\u0E49\u0E32\u0E21\u0E17\u0E38\u0E01\u0E41\u0E0A\u0E17\u0E17\u0E35\u0E48\u0E04\u0E38\u0E13\u0E40\u0E04\u0E22\u0E40\u0E01\u0E47\u0E1A\u0E44\u0E1F\u0E25\u0E4C\u0E44\u0E27\u0E49`;
   } else if (command.type === "documentPacket" || command.type === "documentIssues") {
     const range = bangkokMonthRange(/* @__PURE__ */ new Date());
     const rows = await listVaultDocumentsForChat(lineUserId, lineChatId, scope, range.start, new Date(range.end.getTime() - 1));
@@ -9294,11 +9365,10 @@ ${results.map((item) => `#${item.id} \xB7 ${item.transactionType === "expense" ?
     message = `\u0E40\u0E01\u0E47\u0E1A${command.itemType === "link" ? "\u0E25\u0E34\u0E07\u0E01\u0E4C" : "\u0E02\u0E49\u0E2D\u0E04\u0E27\u0E32\u0E21"}\u0E19\u0E35\u0E49\u0E44\u0E27\u0E49\u0E43\u0E19\u0E04\u0E25\u0E31\u0E07\u0E16\u0E32\u0E27\u0E23\u0E08\u0E19\u0E01\u0E27\u0E48\u0E32\u0E04\u0E38\u0E13\u0E08\u0E30\u0E25\u0E1A\u0E41\u0E25\u0E49\u0E27${command.tagsText ? ` \u0E1E\u0E23\u0E49\u0E2D\u0E21\u0E41\u0E17\u0E47\u0E01 ${command.tagsText}` : ""}`;
   } else if (command.type === "search") {
     const results = await searchVaultForChat(lineUserId, lineChatId, scope, command.query);
-    message = results.length ? `\u0E1E\u0E1A ${results.length} \u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E43\u0E19${scope === "user" ? "\u0E41\u0E0A\u0E17\u0E2A\u0E48\u0E27\u0E19\u0E15\u0E31\u0E27" : "\u0E01\u0E25\u0E38\u0E48\u0E21\u0E19\u0E35\u0E49"}
-${results.slice(0, 8).map((item, index2) => {
-      const durable = item.itemType === "text" || item.itemType === "link" || Boolean(item.storageKey);
-      return `${index2 + 1}. ${item.title} ${durable ? "\u2713 \u0E40\u0E01\u0E47\u0E1A\u0E16\u0E32\u0E27\u0E23" : "\u26A0\uFE0F \u0E15\u0E49\u0E2D\u0E07\u0E2D\u0E31\u0E1B\u0E42\u0E2B\u0E25\u0E14\u0E44\u0E1F\u0E25\u0E4C\u0E0B\u0E49\u0E33"}`;
-    }).join("\n")}` : `\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E1E\u0E1A\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23 \u201C${command.query}\u201D \u0E43\u0E19\u0E41\u0E0A\u0E17\u0E19\u0E35\u0E49`;
+    const rendered = results.slice(0, 8).map(formatVaultSearchResult).join("\n\n");
+    message = results.length ? `\u0E1E\u0E1A ${results.length} \u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E43\u0E19${scope === "user" ? "\u0E04\u0E25\u0E31\u0E07\u0E2A\u0E48\u0E27\u0E19\u0E15\u0E31\u0E27\u0E02\u0E2D\u0E07\u0E04\u0E38\u0E13\u0E17\u0E38\u0E01\u0E41\u0E0A\u0E17" : "\u0E01\u0E25\u0E38\u0E48\u0E21/\u0E2B\u0E49\u0E2D\u0E07\u0E19\u0E35\u0E49"}
+
+${rendered}` : scope === "user" ? `\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E1E\u0E1A\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23 \u201C${command.query}\u201D \u0E43\u0E19\u0E04\u0E25\u0E31\u0E07\u0E2A\u0E48\u0E27\u0E19\u0E15\u0E31\u0E27\u0E02\u0E2D\u0E07\u0E04\u0E38\u0E13` : `\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E1E\u0E1A\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23 \u201C${command.query}\u201D \u0E43\u0E19\u0E01\u0E25\u0E38\u0E48\u0E21/\u0E2B\u0E49\u0E2D\u0E07\u0E19\u0E35\u0E49`;
   } else if (command.type === "mention") {
     const member = await findLineMemberByName(lineChatId, command.memberName);
     if (member && event.replyToken) {
@@ -10005,11 +10075,18 @@ async function processEvent(event, rawPayload, runtime = {}) {
 function isDurableMediaEvent(event) {
   return event.type === "message" && Boolean(event.message) && (event.message?.type === "image" || event.message?.type === "audio" || event.message?.type === "file");
 }
+function mediaRecoveryMaxAgeMs() {
+  const fallback = 24 * 60 * 60 * 1e3;
+  const parsed = Number(process.env.MILO_MEDIA_RECOVERY_MAX_AGE_MS || fallback);
+  return Number.isFinite(parsed) ? Math.max(15 * 60 * 1e3, Math.min(parsed, 7 * 24 * 60 * 60 * 1e3)) : fallback;
+}
 async function recoverPendingMediaWebhookEvents(options = {}) {
   const limit = Math.max(1, Math.min(options.limit ?? 5, 20));
   const leaseMs = Math.max(3e4, options.leaseMs ?? 9e4);
-  const staleBefore = new Date(Date.now() - leaseMs);
-  const rows = await listRecoverableWebhookEvents(staleBefore, limit);
+  const now = Date.now();
+  const staleBefore = new Date(now - leaseMs);
+  const occurredAfter = new Date(now - mediaRecoveryMaxAgeMs());
+  const rows = await listRecoverableWebhookEvents(staleBefore, limit, occurredAfter);
   let recovered = 0;
   let skipped = 0;
   let failed = 0;
@@ -10089,11 +10166,10 @@ function registerLineWebhook(app2) {
           eventType: event.type,
           lineChatId: identity.lineChatId,
           occurredAt: new Date(event.timestamp),
-          rawPayload
+          rawPayload,
+          leaseAt: /* @__PURE__ */ new Date()
         });
         if (!inserted) continue;
-        const claimed = await claimWebhookEvent(event.webhookEventId);
-        if (!claimed) throw new Error(`could not claim durable media event ${event.webhookEventId}`);
         durableMediaIds.add(event.webhookEventId);
       }
     } catch (error) {
@@ -11051,7 +11127,7 @@ var healthHandler = async (req, res) => {
   res.status(200).json({
     status: runtime.authenticated && voice.configured && Boolean(process.env.LINE_CHANNEL_SECRET?.trim()) && Boolean(process.env.LINE_CHANNEL_ACCESS_TOKEN?.trim()) && Boolean(process.env.DATABASE_URL?.trim()) ? "ok" : "degraded",
     service: "milo",
-    release: "milo-durable-media-jobs-2026-09-25",
+    release: "milo-vault-retrieval-2026-09-27",
     intentRoutingMode: "systemone-first+deterministic-fallback",
     systemOneConfigured: systemOneConfigured(),
     systemOneProviderOrder: systemOneProviderOrder(),
@@ -11095,6 +11171,8 @@ var healthHandler = async (req, res) => {
       googleCalendarOAuthConfigured: googleCalendar.configured,
       dashboardExternalOAuthConfigured: Boolean(process.env.OAUTH_SERVER_URL?.trim() && process.env.VITE_APP_ID?.trim()),
       durableVaultStorageConfigured: storage.configured,
+      vaultSearchOpenLinks: true,
+      externalStorageDatabaseFallback: true,
       databaseVaultStorageSupported: true,
       storageProviderChoiceSupported: true,
       googleDriveStorageSupported: true,

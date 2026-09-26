@@ -31,7 +31,12 @@ describe("Milo command parser", () => {
   });
   it("recognizes note, todo, vault text, and search commands", () => {
     expect(parseMiloCommand("โน้ต รหัส Wi‑Fi ห้องประชุม", now)).toEqual({ type: "note", title: "รหัส Wi‑Fi ห้องประชุม", content: "รหัส Wi‑Fi ห้องประชุม" }); expect(parseMiloCommand("งาน ส่งสรุปรายสัปดาห์", now)).toEqual({ type: "todo", title: "ส่งสรุปรายสัปดาห์" });
-    expect(parseMiloCommand("เก็บ ข้อความสำคัญ", now)).toMatchObject({ type: "vault", title: "ข้อความสำคัญ", itemType: "text" }); expect(parseMiloCommand("ค้นหา ใบเสร็จ", now)).toEqual({ type: "search", query: "ใบเสร็จ" });
+    expect(parseMiloCommand("เก็บ ข้อความสำคัญ", now)).toMatchObject({ type: "vault", title: "ข้อความสำคัญ", itemType: "text" });
+    expect(parseMiloCommand("ค้นหา ใบเสร็จ", now)).toEqual({ type: "search", query: "ใบเสร็จ" });
+    expect(parseMiloCommand("ค้นหาไฟล์ quote-a.pdf", now)).toEqual({ type: "search", query: "quote-a.pdf" });
+    expect(parseMiloCommand("ค้นไฟล์ ใบเสนอราคา", now)).toEqual({ type: "search", query: "ใบเสนอราคา" });
+    expect(parseMiloCommand("เปิดไฟล์ รายงานเดือนสิงหาคม", now)).toEqual({ type: "search", query: "รายงานเดือนสิงหาคม" });
+    expect(parseMiloCommand("ไฟล์เก่า", now)).toEqual({ type: "vaultStatus" });
   });
   it("recognizes help commands used by both rich menus", () => { expect(parseMiloCommand("ช่วย", now)).toEqual({ type: "help" }); expect(parseMiloCommand("ช่วยเหลือ", now)).toEqual({ type: "help" }); });
   it("recognizes a tagged link and a group mention instruction", () => { expect(parseMiloCommand("เก็บ https://example.com/brief #งาน #สำคัญ", now)).toMatchObject({ type: "vault", itemType: "link", tagsText: "#งาน #สำคัญ" }); expect(parseMiloCommand("แจ้งส่งงานด้วยถึง @สมชาย", now)).toEqual({ type: "mention", message: "ส่งงานด้วย", memberName: "สมชาย" }); });
@@ -84,6 +89,8 @@ describe("Milo command parser", () => {
     expect(parseMiloCommand("ยกเลิกนัด 12", now)).toEqual({ type: "calendarCancel", id: 12 });
     expect(parseMiloCommand("ผู้ช่วยกลุ่ม", now)).toEqual({ type: "groupGuide" });
     expect(parseMiloCommand("สถานะคลัง", now)).toEqual({ type: "vaultStatus" });
+    expect(parseMiloCommand("ไฟล์เก่า", now)).toEqual({ type: "vaultStatus" });
+    expect(parseMiloCommand("ดูไฟล์ทั้งหมด", now)).toEqual({ type: "vaultStatus" });
   });
   it("recognizes Google Calendar connection commands", () => {
     expect(parseMiloCommand("เชื่อม Google Calendar", now)).toEqual({ type: "calendarConnect" });

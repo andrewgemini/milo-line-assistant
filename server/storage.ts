@@ -162,10 +162,21 @@ async function googleDrivePut(relKey: string, data: Buffer | Uint8Array | string
 
 export async function storagePut(relKey: string, data: Buffer | Uint8Array | string, contentType = "application/octet-stream"): Promise<StorageObject> {
   const provider = selectedProvider();
-  if (provider === "database") return databasePut(relKey, data, contentType);
-  if (provider === "forge") return forgePut(relKey, data, contentType);
-  if (provider === "s3") return s3Put(relKey, data, contentType);
-  return googleDrivePut(relKey, data, contentType);
+  try {
+    if (provider === "database") return databasePut(relKey, data, contentType);
+    if (provider === "forge") return await forgePut(relKey, data, contentType);
+    if (provider === "s3") return await s3Put(relKey, data, contentType);
+    return await googleDrivePut(relKey, data, contentType);
+  } catch (error) {
+    if (provider !== "database" && databaseConfigured()) {
+      console.error("[Milo Storage] external upload failed; falling back to database", {
+        provider,
+        error: error instanceof Error ? error.message : "unknown",
+      });
+      return databasePut(relKey, data, contentType);
+    }
+    throw error;
+  }
 }
 
 function parseStoredKey(value: string): { provider: StorageProvider; objectKey: string } {

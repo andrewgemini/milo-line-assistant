@@ -5,7 +5,7 @@ import { buildGoogleCalendarConnectUrl, disconnectGoogleCalendar, googleCalendar
 import express, { type Express, type Request, type Response } from "express";
 import { sdk } from "../_core/sdk";
 import { transcribeAudio } from "../_core/voiceTranscription";
-import { storagePut } from "../storage";
+import { storagePut, storageRuntimeStatus } from "../storage";
 import * as db from "../db";
 import { analyzeImage } from "./imageAnalysis";
 import { analyzePdfBuffer } from "./pdfAnalysis";
@@ -120,6 +120,27 @@ function formatDocumentPacket(reference: Date, rows: Awaited<ReturnType<typeof d
       : `✅ เดือน${monthLabel} ไม่มีเอกสารที่ค้างตรวจครับ`;
   }
   return `📦 ชุดเอกสารเดือน${monthLabel}\nทั้งหมด ${packet.total} ไฟล์ • พร้อมใช้ ${packet.ready} • ต้องตรวจ ${packet.issues.length}\nไฟล์ซ้ำ ${packet.duplicates} • ต้องอัปโหลดซ้ำ ${packet.storageMissing}\n\nแยกตามประเภท\n${kinds}${issueRows ? `\n\nรายการที่ต้องตรวจ\n${issueRows}` : "\n\n✅ ไม่มีรายการค้างตรวจ"}`;
+}
+
+function vaultStorageOpenUrl(storageKey: string) {
+  const base = process.env.MILO_PUBLIC_URL || "https://milo-line-assistant.onrender.com";
+  return new URL(`/api/milo/storage/${encodeURIComponent(storageKey)}`, base).href;
+}
+
+function formatVaultSearchResult(item: Awaited<ReturnType<typeof db.searchVaultForChat>>[number], index: number) {
+  const title = item.originalFilename || item.title || `รายการ #${item.id}`;
+  if (item.itemType === "link") {
+    return `${index + 1}. ${title}\n🔗 ${item.sourceUrl || item.searchableText || "ไม่มีลิงก์ต้นฉบับ"}`;
+  }
+  if (item.itemType === "text") {
+    const preview = (item.searchableText || "").trim().slice(0, 180);
+    return `${index + 1}. ${title}${preview ? `\n📝 ${preview}` : ""}`;
+  }
+  if (item.storageKey) {
+    const provider = item.storageKey.startsWith("gdrive:") ? "Google Drive" : item.storageKey.startsWith("db:") ? "Database" : item.storageKey.startsWith("s3:") ? "S3" : "Storage";
+    return `${index + 1}. ${title}\n✅ เก็บถาวรที่ ${provider}\n🔗 เปิดไฟล์: ${vaultStorageOpenUrl(item.storageKey)}`;
+  }
+  return `${index + 1}. ${title}\n⚠️ พบข้อมูลรายการเก่า แต่ไม่มีไฟล์ต้นฉบับที่เก็บถาวร ต้องอัปโหลดไฟล์นี้ซ้ำเพื่อเปิดดาวน์โหลดได้`;
 }
 
 async function persistDocumentIntelligence(input: {
@@ -559,8 +580,16 @@ async function handleText(event: LineEvent, lineChatId: string, lineUserId: stri
       ? "👥 วิธีใช้ Milo ในกลุ่ม LINE\n1) เชิญ Milo เข้ากลุ่ม\n2) เรียกด้วย @ไมโล ก่อนคำสั่งข้อความ\n3) ใช้เตือน เก็บ/ค้นหาไฟล์ ปฏิทิน To-do และแท็กสมาชิกได้\nตัวอย่าง: @ไมโล เตือนส่งรายงานพรุ่งนี้ 9:00 หรือ @ไมโล แจ้งส่งงานด้วยถึง @สมชาย"
       : "👥 Milo พร้อมช่วยในกลุ่มนี้ครับ\n• @ไมโล เตือนประชุมพรุ่งนี้ 10:00\n• @ไมโล เก็บ https://example.com #งาน\n• @ไมโล ค้นหา ใบเสนอราคา\n• @ไมโล ลงปฏิทิน ประชุมทีมพรุ่งนี้ 10:00\n• @ไมโล แจ้งส่งงานด้วยถึง @สมชาย\n• ส่งรูป/ไฟล์ในกลุ่มเพื่อเก็บและประมวลผลได้ตามสิทธิ์";
   } else if (command.type === "vaultStatus") {
-    const status = await db.vaultStorageStatus(lineUserId, lineChatId, scope);
-    message = `🗂️ สถานะคลังในแชทนี้\nทั้งหมด ${status.total} รายการ\nเก็บถาวร ${status.durable} รายการ\nไฟล์สื่อที่ต้องอัปโหลดซ้ำ ${status.mediaMissing} รายการ\n\nข้อความ/ลิงก์เก็บในฐานข้อมูล และรูป/ไฟล์ที่มีสำเนา storage จะเก็บไว้จนกว่าคุณจะลบครับ`;
+    const [status, recent] = await Promise.all([
+      db.vaultStorageStatus(lineUserId, lineChatId, scope),
+      db.searchVaultForChat(lineUserId, lineChatId, scope, ""),
+    ]);
+    const recentText = recent.slice(0, 8).map(formatVaultSearchResult).join("\n\n");
+    const vaultScopeLabel = scope === "user" ? "คลังส่วนตัวทั้งหมดของคุณ" : "คลังของกลุ่ม/ห้องนี้";
+    const storage = storageRuntimeStatus();
+    const providerLabel = storage.activeProvider === "google-drive" ? "Google Drive" : storage.activeProvider === "database" ? "Database" : storage.activeProvider === "s3" ? "S3-compatible" : storage.activeProvider === "forge" ? "Forge Storage" : "ยังไม่พร้อม";
+    const fallbackLabel = storage.activeProvider !== "database" && storage.configuredProviders.includes("database") ? " • สำรองลง Database เมื่อ storage หลักมีปัญหา" : "";
+    message = `🗂️ ${vaultScopeLabel}\nทั้งหมด ${status.total} รายการ\nเก็บถาวร ${status.durable} รายการ\nไฟล์สื่อที่ไม่มีไฟล์ต้นฉบับ ${status.mediaMissing} รายการ\nที่เก็บไฟล์ใหม่: ${providerLabel}${fallbackLabel}\n\n${recentText ? `ไฟล์/รายการล่าสุด\n${recentText}` : "ยังไม่มีรายการในคลัง"}\n\nค้นหาไฟล์เก่าได้ด้วย: ค้นหาไฟล์ <ชื่อไฟล์/ร้าน/แท็ก/คำสำคัญ>\nในแชทส่วนตัว Milo จะค้นข้ามทุกแชทที่คุณเคยเก็บไฟล์ไว้`;
   } else if (command.type === "documentPacket" || command.type === "documentIssues") {
     const range = bangkokMonthRange(new Date());
     const rows = await db.listVaultDocumentsForChat(lineUserId, lineChatId, scope, range.start, new Date(range.end.getTime() - 1));
@@ -666,7 +695,12 @@ async function handleText(event: LineEvent, lineChatId: string, lineUserId: stri
     message = `เก็บ${command.itemType === "link" ? "ลิงก์" : "ข้อความ"}นี้ไว้ในคลังถาวรจนกว่าคุณจะลบแล้ว${command.tagsText ? ` พร้อมแท็ก ${command.tagsText}` : ""}`;
   } else if (command.type === "search") {
     const results = await db.searchVaultForChat(lineUserId, lineChatId, scope, command.query);
-    message = results.length ? `พบ ${results.length} รายการใน${scope === "user" ? "แชทส่วนตัว" : "กลุ่มนี้"}\n${results.slice(0, 8).map((item, index) => { const durable = item.itemType === "text" || item.itemType === "link" || Boolean(item.storageKey); return `${index + 1}. ${item.title} ${durable ? "✓ เก็บถาวร" : "⚠️ ต้องอัปโหลดไฟล์ซ้ำ"}`; }).join("\n")}` : `ยังไม่พบรายการ “${command.query}” ในแชทนี้`;
+    const rendered = results.slice(0, 8).map(formatVaultSearchResult).join("\n\n");
+    message = results.length
+      ? `พบ ${results.length} รายการใน${scope === "user" ? "คลังส่วนตัวของคุณทุกแชท" : "กลุ่ม/ห้องนี้"}\n\n${rendered}`
+      : scope === "user"
+        ? `ยังไม่พบรายการ “${command.query}” ในคลังส่วนตัวของคุณ`
+        : `ยังไม่พบรายการ “${command.query}” ในกลุ่ม/ห้องนี้`;
   } else if (command.type === "mention") {
     const member = await db.findLineMemberByName(lineChatId, command.memberName);
     if (member && event.replyToken) {

@@ -15,6 +15,7 @@ async function loadStorage() {
 afterEach(() => {
   vi.clearAllMocks();
   vi.unstubAllEnvs();
+  vi.unstubAllGlobals();
   vi.resetModules();
 });
 
@@ -52,6 +53,23 @@ describe("Milo durable storage provider selection", () => {
     dbMock.getVaultBlob.mockResolvedValueOnce({ content: Buffer.from("receipt"), mimeType: "image/jpeg", sizeBytes: 7 });
     await expect(storageGetDatabaseObject(stored.key)).resolves.toEqual({ data: Buffer.from("receipt"), mimeType: "image/jpeg", sizeBytes: 7 });
     expect(dbMock.getVaultBlob).toHaveBeenCalledWith(stored.key);
+  });
+
+  it("falls back to database storage when the selected external provider upload fails", async () => {
+    vi.stubEnv("DATABASE_URL", "mysql://user:pass@db.example/milo");
+    vi.stubEnv("MILO_STORAGE_PROVIDER", "forge");
+    vi.stubEnv("BUILT_IN_FORGE_API_URL", "https://forge.example");
+    vi.stubEnv("BUILT_IN_FORGE_API_KEY", "forge-key");
+    vi.stubEnv("MILO_S3_BUCKET", "");
+    vi.stubEnv("MILO_GOOGLE_DRIVE_FOLDER_ID", "");
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("provider unavailable", { status: 503 })));
+    const { storagePut } = await loadStorage();
+
+    const stored = await storagePut("milo/U1/fallback.jpg", Buffer.from("fallback"), "image/jpeg");
+
+    expect(stored.provider).toBe("database");
+    expect(stored.key).toMatch(/^db:milo\/U1\/fallback_[a-f0-9]{8}\.jpg$/);
+    expect(dbMock.saveVaultBlob).toHaveBeenCalledWith(expect.objectContaining({ storageKey: stored.key, mimeType: "image/jpeg" }));
   });
 
   it("selects Google Drive when explicitly configured", async () => {

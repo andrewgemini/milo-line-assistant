@@ -66,7 +66,11 @@ vi.mock("../db", () => ({
   canManageFinanceSettings: vi.fn(() => true),
   financeReport: vi.fn(), financeBudgetCycleReport: vi.fn(), getFinanceAccountBudgetCycleStartDay: vi.fn(() => 1), updateFinanceAccountBudgetCycleStartDay: vi.fn(), upsertBudget: vi.fn(), listBudgets: vi.fn(() => []), listTransactions: vi.fn(), searchTransactions: vi.fn(), createRecurringTransaction: vi.fn(), listRecurringTransactions: vi.fn(), updateRecurringTransactionStatus: vi.fn(), writeAuditLog: vi.fn(),
 }));
-vi.mock("../storage", () => ({ storageGetSignedUrl: vi.fn(), storagePut: vi.fn() }));
+vi.mock("../storage", () => ({
+  storageGetSignedUrl: vi.fn(),
+  storagePut: vi.fn(),
+  storageRuntimeStatus: vi.fn(() => ({ requested: "google-drive", activeProvider: "google-drive", configuredProviders: ["database", "google-drive"], configured: true })),
+}));
 vi.mock("./imageAnalysis", () => ({ analyzeImage: vi.fn() }));
 vi.mock("./pdfAnalysis", () => ({ analyzePdfBuffer: vi.fn() }));
 vi.mock("./financeExport", () => ({ buildFinanceExportUrl: vi.fn(() => "https://example.com/export") }));
@@ -399,7 +403,7 @@ describe("LINE webhook processor", () => {
     vi.mocked(sourceIdentity).mockReturnValue({ lineChatId: "U1", lineUserId: "U1", scope: "user" });
     vi.mocked(replyText).mockResolvedValue(new Response());
     vi.mocked(db.createReminder).mockResolvedValue(71 as never);
-    vi.mocked(db.searchVaultForChat).mockResolvedValue([{ title: "ใบเสร็จร้านกาแฟ", itemType: "image", storageKey: "milo/U1/receipt.jpg" }] as never);
+    vi.mocked(db.searchVaultForChat).mockResolvedValue([{ id: 41, title: "ใบเสร็จร้านกาแฟ", originalFilename: "receipt.jpg", itemType: "image", storageKey: "db:milo/U1/receipt_abcd1234.jpg" }] as never);
     vi.mocked(db.listExpenseCategories).mockResolvedValue([{ name: "เดินทาง" }] as never);
     vi.mocked(db.listTransactionCategories).mockResolvedValue([{ name: "เดินทาง", transactionType: "expense" }] as never);
     vi.mocked(db.financeReport).mockResolvedValue({ period: "day", income: 45000, expense: 65, balance: 44935, categories: { อาหาร: 65 } } as never);
@@ -427,6 +431,9 @@ describe("LINE webhook processor", () => {
     expect(db.createTodo).toHaveBeenCalledWith("U1", "U1", "ส่งสรุปรายสัปดาห์");
     expect(db.createVaultItem).toHaveBeenCalledWith(expect.objectContaining({ itemType: "link", sourceUrl: "https://example.com/brief", tagsText: "#งาน" }));
     expect(db.searchVaultForChat).toHaveBeenCalledWith("U1", "U1", "user", "ใบเสร็จ");
+    expect(replyThemedTextCard).toHaveBeenCalledWith("token", expect.stringContaining("receipt.jpg"), "utility");
+    expect(replyThemedTextCard).toHaveBeenCalledWith("token", expect.stringContaining("คลังส่วนตัวของคุณทุกแชท"), "utility");
+    expect(replyThemedTextCard).toHaveBeenCalledWith("token", expect.stringContaining("/api/milo/storage/db%3Amilo%2FU1%2Freceipt_abcd1234.jpg"), "utility");
     expect(db.addExpenseCategory).toHaveBeenCalledWith("U1", "เดินทาง", "expense", 7);
     expect(db.addExpenseCategory).toHaveBeenCalledWith("U1", "โบนัส", "income", 7);
     expect(db.listTransactionCategories).toHaveBeenCalledWith("U1", 7);
@@ -507,12 +514,12 @@ describe("LINE webhook processor", () => {
     vi.mocked(db.registerWebhookEvent).mockResolvedValue(true);
     vi.mocked(getProfile).mockResolvedValue({ displayName: "ผู้ส่ง" });
     vi.mocked(sourceIdentity).mockReturnValue({ lineChatId: "G1", lineUserId: "U1", scope: "group" });
-    vi.mocked(db.searchVaultForChat).mockResolvedValue([{ id: 9, title: "ใบเสนอราคาลูกค้า A", itemType: "file", storageKey: "milo/G1/q.pdf" }] as never);
+    vi.mocked(db.searchVaultForChat).mockResolvedValue([{ id: 9, title: "ใบเสนอราคาลูกค้า A", originalFilename: "quote-a.pdf", itemType: "file", storageKey: "gdrive:drive-file-9" }] as never);
     vi.mocked(replyText).mockResolvedValue(new Response());
     await processEvent({ type: "message", webhookEventId: "evt-group-vault-search", timestamp: Date.now(), replyToken: "token", source: { type: "group", groupId: "G1", userId: "U1" }, message: { id: "g-search-1", type: "text", text: "@ไมโล ค้นหา ใบเสนอราคา" } }, "{}");
     expect(db.searchVaultForChat).toHaveBeenCalledWith("U1", "G1", "group", "ใบเสนอราคา");
-    expect(replyThemedTextCard).toHaveBeenCalledWith("token", expect.stringContaining("ใบเสนอราคาลูกค้า A"), "utility");
-    expect(replyThemedTextCard).toHaveBeenCalledWith("token", expect.stringContaining("เก็บถาวร"), "utility");
+    expect(replyThemedTextCard).toHaveBeenCalledWith("token", expect.stringContaining("quote-a.pdf"), "utility");
+    expect(replyThemedTextCard).toHaveBeenCalledWith("token", expect.stringContaining("/api/milo/storage/gdrive%3Adrive-file-9"), "utility");
   });
 
   it("reports durable-vault coverage without overclaiming missing media storage", async () => {
@@ -520,11 +527,20 @@ describe("LINE webhook processor", () => {
     vi.mocked(getProfile).mockResolvedValue({ displayName: "ผู้ส่ง" });
     vi.mocked(sourceIdentity).mockReturnValue({ lineChatId: "U1", lineUserId: "U1", scope: "user" });
     vi.mocked(db.vaultStorageStatus).mockResolvedValue({ total: 12, durable: 11, mediaMissing: 1 } as never);
+    vi.mocked(db.searchVaultForChat).mockResolvedValue([
+      { id: 12, title: "ใบเสร็จล่าสุด", originalFilename: "latest.jpg", itemType: "image", storageKey: "db:milo/U1/latest_12345678.jpg" },
+      { id: 11, title: "รูปเก่าที่ไม่มีไฟล์", originalFilename: null, itemType: "image", storageKey: null },
+    ] as never);
     vi.mocked(replyText).mockResolvedValue(new Response());
     await processEvent({ type: "message", webhookEventId: "evt-vault-status", timestamp: Date.now(), replyToken: "token", source: { type: "user", userId: "U1" }, message: { id: "vault-status-1", type: "text", text: "สถานะคลัง" } }, "{}");
     expect(db.vaultStorageStatus).toHaveBeenCalledWith("U1", "U1", "user");
     expect(replyThemedTextCard).toHaveBeenCalledWith("token", expect.stringContaining("เก็บถาวร 11 รายการ"), "utility");
-    expect(replyThemedTextCard).toHaveBeenCalledWith("token", expect.stringContaining("ต้องอัปโหลดซ้ำ 1 รายการ"), "utility");
+    expect(replyThemedTextCard).toHaveBeenCalledWith("token", expect.stringContaining("ไฟล์สื่อที่ไม่มีไฟล์ต้นฉบับ 1 รายการ"), "utility");
+    expect(replyThemedTextCard).toHaveBeenCalledWith("token", expect.stringContaining("latest.jpg"), "utility");
+    expect(replyThemedTextCard).toHaveBeenCalledWith("token", expect.stringContaining("ที่เก็บไฟล์ใหม่: Google Drive"), "utility");
+    expect(replyThemedTextCard).toHaveBeenCalledWith("token", expect.stringContaining("สำรองลง Database"), "utility");
+    expect(replyThemedTextCard).toHaveBeenCalledWith("token", expect.stringContaining("พบข้อมูลรายการเก่า แต่ไม่มีไฟล์ต้นฉบับที่เก็บถาวร"), "utility");
+    expect(replyThemedTextCard).toHaveBeenCalledWith("token", expect.stringContaining("ต้องอัปโหลดไฟล์นี้ซ้ำ"), "utility");
   });
 
   it("stores a receipt analysis then records its confirmed expense with amount, category, date and merchant note", async () => {

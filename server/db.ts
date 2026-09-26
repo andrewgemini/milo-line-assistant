@@ -931,16 +931,31 @@ export async function updateVaultIntelligence(input: {
 export async function searchVault(lineUserId: string, term = "") {
   const db = await requireDb();
   const base = and(eq(vaultItems.createdByLineUserId, lineUserId), eq(vaultItems.status, "active"));
-  const where = term.trim() ? and(base, or(like(vaultItems.title, `%${term}%`), like(vaultItems.searchableText, `%${term}%`), like(vaultItems.tagsText, `%${term}%`))) : base;
+  const q = term.trim();
+  const where = q ? and(base, or(
+    like(vaultItems.title, `%${q}%`),
+    like(vaultItems.originalFilename, `%${q}%`),
+    like(vaultItems.searchableText, `%${q}%`),
+    like(vaultItems.tagsText, `%${q}%`),
+  )) : base;
   return db.select().from(vaultItems).where(where).orderBy(desc(vaultItems.createdAt)).limit(100);
 }
 
 export async function searchVaultForChat(lineUserId: string, lineChatId: string, scope: "user" | "group" | "room", term = "") {
   const db = await requireDb();
+  // Private chat is the user's global vault view: include active items the same user
+  // created from prior personal/group/room conversations. Group/room searches stay
+  // isolated to the current chat so shared files never leak across groups.
   const base = scope === "user"
-    ? and(eq(vaultItems.createdByLineUserId, lineUserId), eq(vaultItems.lineChatId, lineChatId), eq(vaultItems.status, "active"))
+    ? and(eq(vaultItems.createdByLineUserId, lineUserId), eq(vaultItems.status, "active"))
     : and(eq(vaultItems.lineChatId, lineChatId), eq(vaultItems.status, "active"));
-  const where = term.trim() ? and(base, or(like(vaultItems.title, `%${term}%`), like(vaultItems.searchableText, `%${term}%`), like(vaultItems.tagsText, `%${term}%`))) : base;
+  const q = term.trim();
+  const where = q ? and(base, or(
+    like(vaultItems.title, `%${q}%`),
+    like(vaultItems.originalFilename, `%${q}%`),
+    like(vaultItems.searchableText, `%${q}%`),
+    like(vaultItems.tagsText, `%${q}%`),
+  )) : base;
   return db.select().from(vaultItems).where(where).orderBy(desc(vaultItems.createdAt)).limit(100);
 }
 
