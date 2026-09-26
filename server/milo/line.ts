@@ -804,7 +804,7 @@ export async function getProfile(source: LineSource, credentials = lineCredentia
   return (await response.json()) as { displayName: string };
 }
 
-export type MiloListRow = { id: number; title: string; detail: string; actionLabel?: string; actionText?: string };
+export type MiloListRow = { id: number; title: string; detail: string; actionLabel?: string; actionText?: string; actionUri?: string };
 
 async function replyMiloListBubble(replyToken: string, title: string, subtitle: string, rows: MiloListRow[], artwork: MiloFlexThemeArtwork, credentials = lineCredentials()) {
   const cards = rows.slice(0, 10).map(row => ({
@@ -826,15 +826,19 @@ async function replyMiloListBubble(replyToken: string, title: string, subtitle: 
           { type: "text", text: `#${row.id}`, size: "xxs", color: MILO_COLORS.secondary, margin: "xs" },
         ],
       },
-      ...(row.actionText ? [{
+      ...(row.actionUri || row.actionText ? [{
         type: "button",
-        style: "secondary",
+        style: row.actionUri ? "primary" : "secondary",
         height: "sm",
         flex: 0,
-        action: {
+        action: row.actionUri ? {
+          type: "uri",
+          label: (row.actionLabel ?? "เปิดไฟล์").slice(0, 20),
+          uri: row.actionUri,
+        } : {
           type: "message",
           label: (row.actionLabel ?? "ยกเลิก").slice(0, 20),
-          text: row.actionText.slice(0, 300),
+          text: row.actionText!.slice(0, 300),
         },
       }] : []),
     ],
@@ -849,8 +853,8 @@ async function replyMiloListBubble(replyToken: string, title: string, subtitle: 
     ...(artwork === "utility" ? [{
       type: "box", layout: "horizontal", spacing: "sm", contents: [
         miloTab("ตั้งเตือน", title.includes("เตือน"), "รายการเตือน"),
-        miloTab("เก็บไฟล์", false, "คลังไฟล์"),
-        miloTab("Export", false, "ส่งออก CSV"),
+        miloTab("เก็บไฟล์", /ไฟล์|คลัง|ค้นหา/.test(title), "คลังไฟล์"),
+        miloTab("Export", /Export|ส่งออก/.test(title), "ส่งออก CSV"),
       ],
     }] : []),
     ...(cards.length ? cards : [{
@@ -879,4 +883,15 @@ export async function replyReminderList(replyToken: string, rows: MiloListRow[],
 
 export async function replyCalendarList(replyToken: string, rows: MiloListRow[], credentials = lineCredentials()) {
   return replyMiloListBubble(replyToken, "📅 ปฏิทิน Milo", "นัดหมายที่กำลังจะถึง แตะยกเลิกได้จากรายการ", rows.map(row => ({ ...row, actionLabel: "ยกเลิก", actionText: "ยกเลิกนัด #" + row.id })), "utility", credentials);
+}
+
+export async function replyVaultSearchResults(replyToken: string, rows: MiloListRow[], options: { title?: string; subtitle?: string } = {}, credentials = lineCredentials()) {
+  return replyMiloListBubble(
+    replyToken,
+    options.title ?? "🗂️ ค้นหาไฟล์",
+    options.subtitle ?? "แตะ “เปิดไฟล์” ที่รายการที่ต้องการได้โดยตรง",
+    rows,
+    "utility",
+    credentials,
+  );
 }

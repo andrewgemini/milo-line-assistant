@@ -3,6 +3,7 @@ import { createServer } from "node:http";
 import app from "./api";
 import { serveStatic } from "./_core/vite";
 import { recoverPendingMediaWebhookEvents } from "./milo/routes";
+import { recoverMissingVaultMedia } from "./milo/vaultRecovery";
 
 serveStatic(app);
 
@@ -31,6 +32,11 @@ async function runMediaRecovery(source: "startup" | "interval") {
 server.listen(port, "0.0.0.0", () => {
   console.log(`Milo container listening on 0.0.0.0:${port}`);
   void runMediaRecovery("startup");
+  void recoverMissingVaultMedia({ limit: 50 }).then(result => {
+    if (result.scanned > 0) console.info("[Milo Vault Recovery] startup backfill", result);
+  }).catch(error => {
+    console.error("[Milo Vault Recovery] startup backfill failed", { error: error instanceof Error ? error.message : "unknown" });
+  });
   mediaRecoveryTimer = setInterval(() => void runMediaRecovery("interval"), 60_000);
   mediaRecoveryTimer.unref();
 });

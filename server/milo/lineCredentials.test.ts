@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { getMessageContent, mascotExpenseCopy, pushFinanceReportCard, replyFinanceReportCard, replyGreetingHome, replyMiloSettings, replyPostSaveSummary, replyCalendarList, replyReminderList, replyThemedTextCard, replyTransactionList, replyVoiceCategoryChoices, replyVoiceProposal, replyVoiceProposalFallback } from "./line";
+import { getMessageContent, mascotExpenseCopy, pushFinanceReportCard, replyFinanceReportCard, replyGreetingHome, replyMiloSettings, replyPostSaveSummary, replyCalendarList, replyReminderList, replyThemedTextCard, replyTransactionList, replyVaultSearchResults, replyVoiceCategoryChoices, replyVoiceProposal, replyVoiceProposalFallback } from "./line";
 
 describe("LINE credentials", () => {
   afterEach(() => vi.restoreAllMocks());
@@ -179,14 +179,23 @@ describe("LINE credentials", () => {
     expect(payload.messages[0]?.quickReply.items.map(item => item.action.text)).toContain("เปลี่ยนหมวดเสียง อาหาร");
   });
 
-  it("renders list results with direct LINE action buttons", async () => {
+  it("renders list results with direct LINE action buttons including one open button per vault file", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(null, { status: 200 }));
     await replyTransactionList("reply-token", [{ id: 7, title: "รายจ่าย 80 บาท", detail: "อาหาร" }], { channelSecret: "secret", channelAccessToken: "token" });
     await replyReminderList("reply-token", [{ id: 8, title: "ประชุม", detail: "18 ก.ย. 2569 10:00" }], { channelSecret: "secret", channelAccessToken: "token" });
     await replyCalendarList("reply-token", [{ id: 9, title: "นัดลูกค้า", detail: "19 ก.ย. 2569 14:00" }], { channelSecret: "secret", channelAccessToken: "token" });
-    expect(fetchMock).toHaveBeenCalledTimes(3);
+    await replyVaultSearchResults("reply-token", [
+      { id: 10, title: "receipt-a.jpg", detail: "Database", actionLabel: "เปิดไฟล์", actionUri: "https://milo-line-assistant.onrender.com/api/milo/storage/db%3Areceipt-a.jpg" },
+      { id: 11, title: "quote-b.pdf", detail: "Google Drive", actionLabel: "เปิดไฟล์", actionUri: "https://milo-line-assistant.onrender.com/api/milo/storage/gdrive%3Afile-b" },
+    ], {}, { channelSecret: "secret", channelAccessToken: "token" });
+    expect(fetchMock).toHaveBeenCalledTimes(4);
     expect(String(fetchMock.mock.calls[0]?.[1]?.body)).toContain("ลบรายการ #7");
     expect(String(fetchMock.mock.calls[1]?.[1]?.body)).toContain("ยกเลิกเตือน #8");
     expect(String(fetchMock.mock.calls[2]?.[1]?.body)).toContain("ยกเลิกนัด #9");
+    const vaultPayload = String(fetchMock.mock.calls[3]?.[1]?.body);
+    expect(vaultPayload).toContain('"type":"uri"');
+    expect(vaultPayload).toContain('"label":"เปิดไฟล์"');
+    expect(vaultPayload).toContain("db%3Areceipt-a.jpg");
+    expect(vaultPayload).toContain("gdrive%3Afile-b");
   });
 });

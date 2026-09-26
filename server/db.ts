@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, inArray, isNull, like, lt, lte, ne, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNull, like, lt, lte, ne, or, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/mysql2";
 import {
   auditLogs,
@@ -963,7 +963,41 @@ export async function vaultStorageStatus(lineUserId: string, lineChatId: string,
   const rows = await searchVaultForChat(lineUserId, lineChatId, scope, "");
   const durable = rows.filter(item => item.itemType === "text" || item.itemType === "link" || Boolean(item.storageKey)).length;
   const mediaMissing = rows.filter(item => (item.itemType === "image" || item.itemType === "file") && !item.storageKey).length;
-  return { total: rows.length, durable, mediaMissing };
+  const database = rows.filter(item => item.storageKey?.startsWith("db:")).length;
+  const googleDrive = rows.filter(item => item.storageKey?.startsWith("gdrive:")).length;
+  const s3 = rows.filter(item => item.storageKey?.startsWith("s3:")).length;
+  const forge = rows.filter(item => item.storageKey?.startsWith("forge:")).length;
+  return { total: rows.length, durable, mediaMissing, database, googleDrive, s3, forge };
+}
+
+export async function listVaultMediaMissingStorage(limit = 50) {
+  const db = await requireDb();
+  return db.select({
+    id: vaultItems.id,
+    lineChatId: vaultItems.lineChatId,
+    createdByLineUserId: vaultItems.createdByLineUserId,
+    itemType: vaultItems.itemType,
+    title: vaultItems.title,
+    originalFilename: vaultItems.originalFilename,
+    mimeType: vaultItems.mimeType,
+    lineMessageId: vaultItems.lineMessageId,
+    createdAt: vaultItems.createdAt,
+  }).from(vaultItems).where(and(
+    eq(vaultItems.status, "active"),
+    or(eq(vaultItems.itemType, "image"), eq(vaultItems.itemType, "file")),
+    isNull(vaultItems.storageKey),
+    sql`${vaultItems.lineMessageId} IS NOT NULL`,
+  )).orderBy(asc(vaultItems.createdAt)).limit(Math.max(1, Math.min(limit, 100)));
+}
+
+export async function attachVaultStorage(input: { id: number; storageKey: string; storageUrl: string }) {
+  const db = await requireDb();
+  const result = await db.update(vaultItems).set({
+    storageKey: input.storageKey,
+    storageUrl: input.storageUrl,
+    tagsText: sql`REPLACE(REPLACE(COALESCE(${vaultItems.tagsText}, ''), '#doc:storage_missing', '#doc:stored'), '#doc:processing', '#doc:stored')`,
+  }).where(and(eq(vaultItems.id, input.id), eq(vaultItems.status, "active"), isNull(vaultItems.storageKey)));
+  return result[0].affectedRows > 0;
 }
 
 export async function updateVaultMetadata(id: number, lineUserId: string, input: { tagsText?: string | null; sourceUrl?: string | null }) {

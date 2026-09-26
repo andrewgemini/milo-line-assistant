@@ -20,6 +20,7 @@ import { assertRecurringCapacity } from "./recurringLimit";
 import { entitlementMessage, hasMiloEntitlement, resolveMiloPlan } from "./entitlements";
 import { generateGoogleGeminiText, googleGeminiConfigured } from "../_core/googleGemini";
 import { deliverFinanceDigest, type FinanceDigestType } from "./financeDigest";
+import { recoverVaultItems } from "./vaultRecovery";
 import { buildExpenseNote, formatImageProposal, normalizeExpenseCategory, parseExtractedDate, resolveReceiptOccurredAt, selectImageProposal } from "./receiptUtils";
 import { applyImageExpenseEdit } from "./imageProposalEdit";
 import { bangkokMonthRange, buildDocumentIntelligence, classifyDocumentKind, documentKindLabel, documentStatusLabel, fingerprintMedia, mergeVaultTags, readDocumentStatus, summarizeVaultDocuments, type DocumentAnalysis } from "./documentIntelligence";
@@ -27,7 +28,7 @@ import { deserializeCapturePlan, formatCapturePreview, serializeCapturePlan } fr
 import { bangkokDayRange, formatTodayOverview } from "./todayOverview";
 import { formatEveningSummary, formatMorningBrief, shouldDeliverDailyDigest } from "./personalDigest";
 import { STANDARD_EXPENSE_CATEGORIES, STANDARD_INCOME_CATEGORIES } from "./financeCategories";
-import { financeReportCardText, getMessageContent, getProfile, lineCredentials, postSaveSummaryText, pushText, pushTextWithQuickReplies, replyCalendarList, replyFinanceReportCard, replyFinanceReportCardFallback, replyGreetingHome, replyMention, replyMiloOnboarding, replyMiloSettings, replyPostSaveSummary, replyReminderList, replyText, replyThemedTextCard, replyTransactionList, replyTextWithQuickReplies, replyVoiceCategoryChoices, replyVoiceProposal, replyVoiceProposalFallback, sourceIdentity, type LineEvent, type VoiceTransactionProposal, verifyLineSignature } from "./line";
+import { financeReportCardText, getMessageContent, getProfile, lineCredentials, postSaveSummaryText, pushText, pushTextWithQuickReplies, replyCalendarList, replyFinanceReportCard, replyFinanceReportCardFallback, replyGreetingHome, replyMention, replyMiloOnboarding, replyMiloSettings, replyPostSaveSummary, replyReminderList, replyText, replyThemedTextCard, replyTransactionList, replyTextWithQuickReplies, replyVaultSearchResults, replyVoiceCategoryChoices, replyVoiceProposal, replyVoiceProposalFallback, sourceIdentity, type LineEvent, type MiloListRow, type VoiceTransactionProposal, verifyLineSignature } from "./line";
 
 function helpText() {
   return "Milo ช่วยคุณจบงานใน LINE แชทเดียวครับ\n🔔 เตือน: เตือนประชุมพรุ่งนี้ 10:00 / เตือนดื่มน้ำทุก 30 นาที / รายการเตือน\n🎯 ตามงาน: ช่วยตามงาน Proposal ลูกค้า B / ช่วยตามงานส่งใบเสนอราคา อีก 24 ชั่วโมง\n☀️ วันนี้: วันนี้มีอะไร / สรุปเช้า / สรุปเย็น / บิลรอจ่าย / จ่ายบิล #เลขรายการ\n🗂️ เก็บ: เก็บ https://example.com #งาน / ค้นหา ใบเสนอราคา / สถานะคลัง\n📦 เอกสาร: สรุปเอกสารเดือนนี้ / ไฟล์ที่ต้องตรวจ\n🧠 จดหลายอย่าง: พรุ่งนี้บ่ายสองประชุมลูกค้า ค่าแท็กซี่ 300 ช่วยเตือนด้วย\n📅 ปฏิทิน: ลงปฏิทิน ประชุมทีมพรุ่งนี้ 10:00 / ดูปฏิทิน\n👥 กลุ่ม LINE: @ไมโล ผู้ช่วยกลุ่ม / @ไมโล แจ้งส่งงานด้วยถึง @สมชาย\n✅ งาน: งาน ส่งสรุปรายสัปดาห์ / ดูงาน / เสร็จงาน #12 / โน้ต รหัส Wi-Fi\n💰 การเงิน: กินกาแฟ 80 / เงินเดือนเข้า 35000 / ตั้งงบ อาหาร 5000 / สรุปเดือนนี้\n📷🎙️ ส่งรูปใบเสร็จหรือเสียงให้ไมโลอ่าน แล้วตรวจและยืนยันก่อนบันทึก\n\nพิมพ์ “ช่วย” ได้ทุกเมื่อครับ";
@@ -137,10 +138,26 @@ function formatVaultSearchResult(item: Awaited<ReturnType<typeof db.searchVaultF
     return `${index + 1}. ${title}${preview ? `\n📝 ${preview}` : ""}`;
   }
   if (item.storageKey) {
-    const provider = item.storageKey.startsWith("gdrive:") ? "Google Drive" : item.storageKey.startsWith("db:") ? "Database" : item.storageKey.startsWith("s3:") ? "S3" : "Storage";
+    const provider = item.storageKey.startsWith("gdrive:") ? "Google Drive" : item.storageKey.startsWith("db:") ? "Database" : item.storageKey.startsWith("s3:") ? "S3" : item.storageKey.startsWith("forge:") ? "Forge" : "Storage";
     return `${index + 1}. ${title}\n✅ เก็บถาวรที่ ${provider}\n🔗 เปิดไฟล์: ${vaultStorageOpenUrl(item.storageKey)}`;
   }
-  return `${index + 1}. ${title}\n⚠️ พบข้อมูลรายการเก่า แต่ไม่มีไฟล์ต้นฉบับที่เก็บถาวร ต้องอัปโหลดไฟล์นี้ซ้ำเพื่อเปิดดาวน์โหลดได้`;
+  return `${index + 1}. ${title}\n⚠️ พบข้อมูลรายการเก่า แต่ไม่มีไฟล์ต้นฉบับที่เก็บถาวร ระบบจะพยายามกู้จาก LINE หากยังดาวน์โหลดได้`;
+}
+
+function vaultSearchRow(item: Awaited<ReturnType<typeof db.searchVaultForChat>>[number]): MiloListRow {
+  const title = item.originalFilename || item.title || `รายการ #${item.id}`;
+  if (item.itemType === "link") {
+    const url = item.sourceUrl || (item.searchableText || "").match(/https?:\/\/\S+/i)?.[0];
+    return { id: item.id, title, detail: item.tagsText || "ลิงก์ที่บันทึกไว้", actionLabel: url ? "เปิดลิงก์" : undefined, actionUri: url || undefined };
+  }
+  if (item.itemType === "text") {
+    return { id: item.id, title, detail: (item.searchableText || "ข้อความที่บันทึกไว้").trim().slice(0, 180) };
+  }
+  if (item.storageKey) {
+    const provider = item.storageKey.startsWith("gdrive:") ? "Google Drive" : item.storageKey.startsWith("db:") ? "Database" : item.storageKey.startsWith("s3:") ? "S3" : item.storageKey.startsWith("forge:") ? "Forge" : "Storage";
+    return { id: item.id, title, detail: `เก็บถาวรที่ ${provider}`, actionLabel: "เปิดไฟล์", actionUri: vaultStorageOpenUrl(item.storageKey) };
+  }
+  return { id: item.id, title, detail: "ยังไม่มีไฟล์ต้นฉบับถาวร • ระบบจะพยายามกู้จาก LINE หากยังดาวน์โหลดได้" };
 }
 
 async function persistDocumentIntelligence(input: {
@@ -580,16 +597,33 @@ async function handleText(event: LineEvent, lineChatId: string, lineUserId: stri
       ? "👥 วิธีใช้ Milo ในกลุ่ม LINE\n1) เชิญ Milo เข้ากลุ่ม\n2) เรียกด้วย @ไมโล ก่อนคำสั่งข้อความ\n3) ใช้เตือน เก็บ/ค้นหาไฟล์ ปฏิทิน To-do และแท็กสมาชิกได้\nตัวอย่าง: @ไมโล เตือนส่งรายงานพรุ่งนี้ 9:00 หรือ @ไมโล แจ้งส่งงานด้วยถึง @สมชาย"
       : "👥 Milo พร้อมช่วยในกลุ่มนี้ครับ\n• @ไมโล เตือนประชุมพรุ่งนี้ 10:00\n• @ไมโล เก็บ https://example.com #งาน\n• @ไมโล ค้นหา ใบเสนอราคา\n• @ไมโล ลงปฏิทิน ประชุมทีมพรุ่งนี้ 10:00\n• @ไมโล แจ้งส่งงานด้วยถึง @สมชาย\n• ส่งรูป/ไฟล์ในกลุ่มเพื่อเก็บและประมวลผลได้ตามสิทธิ์";
   } else if (command.type === "vaultStatus") {
-    const [status, recent] = await Promise.all([
+    let [status, recent] = await Promise.all([
       db.vaultStorageStatus(lineUserId, lineChatId, scope),
       db.searchVaultForChat(lineUserId, lineChatId, scope, ""),
     ]);
+    const missingRecent = recent.filter(item => (item.itemType === "image" || item.itemType === "file") && !item.storageKey && item.lineMessageId).slice(0, 3);
+    if (missingRecent.length) {
+      const recovery = await recoverVaultItems(missingRecent);
+      if (recovery.recovered > 0) {
+        [status, recent] = await Promise.all([
+          db.vaultStorageStatus(lineUserId, lineChatId, scope),
+          db.searchVaultForChat(lineUserId, lineChatId, scope, ""),
+        ]);
+      }
+    }
     const recentText = recent.slice(0, 8).map(formatVaultSearchResult).join("\n\n");
     const vaultScopeLabel = scope === "user" ? "คลังส่วนตัวทั้งหมดของคุณ" : "คลังของกลุ่ม/ห้องนี้";
     const storage = storageRuntimeStatus();
     const providerLabel = storage.activeProvider === "google-drive" ? "Google Drive" : storage.activeProvider === "database" ? "Database" : storage.activeProvider === "s3" ? "S3-compatible" : storage.activeProvider === "forge" ? "Forge Storage" : "ยังไม่พร้อม";
-    const fallbackLabel = storage.activeProvider !== "database" && storage.configuredProviders.includes("database") ? " • สำรองลง Database เมื่อ storage หลักมีปัญหา" : "";
-    message = `🗂️ ${vaultScopeLabel}\nทั้งหมด ${status.total} รายการ\nเก็บถาวร ${status.durable} รายการ\nไฟล์สื่อที่ไม่มีไฟล์ต้นฉบับ ${status.mediaMissing} รายการ\nที่เก็บไฟล์ใหม่: ${providerLabel}${fallbackLabel}\n\n${recentText ? `ไฟล์/รายการล่าสุด\n${recentText}` : "ยังไม่มีรายการในคลัง"}\n\nค้นหาไฟล์เก่าได้ด้วย: ค้นหาไฟล์ <ชื่อไฟล์/ร้าน/แท็ก/คำสำคัญ>\nในแชทส่วนตัว Milo จะค้นข้ามทุกแชทที่คุณเคยเก็บไฟล์ไว้`;
+    const fallbackLabel = storage.activeProvider !== "database" && storage.configuredProviders.includes("database") ? " • สำรอง Database" : "";
+    if (event.replyToken && recent.length) {
+      await replyVaultSearchResults(event.replyToken, recent.slice(0, 8).map(vaultSearchRow), {
+        title: "🗂️ คลังไฟล์",
+        subtitle: `${vaultScopeLabel} • ทั้งหมด ${status.total} • เปิดได้ ${status.durable} • ต้องกู้ ${status.mediaMissing} • ใหม่: ${providerLabel}${fallbackLabel}`,
+      });
+      return;
+    }
+    message = `🗂️ ${vaultScopeLabel}\nทั้งหมด ${status.total} รายการ\nเก็บถาวร ${status.durable} รายการ\nไฟล์สื่อที่ไม่มีไฟล์ต้นฉบับ ${status.mediaMissing} รายการ\nDatabase ${status.database} • Google Drive ${status.googleDrive} • S3 ${status.s3} • Forge ${status.forge}\nที่เก็บไฟล์ใหม่: ${providerLabel}${fallbackLabel}\n\n${recentText ? `ไฟล์/รายการล่าสุด\n${recentText}` : "ยังไม่มีรายการในคลัง"}\n\nค้นหาไฟล์เก่าได้ด้วย: ค้นหาไฟล์ <ชื่อไฟล์/ร้าน/แท็ก/คำสำคัญ>\nในแชทส่วนตัว Milo จะค้นข้ามทุกแชทที่คุณเคยเก็บไฟล์ไว้`;
   } else if (command.type === "documentPacket" || command.type === "documentIssues") {
     const range = bangkokMonthRange(new Date());
     const rows = await db.listVaultDocumentsForChat(lineUserId, lineChatId, scope, range.start, new Date(range.end.getTime() - 1));
@@ -694,7 +728,19 @@ async function handleText(event: LineEvent, lineChatId: string, lineUserId: stri
     await db.createVaultItem({ lineChatId, createdByLineUserId: lineUserId, itemType: command.itemType, title: command.title, searchableText: command.content, tagsText: command.tagsText, sourceUrl: command.sourceUrl, lineMessageId: event.message?.id });
     message = `เก็บ${command.itemType === "link" ? "ลิงก์" : "ข้อความ"}นี้ไว้ในคลังถาวรจนกว่าคุณจะลบแล้ว${command.tagsText ? ` พร้อมแท็ก ${command.tagsText}` : ""}`;
   } else if (command.type === "search") {
-    const results = await db.searchVaultForChat(lineUserId, lineChatId, scope, command.query);
+    let results = await db.searchVaultForChat(lineUserId, lineChatId, scope, command.query);
+    const missingMatches = results.filter(item => (item.itemType === "image" || item.itemType === "file") && !item.storageKey && item.lineMessageId).slice(0, 3);
+    if (missingMatches.length) {
+      const recovery = await recoverVaultItems(missingMatches);
+      if (recovery.recovered > 0) results = await db.searchVaultForChat(lineUserId, lineChatId, scope, command.query);
+    }
+    if (event.replyToken && results.length) {
+      await replyVaultSearchResults(event.replyToken, results.slice(0, 10).map(vaultSearchRow), {
+        title: `🗂️ ค้นหาไฟล์ “${command.query}”`,
+        subtitle: `พบ ${results.length} รายการใน${scope === "user" ? "คลังส่วนตัวทุกแชท" : "กลุ่ม/ห้องนี้"} • แต่ละไฟล์มีปุ่มเปิดของตัวเอง`,
+      });
+      return;
+    }
     const rendered = results.slice(0, 8).map(formatVaultSearchResult).join("\n\n");
     message = results.length
       ? `พบ ${results.length} รายการใน${scope === "user" ? "คลังส่วนตัวของคุณทุกแชท" : "กลุ่ม/ห้องนี้"}\n\n${rendered}`
