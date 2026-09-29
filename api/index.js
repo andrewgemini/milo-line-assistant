@@ -1304,17 +1304,50 @@ async function searchVault(lineUserId, term = "") {
   )) : base;
   return db.select().from(vaultItems).where(where).orderBy(desc(vaultItems.createdAt)).limit(100);
 }
-async function searchVaultForChat(lineUserId, lineChatId, scope, term = "") {
+async function searchVaultForChat(lineUserId, lineChatId, scope, term = "", options = {}) {
   const db = await requireDb();
   const base = scope === "user" ? and(eq(vaultItems.createdByLineUserId, lineUserId), eq(vaultItems.status, "active")) : and(eq(vaultItems.lineChatId, lineChatId), eq(vaultItems.status, "active"));
   const q = term.trim();
-  const where = q ? and(base, or(
-    like(vaultItems.title, `%${q}%`),
-    like(vaultItems.originalFilename, `%${q}%`),
-    like(vaultItems.searchableText, `%${q}%`),
-    like(vaultItems.tagsText, `%${q}%`)
-  )) : base;
-  return db.select().from(vaultItems).where(where).orderBy(desc(vaultItems.createdAt)).limit(100);
+  const limit = Math.max(1, Math.min(options.limit ?? 100, 250));
+  const order = options.order === "oldest" ? asc(vaultItems.createdAt) : desc(vaultItems.createdAt);
+  const fieldsFor = (value) => [
+    like(vaultItems.title, `%${value}%`),
+    like(vaultItems.originalFilename, `%${value}%`),
+    like(vaultItems.searchableText, `%${value}%`),
+    like(vaultItems.tagsText, `%${value}%`)
+  ];
+  if (!q) return db.select().from(vaultItems).where(base).orderBy(order).limit(limit);
+  const exact = await db.select().from(vaultItems).where(and(base, or(...fieldsFor(q)))).orderBy(order).limit(limit);
+  if (exact.length) return exact;
+  const terms = Array.from(new Set(q.split(/[\s,;|/]+/).map((value) => value.trim()).filter((value) => value.length >= 2))).slice(0, 6);
+  if (terms.length <= 1) return exact;
+  return db.select().from(vaultItems).where(and(base, or(...terms.flatMap(fieldsFor)))).orderBy(order).limit(limit);
+}
+async function searchLegacyVaultExtractionsForChat(lineUserId, lineChatId, scope, term, limit = 100) {
+  const db = await requireDb();
+  const base = scope === "user" ? and(eq(vaultItems.createdByLineUserId, lineUserId), eq(vaultItems.status, "active")) : and(eq(vaultItems.lineChatId, lineChatId), eq(vaultItems.status, "active"));
+  const q = term.trim();
+  const cappedLimit = Math.max(1, Math.min(limit, 250));
+  if (!q) return [];
+  const idMatch = q.match(/^#?(\d+)$/);
+  if (idMatch) {
+    const id = Number(idMatch[1]);
+    if (Number.isSafeInteger(id) && id > 0) {
+      const direct = await db.select().from(vaultItems).where(and(base, eq(vaultItems.id, id))).limit(1);
+      if (direct.length) return direct;
+    }
+  }
+  const terms = Array.from(new Set(
+    q.split(/[\s,;|/]+/).map((value) => value.trim()).filter((value) => value.length >= 2)
+  )).slice(0, 6);
+  const extractionConditions = terms.length > 1 ? terms.map((value) => like(imageExtractions.extractedJson, `%${value}%`)) : [like(imageExtractions.extractedJson, `%${q}%`)];
+  const rows = await db.select({ vault: vaultItems }).from(imageExtractions).innerJoin(vaultItems, eq(imageExtractions.vaultItemId, vaultItems.id)).where(and(base, or(...extractionConditions))).orderBy(desc(imageExtractions.createdAt)).limit(cappedLimit);
+  const seen = /* @__PURE__ */ new Set();
+  return rows.map((row) => row.vault).filter((item) => {
+    if (seen.has(item.id)) return false;
+    seen.add(item.id);
+    return true;
+  });
 }
 async function vaultStorageStatus(lineUserId, lineChatId, scope) {
   const rows = await searchVaultForChat(lineUserId, lineChatId, scope, "");
@@ -7891,7 +7924,7 @@ function parseMiloCommand(text2, now = /* @__PURE__ */ new Date()) {
   if (calendar?.type === "list") return { type: "calendarList" };
   if (calendar?.type === "cancel") return { type: "calendarCancel", id: calendar.id };
   if (/^(?:ผู้ช่วยกลุ่ม|กลุ่ม\s*LINE|กลุ่มช่วยอะไร|วิธีใช้กลุ่ม)$/i.test(value)) return { type: "groupGuide" };
-  if (/^(?:สถานะคลัง|คลังไฟล์|คลังถาวร|ไฟล์เก่า|ไฟล์ทั้งหมด|ดูไฟล์เก่า|ดูไฟล์ทั้งหมด)$/i.test(value)) return { type: "vaultStatus" };
+  if (/^(?:สถานะคลัง|คลังไฟล์|คลังถาวร|ไฟล์เก่า|ไฟล์ทั้งหมด|ดูไฟล์เก่า|ดูไฟล์ทั้งหมด|หาไฟล์เก่า|เรียกไฟล์เก่า|เรียกหาไฟล์เก่า|ค้นไฟล์เก่า)$/i.test(value)) return { type: "vaultStatus" };
   if (/^(?:สรุป(?:ชุด)?(?:เอกสาร|ไฟล์)(?:เดือนนี้)?|(?:ชุด)?เอกสารเดือนนี้(?:ครบไหม|ครบหรือยัง)?|เช็กเอกสารเดือนนี้)$/i.test(value)) return { type: "documentPacket" };
   if (/^(?:(?:เอกสาร|ไฟล์)(?:ที่)?(?:มีปัญหา|ต้องตรวจ|รอตรวจ|รอตัดสิน|อ่านไม่ได้)|ตรวจเอกสารที่มีปัญหา)$/i.test(value)) return { type: "documentIssues" };
   const recurring = recurringFrom(value, now);
@@ -9289,9 +9322,11 @@ ${syncMessage}`;
   } else if (command.type === "groupGuide") {
     message = scope === "user" ? "\u{1F465} \u0E27\u0E34\u0E18\u0E35\u0E43\u0E0A\u0E49 Milo \u0E43\u0E19\u0E01\u0E25\u0E38\u0E48\u0E21 LINE\n1) \u0E40\u0E0A\u0E34\u0E0D Milo \u0E40\u0E02\u0E49\u0E32\u0E01\u0E25\u0E38\u0E48\u0E21\n2) \u0E40\u0E23\u0E35\u0E22\u0E01\u0E14\u0E49\u0E27\u0E22 @\u0E44\u0E21\u0E42\u0E25 \u0E01\u0E48\u0E2D\u0E19\u0E04\u0E33\u0E2A\u0E31\u0E48\u0E07\u0E02\u0E49\u0E2D\u0E04\u0E27\u0E32\u0E21\n3) \u0E43\u0E0A\u0E49\u0E40\u0E15\u0E37\u0E2D\u0E19 \u0E40\u0E01\u0E47\u0E1A/\u0E04\u0E49\u0E19\u0E2B\u0E32\u0E44\u0E1F\u0E25\u0E4C \u0E1B\u0E0F\u0E34\u0E17\u0E34\u0E19 To-do \u0E41\u0E25\u0E30\u0E41\u0E17\u0E47\u0E01\u0E2A\u0E21\u0E32\u0E0A\u0E34\u0E01\u0E44\u0E14\u0E49\n\u0E15\u0E31\u0E27\u0E2D\u0E22\u0E48\u0E32\u0E07: @\u0E44\u0E21\u0E42\u0E25 \u0E40\u0E15\u0E37\u0E2D\u0E19\u0E2A\u0E48\u0E07\u0E23\u0E32\u0E22\u0E07\u0E32\u0E19\u0E1E\u0E23\u0E38\u0E48\u0E07\u0E19\u0E35\u0E49 9:00 \u0E2B\u0E23\u0E37\u0E2D @\u0E44\u0E21\u0E42\u0E25 \u0E41\u0E08\u0E49\u0E07\u0E2A\u0E48\u0E07\u0E07\u0E32\u0E19\u0E14\u0E49\u0E27\u0E22\u0E16\u0E36\u0E07 @\u0E2A\u0E21\u0E0A\u0E32\u0E22" : "\u{1F465} Milo \u0E1E\u0E23\u0E49\u0E2D\u0E21\u0E0A\u0E48\u0E27\u0E22\u0E43\u0E19\u0E01\u0E25\u0E38\u0E48\u0E21\u0E19\u0E35\u0E49\u0E04\u0E23\u0E31\u0E1A\n\u2022 @\u0E44\u0E21\u0E42\u0E25 \u0E40\u0E15\u0E37\u0E2D\u0E19\u0E1B\u0E23\u0E30\u0E0A\u0E38\u0E21\u0E1E\u0E23\u0E38\u0E48\u0E07\u0E19\u0E35\u0E49 10:00\n\u2022 @\u0E44\u0E21\u0E42\u0E25 \u0E40\u0E01\u0E47\u0E1A https://example.com #\u0E07\u0E32\u0E19\n\u2022 @\u0E44\u0E21\u0E42\u0E25 \u0E04\u0E49\u0E19\u0E2B\u0E32 \u0E43\u0E1A\u0E40\u0E2A\u0E19\u0E2D\u0E23\u0E32\u0E04\u0E32\n\u2022 @\u0E44\u0E21\u0E42\u0E25 \u0E25\u0E07\u0E1B\u0E0F\u0E34\u0E17\u0E34\u0E19 \u0E1B\u0E23\u0E30\u0E0A\u0E38\u0E21\u0E17\u0E35\u0E21\u0E1E\u0E23\u0E38\u0E48\u0E07\u0E19\u0E35\u0E49 10:00\n\u2022 @\u0E44\u0E21\u0E42\u0E25 \u0E41\u0E08\u0E49\u0E07\u0E2A\u0E48\u0E07\u0E07\u0E32\u0E19\u0E14\u0E49\u0E27\u0E22\u0E16\u0E36\u0E07 @\u0E2A\u0E21\u0E0A\u0E32\u0E22\n\u2022 \u0E2A\u0E48\u0E07\u0E23\u0E39\u0E1B/\u0E44\u0E1F\u0E25\u0E4C\u0E43\u0E19\u0E01\u0E25\u0E38\u0E48\u0E21\u0E40\u0E1E\u0E37\u0E48\u0E2D\u0E40\u0E01\u0E47\u0E1A\u0E41\u0E25\u0E30\u0E1B\u0E23\u0E30\u0E21\u0E27\u0E25\u0E1C\u0E25\u0E44\u0E14\u0E49\u0E15\u0E32\u0E21\u0E2A\u0E34\u0E17\u0E18\u0E34\u0E4C";
   } else if (command.type === "vaultStatus") {
+    const vaultText = event.message?.type === "text" ? (event.message.text ?? "").trim() : "";
+    const wantsOldest = /(?:ไฟล์เก่า|ดูไฟล์เก่า|หาไฟล์เก่า|เรียกไฟล์เก่า|เรียกหาไฟล์เก่า|ค้นไฟล์เก่า)/i.test(vaultText);
     let [status, recent] = await Promise.all([
       vaultStorageStatus(lineUserId, lineChatId, scope),
-      searchVaultForChat(lineUserId, lineChatId, scope, "")
+      searchVaultForChat(lineUserId, lineChatId, scope, "", wantsOldest ? { order: "oldest", limit: 100 } : void 0)
     ]);
     const missingRecent = recent.filter((item) => (item.itemType === "image" || item.itemType === "file") && !item.storageKey && item.lineMessageId).slice(0, 3);
     if (missingRecent.length) {
@@ -9299,7 +9334,7 @@ ${syncMessage}`;
       if (recovery.recovered > 0) {
         [status, recent] = await Promise.all([
           vaultStorageStatus(lineUserId, lineChatId, scope),
-          searchVaultForChat(lineUserId, lineChatId, scope, "")
+          searchVaultForChat(lineUserId, lineChatId, scope, "", wantsOldest ? { order: "oldest", limit: 100 } : void 0)
         ]);
       }
     }
@@ -9310,8 +9345,8 @@ ${syncMessage}`;
     const fallbackLabel = storage.activeProvider !== "database" && storage.configuredProviders.includes("database") ? " \u2022 \u0E2A\u0E33\u0E23\u0E2D\u0E07 Database" : "";
     if (event.replyToken && recent.length) {
       await replyVaultSearchResults(event.replyToken, recent.slice(0, 8).map(vaultSearchRow), {
-        title: "\u{1F5C2}\uFE0F \u0E04\u0E25\u0E31\u0E07\u0E44\u0E1F\u0E25\u0E4C",
-        subtitle: `${vaultScopeLabel} \u2022 \u0E17\u0E31\u0E49\u0E07\u0E2B\u0E21\u0E14 ${status.total} \u2022 \u0E40\u0E1B\u0E34\u0E14\u0E44\u0E14\u0E49 ${status.durable} \u2022 \u0E15\u0E49\u0E2D\u0E07\u0E01\u0E39\u0E49 ${status.mediaMissing} \u2022 \u0E43\u0E2B\u0E21\u0E48: ${providerLabel}${fallbackLabel}`
+        title: wantsOldest ? "\u{1F5C2}\uFE0F \u0E44\u0E1F\u0E25\u0E4C\u0E40\u0E01\u0E48\u0E32" : "\u{1F5C2}\uFE0F \u0E04\u0E25\u0E31\u0E07\u0E44\u0E1F\u0E25\u0E4C",
+        subtitle: `${vaultScopeLabel} \u2022 \u0E17\u0E31\u0E49\u0E07\u0E2B\u0E21\u0E14 ${status.total} \u2022 \u0E40\u0E1B\u0E34\u0E14\u0E44\u0E14\u0E49 ${status.durable} \u2022 \u0E15\u0E49\u0E2D\u0E07\u0E01\u0E39\u0E49 ${status.mediaMissing} \u2022 ${wantsOldest ? "\u0E40\u0E23\u0E35\u0E22\u0E07\u0E40\u0E01\u0E48\u0E32\u0E2A\u0E38\u0E14\u0E01\u0E48\u0E2D\u0E19" : `\u0E43\u0E2B\u0E21\u0E48: ${providerLabel}${fallbackLabel}`}`
       });
       return;
     }
@@ -9476,10 +9511,16 @@ ${results.map((item) => `#${item.id} \xB7 ${item.transactionType === "expense" ?
     message = `\u0E40\u0E01\u0E47\u0E1A${command.itemType === "link" ? "\u0E25\u0E34\u0E07\u0E01\u0E4C" : "\u0E02\u0E49\u0E2D\u0E04\u0E27\u0E32\u0E21"}\u0E19\u0E35\u0E49\u0E44\u0E27\u0E49\u0E43\u0E19\u0E04\u0E25\u0E31\u0E07\u0E16\u0E32\u0E27\u0E23\u0E08\u0E19\u0E01\u0E27\u0E48\u0E32\u0E04\u0E38\u0E13\u0E08\u0E30\u0E25\u0E1A\u0E41\u0E25\u0E49\u0E27${command.tagsText ? ` \u0E1E\u0E23\u0E49\u0E2D\u0E21\u0E41\u0E17\u0E47\u0E01 ${command.tagsText}` : ""}`;
   } else if (command.type === "search") {
     let results = await searchVaultForChat(lineUserId, lineChatId, scope, command.query);
+    if (!results.length) {
+      results = await searchLegacyVaultExtractionsForChat(lineUserId, lineChatId, scope, command.query, 100);
+    }
     const missingMatches = results.filter((item) => (item.itemType === "image" || item.itemType === "file") && !item.storageKey && item.lineMessageId).slice(0, 3);
     if (missingMatches.length) {
       const recovery = await recoverVaultItems(missingMatches);
-      if (recovery.recovered > 0) results = await searchVaultForChat(lineUserId, lineChatId, scope, command.query);
+      if (recovery.recovered > 0) {
+        results = await searchVaultForChat(lineUserId, lineChatId, scope, command.query);
+        if (!results.length) results = await searchLegacyVaultExtractionsForChat(lineUserId, lineChatId, scope, command.query, 100);
+      }
     }
     if (event.replyToken && results.length) {
       await replyVaultSearchResults(event.replyToken, results.slice(0, 10).map(vaultSearchRow), {
@@ -11250,7 +11291,7 @@ var healthHandler = async (req, res) => {
   res.status(200).json({
     status: runtime.authenticated && voice.configured && Boolean(process.env.LINE_CHANNEL_SECRET?.trim()) && Boolean(process.env.LINE_CHANNEL_ACCESS_TOKEN?.trim()) && Boolean(process.env.DATABASE_URL?.trim()) ? "ok" : "degraded",
     service: "milo",
-    release: "milo-vault-retrieval-2026-09-27",
+    release: "milo-vault-legacy-search-2026-09-30",
     intentRoutingMode: "systemone-first+deterministic-fallback",
     systemOneConfigured: systemOneConfigured(),
     systemOneProviderOrder: systemOneProviderOrder(),

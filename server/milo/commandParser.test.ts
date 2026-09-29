@@ -37,6 +37,9 @@ describe("Milo command parser", () => {
     expect(parseMiloCommand("ค้นไฟล์ ใบเสนอราคา", now)).toEqual({ type: "search", query: "ใบเสนอราคา" });
     expect(parseMiloCommand("เปิดไฟล์ รายงานเดือนสิงหาคม", now)).toEqual({ type: "search", query: "รายงานเดือนสิงหาคม" });
     expect(parseMiloCommand("ไฟล์เก่า", now)).toEqual({ type: "vaultStatus" });
+    expect(parseMiloCommand("หาไฟล์เก่า", now)).toEqual({ type: "vaultStatus" });
+    expect(parseMiloCommand("เรียกหาไฟล์เก่า", now)).toEqual({ type: "vaultStatus" });
+    expect(parseMiloCommand("ค้นไฟล์เก่า", now)).toEqual({ type: "vaultStatus" });
   });
   it("recognizes help commands used by both rich menus", () => { expect(parseMiloCommand("ช่วย", now)).toEqual({ type: "help" }); expect(parseMiloCommand("ช่วยเหลือ", now)).toEqual({ type: "help" }); });
   it("recognizes a tagged link and a group mention instruction", () => { expect(parseMiloCommand("เก็บ https://example.com/brief #งาน #สำคัญ", now)).toMatchObject({ type: "vault", itemType: "link", tagsText: "#งาน #สำคัญ" }); expect(parseMiloCommand("แจ้งส่งงานด้วยถึง @สมชาย", now)).toEqual({ type: "mention", message: "ส่งงานด้วย", memberName: "สมชาย" }); });

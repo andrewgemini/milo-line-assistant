@@ -177,7 +177,7 @@ export function parseMiloCommand(text: string, now = new Date()): MiloCommand {
   if (calendar?.type === "list") return { type: "calendarList" };
   if (calendar?.type === "cancel") return { type: "calendarCancel", id: calendar.id };
   if (/^(?:ผู้ช่วยกลุ่ม|กลุ่ม\s*LINE|กลุ่มช่วยอะไร|วิธีใช้กลุ่ม)$/i.test(value)) return { type: "groupGuide" };
-  if (/^(?:สถานะคลัง|คลังไฟล์|คลังถาวร|ไฟล์เก่า|ไฟล์ทั้งหมด|ดูไฟล์เก่า|ดูไฟล์ทั้งหมด)$/i.test(value)) return { type: "vaultStatus" };
+  if (/^(?:สถานะคลัง|คลังไฟล์|คลังถาวร|ไฟล์เก่า|ไฟล์ทั้งหมด|ดูไฟล์เก่า|ดูไฟล์ทั้งหมด|หาไฟล์เก่า|เรียกไฟล์เก่า|เรียกหาไฟล์เก่า|ค้นไฟล์เก่า)$/i.test(value)) return { type: "vaultStatus" };
   if (/^(?:สรุป(?:ชุด)?(?:เอกสาร|ไฟล์)(?:เดือนนี้)?|(?:ชุด)?เอกสารเดือนนี้(?:ครบไหม|ครบหรือยัง)?|เช็กเอกสารเดือนนี้)$/i.test(value)) return { type: "documentPacket" };
   if (/^(?:(?:เอกสาร|ไฟล์)(?:ที่)?(?:มีปัญหา|ต้องตรวจ|รอตรวจ|รอตัดสิน|อ่านไม่ได้)|ตรวจเอกสารที่มีปัญหา)$/i.test(value)) return { type: "documentIssues" };
   const recurring = recurringFrom(value, now); if (recurring) return recurring;

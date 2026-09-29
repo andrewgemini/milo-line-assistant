@@ -47,6 +47,7 @@ vi.mock("../db", () => ({
   updateVaultIntelligence: vi.fn(),
   searchVault: vi.fn(),
   searchVaultForChat: vi.fn(),
+  searchLegacyVaultExtractionsForChat: vi.fn(),
   vaultStorageStatus: vi.fn(),
   attachVaultStorage: vi.fn(),
   listVaultMediaMissingStorage: vi.fn(),
@@ -120,6 +121,7 @@ describe("LINE webhook processor", () => {
     vi.mocked(db.getFinanceAccountBudgetCycleStartDay).mockResolvedValue(1 as never);
     vi.mocked(db.listRecurringTransactions).mockResolvedValue([] as never);
     vi.mocked(db.findVaultItemByFingerprint).mockResolvedValue(undefined as never);
+    vi.mocked(db.searchLegacyVaultExtractionsForChat).mockResolvedValue([] as never);
     vi.mocked(db.listVaultDocumentsForChat).mockResolvedValue([] as never);
     vi.mocked(db.updateVaultIntelligence).mockResolvedValue(true as never);
     vi.mocked(db.attachVaultStorage).mockResolvedValue(true as never);
@@ -541,6 +543,56 @@ describe("LINE webhook processor", () => {
     expect(storagePut).toHaveBeenCalledWith(expect.stringContaining("milo-recovery/U1/line-old-77-old-slip.jpg"), expect.any(Buffer), "image/jpeg");
     expect(db.attachVaultStorage).toHaveBeenCalledWith(expect.objectContaining({ id: 77, storageKey: "db:milo-recovery/U1/old-slip.jpg" }));
     expect(replyVaultSearchResults).toHaveBeenCalledWith("token", [expect.objectContaining({ id: 77, actionLabel: "เปิดไฟล์", actionUri: expect.stringContaining("db%3Amilo-recovery%2FU1%2Fold-slip.jpg") })], expect.any(Object));
+  });
+
+  it("falls back to legacy OCR extraction metadata when an old file has a generic vault title", async () => {
+    vi.mocked(db.registerWebhookEvent).mockResolvedValue(true);
+    vi.mocked(getProfile).mockResolvedValue({ displayName: "ผู้ส่ง" });
+    vi.mocked(sourceIdentity).mockReturnValue({ lineChatId: "U1", lineUserId: "U1", scope: "user" });
+    vi.mocked(db.searchVaultForChat).mockResolvedValue([] as never);
+    vi.mocked(db.searchLegacyVaultExtractionsForChat).mockResolvedValue([
+      { id: 88, title: "รูปจาก LINE", originalFilename: null, itemType: "image", storageKey: "gdrive:legacy-88" },
+    ] as never);
+    vi.mocked(replyVaultSearchResults).mockResolvedValue(new Response());
+
+    await processEvent({ type: "message", webhookEventId: "evt-legacy-ocr-search", timestamp: Date.now(), replyToken: "token", source: { type: "user", userId: "U1" }, message: { id: "search-legacy-ocr", type: "text", text: "ค้นหาไฟล์ EVEANDBOY 716" } }, "{}");
+
+    expect(db.searchVaultForChat).toHaveBeenCalledWith("U1", "U1", "user", "EVEANDBOY 716");
+    expect(db.searchLegacyVaultExtractionsForChat).toHaveBeenCalledWith("U1", "U1", "user", "EVEANDBOY 716", 100);
+    expect(replyVaultSearchResults).toHaveBeenCalledWith("token", [expect.objectContaining({ id: 88, actionLabel: "เปิดไฟล์", actionUri: expect.stringContaining("gdrive%3Alegacy-88") })], expect.any(Object));
+  });
+
+  it("can open a legacy vault item directly by #id when the text index has no match", async () => {
+    vi.mocked(db.registerWebhookEvent).mockResolvedValue(true);
+    vi.mocked(getProfile).mockResolvedValue({ displayName: "ผู้ส่ง" });
+    vi.mocked(sourceIdentity).mockReturnValue({ lineChatId: "U1", lineUserId: "U1", scope: "user" });
+    vi.mocked(db.searchVaultForChat).mockResolvedValue([] as never);
+    vi.mocked(db.searchLegacyVaultExtractionsForChat).mockResolvedValue([
+      { id: 27, title: "ใบเสร็จเก่า", originalFilename: "receipt-old.jpg", itemType: "image", storageKey: "db:legacy-27" },
+    ] as never);
+    vi.mocked(replyVaultSearchResults).mockResolvedValue(new Response());
+
+    await processEvent({ type: "message", webhookEventId: "evt-open-vault-id", timestamp: Date.now(), replyToken: "token", source: { type: "user", userId: "U1" }, message: { id: "open-vault-id", type: "text", text: "เปิดไฟล์ #27" } }, "{}");
+
+    expect(db.searchLegacyVaultExtractionsForChat).toHaveBeenCalledWith("U1", "U1", "user", "#27", 100);
+    expect(replyVaultSearchResults).toHaveBeenCalledWith("token", [expect.objectContaining({ id: 27, title: "receipt-old.jpg", actionLabel: "เปิดไฟล์" })], expect.any(Object));
+  });
+
+  it("lists old vault items oldest-first without widening the private-vault scope", async () => {
+    vi.mocked(db.registerWebhookEvent).mockResolvedValue(true);
+    vi.mocked(getProfile).mockResolvedValue({ displayName: "ผู้ส่ง" });
+    vi.mocked(sourceIdentity).mockReturnValue({ lineChatId: "U1", lineUserId: "U1", scope: "user" });
+    vi.mocked(db.vaultStorageStatus).mockResolvedValue({ total: 2, durable: 2, mediaMissing: 0 } as never);
+    vi.mocked(db.searchVaultForChat).mockResolvedValue([
+      { id: 1, title: "ไฟล์แรก", originalFilename: "first.pdf", itemType: "file", storageKey: "gdrive:first" },
+      { id: 2, title: "ไฟล์ถัดมา", originalFilename: "second.pdf", itemType: "file", storageKey: "gdrive:second" },
+    ] as never);
+    vi.mocked(replyVaultSearchResults).mockResolvedValue(new Response());
+
+    await processEvent({ type: "message", webhookEventId: "evt-oldest-vault", timestamp: Date.now(), replyToken: "token", source: { type: "user", userId: "U1" }, message: { id: "oldest-vault", type: "text", text: "เรียกหาไฟล์เก่า" } }, "{}");
+
+    expect(db.searchVaultForChat).toHaveBeenCalledWith("U1", "U1", "user", "", { order: "oldest", limit: 100 });
+    expect(replyVaultSearchResults).toHaveBeenCalledWith("token", expect.any(Array), expect.objectContaining({ title: "🗂️ ไฟล์เก่า", subtitle: expect.stringContaining("เรียงเก่าสุดก่อน") }));
   });
 
   it("reports durable-vault coverage without overclaiming missing media storage", async () => {

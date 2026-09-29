@@ -597,9 +597,11 @@ async function handleText(event: LineEvent, lineChatId: string, lineUserId: stri
       ? "👥 วิธีใช้ Milo ในกลุ่ม LINE\n1) เชิญ Milo เข้ากลุ่ม\n2) เรียกด้วย @ไมโล ก่อนคำสั่งข้อความ\n3) ใช้เตือน เก็บ/ค้นหาไฟล์ ปฏิทิน To-do และแท็กสมาชิกได้\nตัวอย่าง: @ไมโล เตือนส่งรายงานพรุ่งนี้ 9:00 หรือ @ไมโล แจ้งส่งงานด้วยถึง @สมชาย"
       : "👥 Milo พร้อมช่วยในกลุ่มนี้ครับ\n• @ไมโล เตือนประชุมพรุ่งนี้ 10:00\n• @ไมโล เก็บ https://example.com #งาน\n• @ไมโล ค้นหา ใบเสนอราคา\n• @ไมโล ลงปฏิทิน ประชุมทีมพรุ่งนี้ 10:00\n• @ไมโล แจ้งส่งงานด้วยถึง @สมชาย\n• ส่งรูป/ไฟล์ในกลุ่มเพื่อเก็บและประมวลผลได้ตามสิทธิ์";
   } else if (command.type === "vaultStatus") {
+    const vaultText = event.message?.type === "text" ? (event.message.text ?? "").trim() : "";
+    const wantsOldest = /(?:ไฟล์เก่า|ดูไฟล์เก่า|หาไฟล์เก่า|เรียกไฟล์เก่า|เรียกหาไฟล์เก่า|ค้นไฟล์เก่า)/i.test(vaultText);
     let [status, recent] = await Promise.all([
       db.vaultStorageStatus(lineUserId, lineChatId, scope),
-      db.searchVaultForChat(lineUserId, lineChatId, scope, ""),
+      db.searchVaultForChat(lineUserId, lineChatId, scope, "", wantsOldest ? { order: "oldest", limit: 100 } : undefined),
     ]);
     const missingRecent = recent.filter(item => (item.itemType === "image" || item.itemType === "file") && !item.storageKey && item.lineMessageId).slice(0, 3);
     if (missingRecent.length) {
@@ -607,7 +609,7 @@ async function handleText(event: LineEvent, lineChatId: string, lineUserId: stri
       if (recovery.recovered > 0) {
         [status, recent] = await Promise.all([
           db.vaultStorageStatus(lineUserId, lineChatId, scope),
-          db.searchVaultForChat(lineUserId, lineChatId, scope, ""),
+          db.searchVaultForChat(lineUserId, lineChatId, scope, "", wantsOldest ? { order: "oldest", limit: 100 } : undefined),
         ]);
       }
     }
@@ -618,8 +620,8 @@ async function handleText(event: LineEvent, lineChatId: string, lineUserId: stri
     const fallbackLabel = storage.activeProvider !== "database" && storage.configuredProviders.includes("database") ? " • สำรอง Database" : "";
     if (event.replyToken && recent.length) {
       await replyVaultSearchResults(event.replyToken, recent.slice(0, 8).map(vaultSearchRow), {
-        title: "🗂️ คลังไฟล์",
-        subtitle: `${vaultScopeLabel} • ทั้งหมด ${status.total} • เปิดได้ ${status.durable} • ต้องกู้ ${status.mediaMissing} • ใหม่: ${providerLabel}${fallbackLabel}`,
+        title: wantsOldest ? "🗂️ ไฟล์เก่า" : "🗂️ คลังไฟล์",
+        subtitle: `${vaultScopeLabel} • ทั้งหมด ${status.total} • เปิดได้ ${status.durable} • ต้องกู้ ${status.mediaMissing} • ${wantsOldest ? "เรียงเก่าสุดก่อน" : `ใหม่: ${providerLabel}${fallbackLabel}`}`,
       });
       return;
     }
@@ -729,10 +731,16 @@ async function handleText(event: LineEvent, lineChatId: string, lineUserId: stri
     message = `เก็บ${command.itemType === "link" ? "ลิงก์" : "ข้อความ"}นี้ไว้ในคลังถาวรจนกว่าคุณจะลบแล้ว${command.tagsText ? ` พร้อมแท็ก ${command.tagsText}` : ""}`;
   } else if (command.type === "search") {
     let results = await db.searchVaultForChat(lineUserId, lineChatId, scope, command.query);
+    if (!results.length) {
+      results = await db.searchLegacyVaultExtractionsForChat(lineUserId, lineChatId, scope, command.query, 100);
+    }
     const missingMatches = results.filter(item => (item.itemType === "image" || item.itemType === "file") && !item.storageKey && item.lineMessageId).slice(0, 3);
     if (missingMatches.length) {
       const recovery = await recoverVaultItems(missingMatches);
-      if (recovery.recovered > 0) results = await db.searchVaultForChat(lineUserId, lineChatId, scope, command.query);
+      if (recovery.recovered > 0) {
+        results = await db.searchVaultForChat(lineUserId, lineChatId, scope, command.query);
+        if (!results.length) results = await db.searchLegacyVaultExtractionsForChat(lineUserId, lineChatId, scope, command.query, 100);
+      }
     }
     if (event.replyToken && results.length) {
       await replyVaultSearchResults(event.replyToken, results.slice(0, 10).map(vaultSearchRow), {
