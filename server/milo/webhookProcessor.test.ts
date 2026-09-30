@@ -559,6 +559,31 @@ describe("LINE webhook processor", () => {
     expect(replyVaultSearchResults).toHaveBeenCalledWith("token", [expect.objectContaining({ id: 77, title: "old-slip.jpg", actionLabel: "เปิดไฟล์" })], expect.any(Object));
   });
 
+  it("opens a legacy storageUrl-only file when the old row has no storageKey", async () => {
+    vi.mocked(db.registerWebhookEvent).mockResolvedValue(true);
+    vi.mocked(getProfile).mockResolvedValue({ displayName: "ผู้ส่ง" });
+    vi.mocked(sourceIdentity).mockReturnValue({ lineChatId: "U1", lineUserId: "U1", scope: "user" });
+    vi.mocked(db.searchVaultForChat).mockResolvedValue([{ id: 79, title: "ไฟล์เก่า", originalFilename: "old-contract.pdf", itemType: "file", storageKey: null, storageUrl: "https://legacy.example/files/old-contract.pdf" }] as never);
+    vi.mocked(replyVaultSearchResults).mockResolvedValue(new Response());
+
+    await processEvent({ type: "message", webhookEventId: "evt-vault-legacy-url", timestamp: Date.now(), replyToken: "token", source: { type: "user", userId: "U1" }, message: { id: "vault-legacy-url-1", type: "text", text: "เปิดไฟล์ #79" } }, "{}");
+
+    expect(replyVaultSearchResults).toHaveBeenCalledWith("token", [expect.objectContaining({ id: 79, title: "old-contract.pdf", actionLabel: "เปิดไฟล์", actionUri: "https://legacy.example/files/old-contract.pdf" })], expect.any(Object));
+    expect(getMessageContent).not.toHaveBeenCalled();
+  });
+
+  it("uses a preserved legacy URL when an old Forge key exists but Forge is no longer configured", async () => {
+    vi.mocked(db.registerWebhookEvent).mockResolvedValue(true);
+    vi.mocked(getProfile).mockResolvedValue({ displayName: "ผู้ส่ง" });
+    vi.mocked(sourceIdentity).mockReturnValue({ lineChatId: "U1", lineUserId: "U1", scope: "user" });
+    vi.mocked(db.searchVaultForChat).mockResolvedValue([{ id: 80, title: "ไฟล์ Forge เก่า", originalFilename: "legacy-quote.pdf", itemType: "file", storageKey: "forge:milo/U1/legacy-quote.pdf", storageUrl: "https://legacy.example/files/legacy-quote.pdf" }] as never);
+    vi.mocked(replyVaultSearchResults).mockResolvedValue(new Response());
+
+    await processEvent({ type: "message", webhookEventId: "evt-vault-old-forge", timestamp: Date.now(), replyToken: "token", source: { type: "user", userId: "U1" }, message: { id: "vault-old-forge-1", type: "text", text: "ค้นหาไฟล์ legacy-quote" } }, "{}");
+
+    expect(replyVaultSearchResults).toHaveBeenCalledWith("token", [expect.objectContaining({ id: 80, actionLabel: "เปิดไฟล์", actionUri: "https://legacy.example/files/legacy-quote.pdf" })], expect.any(Object));
+  });
+
   it("searches a shared group vault within the current LINE group", async () => {
     vi.mocked(db.registerWebhookEvent).mockResolvedValue(true);
     vi.mocked(getProfile).mockResolvedValue({ displayName: "ผู้ส่ง" });

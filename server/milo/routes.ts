@@ -128,6 +128,39 @@ function vaultStorageOpenUrl(storageKey: string) {
   return new URL(`/api/milo/storage/${encodeURIComponent(storageKey)}`, base).href;
 }
 
+function normalizeLegacyStorageUrl(storageUrl: string | null | undefined) {
+  const value = storageUrl?.trim();
+  if (!value) return undefined;
+  const base = process.env.MILO_PUBLIC_URL || "https://milo-line-assistant.onrender.com";
+  try {
+    return new URL(value, base).href;
+  } catch {
+    return undefined;
+  }
+}
+
+function vaultItemOpenUrl(item: Awaited<ReturnType<typeof db.searchVaultForChat>>[number]) {
+  const legacyUrl = normalizeLegacyStorageUrl(item.storageUrl);
+  if (!item.storageKey) return legacyUrl;
+
+  const storage = storageRuntimeStatus();
+  const key = item.storageKey;
+  const supported = key.startsWith("db:")
+    ? storage.configuredProviders.includes("database")
+    : key.startsWith("gdrive:")
+      ? storage.configuredProviders.includes("google-drive")
+      : key.startsWith("s3:")
+        ? storage.configuredProviders.includes("s3")
+        : key.startsWith("forge:")
+          ? storage.configuredProviders.includes("forge")
+          : storage.configuredProviders.includes("forge");
+
+  // Legacy unprefixed/Forge keys may outlive the provider configuration. Prefer a
+  // preserved storage URL when the original provider is no longer available.
+  if (!supported && legacyUrl) return legacyUrl;
+  return vaultStorageOpenUrl(key);
+}
+
 function formatVaultSearchResult(item: Awaited<ReturnType<typeof db.searchVaultForChat>>[number], index: number) {
   const title = item.originalFilename || item.title || `รายการ #${item.id}`;
   if (item.itemType === "link") {
@@ -137,9 +170,10 @@ function formatVaultSearchResult(item: Awaited<ReturnType<typeof db.searchVaultF
     const preview = (item.searchableText || "").trim().slice(0, 180);
     return `${index + 1}. ${title}${preview ? `\n📝 ${preview}` : ""}`;
   }
-  if (item.storageKey) {
-    const provider = item.storageKey.startsWith("gdrive:") ? "Google Drive" : item.storageKey.startsWith("db:") ? "Database" : item.storageKey.startsWith("s3:") ? "S3" : item.storageKey.startsWith("forge:") ? "Forge" : "Storage";
-    return `${index + 1}. ${title}\n✅ เก็บถาวรที่ ${provider}\n🔗 เปิดไฟล์: ${vaultStorageOpenUrl(item.storageKey)}`;
+  const openUrl = vaultItemOpenUrl(item);
+  if (openUrl) {
+    const provider = item.storageKey?.startsWith("gdrive:") ? "Google Drive" : item.storageKey?.startsWith("db:") ? "Database" : item.storageKey?.startsWith("s3:") ? "S3" : item.storageKey?.startsWith("forge:") ? "Forge" : item.storageUrl ? "Legacy Storage" : "Storage";
+    return `${index + 1}. ${title}\n✅ เก็บถาวรที่ ${provider}\n🔗 เปิดไฟล์: ${openUrl}`;
   }
   return `${index + 1}. ${title}\n⚠️ พบ metadata ของไฟล์เก่า แต่ไม่มีไฟล์ต้นฉบับถาวร ระบบจะลองกู้จาก LINE เมื่อค้นหา หาก LINE หมดอายุแล้วไฟล์เดิมจะเปิดไม่ได้และต้องส่งต้นฉบับใหม่`;
 }
@@ -153,9 +187,10 @@ function vaultSearchRow(item: Awaited<ReturnType<typeof db.searchVaultForChat>>[
   if (item.itemType === "text") {
     return { id: item.id, title, detail: (item.searchableText || "ข้อความที่บันทึกไว้").trim().slice(0, 180) };
   }
-  if (item.storageKey) {
-    const provider = item.storageKey.startsWith("gdrive:") ? "Google Drive" : item.storageKey.startsWith("db:") ? "Database" : item.storageKey.startsWith("s3:") ? "S3" : item.storageKey.startsWith("forge:") ? "Forge" : "Storage";
-    return { id: item.id, title, detail: `เก็บถาวรที่ ${provider}`, actionLabel: "เปิดไฟล์", actionUri: vaultStorageOpenUrl(item.storageKey) };
+  const openUrl = vaultItemOpenUrl(item);
+  if (openUrl) {
+    const provider = item.storageKey?.startsWith("gdrive:") ? "Google Drive" : item.storageKey?.startsWith("db:") ? "Database" : item.storageKey?.startsWith("s3:") ? "S3" : item.storageKey?.startsWith("forge:") ? "Forge" : item.storageUrl ? "Legacy Storage" : "Storage";
+    return { id: item.id, title, detail: `เก็บถาวรที่ ${provider}`, actionLabel: "เปิดไฟล์", actionUri: openUrl };
   }
   return { id: item.id, title, detail: "พบ metadata แต่ยังไม่มีไฟล์ต้นฉบับถาวร • ระบบจะลองกู้จาก LINE; ถ้า LINE หมดอายุแล้วต้องส่งต้นฉบับใหม่" };
 }
@@ -603,7 +638,7 @@ async function handleText(event: LineEvent, lineChatId: string, lineUserId: stri
       db.vaultStorageStatus(lineUserId, lineChatId, scope),
       db.searchVaultForChat(lineUserId, lineChatId, scope, "", wantsOldest ? { order: "oldest", limit: 100 } : undefined),
     ]);
-    const missingRecent = recent.filter(item => (item.itemType === "image" || item.itemType === "file") && !item.storageKey && item.lineMessageId).slice(0, 3);
+    const missingRecent = recent.filter(item => (item.itemType === "image" || item.itemType === "file") && !item.storageKey && !item.storageUrl && item.lineMessageId).slice(0, 3);
     if (missingRecent.length) {
       const recovery = await recoverVaultItems(missingRecent);
       if (recovery.recovered > 0) {
@@ -625,7 +660,7 @@ async function handleText(event: LineEvent, lineChatId: string, lineUserId: stri
       });
       return;
     }
-    message = `🗂️ ${vaultScopeLabel}\nทั้งหมด ${status.total} รายการ\nเก็บถาวร ${status.durable} รายการ\nไฟล์สื่อที่ไม่มีไฟล์ต้นฉบับ ${status.mediaMissing} รายการ\nDatabase ${status.database} • Google Drive ${status.googleDrive} • S3 ${status.s3} • Forge ${status.forge}\nที่เก็บไฟล์ใหม่: ${providerLabel}${fallbackLabel}\n\n${recentText ? `ไฟล์/รายการล่าสุด\n${recentText}` : "ยังไม่มีรายการในคลัง"}\n\nค้นหาไฟล์เก่าได้ด้วย: ค้นหาไฟล์ <ชื่อไฟล์/ร้าน/แท็ก/คำสำคัญ>\nในแชทส่วนตัว Milo จะค้นข้ามทุกแชทที่คุณเคยเก็บไฟล์ไว้`;
+    message = `🗂️ ${vaultScopeLabel}\nทั้งหมด ${status.total} รายการ\nเก็บถาวร ${status.durable} รายการ\nไฟล์สื่อที่ไม่มีไฟล์ต้นฉบับ ${status.mediaMissing} รายการ\nDatabase ${status.database} • Google Drive ${status.googleDrive} • S3 ${status.s3} • Forge ${status.forge} • Legacy URL ${status.legacyUrl}\nที่เก็บไฟล์ใหม่: ${providerLabel}${fallbackLabel}\n\n${recentText ? `ไฟล์/รายการล่าสุด\n${recentText}` : "ยังไม่มีรายการในคลัง"}\n\nค้นหาไฟล์เก่าได้ด้วย: ค้นหาไฟล์ <ชื่อไฟล์/ร้าน/แท็ก/คำสำคัญ> หรือ เปิดไฟล์ #ID\nในแชทส่วนตัว Milo จะค้นข้ามทุกแชทที่คุณเคยเก็บไฟล์ไว้`;
   } else if (command.type === "documentPacket" || command.type === "documentIssues") {
     const range = bangkokMonthRange(new Date());
     const rows = await db.listVaultDocumentsForChat(lineUserId, lineChatId, scope, range.start, new Date(range.end.getTime() - 1));
@@ -743,7 +778,7 @@ async function handleText(event: LineEvent, lineChatId: string, lineUserId: stri
         return true;
       });
     }
-    const missingMatches = results.filter(item => (item.itemType === "image" || item.itemType === "file") && !item.storageKey && item.lineMessageId).slice(0, 3);
+    const missingMatches = results.filter(item => (item.itemType === "image" || item.itemType === "file") && !item.storageKey && !item.storageUrl && item.lineMessageId).slice(0, 3);
     if (missingMatches.length) {
       const recovery = await recoverVaultItems(missingMatches);
       if (recovery.recovered > 0) {

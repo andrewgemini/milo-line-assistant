@@ -111,6 +111,7 @@ const healthHandler = async (req: express.Request, res: express.Response) => {
       vaultLegacyOcrSearch: true,
       vaultOpenById: true,
       vaultOldestFirstBrowse: true,
+      vaultLegacyStorageUrlFallback: true,
       externalStorageDatabaseFallback: true,
       databaseVaultStorageSupported: true,
       storageProviderChoiceSupported: true,

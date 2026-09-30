@@ -1084,13 +1084,14 @@ export async function searchLegacyVoiceTranscriptionsForChat(
 
 export async function vaultStorageStatus(lineUserId: string, lineChatId: string, scope: "user" | "group" | "room") {
   const rows = await searchVaultForChat(lineUserId, lineChatId, scope, "");
-  const durable = rows.filter(item => item.itemType === "text" || item.itemType === "link" || Boolean(item.storageKey)).length;
-  const mediaMissing = rows.filter(item => (item.itemType === "image" || item.itemType === "file") && !item.storageKey).length;
+  const durable = rows.filter(item => item.itemType === "text" || item.itemType === "link" || Boolean(item.storageKey || item.storageUrl)).length;
+  const mediaMissing = rows.filter(item => (item.itemType === "image" || item.itemType === "file") && !item.storageKey && !item.storageUrl).length;
   const database = rows.filter(item => item.storageKey?.startsWith("db:")).length;
   const googleDrive = rows.filter(item => item.storageKey?.startsWith("gdrive:")).length;
   const s3 = rows.filter(item => item.storageKey?.startsWith("s3:")).length;
   const forge = rows.filter(item => item.storageKey?.startsWith("forge:")).length;
-  return { total: rows.length, durable, mediaMissing, database, googleDrive, s3, forge };
+  const legacyUrl = rows.filter(item => !item.storageKey && Boolean(item.storageUrl)).length;
+  return { total: rows.length, durable, mediaMissing, database, googleDrive, s3, forge, legacyUrl };
 }
 
 export async function listVaultMediaMissingStorage(limit = 50) {
@@ -1109,6 +1110,7 @@ export async function listVaultMediaMissingStorage(limit = 50) {
     eq(vaultItems.status, "active"),
     or(eq(vaultItems.itemType, "image"), eq(vaultItems.itemType, "file")),
     isNull(vaultItems.storageKey),
+    isNull(vaultItems.storageUrl),
     sql`${vaultItems.lineMessageId} IS NOT NULL`,
   )).orderBy(asc(vaultItems.createdAt)).limit(Math.max(1, Math.min(limit, 100)));
 }

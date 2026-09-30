@@ -1385,13 +1385,14 @@ async function searchLegacyVoiceTranscriptionsForChat(lineUserId, lineChatId, sc
 }
 async function vaultStorageStatus(lineUserId, lineChatId, scope) {
   const rows = await searchVaultForChat(lineUserId, lineChatId, scope, "");
-  const durable = rows.filter((item) => item.itemType === "text" || item.itemType === "link" || Boolean(item.storageKey)).length;
-  const mediaMissing = rows.filter((item) => (item.itemType === "image" || item.itemType === "file") && !item.storageKey).length;
+  const durable = rows.filter((item) => item.itemType === "text" || item.itemType === "link" || Boolean(item.storageKey || item.storageUrl)).length;
+  const mediaMissing = rows.filter((item) => (item.itemType === "image" || item.itemType === "file") && !item.storageKey && !item.storageUrl).length;
   const database2 = rows.filter((item) => item.storageKey?.startsWith("db:")).length;
   const googleDrive = rows.filter((item) => item.storageKey?.startsWith("gdrive:")).length;
   const s3 = rows.filter((item) => item.storageKey?.startsWith("s3:")).length;
   const forge = rows.filter((item) => item.storageKey?.startsWith("forge:")).length;
-  return { total: rows.length, durable, mediaMissing, database: database2, googleDrive, s3, forge };
+  const legacyUrl = rows.filter((item) => !item.storageKey && Boolean(item.storageUrl)).length;
+  return { total: rows.length, durable, mediaMissing, database: database2, googleDrive, s3, forge, legacyUrl };
 }
 async function attachVaultStorage(input) {
   const db = await requireDb();
@@ -8898,6 +8899,25 @@ function vaultStorageOpenUrl(storageKey) {
   const base = process.env.MILO_PUBLIC_URL || "https://milo-line-assistant.onrender.com";
   return new URL(`/api/milo/storage/${encodeURIComponent(storageKey)}`, base).href;
 }
+function normalizeLegacyStorageUrl(storageUrl) {
+  const value = storageUrl?.trim();
+  if (!value) return void 0;
+  const base = process.env.MILO_PUBLIC_URL || "https://milo-line-assistant.onrender.com";
+  try {
+    return new URL(value, base).href;
+  } catch {
+    return void 0;
+  }
+}
+function vaultItemOpenUrl(item) {
+  const legacyUrl = normalizeLegacyStorageUrl(item.storageUrl);
+  if (!item.storageKey) return legacyUrl;
+  const storage = storageRuntimeStatus();
+  const key = item.storageKey;
+  const supported = key.startsWith("db:") ? storage.configuredProviders.includes("database") : key.startsWith("gdrive:") ? storage.configuredProviders.includes("google-drive") : key.startsWith("s3:") ? storage.configuredProviders.includes("s3") : key.startsWith("forge:") ? storage.configuredProviders.includes("forge") : storage.configuredProviders.includes("forge");
+  if (!supported && legacyUrl) return legacyUrl;
+  return vaultStorageOpenUrl(key);
+}
 function formatVaultSearchResult(item, index2) {
   const title = item.originalFilename || item.title || `\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23 #${item.id}`;
   if (item.itemType === "link") {
@@ -8909,11 +8929,12 @@ function formatVaultSearchResult(item, index2) {
     return `${index2 + 1}. ${title}${preview ? `
 \u{1F4DD} ${preview}` : ""}`;
   }
-  if (item.storageKey) {
-    const provider = item.storageKey.startsWith("gdrive:") ? "Google Drive" : item.storageKey.startsWith("db:") ? "Database" : item.storageKey.startsWith("s3:") ? "S3" : item.storageKey.startsWith("forge:") ? "Forge" : "Storage";
+  const openUrl = vaultItemOpenUrl(item);
+  if (openUrl) {
+    const provider = item.storageKey?.startsWith("gdrive:") ? "Google Drive" : item.storageKey?.startsWith("db:") ? "Database" : item.storageKey?.startsWith("s3:") ? "S3" : item.storageKey?.startsWith("forge:") ? "Forge" : item.storageUrl ? "Legacy Storage" : "Storage";
     return `${index2 + 1}. ${title}
 \u2705 \u0E40\u0E01\u0E47\u0E1A\u0E16\u0E32\u0E27\u0E23\u0E17\u0E35\u0E48 ${provider}
-\u{1F517} \u0E40\u0E1B\u0E34\u0E14\u0E44\u0E1F\u0E25\u0E4C: ${vaultStorageOpenUrl(item.storageKey)}`;
+\u{1F517} \u0E40\u0E1B\u0E34\u0E14\u0E44\u0E1F\u0E25\u0E4C: ${openUrl}`;
   }
   return `${index2 + 1}. ${title}
 \u26A0\uFE0F \u0E1E\u0E1A metadata \u0E02\u0E2D\u0E07\u0E44\u0E1F\u0E25\u0E4C\u0E40\u0E01\u0E48\u0E32 \u0E41\u0E15\u0E48\u0E44\u0E21\u0E48\u0E21\u0E35\u0E44\u0E1F\u0E25\u0E4C\u0E15\u0E49\u0E19\u0E09\u0E1A\u0E31\u0E1A\u0E16\u0E32\u0E27\u0E23 \u0E23\u0E30\u0E1A\u0E1A\u0E08\u0E30\u0E25\u0E2D\u0E07\u0E01\u0E39\u0E49\u0E08\u0E32\u0E01 LINE \u0E40\u0E21\u0E37\u0E48\u0E2D\u0E04\u0E49\u0E19\u0E2B\u0E32 \u0E2B\u0E32\u0E01 LINE \u0E2B\u0E21\u0E14\u0E2D\u0E32\u0E22\u0E38\u0E41\u0E25\u0E49\u0E27\u0E44\u0E1F\u0E25\u0E4C\u0E40\u0E14\u0E34\u0E21\u0E08\u0E30\u0E40\u0E1B\u0E34\u0E14\u0E44\u0E21\u0E48\u0E44\u0E14\u0E49\u0E41\u0E25\u0E30\u0E15\u0E49\u0E2D\u0E07\u0E2A\u0E48\u0E07\u0E15\u0E49\u0E19\u0E09\u0E1A\u0E31\u0E1A\u0E43\u0E2B\u0E21\u0E48`;
@@ -8927,9 +8948,10 @@ function vaultSearchRow(item) {
   if (item.itemType === "text") {
     return { id: item.id, title, detail: (item.searchableText || "\u0E02\u0E49\u0E2D\u0E04\u0E27\u0E32\u0E21\u0E17\u0E35\u0E48\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E44\u0E27\u0E49").trim().slice(0, 180) };
   }
-  if (item.storageKey) {
-    const provider = item.storageKey.startsWith("gdrive:") ? "Google Drive" : item.storageKey.startsWith("db:") ? "Database" : item.storageKey.startsWith("s3:") ? "S3" : item.storageKey.startsWith("forge:") ? "Forge" : "Storage";
-    return { id: item.id, title, detail: `\u0E40\u0E01\u0E47\u0E1A\u0E16\u0E32\u0E27\u0E23\u0E17\u0E35\u0E48 ${provider}`, actionLabel: "\u0E40\u0E1B\u0E34\u0E14\u0E44\u0E1F\u0E25\u0E4C", actionUri: vaultStorageOpenUrl(item.storageKey) };
+  const openUrl = vaultItemOpenUrl(item);
+  if (openUrl) {
+    const provider = item.storageKey?.startsWith("gdrive:") ? "Google Drive" : item.storageKey?.startsWith("db:") ? "Database" : item.storageKey?.startsWith("s3:") ? "S3" : item.storageKey?.startsWith("forge:") ? "Forge" : item.storageUrl ? "Legacy Storage" : "Storage";
+    return { id: item.id, title, detail: `\u0E40\u0E01\u0E47\u0E1A\u0E16\u0E32\u0E27\u0E23\u0E17\u0E35\u0E48 ${provider}`, actionLabel: "\u0E40\u0E1B\u0E34\u0E14\u0E44\u0E1F\u0E25\u0E4C", actionUri: openUrl };
   }
   return { id: item.id, title, detail: "\u0E1E\u0E1A metadata \u0E41\u0E15\u0E48\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E21\u0E35\u0E44\u0E1F\u0E25\u0E4C\u0E15\u0E49\u0E19\u0E09\u0E1A\u0E31\u0E1A\u0E16\u0E32\u0E27\u0E23 \u2022 \u0E23\u0E30\u0E1A\u0E1A\u0E08\u0E30\u0E25\u0E2D\u0E07\u0E01\u0E39\u0E49\u0E08\u0E32\u0E01 LINE; \u0E16\u0E49\u0E32 LINE \u0E2B\u0E21\u0E14\u0E2D\u0E32\u0E22\u0E38\u0E41\u0E25\u0E49\u0E27\u0E15\u0E49\u0E2D\u0E07\u0E2A\u0E48\u0E07\u0E15\u0E49\u0E19\u0E09\u0E1A\u0E31\u0E1A\u0E43\u0E2B\u0E21\u0E48" };
 }
@@ -9362,7 +9384,7 @@ ${syncMessage}`;
       vaultStorageStatus(lineUserId, lineChatId, scope),
       searchVaultForChat(lineUserId, lineChatId, scope, "", wantsOldest ? { order: "oldest", limit: 100 } : void 0)
     ]);
-    const missingRecent = recent.filter((item) => (item.itemType === "image" || item.itemType === "file") && !item.storageKey && item.lineMessageId).slice(0, 3);
+    const missingRecent = recent.filter((item) => (item.itemType === "image" || item.itemType === "file") && !item.storageKey && !item.storageUrl && item.lineMessageId).slice(0, 3);
     if (missingRecent.length) {
       const recovery = await recoverVaultItems(missingRecent);
       if (recovery.recovered > 0) {
@@ -9388,13 +9410,13 @@ ${syncMessage}`;
 \u0E17\u0E31\u0E49\u0E07\u0E2B\u0E21\u0E14 ${status.total} \u0E23\u0E32\u0E22\u0E01\u0E32\u0E23
 \u0E40\u0E01\u0E47\u0E1A\u0E16\u0E32\u0E27\u0E23 ${status.durable} \u0E23\u0E32\u0E22\u0E01\u0E32\u0E23
 \u0E44\u0E1F\u0E25\u0E4C\u0E2A\u0E37\u0E48\u0E2D\u0E17\u0E35\u0E48\u0E44\u0E21\u0E48\u0E21\u0E35\u0E44\u0E1F\u0E25\u0E4C\u0E15\u0E49\u0E19\u0E09\u0E1A\u0E31\u0E1A ${status.mediaMissing} \u0E23\u0E32\u0E22\u0E01\u0E32\u0E23
-Database ${status.database} \u2022 Google Drive ${status.googleDrive} \u2022 S3 ${status.s3} \u2022 Forge ${status.forge}
+Database ${status.database} \u2022 Google Drive ${status.googleDrive} \u2022 S3 ${status.s3} \u2022 Forge ${status.forge} \u2022 Legacy URL ${status.legacyUrl}
 \u0E17\u0E35\u0E48\u0E40\u0E01\u0E47\u0E1A\u0E44\u0E1F\u0E25\u0E4C\u0E43\u0E2B\u0E21\u0E48: ${providerLabel}${fallbackLabel}
 
 ${recentText ? `\u0E44\u0E1F\u0E25\u0E4C/\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E25\u0E48\u0E32\u0E2A\u0E38\u0E14
 ${recentText}` : "\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E21\u0E35\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E43\u0E19\u0E04\u0E25\u0E31\u0E07"}
 
-\u0E04\u0E49\u0E19\u0E2B\u0E32\u0E44\u0E1F\u0E25\u0E4C\u0E40\u0E01\u0E48\u0E32\u0E44\u0E14\u0E49\u0E14\u0E49\u0E27\u0E22: \u0E04\u0E49\u0E19\u0E2B\u0E32\u0E44\u0E1F\u0E25\u0E4C <\u0E0A\u0E37\u0E48\u0E2D\u0E44\u0E1F\u0E25\u0E4C/\u0E23\u0E49\u0E32\u0E19/\u0E41\u0E17\u0E47\u0E01/\u0E04\u0E33\u0E2A\u0E33\u0E04\u0E31\u0E0D>
+\u0E04\u0E49\u0E19\u0E2B\u0E32\u0E44\u0E1F\u0E25\u0E4C\u0E40\u0E01\u0E48\u0E32\u0E44\u0E14\u0E49\u0E14\u0E49\u0E27\u0E22: \u0E04\u0E49\u0E19\u0E2B\u0E32\u0E44\u0E1F\u0E25\u0E4C <\u0E0A\u0E37\u0E48\u0E2D\u0E44\u0E1F\u0E25\u0E4C/\u0E23\u0E49\u0E32\u0E19/\u0E41\u0E17\u0E47\u0E01/\u0E04\u0E33\u0E2A\u0E33\u0E04\u0E31\u0E0D> \u0E2B\u0E23\u0E37\u0E2D \u0E40\u0E1B\u0E34\u0E14\u0E44\u0E1F\u0E25\u0E4C #ID
 \u0E43\u0E19\u0E41\u0E0A\u0E17\u0E2A\u0E48\u0E27\u0E19\u0E15\u0E31\u0E27 Milo \u0E08\u0E30\u0E04\u0E49\u0E19\u0E02\u0E49\u0E32\u0E21\u0E17\u0E38\u0E01\u0E41\u0E0A\u0E17\u0E17\u0E35\u0E48\u0E04\u0E38\u0E13\u0E40\u0E04\u0E22\u0E40\u0E01\u0E47\u0E1A\u0E44\u0E1F\u0E25\u0E4C\u0E44\u0E27\u0E49`;
   } else if (command.type === "documentPacket" || command.type === "documentIssues") {
     const range = bangkokMonthRange(/* @__PURE__ */ new Date());
@@ -9557,7 +9579,7 @@ ${results.map((item) => `#${item.id} \xB7 ${item.transactionType === "expense" ?
         return true;
       });
     }
-    const missingMatches = results.filter((item) => (item.itemType === "image" || item.itemType === "file") && !item.storageKey && item.lineMessageId).slice(0, 3);
+    const missingMatches = results.filter((item) => (item.itemType === "image" || item.itemType === "file") && !item.storageKey && !item.storageUrl && item.lineMessageId).slice(0, 3);
     if (missingMatches.length) {
       const recovery = await recoverVaultItems(missingMatches);
       if (recovery.recovered > 0) {
@@ -11393,6 +11415,7 @@ var healthHandler = async (req, res) => {
       vaultLegacyOcrSearch: true,
       vaultOpenById: true,
       vaultOldestFirstBrowse: true,
+      vaultLegacyStorageUrlFallback: true,
       externalStorageDatabaseFallback: true,
       databaseVaultStorageSupported: true,
       storageProviderChoiceSupported: true,
