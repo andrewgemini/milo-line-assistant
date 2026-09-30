@@ -141,7 +141,7 @@ function formatVaultSearchResult(item: Awaited<ReturnType<typeof db.searchVaultF
     const provider = item.storageKey.startsWith("gdrive:") ? "Google Drive" : item.storageKey.startsWith("db:") ? "Database" : item.storageKey.startsWith("s3:") ? "S3" : item.storageKey.startsWith("forge:") ? "Forge" : "Storage";
     return `${index + 1}. ${title}\n✅ เก็บถาวรที่ ${provider}\n🔗 เปิดไฟล์: ${vaultStorageOpenUrl(item.storageKey)}`;
   }
-  return `${index + 1}. ${title}\n⚠️ พบข้อมูลรายการเก่า แต่ไม่มีไฟล์ต้นฉบับที่เก็บถาวร ระบบจะพยายามกู้จาก LINE หากยังดาวน์โหลดได้`;
+  return `${index + 1}. ${title}\n⚠️ พบ metadata ของไฟล์เก่า แต่ไม่มีไฟล์ต้นฉบับถาวร ระบบจะลองกู้จาก LINE เมื่อค้นหา หาก LINE หมดอายุแล้วไฟล์เดิมจะเปิดไม่ได้และต้องส่งต้นฉบับใหม่`;
 }
 
 function vaultSearchRow(item: Awaited<ReturnType<typeof db.searchVaultForChat>>[number]): MiloListRow {
@@ -157,7 +157,7 @@ function vaultSearchRow(item: Awaited<ReturnType<typeof db.searchVaultForChat>>[
     const provider = item.storageKey.startsWith("gdrive:") ? "Google Drive" : item.storageKey.startsWith("db:") ? "Database" : item.storageKey.startsWith("s3:") ? "S3" : item.storageKey.startsWith("forge:") ? "Forge" : "Storage";
     return { id: item.id, title, detail: `เก็บถาวรที่ ${provider}`, actionLabel: "เปิดไฟล์", actionUri: vaultStorageOpenUrl(item.storageKey) };
   }
-  return { id: item.id, title, detail: "ยังไม่มีไฟล์ต้นฉบับถาวร • ระบบจะพยายามกู้จาก LINE หากยังดาวน์โหลดได้" };
+  return { id: item.id, title, detail: "พบ metadata แต่ยังไม่มีไฟล์ต้นฉบับถาวร • ระบบจะลองกู้จาก LINE; ถ้า LINE หมดอายุแล้วต้องส่งต้นฉบับใหม่" };
 }
 
 async function persistDocumentIntelligence(input: {
@@ -598,7 +598,7 @@ async function handleText(event: LineEvent, lineChatId: string, lineUserId: stri
       : "👥 Milo พร้อมช่วยในกลุ่มนี้ครับ\n• @ไมโล เตือนประชุมพรุ่งนี้ 10:00\n• @ไมโล เก็บ https://example.com #งาน\n• @ไมโล ค้นหา ใบเสนอราคา\n• @ไมโล ลงปฏิทิน ประชุมทีมพรุ่งนี้ 10:00\n• @ไมโล แจ้งส่งงานด้วยถึง @สมชาย\n• ส่งรูป/ไฟล์ในกลุ่มเพื่อเก็บและประมวลผลได้ตามสิทธิ์";
   } else if (command.type === "vaultStatus") {
     const vaultText = event.message?.type === "text" ? (event.message.text ?? "").trim() : "";
-    const wantsOldest = /(?:ไฟล์เก่า|ดูไฟล์เก่า|หาไฟล์เก่า|เรียกไฟล์เก่า|เรียกหาไฟล์เก่า|ค้นไฟล์เก่า)/i.test(vaultText);
+    const wantsOldest = /(?:ไฟล์เก่า|ดูไฟล์เก่า|หาไฟล์เก่า|เรียกไฟล์เก่า|เรียกหาไฟล์เก่า|ค้นไฟล์เก่า|เปิดดูไฟล์เก่า)/i.test(vaultText);
     let [status, recent] = await Promise.all([
       db.vaultStorageStatus(lineUserId, lineChatId, scope),
       db.searchVaultForChat(lineUserId, lineChatId, scope, "", wantsOldest ? { order: "oldest", limit: 100 } : undefined),
@@ -732,14 +732,34 @@ async function handleText(event: LineEvent, lineChatId: string, lineUserId: stri
   } else if (command.type === "search") {
     let results = await db.searchVaultForChat(lineUserId, lineChatId, scope, command.query);
     if (!results.length) {
-      results = await db.searchLegacyVaultExtractionsForChat(lineUserId, lineChatId, scope, command.query, 100);
+      const [imageLegacy, voiceLegacy] = await Promise.all([
+        db.searchLegacyVaultExtractionsForChat(lineUserId, lineChatId, scope, command.query, 100),
+        db.searchLegacyVoiceTranscriptionsForChat(lineUserId, lineChatId, scope, command.query, 100),
+      ]);
+      const seen = new Set<number>();
+      results = [...imageLegacy, ...voiceLegacy].filter(item => {
+        if (seen.has(item.id)) return false;
+        seen.add(item.id);
+        return true;
+      });
     }
     const missingMatches = results.filter(item => (item.itemType === "image" || item.itemType === "file") && !item.storageKey && item.lineMessageId).slice(0, 3);
     if (missingMatches.length) {
       const recovery = await recoverVaultItems(missingMatches);
       if (recovery.recovered > 0) {
         results = await db.searchVaultForChat(lineUserId, lineChatId, scope, command.query);
-        if (!results.length) results = await db.searchLegacyVaultExtractionsForChat(lineUserId, lineChatId, scope, command.query, 100);
+        if (!results.length) {
+          const [imageLegacy, voiceLegacy] = await Promise.all([
+            db.searchLegacyVaultExtractionsForChat(lineUserId, lineChatId, scope, command.query, 100),
+            db.searchLegacyVoiceTranscriptionsForChat(lineUserId, lineChatId, scope, command.query, 100),
+          ]);
+          const seen = new Set<number>();
+          results = [...imageLegacy, ...voiceLegacy].filter(item => {
+            if (seen.has(item.id)) return false;
+            seen.add(item.id);
+            return true;
+          });
+        }
       }
     }
     if (event.replyToken && results.length) {

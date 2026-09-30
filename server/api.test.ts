@@ -14,7 +14,7 @@ describe("production API entrypoint", () => {
     await new Promise<void>(resolve => server.once("listening", resolve));
     const base = "http://127.0.0.1:" + (server.address() as AddressInfo).port;
     try {
-      expect(await (await fetch(base + "/api/health")).json()).toMatchObject({ service: "milo", release: "milo-vault-legacy-search-2026-09-30", readiness: { dashboardExternalOAuthConfigured: false, durableMediaJobs: true, mediaPersistBeforeAck: true, mediaRestartRecovery: "startup+60s+cron", ocrTotalTimeoutMs: 28000, vaultSearchOpenLinks: true, externalStorageDatabaseFallback: true } });
+      expect(await (await fetch(base + "/api/health")).json()).toMatchObject({ service: "milo", release: "milo-vault-retrieval-final-2026-09-30", readiness: { dashboardExternalOAuthConfigured: false, durableMediaJobs: true, mediaPersistBeforeAck: true, mediaRestartRecovery: "startup+60s+cron", ocrTotalTimeoutMs: 28000, vaultSearchOpenLinks: true, vaultLegacyOcrSearch: true, vaultOpenById: true, vaultOldestFirstBrowse: true, externalStorageDatabaseFallback: true } });
       expect(await (await fetch(base + "/api/health", { headers: { "x-vercel-oidc-token": "request-oidc-token" } })).json()).toMatchObject({
         imageAnalysisMode: expect.stringContaining("vercel-ai-gateway-oidc"),
         voiceConfigured: true,

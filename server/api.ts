@@ -63,7 +63,7 @@ const healthHandler = async (req: express.Request, res: express.Response) => {
   res.status(200).json({
     status: runtime.authenticated && voice.configured && Boolean(process.env.LINE_CHANNEL_SECRET?.trim()) && Boolean(process.env.LINE_CHANNEL_ACCESS_TOKEN?.trim()) && Boolean(process.env.DATABASE_URL?.trim()) ? "ok" : "degraded",
     service: "milo",
-    release: "milo-vault-legacy-search-2026-09-30",
+    release: "milo-vault-retrieval-final-2026-09-30",
     intentRoutingMode: "systemone-first+deterministic-fallback",
     systemOneConfigured: systemOneConfigured(),
     systemOneProviderOrder: systemOneProviderOrder(),
@@ -108,6 +108,9 @@ const healthHandler = async (req: express.Request, res: express.Response) => {
       dashboardExternalOAuthConfigured: Boolean(process.env.OAUTH_SERVER_URL?.trim() && process.env.VITE_APP_ID?.trim()),
       durableVaultStorageConfigured: storage.configured,
       vaultSearchOpenLinks: true,
+      vaultLegacyOcrSearch: true,
+      vaultOpenById: true,
+      vaultOldestFirstBrowse: true,
       externalStorageDatabaseFallback: true,
       databaseVaultStorageSupported: true,
       storageProviderChoiceSupported: true,

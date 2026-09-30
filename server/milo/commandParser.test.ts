@@ -93,6 +93,9 @@ describe("Milo command parser", () => {
     expect(parseMiloCommand("ผู้ช่วยกลุ่ม", now)).toEqual({ type: "groupGuide" });
     expect(parseMiloCommand("สถานะคลัง", now)).toEqual({ type: "vaultStatus" });
     expect(parseMiloCommand("ไฟล์เก่า", now)).toEqual({ type: "vaultStatus" });
+    expect(parseMiloCommand("หาไฟล์เก่า", now)).toEqual({ type: "vaultStatus" });
+    expect(parseMiloCommand("เรียกไฟล์เก่า", now)).toEqual({ type: "vaultStatus" });
+    expect(parseMiloCommand("เปิดดูไฟล์เก่า", now)).toEqual({ type: "vaultStatus" });
     expect(parseMiloCommand("ดูไฟล์ทั้งหมด", now)).toEqual({ type: "vaultStatus" });
   });
   it("recognizes Google Calendar connection commands", () => {

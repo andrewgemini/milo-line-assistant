@@ -967,6 +967,15 @@ export async function searchVaultForChat(
 
   if (!q) return db.select().from(vaultItems).where(base).orderBy(order).limit(limit);
 
+  const idMatch = q.match(/^#?(\d+)$/);
+  if (idMatch) {
+    const id = Number(idMatch[1]);
+    if (Number.isSafeInteger(id) && id > 0) {
+      const direct = await db.select().from(vaultItems).where(and(base, eq(vaultItems.id, id))).limit(1);
+      if (direct.length) return direct;
+    }
+  }
+
   const exact = await db.select().from(vaultItems)
     .where(and(base, or(...fieldsFor(q))))
     .orderBy(order)
@@ -1013,14 +1022,58 @@ export async function searchLegacyVaultExtractionsForChat(
   const extractionConditions = terms.length > 1
     ? terms.map(value => like(imageExtractions.extractedJson, `%${value}%`))
     : [like(imageExtractions.extractedJson, `%${q}%`)];
-
   const rows = await db.select({ vault: vaultItems })
     .from(imageExtractions)
     .innerJoin(vaultItems, eq(imageExtractions.vaultItemId, vaultItems.id))
     .where(and(base, or(...extractionConditions)))
     .orderBy(desc(imageExtractions.createdAt))
     .limit(cappedLimit);
+  const seen = new Set<number>();
+  return rows.map(row => row.vault).filter(item => {
+    if (seen.has(item.id)) return false;
+    seen.add(item.id);
+    return true;
+  });
+}
 
+export async function searchLegacyVoiceTranscriptionsForChat(
+  lineUserId: string,
+  lineChatId: string,
+  scope: "user" | "group" | "room",
+  term: string,
+  limit = 100,
+) {
+  const db = await requireDb();
+  const base = scope === "user"
+    ? and(eq(vaultItems.createdByLineUserId, lineUserId), eq(vaultItems.status, "active"))
+    : and(eq(vaultItems.lineChatId, lineChatId), eq(vaultItems.status, "active"));
+  const q = term.trim();
+  const cappedLimit = Math.max(1, Math.min(limit, 250));
+  if (!q) return [];
+
+  const idMatch = q.match(/^#?(\d+)$/);
+  if (idMatch) {
+    const id = Number(idMatch[1]);
+    if (Number.isSafeInteger(id) && id > 0) {
+      const direct = await db.select().from(vaultItems)
+        .where(and(base, eq(vaultItems.id, id)))
+        .limit(1);
+      if (direct.length) return direct;
+    }
+  }
+
+  const terms = Array.from(new Set(
+    q.split(/[\s,;|/]+/).map(value => value.trim()).filter(value => value.length >= 2),
+  )).slice(0, 6);
+  const transcriptConditions = terms.length > 1
+    ? terms.map(value => like(voiceTranscriptions.transcript, `%${value}%`))
+    : [like(voiceTranscriptions.transcript, `%${q}%`)];
+  const rows = await db.select({ vault: vaultItems })
+    .from(voiceTranscriptions)
+    .innerJoin(vaultItems, eq(voiceTranscriptions.vaultItemId, vaultItems.id))
+    .where(and(base, or(...transcriptConditions)))
+    .orderBy(desc(voiceTranscriptions.createdAt))
+    .limit(cappedLimit);
   const seen = new Set<number>();
   return rows.map(row => row.vault).filter(item => {
     if (seen.has(item.id)) return false;

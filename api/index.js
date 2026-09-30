@@ -1317,6 +1317,14 @@ async function searchVaultForChat(lineUserId, lineChatId, scope, term = "", opti
     like(vaultItems.tagsText, `%${value}%`)
   ];
   if (!q) return db.select().from(vaultItems).where(base).orderBy(order).limit(limit);
+  const idMatch = q.match(/^#?(\d+)$/);
+  if (idMatch) {
+    const id = Number(idMatch[1]);
+    if (Number.isSafeInteger(id) && id > 0) {
+      const direct = await db.select().from(vaultItems).where(and(base, eq(vaultItems.id, id))).limit(1);
+      if (direct.length) return direct;
+    }
+  }
   const exact = await db.select().from(vaultItems).where(and(base, or(...fieldsFor(q)))).orderBy(order).limit(limit);
   if (exact.length) return exact;
   const terms = Array.from(new Set(q.split(/[\s,;|/]+/).map((value) => value.trim()).filter((value) => value.length >= 2))).slice(0, 6);
@@ -1342,6 +1350,32 @@ async function searchLegacyVaultExtractionsForChat(lineUserId, lineChatId, scope
   )).slice(0, 6);
   const extractionConditions = terms.length > 1 ? terms.map((value) => like(imageExtractions.extractedJson, `%${value}%`)) : [like(imageExtractions.extractedJson, `%${q}%`)];
   const rows = await db.select({ vault: vaultItems }).from(imageExtractions).innerJoin(vaultItems, eq(imageExtractions.vaultItemId, vaultItems.id)).where(and(base, or(...extractionConditions))).orderBy(desc(imageExtractions.createdAt)).limit(cappedLimit);
+  const seen = /* @__PURE__ */ new Set();
+  return rows.map((row) => row.vault).filter((item) => {
+    if (seen.has(item.id)) return false;
+    seen.add(item.id);
+    return true;
+  });
+}
+async function searchLegacyVoiceTranscriptionsForChat(lineUserId, lineChatId, scope, term, limit = 100) {
+  const db = await requireDb();
+  const base = scope === "user" ? and(eq(vaultItems.createdByLineUserId, lineUserId), eq(vaultItems.status, "active")) : and(eq(vaultItems.lineChatId, lineChatId), eq(vaultItems.status, "active"));
+  const q = term.trim();
+  const cappedLimit = Math.max(1, Math.min(limit, 250));
+  if (!q) return [];
+  const idMatch = q.match(/^#?(\d+)$/);
+  if (idMatch) {
+    const id = Number(idMatch[1]);
+    if (Number.isSafeInteger(id) && id > 0) {
+      const direct = await db.select().from(vaultItems).where(and(base, eq(vaultItems.id, id))).limit(1);
+      if (direct.length) return direct;
+    }
+  }
+  const terms = Array.from(new Set(
+    q.split(/[\s,;|/]+/).map((value) => value.trim()).filter((value) => value.length >= 2)
+  )).slice(0, 6);
+  const transcriptConditions = terms.length > 1 ? terms.map((value) => like(voiceTranscriptions.transcript, `%${value}%`)) : [like(voiceTranscriptions.transcript, `%${q}%`)];
+  const rows = await db.select({ vault: vaultItems }).from(voiceTranscriptions).innerJoin(vaultItems, eq(voiceTranscriptions.vaultItemId, vaultItems.id)).where(and(base, or(...transcriptConditions))).orderBy(desc(voiceTranscriptions.createdAt)).limit(cappedLimit);
   const seen = /* @__PURE__ */ new Set();
   return rows.map((row) => row.vault).filter((item) => {
     if (seen.has(item.id)) return false;
@@ -7924,7 +7958,7 @@ function parseMiloCommand(text2, now = /* @__PURE__ */ new Date()) {
   if (calendar?.type === "list") return { type: "calendarList" };
   if (calendar?.type === "cancel") return { type: "calendarCancel", id: calendar.id };
   if (/^(?:ผู้ช่วยกลุ่ม|กลุ่ม\s*LINE|กลุ่มช่วยอะไร|วิธีใช้กลุ่ม)$/i.test(value)) return { type: "groupGuide" };
-  if (/^(?:สถานะคลัง|คลังไฟล์|คลังถาวร|ไฟล์เก่า|ไฟล์ทั้งหมด|ดูไฟล์เก่า|ดูไฟล์ทั้งหมด|หาไฟล์เก่า|เรียกไฟล์เก่า|เรียกหาไฟล์เก่า|ค้นไฟล์เก่า)$/i.test(value)) return { type: "vaultStatus" };
+  if (/^(?:สถานะคลัง|คลังไฟล์|คลังถาวร|ไฟล์เก่า|ไฟล์ทั้งหมด|ดูไฟล์เก่า|ดูไฟล์ทั้งหมด|หาไฟล์เก่า|เรียกไฟล์เก่า|เรียกหาไฟล์เก่า|ค้นไฟล์เก่า|เปิดดูไฟล์เก่า)$/i.test(value)) return { type: "vaultStatus" };
   if (/^(?:สรุป(?:ชุด)?(?:เอกสาร|ไฟล์)(?:เดือนนี้)?|(?:ชุด)?เอกสารเดือนนี้(?:ครบไหม|ครบหรือยัง)?|เช็กเอกสารเดือนนี้)$/i.test(value)) return { type: "documentPacket" };
   if (/^(?:(?:เอกสาร|ไฟล์)(?:ที่)?(?:มีปัญหา|ต้องตรวจ|รอตรวจ|รอตัดสิน|อ่านไม่ได้)|ตรวจเอกสารที่มีปัญหา)$/i.test(value)) return { type: "documentIssues" };
   const recurring = recurringFrom(value, now);
@@ -8882,7 +8916,7 @@ function formatVaultSearchResult(item, index2) {
 \u{1F517} \u0E40\u0E1B\u0E34\u0E14\u0E44\u0E1F\u0E25\u0E4C: ${vaultStorageOpenUrl(item.storageKey)}`;
   }
   return `${index2 + 1}. ${title}
-\u26A0\uFE0F \u0E1E\u0E1A\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E40\u0E01\u0E48\u0E32 \u0E41\u0E15\u0E48\u0E44\u0E21\u0E48\u0E21\u0E35\u0E44\u0E1F\u0E25\u0E4C\u0E15\u0E49\u0E19\u0E09\u0E1A\u0E31\u0E1A\u0E17\u0E35\u0E48\u0E40\u0E01\u0E47\u0E1A\u0E16\u0E32\u0E27\u0E23 \u0E23\u0E30\u0E1A\u0E1A\u0E08\u0E30\u0E1E\u0E22\u0E32\u0E22\u0E32\u0E21\u0E01\u0E39\u0E49\u0E08\u0E32\u0E01 LINE \u0E2B\u0E32\u0E01\u0E22\u0E31\u0E07\u0E14\u0E32\u0E27\u0E19\u0E4C\u0E42\u0E2B\u0E25\u0E14\u0E44\u0E14\u0E49`;
+\u26A0\uFE0F \u0E1E\u0E1A metadata \u0E02\u0E2D\u0E07\u0E44\u0E1F\u0E25\u0E4C\u0E40\u0E01\u0E48\u0E32 \u0E41\u0E15\u0E48\u0E44\u0E21\u0E48\u0E21\u0E35\u0E44\u0E1F\u0E25\u0E4C\u0E15\u0E49\u0E19\u0E09\u0E1A\u0E31\u0E1A\u0E16\u0E32\u0E27\u0E23 \u0E23\u0E30\u0E1A\u0E1A\u0E08\u0E30\u0E25\u0E2D\u0E07\u0E01\u0E39\u0E49\u0E08\u0E32\u0E01 LINE \u0E40\u0E21\u0E37\u0E48\u0E2D\u0E04\u0E49\u0E19\u0E2B\u0E32 \u0E2B\u0E32\u0E01 LINE \u0E2B\u0E21\u0E14\u0E2D\u0E32\u0E22\u0E38\u0E41\u0E25\u0E49\u0E27\u0E44\u0E1F\u0E25\u0E4C\u0E40\u0E14\u0E34\u0E21\u0E08\u0E30\u0E40\u0E1B\u0E34\u0E14\u0E44\u0E21\u0E48\u0E44\u0E14\u0E49\u0E41\u0E25\u0E30\u0E15\u0E49\u0E2D\u0E07\u0E2A\u0E48\u0E07\u0E15\u0E49\u0E19\u0E09\u0E1A\u0E31\u0E1A\u0E43\u0E2B\u0E21\u0E48`;
 }
 function vaultSearchRow(item) {
   const title = item.originalFilename || item.title || `\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23 #${item.id}`;
@@ -8897,7 +8931,7 @@ function vaultSearchRow(item) {
     const provider = item.storageKey.startsWith("gdrive:") ? "Google Drive" : item.storageKey.startsWith("db:") ? "Database" : item.storageKey.startsWith("s3:") ? "S3" : item.storageKey.startsWith("forge:") ? "Forge" : "Storage";
     return { id: item.id, title, detail: `\u0E40\u0E01\u0E47\u0E1A\u0E16\u0E32\u0E27\u0E23\u0E17\u0E35\u0E48 ${provider}`, actionLabel: "\u0E40\u0E1B\u0E34\u0E14\u0E44\u0E1F\u0E25\u0E4C", actionUri: vaultStorageOpenUrl(item.storageKey) };
   }
-  return { id: item.id, title, detail: "\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E21\u0E35\u0E44\u0E1F\u0E25\u0E4C\u0E15\u0E49\u0E19\u0E09\u0E1A\u0E31\u0E1A\u0E16\u0E32\u0E27\u0E23 \u2022 \u0E23\u0E30\u0E1A\u0E1A\u0E08\u0E30\u0E1E\u0E22\u0E32\u0E22\u0E32\u0E21\u0E01\u0E39\u0E49\u0E08\u0E32\u0E01 LINE \u0E2B\u0E32\u0E01\u0E22\u0E31\u0E07\u0E14\u0E32\u0E27\u0E19\u0E4C\u0E42\u0E2B\u0E25\u0E14\u0E44\u0E14\u0E49" };
+  return { id: item.id, title, detail: "\u0E1E\u0E1A metadata \u0E41\u0E15\u0E48\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E21\u0E35\u0E44\u0E1F\u0E25\u0E4C\u0E15\u0E49\u0E19\u0E09\u0E1A\u0E31\u0E1A\u0E16\u0E32\u0E27\u0E23 \u2022 \u0E23\u0E30\u0E1A\u0E1A\u0E08\u0E30\u0E25\u0E2D\u0E07\u0E01\u0E39\u0E49\u0E08\u0E32\u0E01 LINE; \u0E16\u0E49\u0E32 LINE \u0E2B\u0E21\u0E14\u0E2D\u0E32\u0E22\u0E38\u0E41\u0E25\u0E49\u0E27\u0E15\u0E49\u0E2D\u0E07\u0E2A\u0E48\u0E07\u0E15\u0E49\u0E19\u0E09\u0E1A\u0E31\u0E1A\u0E43\u0E2B\u0E21\u0E48" };
 }
 async function persistDocumentIntelligence(input) {
   const intelligence = buildDocumentIntelligence(input);
@@ -9323,7 +9357,7 @@ ${syncMessage}`;
     message = scope === "user" ? "\u{1F465} \u0E27\u0E34\u0E18\u0E35\u0E43\u0E0A\u0E49 Milo \u0E43\u0E19\u0E01\u0E25\u0E38\u0E48\u0E21 LINE\n1) \u0E40\u0E0A\u0E34\u0E0D Milo \u0E40\u0E02\u0E49\u0E32\u0E01\u0E25\u0E38\u0E48\u0E21\n2) \u0E40\u0E23\u0E35\u0E22\u0E01\u0E14\u0E49\u0E27\u0E22 @\u0E44\u0E21\u0E42\u0E25 \u0E01\u0E48\u0E2D\u0E19\u0E04\u0E33\u0E2A\u0E31\u0E48\u0E07\u0E02\u0E49\u0E2D\u0E04\u0E27\u0E32\u0E21\n3) \u0E43\u0E0A\u0E49\u0E40\u0E15\u0E37\u0E2D\u0E19 \u0E40\u0E01\u0E47\u0E1A/\u0E04\u0E49\u0E19\u0E2B\u0E32\u0E44\u0E1F\u0E25\u0E4C \u0E1B\u0E0F\u0E34\u0E17\u0E34\u0E19 To-do \u0E41\u0E25\u0E30\u0E41\u0E17\u0E47\u0E01\u0E2A\u0E21\u0E32\u0E0A\u0E34\u0E01\u0E44\u0E14\u0E49\n\u0E15\u0E31\u0E27\u0E2D\u0E22\u0E48\u0E32\u0E07: @\u0E44\u0E21\u0E42\u0E25 \u0E40\u0E15\u0E37\u0E2D\u0E19\u0E2A\u0E48\u0E07\u0E23\u0E32\u0E22\u0E07\u0E32\u0E19\u0E1E\u0E23\u0E38\u0E48\u0E07\u0E19\u0E35\u0E49 9:00 \u0E2B\u0E23\u0E37\u0E2D @\u0E44\u0E21\u0E42\u0E25 \u0E41\u0E08\u0E49\u0E07\u0E2A\u0E48\u0E07\u0E07\u0E32\u0E19\u0E14\u0E49\u0E27\u0E22\u0E16\u0E36\u0E07 @\u0E2A\u0E21\u0E0A\u0E32\u0E22" : "\u{1F465} Milo \u0E1E\u0E23\u0E49\u0E2D\u0E21\u0E0A\u0E48\u0E27\u0E22\u0E43\u0E19\u0E01\u0E25\u0E38\u0E48\u0E21\u0E19\u0E35\u0E49\u0E04\u0E23\u0E31\u0E1A\n\u2022 @\u0E44\u0E21\u0E42\u0E25 \u0E40\u0E15\u0E37\u0E2D\u0E19\u0E1B\u0E23\u0E30\u0E0A\u0E38\u0E21\u0E1E\u0E23\u0E38\u0E48\u0E07\u0E19\u0E35\u0E49 10:00\n\u2022 @\u0E44\u0E21\u0E42\u0E25 \u0E40\u0E01\u0E47\u0E1A https://example.com #\u0E07\u0E32\u0E19\n\u2022 @\u0E44\u0E21\u0E42\u0E25 \u0E04\u0E49\u0E19\u0E2B\u0E32 \u0E43\u0E1A\u0E40\u0E2A\u0E19\u0E2D\u0E23\u0E32\u0E04\u0E32\n\u2022 @\u0E44\u0E21\u0E42\u0E25 \u0E25\u0E07\u0E1B\u0E0F\u0E34\u0E17\u0E34\u0E19 \u0E1B\u0E23\u0E30\u0E0A\u0E38\u0E21\u0E17\u0E35\u0E21\u0E1E\u0E23\u0E38\u0E48\u0E07\u0E19\u0E35\u0E49 10:00\n\u2022 @\u0E44\u0E21\u0E42\u0E25 \u0E41\u0E08\u0E49\u0E07\u0E2A\u0E48\u0E07\u0E07\u0E32\u0E19\u0E14\u0E49\u0E27\u0E22\u0E16\u0E36\u0E07 @\u0E2A\u0E21\u0E0A\u0E32\u0E22\n\u2022 \u0E2A\u0E48\u0E07\u0E23\u0E39\u0E1B/\u0E44\u0E1F\u0E25\u0E4C\u0E43\u0E19\u0E01\u0E25\u0E38\u0E48\u0E21\u0E40\u0E1E\u0E37\u0E48\u0E2D\u0E40\u0E01\u0E47\u0E1A\u0E41\u0E25\u0E30\u0E1B\u0E23\u0E30\u0E21\u0E27\u0E25\u0E1C\u0E25\u0E44\u0E14\u0E49\u0E15\u0E32\u0E21\u0E2A\u0E34\u0E17\u0E18\u0E34\u0E4C";
   } else if (command.type === "vaultStatus") {
     const vaultText = event.message?.type === "text" ? (event.message.text ?? "").trim() : "";
-    const wantsOldest = /(?:ไฟล์เก่า|ดูไฟล์เก่า|หาไฟล์เก่า|เรียกไฟล์เก่า|เรียกหาไฟล์เก่า|ค้นไฟล์เก่า)/i.test(vaultText);
+    const wantsOldest = /(?:ไฟล์เก่า|ดูไฟล์เก่า|หาไฟล์เก่า|เรียกไฟล์เก่า|เรียกหาไฟล์เก่า|ค้นไฟล์เก่า|เปิดดูไฟล์เก่า)/i.test(vaultText);
     let [status, recent] = await Promise.all([
       vaultStorageStatus(lineUserId, lineChatId, scope),
       searchVaultForChat(lineUserId, lineChatId, scope, "", wantsOldest ? { order: "oldest", limit: 100 } : void 0)
@@ -9512,14 +9546,34 @@ ${results.map((item) => `#${item.id} \xB7 ${item.transactionType === "expense" ?
   } else if (command.type === "search") {
     let results = await searchVaultForChat(lineUserId, lineChatId, scope, command.query);
     if (!results.length) {
-      results = await searchLegacyVaultExtractionsForChat(lineUserId, lineChatId, scope, command.query, 100);
+      const [imageLegacy, voiceLegacy] = await Promise.all([
+        searchLegacyVaultExtractionsForChat(lineUserId, lineChatId, scope, command.query, 100),
+        searchLegacyVoiceTranscriptionsForChat(lineUserId, lineChatId, scope, command.query, 100)
+      ]);
+      const seen = /* @__PURE__ */ new Set();
+      results = [...imageLegacy, ...voiceLegacy].filter((item) => {
+        if (seen.has(item.id)) return false;
+        seen.add(item.id);
+        return true;
+      });
     }
     const missingMatches = results.filter((item) => (item.itemType === "image" || item.itemType === "file") && !item.storageKey && item.lineMessageId).slice(0, 3);
     if (missingMatches.length) {
       const recovery = await recoverVaultItems(missingMatches);
       if (recovery.recovered > 0) {
         results = await searchVaultForChat(lineUserId, lineChatId, scope, command.query);
-        if (!results.length) results = await searchLegacyVaultExtractionsForChat(lineUserId, lineChatId, scope, command.query, 100);
+        if (!results.length) {
+          const [imageLegacy, voiceLegacy] = await Promise.all([
+            searchLegacyVaultExtractionsForChat(lineUserId, lineChatId, scope, command.query, 100),
+            searchLegacyVoiceTranscriptionsForChat(lineUserId, lineChatId, scope, command.query, 100)
+          ]);
+          const seen = /* @__PURE__ */ new Set();
+          results = [...imageLegacy, ...voiceLegacy].filter((item) => {
+            if (seen.has(item.id)) return false;
+            seen.add(item.id);
+            return true;
+          });
+        }
       }
     }
     if (event.replyToken && results.length) {
@@ -11291,7 +11345,7 @@ var healthHandler = async (req, res) => {
   res.status(200).json({
     status: runtime.authenticated && voice.configured && Boolean(process.env.LINE_CHANNEL_SECRET?.trim()) && Boolean(process.env.LINE_CHANNEL_ACCESS_TOKEN?.trim()) && Boolean(process.env.DATABASE_URL?.trim()) ? "ok" : "degraded",
     service: "milo",
-    release: "milo-vault-legacy-search-2026-09-30",
+    release: "milo-vault-retrieval-final-2026-09-30",
     intentRoutingMode: "systemone-first+deterministic-fallback",
     systemOneConfigured: systemOneConfigured(),
     systemOneProviderOrder: systemOneProviderOrder(),
@@ -11336,6 +11390,9 @@ var healthHandler = async (req, res) => {
       dashboardExternalOAuthConfigured: Boolean(process.env.OAUTH_SERVER_URL?.trim() && process.env.VITE_APP_ID?.trim()),
       durableVaultStorageConfigured: storage.configured,
       vaultSearchOpenLinks: true,
+      vaultLegacyOcrSearch: true,
+      vaultOpenById: true,
+      vaultOldestFirstBrowse: true,
       externalStorageDatabaseFallback: true,
       databaseVaultStorageSupported: true,
       storageProviderChoiceSupported: true,
