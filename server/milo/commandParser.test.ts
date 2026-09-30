@@ -79,6 +79,12 @@ describe("Milo command parser", () => {
       expect(followUp.title).toBe("Proposal ลูกค้า B");
       expect(followUp.remindAt).toEqual(new Date("2026-09-17T02:00:00.000Z"));
     }
+    const naturalFollowUp = parseMiloCommand("ช่วยติดตาม Proposal ลูกค้า B อีก 12 ชั่วโมง", now);
+    expect(naturalFollowUp.type).toBe("followUp");
+    if (naturalFollowUp.type === "followUp") {
+      expect(naturalFollowUp.title).toBe("Proposal ลูกค้า B");
+      expect(naturalFollowUp.remindAt).toEqual(new Date("2026-09-16T14:00:00.000Z"));
+    }
   });
 
   it("recognizes calendar, group-guide and vault-status commands", () => {

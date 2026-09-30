@@ -4,6 +4,7 @@ import { suggestStandardCategory } from "./financeCategories";
 export type CompoundCaptureItem =
   | { type: "calendar"; title: string; startsAt: Date; endsAt: Date }
   | { type: "reminder"; title: string; dueAt: Date }
+  | { type: "todo"; title: string; dueAt: Date }
   | { type: "pending_bill"; title: string; amount: number; category: string; dueAt: Date };
 
 export type CompoundCapturePlan = {
@@ -12,6 +13,7 @@ export type CompoundCapturePlan = {
 };
 
 const MONEY_CLAUSE = /((?:(?:จ่าย|ชำระ|ซื้อ)\s*)?ค่า[\u0E00-\u0E7FA-Za-z0-9._/-]+(?:\s+[\u0E00-\u0E7FA-Za-z0-9._/-]+){0,2}|(?:จ่าย|ชำระ|ซื้อ)\s+[\u0E00-\u0E7FA-Za-z0-9._/-]+(?:\s+[\u0E00-\u0E7FA-Za-z0-9._/-]+){0,2})\s+(\d[\d,]*(?:\.\d{1,2})?)\s*บาท(?=\s|$|[\u0E00-\u0E7F])/;
+const TODO_CLAUSE = /(?:^|\s)(?:และ\s*)?(?:งาน|todo|ต้องทำ)\s*[:：-]?\s*(.+?)(?=\s+(?:ช่วย)?เตือน(?:ฉัน)?ก่อน|$)/i;
 const CALENDAR_CUE = /ประชุม|นัด|พบ|คุย|สัมภาษณ์|ส่งงาน/i;
 const FUTURE_CUE = /วันนี้|พรุ่งนี้|วันที่\s*\d|\d{1,2}[/-]\d{1,2}|\d{4}-\d{1,2}-\d{1,2}|(?:เวลา\s*)?\d{1,2}(?::|\.)\d{2}|(?:ตี|บ่าย|เย็น|ค่ำ)\s*(?:\d{1,2}|หนึ่ง|สอง|สาม|สี่|ห้า|หก|เจ็ด|แปด|เก้า|สิบ)/i;
 
@@ -24,9 +26,10 @@ function reminderLeadMinutes(value: string) {
   return explicit ? Math.min(Math.max(Number(explicit[1]), 1), 24 * 60) : 15;
 }
 
-function stripCaptureClauses(value: string, moneyMatch?: RegExpMatchArray | null) {
+function stripCaptureClauses(value: string, moneyMatch?: RegExpMatchArray | null, todoMatch?: RegExpMatchArray | null) {
   let result = value;
   if (moneyMatch?.[0]) result = result.replace(moneyMatch[0], " ");
+  if (todoMatch?.[0]) result = result.replace(todoMatch[0], " ");
   return result
     .replace(/(?:ช่วย)?เตือน(?:ฉัน)?ก่อน(?:ประชุม|นัด)?(?:\s*\d+\s*นาที)?(?:ด้วยนะ|ด้วย|นะ|ครับ|ค่ะ)?/gi, " ")
     .replace(/\s+/g, " ")
@@ -39,8 +42,10 @@ export function parseCompoundCapture(text: string, now = new Date()): CompoundCa
   if (/^(?:ยืนยัน|แก้(?:ไข)?|ตั้งจด|จดอัตโนมัติ|จดประจำ|รายการประจำ|ตั้งงบ|เพิ่มหมวด|ลบหมวด|ค้นหา|ส่งออก)/i.test(value) || /ทุก(?:วัน|สัปดาห์|เดือน)/i.test(value)) return undefined;
 
   const moneyMatch = value.match(MONEY_CLAUSE);
-  if (!moneyMatch) return undefined;
-  const calendarText = stripCaptureClauses(value, moneyMatch);
+  const todoMatch = value.match(TODO_CLAUSE);
+  if (!moneyMatch && !todoMatch) return undefined;
+
+  const calendarText = stripCaptureClauses(value, moneyMatch, todoMatch);
   const calendarIntent = CALENDAR_CUE.test(calendarText)
     ? parseCalendarIntent(`นัด ${calendarText}`, now)
     : undefined;
@@ -66,6 +71,13 @@ export function parseCompoundCapture(text: string, now = new Date()): CompoundCa
       if (!calendar && !/เตือน/i.test(value)) {
         items.push({ type: "reminder", title: `ถึงกำหนดจ่าย${title}`, dueAt });
       }
+    }
+  }
+
+  if (todoMatch?.[1]) {
+    const title = todoMatch[1].replace(/[,.，。;；]+$/g, "").replace(/\s+/g, " ").trim().slice(0, 255);
+    if (title) {
+      items.push({ type: "todo", title, dueAt: calendar?.startsAt ?? parseCalendarDateTime(value, now) });
     }
   }
 
@@ -100,6 +112,11 @@ export function deserializeCapturePlan(payload: string): CompoundCapturePlan {
       if (!Number.isFinite(dueAt.getTime())) throw new Error("Invalid reminder capture");
       return { type: "reminder" as const, title: item.title, dueAt };
     }
+    if (item.type === "todo" && typeof item.title === "string") {
+      const dueAt = new Date(String(item.dueAt));
+      if (!Number.isFinite(dueAt.getTime())) throw new Error("Invalid todo capture");
+      return { type: "todo" as const, title: item.title, dueAt };
+    }
     if (item.type === "pending_bill" && typeof item.title === "string" && typeof item.category === "string") {
       const dueAt = new Date(String(item.dueAt));
       const amount = Number(item.amount);
@@ -115,6 +132,7 @@ export function formatCapturePreview(plan: CompoundCapturePlan, formatDate: (dat
   const rows = plan.items.map(item => {
     if (item.type === "calendar") return `📅 นัดหมาย • ${item.title}\n   ${formatDate(item.startsAt)}`;
     if (item.type === "reminder") return `🔔 เตือน • ${item.title}\n   ${formatDate(item.dueAt)}`;
+    if (item.type === "todo") return `✅ งาน • ${item.title}\n   กำหนด ${formatDate(item.dueAt)}`;
     return `🧾 บิลรอจ่าย • ${item.title} ${item.amount.toLocaleString("th-TH")} บาท\n   ครบกำหนด ${formatDate(item.dueAt)} • หมวด${item.category}`;
   });
   return `ไมโลเข้าใจว่า…\n\n${rows.join("\n\n")}\n\nยังไม่สร้างรายการการเงินจริงจนกว่าจะกดจ่ายบิล`;

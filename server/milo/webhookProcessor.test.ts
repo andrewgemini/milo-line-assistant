@@ -13,6 +13,7 @@ vi.mock("../db", () => ({
   completeMiloOnboarding: vi.fn(),
   ensureCaptureSchema: vi.fn(),
   upsertLineChat: vi.fn(),
+  setLineChatActive: vi.fn(),
   upsertLineMember: vi.fn(),
   finishWebhookEvent: vi.fn(),
   deferWebhookEvent: vi.fn(),
@@ -162,7 +163,7 @@ describe("LINE webhook processor", () => {
     expect(db.createTransaction).not.toHaveBeenCalled();
   });
 
-  it("confirms a staged capture into calendar, reminder, and pending bill but not a transaction", async () => {
+  it("confirms a staged capture into calendar, task, reminder, and pending bill but not a transaction", async () => {
     vi.mocked(db.registerWebhookEvent).mockResolvedValue(true);
     vi.mocked(sourceIdentity).mockReturnValue({ lineChatId: "U1", lineUserId: "U1", scope: "user" });
     vi.mocked(db.latestProposedCaptureDraft).mockResolvedValue({
@@ -172,6 +173,7 @@ describe("LINE webhook processor", () => {
         items: [
           { type: "calendar", title: "ประชุมกับลูกค้า", startsAt: "2026-09-17T07:00:00.000Z", endsAt: "2026-09-17T08:00:00.000Z" },
           { type: "pending_bill", title: "ค่าแท็กซี่", amount: 300, category: "เดินทาง", dueAt: "2026-09-17T07:00:00.000Z" },
+          { type: "todo", title: "ส่งใบเสนอราคา", dueAt: "2026-09-17T07:00:00.000Z" },
           { type: "reminder", title: "เตือนประชุมกับลูกค้า", dueAt: "2026-09-17T06:45:00.000Z" },
         ],
       }),
@@ -179,6 +181,7 @@ describe("LINE webhook processor", () => {
     vi.mocked(db.createCalendarEvent).mockResolvedValue(101 as never);
     vi.mocked(db.createPendingBill).mockResolvedValue(102 as never);
     vi.mocked(db.createReminder).mockResolvedValue(103 as never);
+    vi.mocked(db.createTodo).mockResolvedValue([{ insertId: 104 }] as never);
     vi.mocked(replyTextWithQuickReplies).mockResolvedValue(new Response());
 
     await processEvent({
@@ -188,6 +191,7 @@ describe("LINE webhook processor", () => {
     }, "{}");
 
     expect(db.createCalendarEvent).toHaveBeenCalledTimes(1);
+    expect(db.createTodo).toHaveBeenCalledWith("U1", "U1", "ส่งใบเสนอราคา", new Date("2026-09-17T07:00:00.000Z"));
     expect(db.createReminder).toHaveBeenCalledTimes(1);
     expect(db.createPendingBill).toHaveBeenCalledWith(expect.objectContaining({ captureDraftId: 31, amount: 300, financeAccountId: 7 }));
     expect(db.finishCaptureDraft).toHaveBeenCalledWith(expect.objectContaining({ id: 31, status: "accepted" }));
@@ -215,6 +219,23 @@ describe("LINE webhook processor", () => {
     expect(db.markPendingBillPaid).toHaveBeenCalledWith({ id: 42, transactionId: 700, lineUserId: "U1", lineChatId: "U1" });
     expect(replyPostSaveSummary).toHaveBeenCalledTimes(1);
     expect(replyText).not.toHaveBeenCalled();
+  });
+
+  it("creates both a task and reminder for a natural smart follow-up command", async () => {
+    vi.mocked(db.registerWebhookEvent).mockResolvedValue(true);
+    vi.mocked(sourceIdentity).mockReturnValueOnce({ lineChatId: "U1", lineUserId: "U1", scope: "user" });
+    vi.mocked(db.createTodo).mockResolvedValue([{ insertId: 51 }] as never);
+    vi.mocked(db.createReminder).mockResolvedValue(52 as never);
+    vi.mocked(replyText).mockResolvedValue(new Response());
+
+    await processEvent({
+      type: "message", webhookEventId: "evt-follow-up", timestamp: Date.parse("2026-09-16T02:00:00.000Z"),
+      replyToken: "token", source: { type: "user", userId: "U1" },
+      message: { id: "follow-up-1", type: "text", text: "ช่วยติดตาม Proposal ลูกค้า B อีก 12 ชั่วโมง" },
+    }, "{}");
+
+    expect(db.createTodo).toHaveBeenCalledWith("U1", "U1", "Proposal ลูกค้า B", expect.any(Date));
+    expect(db.createReminder).toHaveBeenCalledWith(expect.objectContaining({ title: "ติดตามงาน: Proposal ลูกค้า B", recurrenceType: "once" }));
   });
 
   it("combines appointments, reminders, todos, bills, and today's finance in one overview", async () => {

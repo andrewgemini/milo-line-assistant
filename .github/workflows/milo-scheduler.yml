@@ -1,0 +1,42 @@
+name: Milo Scheduler
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+    - cron: "0 0 * * *"
+    - cron: "0 13 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: milo-scheduler
+  cancel-in-progress: false
+
+jobs:
+  wake-render:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Request GitHub OIDC token and run Milo scheduler
+        shell: bash
+        env:
+          MILO_SCHEDULER_URL: https://milo-line-assistant.onrender.com/api/scheduled/reminders
+          OIDC_AUDIENCE: milo-line-assistant-cron
+        run: |
+          set -euo pipefail
+          token_json="$(curl --fail --silent --show-error \
+            -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=${OIDC_AUDIENCE}")"
+          id_token="$(printf '%s' "$token_json" | jq -r '.value')"
+          test -n "$id_token"
+          test "$id_token" != "null"
+          curl --fail --silent --show-error \
+            --retry 3 --retry-all-errors --retry-delay 5 \
+            --connect-timeout 20 --max-time 120 \
+            -H "Authorization: Bearer ${id_token}" \
+            -H "X-Milo-Cron-Provider: github-actions" \
+            -H "X-Cron-Compact: 1" \
+            "$MILO_SCHEDULER_URL"

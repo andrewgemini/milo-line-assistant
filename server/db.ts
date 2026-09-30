@@ -110,6 +110,20 @@ export async function upsertLineChat(lineChatId: string, scope: "user" | "group"
     .onDuplicateKeyUpdate({ set: { scope, displayName: displayName ?? null, isActive: true } });
 }
 
+export async function setLineChatActive(lineChatId: string, isActive: boolean) {
+  const db = await requireDb();
+  const result = await db.update(lineChats).set({ isActive }).where(eq(lineChats.lineChatId, lineChatId));
+  return result[0].affectedRows > 0;
+}
+
+export async function listActivePrivateLineUsers() {
+  const db = await requireDb();
+  const rows = await db.select({ lineUserId: lineChats.lineChatId }).from(lineChats)
+    .where(and(eq(lineChats.scope, "user"), eq(lineChats.isActive, true)))
+    .orderBy(lineChats.id);
+  return rows.map(row => row.lineUserId);
+}
+
 export async function upsertLineMember(lineChatId: string, lineUserId: string, displayName?: string) {
   const db = await requireDb();
   await db.insert(lineMembers).values({ lineChatId, lineUserId, displayName: displayName ?? null })

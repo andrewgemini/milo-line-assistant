@@ -121,7 +121,7 @@ function recurringFrom(value: string, now: Date): Extract<MiloCommand, { type: "
 }
 
 function followUpFrom(text: string, now: Date): Extract<MiloCommand, { type: "followUp" }> | undefined {
-  const match = text.trim().match(/^(?:ช่วย)?(?:ตาม|ทวง)งาน\s+(.+?)(?:\s+(?:อีก\s*)?(\d+)\s*ชั่วโมง)?\s*$/i);
+  const match = text.trim().match(/^(?:ช่วย)?(?:(?:ตาม|ทวง)งาน|ติดตาม(?:งาน)?|ตามต่อ)\s+(.+?)(?:\s+(?:อีก\s*)?(\d+)\s*ชั่วโมง)?\s*$/i);
   if (!match) return undefined;
   const title = match[1].trim().replace(/\s+(?:ด้วย|นะ|ครับ|ค่ะ)$/i, "").trim();
   if (!title) return undefined;

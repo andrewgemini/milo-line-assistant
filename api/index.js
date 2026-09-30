@@ -616,6 +616,16 @@ async function upsertLineChat(lineChatId, scope, displayName) {
   const db = await requireDb();
   await db.insert(lineChats).values({ lineChatId, scope, displayName: displayName ?? null, isActive: true }).onDuplicateKeyUpdate({ set: { scope, displayName: displayName ?? null, isActive: true } });
 }
+async function setLineChatActive(lineChatId, isActive) {
+  const db = await requireDb();
+  const result = await db.update(lineChats).set({ isActive }).where(eq(lineChats.lineChatId, lineChatId));
+  return result[0].affectedRows > 0;
+}
+async function listActivePrivateLineUsers() {
+  const db = await requireDb();
+  const rows = await db.select({ lineUserId: lineChats.lineChatId }).from(lineChats).where(and(eq(lineChats.scope, "user"), eq(lineChats.isActive, true))).orderBy(lineChats.id);
+  return rows.map((row) => row.lineUserId);
+}
 async function upsertLineMember(lineChatId, lineUserId, displayName) {
   const db = await requireDb();
   await db.insert(lineMembers).values({ lineChatId, lineUserId, displayName: displayName ?? null }).onDuplicateKeyUpdate({ set: { displayName: displayName ?? null } });
@@ -4588,10 +4598,10 @@ var appRouter = router({
         if (ctx.user.role !== "admin") throw new Error("\u0E40\u0E09\u0E1E\u0E32\u0E30\u0E1C\u0E39\u0E49\u0E14\u0E39\u0E41\u0E25\u0E42\u0E04\u0E23\u0E07\u0E01\u0E32\u0E23\u0E17\u0E35\u0E48\u0E15\u0E31\u0E49\u0E07\u0E07\u0E32\u0E19\u0E2A\u0E48\u0E07\u0E40\u0E15\u0E37\u0E2D\u0E19\u0E44\u0E14\u0E49");
         if (!ENV.isProduction) throw new Error("\u0E15\u0E49\u0E2D\u0E07\u0E40\u0E1C\u0E22\u0E41\u0E1E\u0E23\u0E48\u0E40\u0E27\u0E47\u0E1A\u0E44\u0E0B\u0E15\u0E4C\u0E01\u0E48\u0E2D\u0E19 \u0E08\u0E36\u0E07\u0E08\u0E30\u0E15\u0E31\u0E49\u0E07\u0E07\u0E32\u0E19\u0E2A\u0E48\u0E07\u0E40\u0E15\u0E37\u0E2D\u0E19\u0E2D\u0E31\u0E15\u0E42\u0E19\u0E21\u0E31\u0E15\u0E34\u0E44\u0E14\u0E49");
         const key = "reminder-delivery-primary";
-        const taskUid = "external-cron-reminders";
+        const taskUid = "github-actions-reminders";
         const current = await getAutomationSetting(key);
         await saveAutomationSetting({ settingKey: key, scheduleCronTaskUid: taskUid, isEnabled: true });
-        console.info("[Milo Scheduler] External Cron configured", { taskUid, wasEnabled: Boolean(current?.isEnabled) });
+        console.info("[Milo Scheduler] GitHub Actions OIDC scheduler enabled", { taskUid, wasEnabled: Boolean(current?.isEnabled) });
         return { taskUid, status: current?.isEnabled ? "already-active" : "configured", nextExecutionAt: null };
       })
     })
@@ -7686,6 +7696,7 @@ function suggestStandardCategory(transactionType, note) {
 
 // server/milo/multiIntent.ts
 var MONEY_CLAUSE = /((?:(?:จ่าย|ชำระ|ซื้อ)\s*)?ค่า[\u0E00-\u0E7FA-Za-z0-9._/-]+(?:\s+[\u0E00-\u0E7FA-Za-z0-9._/-]+){0,2}|(?:จ่าย|ชำระ|ซื้อ)\s+[\u0E00-\u0E7FA-Za-z0-9._/-]+(?:\s+[\u0E00-\u0E7FA-Za-z0-9._/-]+){0,2})\s+(\d[\d,]*(?:\.\d{1,2})?)\s*บาท(?=\s|$|[\u0E00-\u0E7F])/;
+var TODO_CLAUSE = /(?:^|\s)(?:และ\s*)?(?:งาน|todo|ต้องทำ)\s*[:：-]?\s*(.+?)(?=\s+(?:ช่วย)?เตือน(?:ฉัน)?ก่อน|$)/i;
 var CALENDAR_CUE = /ประชุม|นัด|พบ|คุย|สัมภาษณ์|ส่งงาน/i;
 var FUTURE_CUE = /วันนี้|พรุ่งนี้|วันที่\s*\d|\d{1,2}[/-]\d{1,2}|\d{4}-\d{1,2}-\d{1,2}|(?:เวลา\s*)?\d{1,2}(?::|\.)\d{2}|(?:ตี|บ่าย|เย็น|ค่ำ)\s*(?:\d{1,2}|หนึ่ง|สอง|สาม|สี่|ห้า|หก|เจ็ด|แปด|เก้า|สิบ)/i;
 function cleanBillTitle(raw) {
@@ -7695,9 +7706,10 @@ function reminderLeadMinutes(value) {
   const explicit = value.match(/(?:เตือน)?ก่อน(?:ประชุม|นัด)?\s*(\d+)\s*นาที/i);
   return explicit ? Math.min(Math.max(Number(explicit[1]), 1), 24 * 60) : 15;
 }
-function stripCaptureClauses(value, moneyMatch) {
+function stripCaptureClauses(value, moneyMatch, todoMatch) {
   let result = value;
   if (moneyMatch?.[0]) result = result.replace(moneyMatch[0], " ");
+  if (todoMatch?.[0]) result = result.replace(todoMatch[0], " ");
   return result.replace(/(?:ช่วย)?เตือน(?:ฉัน)?ก่อน(?:ประชุม|นัด)?(?:\s*\d+\s*นาที)?(?:ด้วยนะ|ด้วย|นะ|ครับ|ค่ะ)?/gi, " ").replace(/\s+/g, " ").trim();
 }
 function parseCompoundCapture(text2, now = /* @__PURE__ */ new Date()) {
@@ -7705,8 +7717,9 @@ function parseCompoundCapture(text2, now = /* @__PURE__ */ new Date()) {
   if (!value || !FUTURE_CUE.test(value)) return void 0;
   if (/^(?:ยืนยัน|แก้(?:ไข)?|ตั้งจด|จดอัตโนมัติ|จดประจำ|รายการประจำ|ตั้งงบ|เพิ่มหมวด|ลบหมวด|ค้นหา|ส่งออก)/i.test(value) || /ทุก(?:วัน|สัปดาห์|เดือน)/i.test(value)) return void 0;
   const moneyMatch = value.match(MONEY_CLAUSE);
-  if (!moneyMatch) return void 0;
-  const calendarText = stripCaptureClauses(value, moneyMatch);
+  const todoMatch = value.match(TODO_CLAUSE);
+  if (!moneyMatch && !todoMatch) return void 0;
+  const calendarText = stripCaptureClauses(value, moneyMatch, todoMatch);
   const calendarIntent = CALENDAR_CUE.test(calendarText) ? parseCalendarIntent(`\u0E19\u0E31\u0E14 ${calendarText}`, now) : void 0;
   const calendar = calendarIntent?.type === "create" ? calendarIntent.data : void 0;
   const items = [];
@@ -7728,6 +7741,12 @@ function parseCompoundCapture(text2, now = /* @__PURE__ */ new Date()) {
       if (!calendar && !/เตือน/i.test(value)) {
         items.push({ type: "reminder", title: `\u0E16\u0E36\u0E07\u0E01\u0E33\u0E2B\u0E19\u0E14\u0E08\u0E48\u0E32\u0E22${title}`, dueAt });
       }
+    }
+  }
+  if (todoMatch?.[1]) {
+    const title = todoMatch[1].replace(/[,.，。;；]+$/g, "").replace(/\s+/g, " ").trim().slice(0, 255);
+    if (title) {
+      items.push({ type: "todo", title, dueAt: calendar?.startsAt ?? parseCalendarDateTime(value, now) });
     }
   }
   if (calendar && /เตือน/i.test(value)) {
@@ -7758,6 +7777,11 @@ function deserializeCapturePlan(payload) {
       if (!Number.isFinite(dueAt.getTime())) throw new Error("Invalid reminder capture");
       return { type: "reminder", title: item.title, dueAt };
     }
+    if (item.type === "todo" && typeof item.title === "string") {
+      const dueAt = new Date(String(item.dueAt));
+      if (!Number.isFinite(dueAt.getTime())) throw new Error("Invalid todo capture");
+      return { type: "todo", title: item.title, dueAt };
+    }
     if (item.type === "pending_bill" && typeof item.title === "string" && typeof item.category === "string") {
       const dueAt = new Date(String(item.dueAt));
       const amount = Number(item.amount);
@@ -7774,6 +7798,8 @@ function formatCapturePreview(plan, formatDate2) {
    ${formatDate2(item.startsAt)}`;
     if (item.type === "reminder") return `\u{1F514} \u0E40\u0E15\u0E37\u0E2D\u0E19 \u2022 ${item.title}
    ${formatDate2(item.dueAt)}`;
+    if (item.type === "todo") return `\u2705 \u0E07\u0E32\u0E19 \u2022 ${item.title}
+   \u0E01\u0E33\u0E2B\u0E19\u0E14 ${formatDate2(item.dueAt)}`;
     return `\u{1F9FE} \u0E1A\u0E34\u0E25\u0E23\u0E2D\u0E08\u0E48\u0E32\u0E22 \u2022 ${item.title} ${item.amount.toLocaleString("th-TH")} \u0E1A\u0E32\u0E17
    \u0E04\u0E23\u0E1A\u0E01\u0E33\u0E2B\u0E19\u0E14 ${formatDate2(item.dueAt)} \u2022 \u0E2B\u0E21\u0E27\u0E14${item.category}`;
   });
@@ -7853,7 +7879,7 @@ function recurringFrom(value, now) {
   return void 0;
 }
 function followUpFrom(text2, now) {
-  const match = text2.trim().match(/^(?:ช่วย)?(?:ตาม|ทวง)งาน\s+(.+?)(?:\s+(?:อีก\s*)?(\d+)\s*ชั่วโมง)?\s*$/i);
+  const match = text2.trim().match(/^(?:ช่วย)?(?:(?:ตาม|ทวง)งาน|ติดตาม(?:งาน)?|ตามต่อ)\s+(.+?)(?:\s+(?:อีก\s*)?(\d+)\s*ชั่วโมง)?\s*$/i);
   if (!match) return void 0;
   const title = match[1].trim().replace(/\s+(?:ด้วย|นะ|ครับ|ค่ะ)$/i, "").trim();
   if (!title) return void 0;
@@ -8789,6 +8815,142 @@ ${input.todos.slice(0, 8).map((item) => `\u2022 #${item.id} ${item.title}${item.
   return lines.join("\n");
 }
 
+// server/milo/personalDigestDelivery.ts
+import crypto6 from "node:crypto";
+async function buildPersonalDigestSnapshot(lineUserId, lineChatId, scope, reference = /* @__PURE__ */ new Date(), range = bangkokDayRange(reference)) {
+  const financeScope = scope === "user" ? await resolveFinanceAccountForLineEvent(lineUserId, lineChatId, scope) : void 0;
+  const [calendars, reminders2, todos, completedTodos, bills, finance] = await Promise.all([
+    listCalendarEventsForRange(lineUserId, lineChatId, scope, range.start, new Date(range.end.getTime() - 1)),
+    listRemindersForChat(lineUserId, lineChatId, scope),
+    listTodosForChat(lineUserId, lineChatId, scope),
+    listCompletedTodosForChat(lineUserId, lineChatId, scope, range.start, new Date(range.end.getTime() - 1)),
+    financeScope ? listPendingBillsForChat(lineUserId, lineChatId, scope, financeScope.account.id) : Promise.resolve([]),
+    financeScope ? financeReport(lineUserId, "day", reference, financeScope.account.id) : Promise.resolve(void 0)
+  ]);
+  return {
+    reference,
+    calendars,
+    reminders: reminders2.filter((item) => item.status === "active" && item.nextRunAt && item.nextRunAt >= range.start && item.nextRunAt < range.end),
+    todos,
+    completedTodos,
+    // Include overdue pending bills as well as bills due today so a missed bill never disappears from a daily brief.
+    bills: bills.filter((item) => item.dueAt < range.end),
+    finance
+  };
+}
+function personalDigestStateKey(settingKey, lineUserId) {
+  const userHash = crypto6.createHash("sha256").update(lineUserId).digest("hex").slice(0, 24);
+  return `${settingKey}:${userHash}`;
+}
+function personalDigestFailureKey(settingKey, lineUserId) {
+  return `${personalDigestStateKey(settingKey, lineUserId)}:failure`;
+}
+function withinFailureCooldown(lastRunAt, reference, cooldownMs = 15 * 6e4) {
+  if (!lastRunAt) return false;
+  const elapsed = reference.getTime() - new Date(lastRunAt).getTime();
+  return elapsed >= 0 && elapsed < cooldownMs;
+}
+function bangkokHour(reference) {
+  return Number(new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Bangkok",
+    hour: "2-digit",
+    hourCycle: "h23"
+  }).format(reference));
+}
+function personalDigestSlotForBangkok(reference = /* @__PURE__ */ new Date()) {
+  const hour = bangkokHour(reference);
+  if (hour < 7) return void 0;
+  return hour < 20 ? "morning" : "evening";
+}
+async function deliverPersonalDigestBatch(input) {
+  const reference = input.reference ?? /* @__PURE__ */ new Date();
+  const globalSetting = await getAutomationSetting(input.settingKey);
+  if (globalSetting?.isEnabled === false) {
+    return { slot: input.slot, scanned: 0, delivered: 0, skipped: 0, failed: 0, disabled: true };
+  }
+  const recipients = await listActivePrivateLineUsers();
+  let delivered = 0;
+  let skipped = 0;
+  let failed = 0;
+  const formatter = input.slot === "morning" ? formatMorningBrief : formatEveningSummary;
+  for (const targetLineUserId of recipients) {
+    const stateKey = personalDigestStateKey(input.settingKey, targetLineUserId);
+    const failureKey = personalDigestFailureKey(input.settingKey, targetLineUserId);
+    const [state, failureState] = await Promise.all([
+      getAutomationSetting(stateKey),
+      getAutomationSetting(failureKey)
+    ]);
+    if (!shouldDeliverDailyDigest(state?.lastRunAt, reference) || withinFailureCooldown(failureState?.lastRunAt, reference)) {
+      skipped += 1;
+      continue;
+    }
+    try {
+      const snapshot = await buildPersonalDigestSnapshot(targetLineUserId, targetLineUserId, "user", reference);
+      await pushText(targetLineUserId, formatter(snapshot));
+      await saveAutomationSetting({ settingKey: stateKey, isEnabled: true, lastRunAt: reference });
+      delivered += 1;
+    } catch (error) {
+      failed += 1;
+      await saveAutomationSetting({ settingKey: failureKey, isEnabled: true, lastRunAt: reference }).catch(() => void 0);
+      await writeAuditLog({
+        action: "personal_digest.delivery_failed",
+        entityType: "personal_digest",
+        actorLineUserId: targetLineUserId,
+        lineChatId: targetLineUserId,
+        details: {
+          slot: input.slot,
+          settingKey: input.settingKey,
+          error: error instanceof Error ? error.message.slice(0, 500) : "unknown"
+        }
+      }).catch(() => void 0);
+    }
+  }
+  await saveAutomationSetting({
+    settingKey: input.settingKey,
+    scheduleCronTaskUid: globalSetting?.scheduleCronTaskUid ?? null,
+    isEnabled: globalSetting?.isEnabled ?? true,
+    lastRunAt: reference
+  });
+  return { slot: input.slot, scanned: recipients.length, delivered, skipped, failed, disabled: false };
+}
+async function deliverDuePersonalDigests(reference = /* @__PURE__ */ new Date()) {
+  const slot = personalDigestSlotForBangkok(reference);
+  if (!slot) return { slot: null, scanned: 0, delivered: 0, skipped: 0, failed: 0, disabled: false };
+  return deliverPersonalDigestBatch({
+    settingKey: slot === "morning" ? "personal-digest-morning" : "personal-digest-evening",
+    slot,
+    reference
+  });
+}
+
+// server/milo/githubCronAuth.ts
+import { createRemoteJWKSet, jwtVerify as jwtVerify2 } from "jose";
+var GITHUB_CRON_AUDIENCE = "milo-line-assistant-cron";
+var GITHUB_CRON_REPOSITORY = "andrewgemini/milo-line-assistant";
+var GITHUB_CRON_REF = "refs/heads/main";
+var GITHUB_CRON_WORKFLOW_REF = `${GITHUB_CRON_REPOSITORY}/.github/workflows/milo-scheduler.yml@${GITHUB_CRON_REF}`;
+var GITHUB_OIDC_ISSUER = "https://token.actions.githubusercontent.com";
+var githubJwks = createRemoteJWKSet(new URL(`${GITHUB_OIDC_ISSUER}/.well-known/jwks`));
+function trustedGitHubCronClaims(payload) {
+  const eventName = typeof payload.event_name === "string" ? payload.event_name : "";
+  return payload.repository === GITHUB_CRON_REPOSITORY && payload.ref === GITHUB_CRON_REF && payload.workflow_ref === GITHUB_CRON_WORKFLOW_REF && (eventName === "schedule" || eventName === "workflow_dispatch");
+}
+async function verifyGitHubActionsCronRequest(req) {
+  const authorization = req.headers.authorization;
+  if (typeof authorization !== "string" || !authorization.startsWith("Bearer ")) return false;
+  const token = authorization.slice(7).trim();
+  if (!token) return false;
+  try {
+    const { payload } = await jwtVerify2(token, githubJwks, {
+      issuer: GITHUB_OIDC_ISSUER,
+      audience: GITHUB_CRON_AUDIENCE
+    });
+    return trustedGitHubCronClaims(payload);
+  } catch {
+    return false;
+  }
+}
+
 // server/milo/routes.ts
 function helpText() {
   return "Milo \u0E0A\u0E48\u0E27\u0E22\u0E04\u0E38\u0E13\u0E08\u0E1A\u0E07\u0E32\u0E19\u0E43\u0E19 LINE \u0E41\u0E0A\u0E17\u0E40\u0E14\u0E35\u0E22\u0E27\u0E04\u0E23\u0E31\u0E1A\n\u{1F514} \u0E40\u0E15\u0E37\u0E2D\u0E19: \u0E40\u0E15\u0E37\u0E2D\u0E19\u0E1B\u0E23\u0E30\u0E0A\u0E38\u0E21\u0E1E\u0E23\u0E38\u0E48\u0E07\u0E19\u0E35\u0E49 10:00 / \u0E40\u0E15\u0E37\u0E2D\u0E19\u0E14\u0E37\u0E48\u0E21\u0E19\u0E49\u0E33\u0E17\u0E38\u0E01 30 \u0E19\u0E32\u0E17\u0E35 / \u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E40\u0E15\u0E37\u0E2D\u0E19\n\u{1F3AF} \u0E15\u0E32\u0E21\u0E07\u0E32\u0E19: \u0E0A\u0E48\u0E27\u0E22\u0E15\u0E32\u0E21\u0E07\u0E32\u0E19 Proposal \u0E25\u0E39\u0E01\u0E04\u0E49\u0E32 B / \u0E0A\u0E48\u0E27\u0E22\u0E15\u0E32\u0E21\u0E07\u0E32\u0E19\u0E2A\u0E48\u0E07\u0E43\u0E1A\u0E40\u0E2A\u0E19\u0E2D\u0E23\u0E32\u0E04\u0E32 \u0E2D\u0E35\u0E01 24 \u0E0A\u0E31\u0E48\u0E27\u0E42\u0E21\u0E07\n\u2600\uFE0F \u0E27\u0E31\u0E19\u0E19\u0E35\u0E49: \u0E27\u0E31\u0E19\u0E19\u0E35\u0E49\u0E21\u0E35\u0E2D\u0E30\u0E44\u0E23 / \u0E2A\u0E23\u0E38\u0E1B\u0E40\u0E0A\u0E49\u0E32 / \u0E2A\u0E23\u0E38\u0E1B\u0E40\u0E22\u0E47\u0E19 / \u0E1A\u0E34\u0E25\u0E23\u0E2D\u0E08\u0E48\u0E32\u0E22 / \u0E08\u0E48\u0E32\u0E22\u0E1A\u0E34\u0E25 #\u0E40\u0E25\u0E02\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\n\u{1F5C2}\uFE0F \u0E40\u0E01\u0E47\u0E1A: \u0E40\u0E01\u0E47\u0E1A https://example.com #\u0E07\u0E32\u0E19 / \u0E04\u0E49\u0E19\u0E2B\u0E32 \u0E43\u0E1A\u0E40\u0E2A\u0E19\u0E2D\u0E23\u0E32\u0E04\u0E32 / \u0E2A\u0E16\u0E32\u0E19\u0E30\u0E04\u0E25\u0E31\u0E07\n\u{1F4E6} \u0E40\u0E2D\u0E01\u0E2A\u0E32\u0E23: \u0E2A\u0E23\u0E38\u0E1B\u0E40\u0E2D\u0E01\u0E2A\u0E32\u0E23\u0E40\u0E14\u0E37\u0E2D\u0E19\u0E19\u0E35\u0E49 / \u0E44\u0E1F\u0E25\u0E4C\u0E17\u0E35\u0E48\u0E15\u0E49\u0E2D\u0E07\u0E15\u0E23\u0E27\u0E08\n\u{1F9E0} \u0E08\u0E14\u0E2B\u0E25\u0E32\u0E22\u0E2D\u0E22\u0E48\u0E32\u0E07: \u0E1E\u0E23\u0E38\u0E48\u0E07\u0E19\u0E35\u0E49\u0E1A\u0E48\u0E32\u0E22\u0E2A\u0E2D\u0E07\u0E1B\u0E23\u0E30\u0E0A\u0E38\u0E21\u0E25\u0E39\u0E01\u0E04\u0E49\u0E32 \u0E04\u0E48\u0E32\u0E41\u0E17\u0E47\u0E01\u0E0B\u0E35\u0E48 300 \u0E0A\u0E48\u0E27\u0E22\u0E40\u0E15\u0E37\u0E2D\u0E19\u0E14\u0E49\u0E27\u0E22\n\u{1F4C5} \u0E1B\u0E0F\u0E34\u0E17\u0E34\u0E19: \u0E25\u0E07\u0E1B\u0E0F\u0E34\u0E17\u0E34\u0E19 \u0E1B\u0E23\u0E30\u0E0A\u0E38\u0E21\u0E17\u0E35\u0E21\u0E1E\u0E23\u0E38\u0E48\u0E07\u0E19\u0E35\u0E49 10:00 / \u0E14\u0E39\u0E1B\u0E0F\u0E34\u0E17\u0E34\u0E19\n\u{1F465} \u0E01\u0E25\u0E38\u0E48\u0E21 LINE: @\u0E44\u0E21\u0E42\u0E25 \u0E1C\u0E39\u0E49\u0E0A\u0E48\u0E27\u0E22\u0E01\u0E25\u0E38\u0E48\u0E21 / @\u0E44\u0E21\u0E42\u0E25 \u0E41\u0E08\u0E49\u0E07\u0E2A\u0E48\u0E07\u0E07\u0E32\u0E19\u0E14\u0E49\u0E27\u0E22\u0E16\u0E36\u0E07 @\u0E2A\u0E21\u0E0A\u0E32\u0E22\n\u2705 \u0E07\u0E32\u0E19: \u0E07\u0E32\u0E19 \u0E2A\u0E48\u0E07\u0E2A\u0E23\u0E38\u0E1B\u0E23\u0E32\u0E22\u0E2A\u0E31\u0E1B\u0E14\u0E32\u0E2B\u0E4C / \u0E14\u0E39\u0E07\u0E32\u0E19 / \u0E40\u0E2A\u0E23\u0E47\u0E08\u0E07\u0E32\u0E19 #12 / \u0E42\u0E19\u0E49\u0E15 \u0E23\u0E2B\u0E31\u0E2A Wi-Fi\n\u{1F4B0} \u0E01\u0E32\u0E23\u0E40\u0E07\u0E34\u0E19: \u0E01\u0E34\u0E19\u0E01\u0E32\u0E41\u0E1F 80 / \u0E40\u0E07\u0E34\u0E19\u0E40\u0E14\u0E37\u0E2D\u0E19\u0E40\u0E02\u0E49\u0E32 35000 / \u0E15\u0E31\u0E49\u0E07\u0E07\u0E1A \u0E2D\u0E32\u0E2B\u0E32\u0E23 5000 / \u0E2A\u0E23\u0E38\u0E1B\u0E40\u0E14\u0E37\u0E2D\u0E19\u0E19\u0E35\u0E49\n\u{1F4F7}\u{1F399}\uFE0F \u0E2A\u0E48\u0E07\u0E23\u0E39\u0E1B\u0E43\u0E1A\u0E40\u0E2A\u0E23\u0E47\u0E08\u0E2B\u0E23\u0E37\u0E2D\u0E40\u0E2A\u0E35\u0E22\u0E07\u0E43\u0E2B\u0E49\u0E44\u0E21\u0E42\u0E25\u0E2D\u0E48\u0E32\u0E19 \u0E41\u0E25\u0E49\u0E27\u0E15\u0E23\u0E27\u0E08\u0E41\u0E25\u0E30\u0E22\u0E37\u0E19\u0E22\u0E31\u0E19\u0E01\u0E48\u0E2D\u0E19\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\n\n\u0E1E\u0E34\u0E21\u0E1E\u0E4C \u201C\u0E0A\u0E48\u0E27\u0E22\u201D \u0E44\u0E14\u0E49\u0E17\u0E38\u0E01\u0E40\u0E21\u0E37\u0E48\u0E2D\u0E04\u0E23\u0E31\u0E1A";
@@ -9044,7 +9206,7 @@ async function resolveFinanceScope(lineUserId, lineChatId, scope) {
   if (!access) return void 0;
   return { financeAccountId: access.account.id, role: access.membership.role };
 }
-async function buildPersonalDigestSnapshot(lineUserId, lineChatId, scope, reference = /* @__PURE__ */ new Date(), range = bangkokDayRange(reference)) {
+async function buildPersonalDigestSnapshot2(lineUserId, lineChatId, scope, reference = /* @__PURE__ */ new Date(), range = bangkokDayRange(reference)) {
   const financeScope = scope === "user" ? await resolveFinanceScope(lineUserId, lineChatId, scope) : void 0;
   const [calendars, reminders2, todos, completedTodos, bills, finance] = await Promise.all([
     listCalendarEventsForRange(lineUserId, lineChatId, scope, range.start, new Date(range.end.getTime() - 1)),
@@ -9175,7 +9337,7 @@ ${lineUserId}
   } else if (command.type === "captureConfirm") {
     const draft = await latestProposedCaptureDraft(lineUserId, lineChatId);
     if (!draft) {
-      message = "\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E21\u0E35\u0E0A\u0E38\u0E14\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E17\u0E35\u0E48\u0E23\u0E2D\u0E22\u0E37\u0E19\u0E22\u0E31\u0E19 \u0E25\u0E2D\u0E07\u0E1E\u0E34\u0E21\u0E1E\u0E4C\u0E19\u0E31\u0E14\u0E2B\u0E21\u0E32\u0E22 \u0E1A\u0E34\u0E25 \u0E41\u0E25\u0E30\u0E04\u0E33\u0E40\u0E15\u0E37\u0E2D\u0E19\u0E43\u0E19\u0E02\u0E49\u0E2D\u0E04\u0E27\u0E32\u0E21\u0E40\u0E14\u0E35\u0E22\u0E27\u0E01\u0E48\u0E2D\u0E19\u0E04\u0E23\u0E31\u0E1A";
+      message = "\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E21\u0E35\u0E0A\u0E38\u0E14\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E17\u0E35\u0E48\u0E23\u0E2D\u0E22\u0E37\u0E19\u0E22\u0E31\u0E19 \u0E25\u0E2D\u0E07\u0E1E\u0E34\u0E21\u0E1E\u0E4C\u0E19\u0E31\u0E14\u0E2B\u0E21\u0E32\u0E22 \u0E07\u0E32\u0E19 \u0E1A\u0E34\u0E25 \u0E41\u0E25\u0E30\u0E04\u0E33\u0E40\u0E15\u0E37\u0E2D\u0E19\u0E43\u0E19\u0E02\u0E49\u0E2D\u0E04\u0E27\u0E32\u0E21\u0E40\u0E14\u0E35\u0E22\u0E27\u0E01\u0E48\u0E2D\u0E19\u0E04\u0E23\u0E31\u0E1A";
     } else {
       const capture = deserializeCapturePlan(draft.payloadJson);
       if (capture.items.some((item) => item.type === "reminder") && !hasMiloEntitlement(plan, "reminders")) {
@@ -9209,6 +9371,9 @@ ${lineUserId}
         } else if (item.type === "reminder") {
           const id = await createReminder({ lineChatId, createdByLineUserId: lineUserId, title: item.title, recurrenceType: "once", recurrenceInterval: 1, dueAt: item.dueAt, nextRunAt: item.dueAt, sourceMessageId });
           created.push({ type: item.type, id });
+        } else if (item.type === "todo") {
+          const result = await createTodo(lineChatId, lineUserId, item.title, item.dueAt);
+          created.push({ type: item.type, id: Number(result[0]?.insertId ?? 0) });
         } else {
           const id = await createPendingBill({ lineChatId, lineUserId, financeAccountId: captureFinance.financeAccountId, captureDraftId: draft.id, title: item.title, amount: item.amount, category: item.category, dueAt: item.dueAt, sourceMessageId });
           created.push({ type: item.type, id });
@@ -9217,7 +9382,7 @@ ${lineUserId}
       await finishCaptureDraft({ id: draft.id, lineUserId, lineChatId, status: "accepted", details: { created } });
       const billIds = created.filter((item) => item.type === "pending_bill").map((item) => `#${item.id}`).join(", ");
       message = `\u0E1A\u0E31\u0E19\u0E17\u0E36\u0E01\u0E0A\u0E38\u0E14\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u0E41\u0E25\u0E49\u0E27 \u2705
-\u0E19\u0E31\u0E14\u0E2B\u0E21\u0E32\u0E22 ${created.filter((item) => item.type === "calendar").length} \u2022 \u0E40\u0E15\u0E37\u0E2D\u0E19 ${created.filter((item) => item.type === "reminder").length} \u2022 \u0E1A\u0E34\u0E25\u0E23\u0E2D\u0E08\u0E48\u0E32\u0E22 ${created.filter((item) => item.type === "pending_bill").length}${billIds ? ` (${billIds})` : ""}
+\u0E19\u0E31\u0E14\u0E2B\u0E21\u0E32\u0E22 ${created.filter((item) => item.type === "calendar").length} \u2022 \u0E07\u0E32\u0E19 ${created.filter((item) => item.type === "todo").length} \u2022 \u0E40\u0E15\u0E37\u0E2D\u0E19 ${created.filter((item) => item.type === "reminder").length} \u2022 \u0E1A\u0E34\u0E25\u0E23\u0E2D\u0E08\u0E48\u0E32\u0E22 ${created.filter((item) => item.type === "pending_bill").length}${billIds ? ` (${billIds})` : ""}
 
 \u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E21\u0E35\u0E01\u0E32\u0E23\u0E2A\u0E23\u0E49\u0E32\u0E07\u0E23\u0E32\u0E22\u0E08\u0E48\u0E32\u0E22\u0E08\u0E23\u0E34\u0E07 \u0E1E\u0E34\u0E21\u0E1E\u0E4C \u201C\u0E08\u0E48\u0E32\u0E22\u0E1A\u0E34\u0E25 #\u0E40\u0E25\u0E02\u0E23\u0E32\u0E22\u0E01\u0E32\u0E23\u201D \u0E40\u0E21\u0E37\u0E48\u0E2D\u0E0A\u0E33\u0E23\u0E30\u0E41\u0E25\u0E49\u0E27`;
       if (event.replyToken) {
@@ -9250,9 +9415,9 @@ ${lineUserId}
       finance
     });
   } else if (command.type === "morningBrief") {
-    message = formatMorningBrief(await buildPersonalDigestSnapshot(lineUserId, lineChatId, scope));
+    message = formatMorningBrief(await buildPersonalDigestSnapshot2(lineUserId, lineChatId, scope));
   } else if (command.type === "eveningSummary") {
-    message = formatEveningSummary(await buildPersonalDigestSnapshot(lineUserId, lineChatId, scope));
+    message = formatEveningSummary(await buildPersonalDigestSnapshot2(lineUserId, lineChatId, scope));
   } else if (command.type === "followUp") {
     const todoResult = await createTodo(lineChatId, lineUserId, command.title, command.remindAt);
     const reminderId = await createReminder({
@@ -10236,6 +10401,11 @@ async function processEvent(event, rawPayload, runtime = {}) {
     if (!accepted) return;
   }
   try {
+    if (identity.scope === "user" && event.type === "unfollow") {
+      await setLineChatActive(identity.lineChatId, false);
+      await finishWebhookEvent(event.webhookEventId, "processed");
+      return;
+    }
     const profile = await getProfile(event.source).catch(() => void 0);
     await upsertLineChat(identity.lineChatId, identity.scope, profile?.displayName);
     await upsertLineMember(identity.lineChatId, identity.lineUserId, profile?.displayName);
@@ -10476,9 +10646,15 @@ function registerMiloCron(app2) {
   app2.all("/api/scheduled/reminders", async (req, res) => {
     const sendSuccess = (payload) => req.headers["x-cron-compact"] === "1" ? res.status(204).end() : res.json(payload);
     try {
+      const isGitHubActionsCron = req.method === "GET" && req.headers["x-milo-cron-provider"] === "github-actions";
       const isVercelCron = req.method === "GET" && req.headers["user-agent"] === "vercel-cron/1.0";
       let taskUid;
-      if (isVercelCron) {
+      if (isGitHubActionsCron) {
+        const trusted = await verifyGitHubActionsCronRequest(req);
+        if (!trusted) return res.status(401).json({ error: "cron-unauthorized" });
+        taskUid = "github-actions-reminders";
+        await saveAutomationSetting({ settingKey: "reminder-delivery-primary", scheduleCronTaskUid: taskUid, isEnabled: true });
+      } else if (isVercelCron) {
         const secret3 = process.env.CRON_SECRET?.trim();
         const authorization = req.headers.authorization;
         const headerSecret = req.headers["x-cron-secret"];
@@ -10506,8 +10682,9 @@ function registerMiloCron(app2) {
       }));
       const result = await deliverDueReminders({ runner: "heartbeat", taskUid });
       const recurring = await deliverDueRecurringTransactions();
+      const personalDigest = await deliverDuePersonalDigests();
       await saveAutomationSetting({ settingKey: "reminder-delivery-primary", scheduleCronTaskUid: taskUid, isEnabled: true, lastRunAt: /* @__PURE__ */ new Date() });
-      return sendSuccess({ ok: true, ...result, recurring, mediaRecovery });
+      return sendSuccess({ ok: true, ...result, recurring, personalDigest, mediaRecovery });
     } catch (error) {
       return res.status(500).json({ error: error instanceof Error ? error.message : "unknown", timestamp: (/* @__PURE__ */ new Date()).toISOString() });
     }
@@ -10526,22 +10703,14 @@ function registerMiloCron(app2) {
       }
     });
   };
-  const registerPersonalDigestRoute = (path5, settingKey, formatter) => {
+  const registerPersonalDigestRoute = (path5, settingKey, slot) => {
     app2.get(path5, async (req, res) => {
       try {
         const isVercelCron = req.headers["user-agent"] === "vercel-cron/1.0";
         const secret3 = process.env.CRON_SECRET?.trim();
         if (!isVercelCron || !secret3 || req.headers.authorization !== `Bearer ${secret3}`) return res.status(401).json({ error: "cron-unauthorized" });
-        const targetLineUserId = await getOwnerLinkedLineUser();
-        if (!targetLineUserId) return res.json({ ok: true, skipped: "no-linked-private-line-user" });
-        const now = /* @__PURE__ */ new Date();
-        const schedule = await getAutomationSetting(settingKey);
-        const dayKey = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Bangkok", year: "numeric", month: "2-digit", day: "2-digit" }).format(now);
-        if (!shouldDeliverDailyDigest(schedule?.lastRunAt, now)) return res.json({ ok: true, skipped: "already-delivered", date: dayKey });
-        const snapshot = await buildPersonalDigestSnapshot(targetLineUserId, targetLineUserId, "user", now);
-        await pushText(targetLineUserId, formatter(snapshot));
-        await saveAutomationSetting({ settingKey, isEnabled: true, lastRunAt: now });
-        return res.json({ ok: true, delivered: true, date: dayKey });
+        const result = await deliverPersonalDigestBatch({ settingKey, slot, reference: /* @__PURE__ */ new Date() });
+        return res.json({ ok: true, ...result });
       } catch (error) {
         return res.status(500).json({ error: error instanceof Error ? error.message : "unknown", timestamp: (/* @__PURE__ */ new Date()).toISOString() });
       }
@@ -10549,8 +10718,8 @@ function registerMiloCron(app2) {
   };
   registerFinanceDigestRoute("/api/scheduled/finance-daily", "finance-digest-daily", "daily");
   registerFinanceDigestRoute("/api/scheduled/finance-weekly", "finance-digest-weekly", "weekly");
-  registerPersonalDigestRoute("/api/scheduled/personal-morning", "personal-digest-morning", formatMorningBrief);
-  registerPersonalDigestRoute("/api/scheduled/personal-evening", "personal-digest-evening", formatEveningSummary);
+  registerPersonalDigestRoute("/api/scheduled/personal-morning", "personal-digest-morning", "morning");
+  registerPersonalDigestRoute("/api/scheduled/personal-evening", "personal-digest-evening", "evening");
 }
 
 // server/milo/saveResultImage.ts
@@ -10898,7 +11067,7 @@ function registerSaveResultImageRoute(app2) {
 }
 
 // server/milo/financeReportImage.ts
-import crypto6 from "node:crypto";
+import crypto7 from "node:crypto";
 import sharp3 from "sharp";
 
 // server/milo/referenceArtwork.ts
@@ -10995,7 +11164,7 @@ function iso(value) {
   return Number.isFinite(date.getTime()) ? date.toISOString() : void 0;
 }
 function sign3(payload) {
-  return crypto6.createHmac("sha256", secret()).update(payload).digest("hex");
+  return crypto7.createHmac("sha256", secret()).update(payload).digest("hex");
 }
 function validNumber(value) {
   const n = Number(value);
@@ -11008,7 +11177,7 @@ function decodeInput(req) {
   const expected = sign3(data);
   const a = Buffer.from(supplied);
   const b = Buffer.from(expected);
-  if (a.length !== b.length || !crypto6.timingSafeEqual(a, b)) return void 0;
+  if (a.length !== b.length || !crypto7.timingSafeEqual(a, b)) return void 0;
   try {
     const parsed = JSON.parse(Buffer.from(data, "base64url").toString("utf8"));
     if (!parsed.period || !["day", "week", "month", "year"].includes(parsed.period)) return void 0;
@@ -11176,7 +11345,7 @@ function registerFinanceReportImageRoute(app2) {
 }
 
 // server/milo/richMenuDataImage.ts
-import crypto7 from "node:crypto";
+import crypto8 from "node:crypto";
 import { deflateRawSync, inflateRawSync } from "node:zlib";
 import sharp4 from "sharp";
 var WIDTH2 = 1080;
@@ -11203,7 +11372,7 @@ function compactText(value) {
   return normalized || "\u0E22\u0E31\u0E07\u0E44\u0E21\u0E48\u0E21\u0E35\u0E02\u0E49\u0E2D\u0E21\u0E39\u0E25\u0E2A\u0E33\u0E2B\u0E23\u0E31\u0E1A\u0E41\u0E2A\u0E14\u0E07\u0E1C\u0E25";
 }
 function sign4(data) {
-  return crypto7.createHmac("sha256", secret2()).update(data).digest("hex");
+  return crypto8.createHmac("sha256", secret2()).update(data).digest("hex");
 }
 function isDynamicRichMenuArtwork(key) {
   return DATA_KEYS.has(key);
@@ -11215,7 +11384,7 @@ function decode(req) {
   const expected = sign4(data);
   const a = Buffer.from(supplied);
   const b = Buffer.from(expected);
-  if (a.length !== b.length || !crypto7.timingSafeEqual(a, b)) return void 0;
+  if (a.length !== b.length || !crypto8.timingSafeEqual(a, b)) return void 0;
   try {
     const parsed = JSON.parse(inflateRawSync(Buffer.from(data, "base64url")).toString("utf8"));
     if (!parsed.key || !isDynamicRichMenuArtwork(parsed.key) || typeof parsed.text !== "string") return void 0;
@@ -11367,7 +11536,7 @@ var healthHandler = async (req, res) => {
   res.status(200).json({
     status: runtime.authenticated && voice.configured && Boolean(process.env.LINE_CHANNEL_SECRET?.trim()) && Boolean(process.env.LINE_CHANNEL_ACCESS_TOKEN?.trim()) && Boolean(process.env.DATABASE_URL?.trim()) ? "ok" : "degraded",
     service: "milo",
-    release: "milo-vault-retrieval-final-2026-09-30",
+    release: "milo-business-assistant-complete-2026-09-30",
     intentRoutingMode: "systemone-first+deterministic-fallback",
     systemOneConfigured: systemOneConfigured(),
     systemOneProviderOrder: systemOneProviderOrder(),

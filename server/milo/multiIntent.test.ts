@@ -22,6 +22,16 @@ describe("compound capture", () => {
     expect(plan?.items[2]).toMatchObject({ type: "reminder" });
   });
 
+  it("captures appointment, task, pending bill and reminder in one confirmation plan", () => {
+    const plan = parseCompoundCapture("พรุ่งนี้ 14:00 ประชุมกับลูกค้า ค่าแท็กซี่ 300 บาท งาน ส่งใบเสนอราคา ช่วยเตือนก่อนประชุมด้วยนะ", now);
+    expect(plan?.items.map(item => item.type)).toEqual(["calendar", "pending_bill", "todo", "reminder"]);
+    expect(plan?.items[0]).toMatchObject({ type: "calendar", title: "ประชุมกับลูกค้า" });
+    expect(plan?.items[1]).toMatchObject({ type: "pending_bill", title: "ค่าแท็กซี่", amount: 300 });
+    expect(plan?.items[2]).toMatchObject({ type: "todo", title: "ส่งใบเสนอราคา" });
+    expect((plan?.items[2] as { dueAt: Date }).dueAt.toISOString()).toBe("2026-09-17T07:00:00.000Z");
+    expect((plan?.items[3] as { dueAt: Date }).dueAt.toISOString()).toBe("2026-09-17T06:45:00.000Z");
+  });
+
   it("turns a future bill into a pending bill plus due reminder", () => {
     const plan = parseCompoundCapture("พรุ่งนี้จ่ายค่าไฟ 1,250 บาท", now);
     expect(plan?.items).toHaveLength(2);

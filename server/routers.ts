@@ -170,10 +170,10 @@ export const appRouter = router({
         if (ctx.user.role !== "admin") throw new Error("เฉพาะผู้ดูแลโครงการที่ตั้งงานส่งเตือนได้");
         if (!ENV.isProduction) throw new Error("ต้องเผยแพร่เว็บไซต์ก่อน จึงจะตั้งงานส่งเตือนอัตโนมัติได้");
         const key = "reminder-delivery-primary";
-        const taskUid = "external-cron-reminders";
+        const taskUid = "github-actions-reminders";
         const current = await db.getAutomationSetting(key);
         await db.saveAutomationSetting({ settingKey: key, scheduleCronTaskUid: taskUid, isEnabled: true });
-        console.info("[Milo Scheduler] External Cron configured", { taskUid, wasEnabled: Boolean(current?.isEnabled) });
+        console.info("[Milo Scheduler] GitHub Actions OIDC scheduler enabled", { taskUid, wasEnabled: Boolean(current?.isEnabled) });
         return { taskUid, status: current?.isEnabled ? "already-active" as const : "configured" as const, nextExecutionAt: null };
       }),
     }),

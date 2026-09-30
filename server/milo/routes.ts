@@ -26,7 +26,9 @@ import { applyImageExpenseEdit } from "./imageProposalEdit";
 import { bangkokMonthRange, buildDocumentIntelligence, classifyDocumentKind, documentKindLabel, documentStatusLabel, fingerprintMedia, mergeVaultTags, readDocumentStatus, summarizeVaultDocuments, type DocumentAnalysis } from "./documentIntelligence";
 import { deserializeCapturePlan, formatCapturePreview, serializeCapturePlan } from "./multiIntent";
 import { bangkokDayRange, formatTodayOverview } from "./todayOverview";
-import { formatEveningSummary, formatMorningBrief, shouldDeliverDailyDigest } from "./personalDigest";
+import { formatEveningSummary, formatMorningBrief } from "./personalDigest";
+import { deliverDuePersonalDigests, deliverPersonalDigestBatch } from "./personalDigestDelivery";
+import { verifyGitHubActionsCronRequest } from "./githubCronAuth";
 import { STANDARD_EXPENSE_CATEGORIES, STANDARD_INCOME_CATEGORIES } from "./financeCategories";
 import { financeReportCardText, getMessageContent, getProfile, lineCredentials, postSaveSummaryText, pushText, pushTextWithQuickReplies, replyCalendarList, replyFinanceReportCard, replyFinanceReportCardFallback, replyGreetingHome, replyMention, replyMiloOnboarding, replyMiloSettings, replyPostSaveSummary, replyReminderList, replyText, replyThemedTextCard, replyTransactionList, replyTextWithQuickReplies, replyVaultSearchResults, replyVoiceCategoryChoices, replyVoiceProposal, replyVoiceProposalFallback, sourceIdentity, type LineEvent, type MiloListRow, type VoiceTransactionProposal, verifyLineSignature } from "./line";
 
@@ -433,7 +435,7 @@ async function handleText(event: LineEvent, lineChatId: string, lineUserId: stri
   } else if (command.type === "captureConfirm") {
     const draft = await db.latestProposedCaptureDraft(lineUserId, lineChatId);
     if (!draft) {
-      message = "ยังไม่มีชุดรายการที่รอยืนยัน ลองพิมพ์นัดหมาย บิล และคำเตือนในข้อความเดียวก่อนครับ";
+      message = "ยังไม่มีชุดรายการที่รอยืนยัน ลองพิมพ์นัดหมาย งาน บิล และคำเตือนในข้อความเดียวก่อนครับ";
     } else {
       const capture = deserializeCapturePlan(draft.payloadJson);
       if (capture.items.some(item => item.type === "reminder") && !hasMiloEntitlement(plan, "reminders")) {
@@ -467,6 +469,9 @@ async function handleText(event: LineEvent, lineChatId: string, lineUserId: stri
         } else if (item.type === "reminder") {
           const id = await db.createReminder({ lineChatId, createdByLineUserId: lineUserId, title: item.title, recurrenceType: "once", recurrenceInterval: 1, dueAt: item.dueAt, nextRunAt: item.dueAt, sourceMessageId });
           created.push({ type: item.type, id });
+        } else if (item.type === "todo") {
+          const result = await db.createTodo(lineChatId, lineUserId, item.title, item.dueAt);
+          created.push({ type: item.type, id: Number(result[0]?.insertId ?? 0) });
         } else {
           const id = await db.createPendingBill({ lineChatId, lineUserId, financeAccountId: captureFinance!.financeAccountId, captureDraftId: draft.id, title: item.title, amount: item.amount, category: item.category, dueAt: item.dueAt, sourceMessageId });
           created.push({ type: item.type, id });
@@ -474,7 +479,7 @@ async function handleText(event: LineEvent, lineChatId: string, lineUserId: stri
       }
       await db.finishCaptureDraft({ id: draft.id, lineUserId, lineChatId, status: "accepted", details: { created } });
       const billIds = created.filter(item => item.type === "pending_bill").map(item => `#${item.id}`).join(", ");
-      message = `บันทึกชุดรายการแล้ว ✅\nนัดหมาย ${created.filter(item => item.type === "calendar").length} • เตือน ${created.filter(item => item.type === "reminder").length} • บิลรอจ่าย ${created.filter(item => item.type === "pending_bill").length}${billIds ? ` (${billIds})` : ""}\n\nยังไม่มีการสร้างรายจ่ายจริง พิมพ์ “จ่ายบิล #เลขรายการ” เมื่อชำระแล้ว`;
+      message = `บันทึกชุดรายการแล้ว ✅\nนัดหมาย ${created.filter(item => item.type === "calendar").length} • งาน ${created.filter(item => item.type === "todo").length} • เตือน ${created.filter(item => item.type === "reminder").length} • บิลรอจ่าย ${created.filter(item => item.type === "pending_bill").length}${billIds ? ` (${billIds})` : ""}\n\nยังไม่มีการสร้างรายจ่ายจริง พิมพ์ “จ่ายบิล #เลขรายการ” เมื่อชำระแล้ว`;
       if (event.replyToken) {
         await replyTextWithQuickReplies(event.replyToken, message, [
           { label: "วันนี้มีอะไร", text: "วันนี้มีอะไร" },
@@ -1311,6 +1316,11 @@ export async function processEvent(event: LineEvent, rawPayload: string, runtime
     if (!accepted) return;
   }
   try {
+    if (identity.scope === "user" && event.type === "unfollow") {
+      await db.setLineChatActive(identity.lineChatId, false);
+      await db.finishWebhookEvent(event.webhookEventId, "processed");
+      return;
+    }
     const profile = await getProfile(event.source).catch(() => undefined);
     await db.upsertLineChat(identity.lineChatId, identity.scope, profile?.displayName);
     await db.upsertLineMember(identity.lineChatId, identity.lineUserId, profile?.displayName);
@@ -1566,9 +1576,15 @@ export function registerMiloCron(app: Express) {
     const sendSuccess = (payload: Record<string, unknown>) =>
       req.headers["x-cron-compact"] === "1" ? res.status(204).end() : res.json(payload);
     try {
+      const isGitHubActionsCron = req.method === "GET" && req.headers["x-milo-cron-provider"] === "github-actions";
       const isVercelCron = req.method === "GET" && req.headers["user-agent"] === "vercel-cron/1.0";
       let taskUid: string;
-      if (isVercelCron) {
+      if (isGitHubActionsCron) {
+        const trusted = await verifyGitHubActionsCronRequest(req);
+        if (!trusted) return res.status(401).json({ error: "cron-unauthorized" });
+        taskUid = "github-actions-reminders";
+        await db.saveAutomationSetting({ settingKey: "reminder-delivery-primary", scheduleCronTaskUid: taskUid, isEnabled: true });
+      } else if (isVercelCron) {
         const secret = process.env.CRON_SECRET?.trim();
         const authorization = req.headers.authorization;
         const headerSecret = req.headers["x-cron-secret"];
@@ -1596,8 +1612,9 @@ export function registerMiloCron(app: Express) {
       }));
       const result = await deliverDueReminders({ runner: "heartbeat", taskUid });
       const recurring = await deliverDueRecurringTransactions();
+      const personalDigest = await deliverDuePersonalDigests();
       await db.saveAutomationSetting({ settingKey: "reminder-delivery-primary", scheduleCronTaskUid: taskUid, isEnabled: true, lastRunAt: new Date() });
-      return sendSuccess({ ok: true, ...result, recurring, mediaRecovery });
+      return sendSuccess({ ok: true, ...result, recurring, personalDigest, mediaRecovery });
     } catch (error) {
       return res.status(500).json({ error: error instanceof Error ? error.message : "unknown", timestamp: new Date().toISOString() });
     }
@@ -1616,22 +1633,14 @@ export function registerMiloCron(app: Express) {
       }
     });
   };
-  const registerPersonalDigestRoute = (path: string, settingKey: string, formatter: (snapshot: Awaited<ReturnType<typeof buildPersonalDigestSnapshot>>) => string) => {
+  const registerPersonalDigestRoute = (path: string, settingKey: string, slot: "morning" | "evening") => {
     app.get(path, async (req: Request, res: Response) => {
       try {
         const isVercelCron = req.headers["user-agent"] === "vercel-cron/1.0";
         const secret = process.env.CRON_SECRET?.trim();
         if (!isVercelCron || !secret || req.headers.authorization !== `Bearer ${secret}`) return res.status(401).json({ error: "cron-unauthorized" });
-        const targetLineUserId = await db.getOwnerLinkedLineUser();
-        if (!targetLineUserId) return res.json({ ok: true, skipped: "no-linked-private-line-user" });
-        const now = new Date();
-        const schedule = await db.getAutomationSetting(settingKey);
-        const dayKey = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Bangkok", year: "numeric", month: "2-digit", day: "2-digit" }).format(now);
-        if (!shouldDeliverDailyDigest(schedule?.lastRunAt, now)) return res.json({ ok: true, skipped: "already-delivered", date: dayKey });
-        const snapshot = await buildPersonalDigestSnapshot(targetLineUserId, targetLineUserId, "user", now);
-        await pushText(targetLineUserId, formatter(snapshot));
-        await db.saveAutomationSetting({ settingKey, isEnabled: true, lastRunAt: now });
-        return res.json({ ok: true, delivered: true, date: dayKey });
+        const result = await deliverPersonalDigestBatch({ settingKey, slot, reference: new Date() });
+        return res.json({ ok: true, ...result });
       } catch (error) {
         return res.status(500).json({ error: error instanceof Error ? error.message : "unknown", timestamp: new Date().toISOString() });
       }
@@ -1639,6 +1648,6 @@ export function registerMiloCron(app: Express) {
   };
   registerFinanceDigestRoute("/api/scheduled/finance-daily", "finance-digest-daily", "daily");
   registerFinanceDigestRoute("/api/scheduled/finance-weekly", "finance-digest-weekly", "weekly");
-  registerPersonalDigestRoute("/api/scheduled/personal-morning", "personal-digest-morning", formatMorningBrief);
-  registerPersonalDigestRoute("/api/scheduled/personal-evening", "personal-digest-evening", formatEveningSummary);
+  registerPersonalDigestRoute("/api/scheduled/personal-morning", "personal-digest-morning", "morning");
+  registerPersonalDigestRoute("/api/scheduled/personal-evening", "personal-digest-evening", "evening");
 }
